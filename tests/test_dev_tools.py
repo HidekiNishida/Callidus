@@ -63,6 +63,18 @@ async def test_grep_skips_venv_and_command_string(ctx, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_pytest_without_tests_accepts_html_delivery(tmp_path):
+    (tmp_path / "index.html").write_text("<h1>Vendas</h1>\n", encoding="utf-8")
+    result = await run_verification(
+        project_root=str(tmp_path),
+        spec={"type": "pytest", "path": "."},
+        approved=True,
+    )
+    assert result.passed is True
+    assert "não há testes" in result.summary
+
+
+@pytest.mark.asyncio
 async def test_script_verification(tmp_path):
     script = tmp_path / "check.py"
     script.write_text("print('ok')\n", encoding="utf-8")

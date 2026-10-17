@@ -117,6 +117,7 @@ def extract_sources(*chunks: str) -> list[str]:
     found: list[str] = []
     for chunk in chunks:
         for match in _PATH.findall(chunk or ""):
-            if match not in found:
-                found.append(match)
+            if match.startswith(("a/", "b/")) or match in found:
+                continue
+            found.append(match)
     return found[:12]

@@ -1025,6 +1025,13 @@ function visibleReply(markdown) {
     if (body) return body;
   }
   if (/\n#{1,3}\s*(etapas|verifica|fontes|fluxo|objetivo)\b/i.test(text)) {
+    const files = [];
+    for (const match of text.matchAll(/^- `([^`]+)`/gm)) {
+      const path = match[1];
+      if (/^[ab]\//.test(path) || files.includes(path)) continue;
+      files.push(path);
+    }
+    if (files.length) return `O resultado está em ${files.join(", ")}.`;
     const now = text.match(/^Agora:\s*(.+)$/im);
     if (now) return now[1].replace(/\.$/, "").trim();
   }

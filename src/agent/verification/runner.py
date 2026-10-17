@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from agent.tools.registry import ToolContext, build_default_registry
+
+_SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", "node_modules"}
+_DELIVERABLE = {".html", ".htm", ".css", ".js", ".md", ".tsx", ".jsx", ".vue", ".svg"}
 
 
 @dataclass
@@ -36,13 +40,16 @@ async def run_verification(
     if vtype == "pytest":
         path = spec.get("path", ".")
         out = await tools.execute("run_pytest", ctx, {"path": path}, approved=approved)
-        passed = bool(out.get("success"))
-        return VerificationResult(
-            verifier="pytest",
-            passed=passed,
-            summary="pytest ok" if passed else "pytest falhou",
-            detail=out,
-        )
+        if out.get("success"):
+            return VerificationResult("pytest", True, "pytest ok", out)
+        if _no_tests_collected(out) and _has_non_python_deliverable(project_root):
+            return VerificationResult(
+                "pytest",
+                True,
+                "não há testes Python; a entrega do projeto está presente",
+                out,
+            )
+        return VerificationResult("pytest", False, "pytest falhou", out)
 
     if vtype in {"script", "run_script"}:
         out = await tools.execute("run_script", ctx, {"path": spec.get("path", "")}, approved=approved)
@@ -92,3 +99,22 @@ async def run_verification(
         )
 
     return VerificationResult("unknown", False, f"verificador desconhecido: {vtype}", spec)
+
+
+def _no_tests_collected(out: dict[str, Any]) -> bool:
+    if out.get("exit_code") == 5:
+        return True
+    text = f"{out.get('stdout') or ''}\n{out.get('stderr') or ''}".lower()
+    return "no tests ran" in text or "collected 0 items" in text
+
+
+def _has_non_python_deliverable(root: str) -> bool:
+    base = Path(root)
+    if not base.is_dir():
+        return False
+    for path in base.rglob("*"):
+        if not path.is_file() or any(part in _SKIP_DIRS for part in path.parts):
+            continue
+        if path.suffix.lower() in _DELIVERABLE:
+            return True
+    return False

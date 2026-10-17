@@ -782,6 +782,13 @@ class RunOrchestrator:
             return {"action": "verified_ok", "task_id": str(task.id)}
 
         if vresult.passed is False:
+            fp = AttemptService.fingerprint({"passed": False, "summary": vresult.summary})
+            if self._attempts.repeated_output_detected(task.id, fp, window=2):
+                self._tasks.update_status(
+                    task.id,
+                    TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="a mesma verificação falhou de novo"),
+                )
+                return {"action": "blocked_loop", "task_id": str(task.id)}
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
             return {"action": "verify_failed", "task_id": str(task.id)}
 
