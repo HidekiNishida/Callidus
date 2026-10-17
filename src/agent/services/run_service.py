@@ -20,6 +20,13 @@ class RunService:
         if task is None or task.project_id != project_id:
             raise LookupError("Tarefa raiz inválida")
 
+        config = dict(data.config or {})
+        meta = dict(task.metadata_json or {})
+        if config.get("model_id"):
+            meta["model_id"] = config["model_id"]
+            if config.get("provider"):
+                meta["provider"] = config["provider"]
+            task.metadata_json = meta
         run = ExecutionRunModel(
             project_id=project_id,
             root_task_id=data.root_task_id,

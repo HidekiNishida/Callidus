@@ -58,7 +58,7 @@ class RunBlockedError(RuntimeError):
 def _select_provider(settings: Settings, run_config: dict) -> LLMProvider:
     name = run_config.get("provider") or settings.default_provider
     if name == "ollama":
-        return OllamaProvider(settings.ollama_base_url)
+        return OllamaProvider(settings.ollama_base_url, timeout=settings.ollama_timeout_sec)
     if name == "llamacpp":
         return LlamaCppProvider(settings.llamacpp_base_url)
     if name == "mock":
@@ -521,6 +521,10 @@ class RunOrchestrator:
         if meta.get("model_operation"):
             provider = _select_provider(self._settings, config)
             profile = _profile_from_config(config, self._settings)
+            if meta.get("prompt_key") == "page":
+                generation = dict(profile.generation)
+                generation["num_predict"] = max(int(generation.get("num_predict") or 0), 4096)
+                profile = profile.model_copy(update={"generation": generation})
             from agent.providers.base import ChatCompletionRequest
             from agent.util.json_parse import parse_json_object
 
@@ -532,12 +536,13 @@ class RunOrchestrator:
                 profile=profile,
                 run_id=run.id,
             )
-            self._note_thought(run, task, f"Pensando na alteração «{task.title}».")
+            self._note_thought(run, task, f"Pensando na alteração «{task.title}» com {profile.model_id}.")
             try:
                 resp = await provider.chat(
                     ChatCompletionRequest(messages=budget.messages, profile=profile)
                 )
             except ProviderError as exc:
+                self._note_thought(run, task, f"A inferência falhou: {exc}.")
                 response = {"error": str(exc)}
                 self._attempts.record(
                     run_id=run.id,

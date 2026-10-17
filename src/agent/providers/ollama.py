@@ -18,6 +18,36 @@ def _ollama_message(message) -> dict:
     return payload
 
 
+def inference_failure_text(exc: Exception) -> str:
+    detail = str(exc).strip()
+    name = exc.__class__.__name__.lower()
+    if "timeout" in name or "timed out" in detail.lower():
+        return "tempo esgotado"
+    return detail or exc.__class__.__name__
+
+
+def _reasoning_model(model_id: str) -> bool:
+    low = model_id.lower()
+    return any(token in low for token in ("qwen3", "gpt-oss", "deepseek", "reason"))
+
+
+def chat_body(request: ChatCompletionRequest) -> dict:
+    options = dict(request.profile.generation or {})
+    think = options.pop("think", False)
+    body = {
+        "model": request.profile.model_id,
+        "messages": [_ollama_message(m) for m in request.messages],
+        "stream": False,
+    }
+    if _reasoning_model(request.profile.model_id):
+        body["think"] = bool(think)
+    if options:
+        body["options"] = options
+    if request.response_format is not None:
+        body["format"] = request.response_format.get("schema") or request.response_format
+    return body
+
+
 class OllamaProvider(LLMProvider):
     name = "ollama"
 
@@ -39,14 +69,7 @@ class OllamaProvider(LLMProvider):
 
     async def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         url = f"{self._base_url}/api/chat"
-        body = {
-            "model": request.profile.model_id,
-            "messages": [_ollama_message(m) for m in request.messages],
-            "stream": False,
-            "options": request.profile.generation or None,
-        }
-        if request.response_format is not None:
-            body["format"] = request.response_format.get("schema") or request.response_format
+        body = chat_body(request)
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
@@ -54,7 +77,7 @@ class OllamaProvider(LLMProvider):
                 resp.raise_for_status()
                 data = resp.json()
         except httpx.HTTPError as exc:
-            raise ProviderError(f"Falha na inferência Ollama: {exc}") from exc
+            raise ProviderError(f"Falha na inferência Ollama: {inference_failure_text(exc)}") from exc
 
         message = data.get("message") or {}
         content = message.get("content") or ""

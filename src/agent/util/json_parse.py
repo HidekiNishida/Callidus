@@ -7,7 +7,7 @@ from typing import Any
 
 
 def parse_json_object(text: str) -> tuple[dict[str, Any] | None, str | None]:
-    text = text.strip()
+    text = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
     if not text:
         return None, "resposta vazia"
     try:

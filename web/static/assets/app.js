@@ -255,6 +255,16 @@ function runMeter(root) {
   return meterTag(root.created_at, end, tokens, live);
 }
 
+function keepComposerChoices(form) {
+  const provider = document.getElementById("sel-provider").value;
+  const model = document.getElementById("sel-model").value;
+  form.reset();
+  const providerSel = document.getElementById("sel-provider");
+  const modelSel = document.getElementById("sel-model");
+  if ([...providerSel.options].some((opt) => opt.value === provider)) providerSel.value = provider;
+  if ([...modelSel.options].some((opt) => opt.value === model)) modelSel.value = model;
+}
+
 function runConfigFromUI(objective) {
   const provider = document.getElementById("sel-provider").value;
   const model_id = document.getElementById("sel-model").value || state.uiDefaults?.model_id || "llama3.2";
@@ -1269,10 +1279,11 @@ function renderChat() {
     return;
   }
   const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 120;
-  const model = state.live?.model?.model_id ? ` · ${escapeHtml(state.live.model.model_id)}` : "";
   const busy = ["PLANNING", "READY", "RUNNING", "VERIFYING", "RETRY_PENDING"];
   log.innerHTML = roots
     .map((root) => {
+      const modelId = (root.metadata_json || {}).model_id || state.live?.model?.model_id || "";
+      const model = modelId ? ` · ${escapeHtml(modelId)}` : "";
       const kids = state.tasks.filter((task) => task.parent_id === root.id);
       const ids = descendantIds(root.id);
       const focusHere = state.live?.focus && ids.has(state.live.focus.id);
@@ -1813,10 +1824,11 @@ async function init() {
     renderProjects(document.getElementById("project-search").value);
     attachments.splice(0, attachments.length);
     renderAttachmentChips();
-    e.target.reset();
+    const cfg = runConfigFromUI(objective);
+    keepComposerChoices(e.target);
     renderChat();
     try {
-      await startRun();
+      await startRun(cfg);
     } catch (err) {
       toast(err.message || "Falha ao iniciar", "error");
     }
@@ -1826,11 +1838,11 @@ async function init() {
 
   document.getElementById("btn-run").onclick = () => startRun().catch((err) => toast(err.message, "error"));
 
-  async function startRun() {
+  async function startRun(config) {
     const root = state.tasks.find((t) => t.id === state.selectedTaskId) || state.tasks.find((t) => !t.parent_id);
     const workspace = workspaceId();
     if (!root || !workspace) throw new Error("Não há mensagem para executar");
-    const cfg = runConfigFromUI(root.objective || "");
+    const cfg = config || runConfigFromUI(root.objective || "");
     state.currentRun = await api(`/projects/${workspace}/runs`, {
       method: "POST",
       body: JSON.stringify({ root_task_id: root.id, config: cfg }),

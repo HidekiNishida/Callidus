@@ -290,12 +290,15 @@ def profile_from_run_config(run_config: dict[str, Any], settings: Settings) -> M
     model_id = str(run_config.get("model_id") or settings.default_model_id)
     low = model_id.lower()
     vision = any(token in low for token in ("-vl", "vl:", "vision", "llava", "moondream"))
+    generation = dict(run_config.get("generation") or {})
+    generation.setdefault("think", False)
     return ModelProfile(
         model_id=model_id,
         context_limit=int(run_config.get("context_limit", settings.default_context_limit)),
         input_budget=int(run_config.get("input_budget", settings.default_input_budget)),
         output_reserve=int(run_config.get("output_reserve", settings.default_output_reserve)),
         supports_vision=vision,
+        generation=generation,
     )
 
 

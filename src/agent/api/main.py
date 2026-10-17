@@ -81,12 +81,29 @@ def _usage_tokens(session: Session, task) -> int:
     return int(latest or 0)
 
 
+def _remembered_model(session: Session, task) -> dict:
+    meta = dict(task.metadata_json or {})
+    if task.parent_id is not None or meta.get("model_id"):
+        return meta
+    run = session.scalar(
+        select(ExecutionRunModel)
+        .where(ExecutionRunModel.root_task_id == task.id)
+        .order_by(ExecutionRunModel.created_at.desc())
+        .limit(1)
+    )
+    model_id = ((run.config_json or {}) if run else {}).get("model_id")
+    if model_id:
+        meta["model_id"] = model_id
+    return meta
+
+
 def _present_task(session: Session, task) -> TaskRead:
     data = TaskRead.model_validate(task)
     return data.model_copy(
         update={
             "display_title": translate(task.title, locale_for_task(session, task)),
             "usage_tokens": _usage_tokens(session, task),
+            "metadata_json": _remembered_model(session, task),
         }
     )
 
