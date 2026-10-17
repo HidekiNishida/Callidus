@@ -214,6 +214,7 @@ async function refreshTasks() {
   if (!state.selectedProject) return;
   state.tasks = await api(`/projects/${state.selectedProject.id}/tasks`);
   renderTaskTree();
+  renderChat();
 }
 
 const ACTION_PT = {
@@ -298,8 +299,66 @@ async function refreshLive() {
   }
 }
 
+function toolOf(task) {
+  const meta = task.metadata_json || {};
+  if (meta.tool) return meta.tool;
+  if (meta.verification) return "verificação";
+  if (meta.model_operation) return "modelo";
+  return "";
+}
+
+function resultLine(task) {
+  const result = task.consolidated_result_json;
+  if (!result) return "";
+  const inner = result.result || result;
+  if (inner.stderr && inner.success) return String(inner.stderr).split("\n").slice(-3).join(" ");
+  if (inner.error) return String(inner.error);
+  if (inner.summary) return String(inner.summary);
+  if (inner.path) return String(inner.path);
+  return "";
+}
+
+function renderChat() {
+  const log = document.getElementById("chat-log");
+  if (!log) return;
+  const roots = state.tasks.filter((t) => !t.parent_id);
+  if (!state.selectedProject || !roots.length) {
+    log.innerHTML = `<div class="chat-empty"><h2>O que vamos construir?</h2><p>Escreva embaixo como no chat do Cursor. O agente divide o trabalho, edita os arquivos e mostra cada passo aqui.</p></div>`;
+    return;
+  }
+  const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 120;
+  const model = state.live?.model?.model_id ? ` · ${escapeHtml(state.live.model.model_id)}` : "";
+  log.innerHTML = roots
+    .map((root) => {
+      const kids = state.tasks.filter((t) => t.parent_id === root.id);
+      const cards = kids
+        .map((k) => {
+          const line = resultLine(k);
+          const tool = toolOf(k);
+          return `<div class="tool-card"><div class="row">${statusBadge(k.status)} <strong>${escapeHtml(k.title)}</strong>${tool ? ` <span class="muted">${escapeHtml(tool)}</span>` : ""}</div>${line ? `<p>${escapeHtml(line.slice(0, 320))}</p>` : ""}</div>`;
+        })
+        .join("");
+      const live =
+        state.live?.headline && state.live.action !== "run_completed"
+          ? `<div class="tool-card"><div class="row"><strong>${escapeHtml(state.live.headline)}</strong></div><p>${escapeHtml(state.live.how || "")}</p></div>`
+          : "";
+      return `<div class="bubble user"><div class="who">Você</div><div>${escapeHtml(root.objective)}</div></div>
+        <div class="bubble agent"><div class="who">Agente${model}</div>${cards || `<p class="muted">Vou planejar e dividir isso em passos.</p>`}${live}</div>`;
+    })
+    .join("");
+  if (stick) log.scrollTop = log.scrollHeight;
+}
+
 async function refreshAll() {
-  await Promise.all([refreshTasks(), refreshOverview(), refreshActivity(), refreshLive()]);
+  const results = await Promise.allSettled([
+    refreshTasks(),
+    refreshOverview(),
+    refreshActivity(),
+    refreshLive(),
+  ]);
+  renderChat();
+  const failed = results.find((r) => r.status === "rejected");
+  if (failed) console.warn(failed.reason);
 }
 
 function updateRunButtons() {
@@ -374,6 +433,8 @@ async function init() {
   state.uiDefaults = await api("/config/ui-defaults");
   const health = await api("/health");
   document.getElementById("health-indicator").textContent = `API ${health.status} · v${health.version || "?"}`;
+  const barHealth = document.getElementById("health-indicator-bar");
+  if (barHealth) barHealth.textContent = `API ${health.status}`;
 
   const prefs = loadPrefs();
   if (prefs.provider) document.getElementById("sel-provider").value = prefs.provider;
@@ -423,23 +484,35 @@ async function init() {
     }
   };
 
+  const objectiveBox = document.querySelector("#form-task textarea[name=objective]");
+  objectiveBox.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      document.getElementById("form-task").requestSubmit();
+    }
+  });
+
+  document.getElementById("btn-toggle-details").onclick = () => {
+    const panel = document.getElementById("details-panel");
+    panel.hidden = !panel.hidden;
+  };
+
   document.getElementById("form-task").onsubmit = async (e) => {
     e.preventDefault();
-    if (!state.selectedProject) return toast("Selecione um projeto", "error");
+    if (!state.selectedProject) return toast("Escolha um projeto na lateral", "error");
     const fd = new FormData(e.target);
+    const objective = String(fd.get("objective") || "").trim();
+    if (!objective) return;
+    const title = String(fd.get("title") || objective).slice(0, 80);
     const task = await api(`/projects/${state.selectedProject.id}/tasks`, {
       method: "POST",
-      body: JSON.stringify({
-        title: fd.get("title"),
-        objective: fd.get("objective"),
-        kind: "objective",
-      }),
+      body: JSON.stringify({ title, objective, kind: "objective" }),
     });
     state.selectedTaskId = task.id;
+    state.tasks = [...state.tasks, { ...task, parent_id: null }];
     e.target.reset();
-    await refreshAll();
-    updateRunButtons();
-    toast("Tarefa raiz criada");
+    renderChat();
+    document.getElementById("btn-run").click();
   };
 
   document.getElementById("task-filter-status").onchange = () => renderTaskTree();

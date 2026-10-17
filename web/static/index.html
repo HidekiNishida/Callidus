@@ -10,42 +10,35 @@
   <div class="app-shell">
     <aside class="sidebar" aria-label="Projetos">
       <div class="sidebar-head">
-        <strong>Projetos</strong>
+        <strong>Agente</strong>
         <button type="button" id="btn-toggle-project-form" class="btn-ghost" title="Novo projeto">+</button>
       </div>
-      <input type="search" id="project-search" placeholder="Filtrar projetos…" autocomplete="off" />
+      <input type="search" id="project-search" placeholder="Buscar projeto…" autocomplete="off" />
       <form id="form-project" class="collapsed">
-        <input name="name" placeholder="Nome do projeto" required />
-        <input name="root_path" placeholder="Caminho raiz absoluto" required />
+        <input name="name" placeholder="Nome" required />
+        <input name="root_path" placeholder="Pasta do código" required />
         <button type="submit" class="btn-primary">Criar</button>
       </form>
       <ul id="project-list" class="project-list"></ul>
       <div class="sidebar-foot muted" id="health-indicator">—</div>
     </aside>
 
-    <div class="main">
+    <div class="main chat-main">
       <header class="topbar">
         <div class="topbar-left">
-          <h1 id="workspace-title">Selecione um projeto</h1>
-          <p class="muted" id="workspace-subtitle"></p>
+          <h1 id="workspace-title">Novo chat</h1>
+          <p class="muted" id="workspace-subtitle">Escolha um projeto e descreva o que fazer.</p>
         </div>
         <div class="topbar-run" id="run-toolbar" hidden>
-          <button type="button" id="btn-run" class="btn-primary">▶ Iniciar</button>
-          <button type="button" id="btn-step" class="btn-secondary" disabled>Passo</button>
-          <button type="button" id="btn-execute" class="btn-secondary" disabled>Auto</button>
+          <button type="button" id="btn-step" class="btn-secondary" disabled title="Um passo">Passo</button>
           <button type="button" id="btn-pause" class="btn-secondary" disabled>Pausar</button>
-          <button type="button" id="btn-cancel-run" class="btn-danger" disabled>Cancelar</button>
-          <label class="chk"><input type="checkbox" id="poll-active" checked /> Ao vivo</label>
-          <label class="chk" title="Worker em segundo plano avança runs ativos"><input type="checkbox" id="chk-autonomous" /> Autônomo</label>
+          <button type="button" id="btn-cancel-run" class="btn-danger" disabled>Parar</button>
+          <button type="button" id="btn-toggle-details" class="btn-secondary">Plano</button>
         </div>
-        <div class="topbar-model">
-          <select id="sel-provider" aria-label="Provedor">
-            <option value="ollama">Ollama</option>
-            <option value="mock">Mock (demo)</option>
-          </select>
-          <select id="sel-model" aria-label="Modelo"></select>
-          <label class="chk" title="Comandos shell destrutivos"><input type="checkbox" id="chk-approve-tools" checked /> Aprovar ferramentas</label>
-        </div>
+        <button type="button" id="btn-run" class="btn-primary" hidden>Iniciar</button>
+        <button type="button" id="btn-execute" class="btn-secondary" hidden>Auto</button>
+        <label class="chk" hidden><input type="checkbox" id="poll-active" checked /> Ao vivo</label>
+        <label class="chk" hidden><input type="checkbox" id="chk-autonomous" checked /> Autônomo</label>
       </header>
 
       <div class="stats-bar" id="stats-bar" hidden></div>
@@ -54,87 +47,90 @@
         <div class="live-dot" id="live-dot" aria-hidden="true"></div>
         <div class="live-copy">
           <p class="live-kicker" id="live-kicker">Agente</p>
-          <h2 id="live-title">Aguardando uma execução</h2>
+          <h2 id="live-title">Aguardando</h2>
           <p id="live-how" class="muted"></p>
         </div>
         <div class="live-meta" id="live-meta"></div>
       </section>
 
-      <div class="workspace">
-        <section class="panel col-tree">
-          <div class="panel-head">
-            <h2>Objetivo</h2>
-            <select id="objective-template" aria-label="Template">
-              <option value="">Template…</option>
-              <option value="e2e">Demo E2E (calc.py)</option>
-              <option value="custom">Objetivo livre</option>
-            </select>
-          </div>
-          <form id="form-task" class="composer">
-            <input name="title" placeholder="Título curto" required />
-            <textarea name="objective" rows="3" placeholder="Descreva o que deve ser feito e verificado…" required></textarea>
-            <button type="submit" class="btn-primary">Criar tarefa raiz</button>
-          </form>
-          <div class="panel-head">
-            <h2>Plano</h2>
-            <select id="task-filter-status" aria-label="Filtrar status">
-              <option value="">Todos os estados</option>
-              <option value="RUNNING">Em execução</option>
-              <option value="BLOCKED">Bloqueados</option>
-              <option value="COMPLETED">Concluídos</option>
-            </select>
-          </div>
-          <div id="task-tree" class="task-tree" role="tree"></div>
-          <p class="muted hint">Clique em uma tarefa para inspecionar tentativas e evidências.</p>
-        </section>
-
-        <section class="panel col-inspector">
-          <div class="tabs" role="tablist">
-            <button type="button" class="tab active" data-tab="detail">Detalhe</button>
-            <button type="button" class="tab" data-tab="attempts">Tentativas</button>
-            <button type="button" class="tab" data-tab="evidence">Evidências</button>
-            <button type="button" class="tab" data-tab="diff">Git diff</button>
-            <button type="button" class="tab" data-tab="tools">Ferramentas</button>
-            <button type="button" class="tab" data-tab="context">Contexto</button>
-            <button type="button" class="tab" data-tab="metrics">Métricas</button>
-            <button type="button" class="tab" data-tab="graph">Grafo</button>
-          </div>
-          <div id="tab-detail" class="tab-panel active"></div>
-          <div id="tab-attempts" class="tab-panel"><pre id="attempts-view"></pre></div>
-          <div id="tab-evidence" class="tab-panel"><pre id="evidence-view"></pre></div>
-          <div id="tab-diff" class="tab-panel">
-            <button type="button" id="btn-refresh-diff" class="btn-secondary">Atualizar diff</button>
-            <pre id="diff-view"></pre>
-          </div>
-          <div id="tab-tools" class="tab-panel"><pre id="tools-view"></pre></div>
-          <div id="tab-context" class="tab-panel"><pre id="context-view"></pre></div>
-          <div id="tab-metrics" class="tab-panel">
-            <button type="button" id="btn-refresh-metrics" class="btn-secondary">Atualizar métricas</button>
-            <pre id="metrics-view"></pre>
-          </div>
-          <div id="tab-graph" class="tab-panel">
-            <button type="button" id="btn-kg-reindex" class="btn-secondary">Reindexar grafo</button>
-            <input type="search" id="kg-search" placeholder="Buscar no grafo…" />
-            <pre id="graph-view"></pre>
-          </div>
-        </section>
+      <div id="chat-log" class="chat-log" aria-live="polite">
+        <div class="chat-empty">
+          <h2>O que vamos construir?</h2>
+          <p>Escreva embaixo como no chat do Cursor. O agente divide o trabalho, edita arquivos e mostra cada passo aqui.</p>
+        </div>
       </div>
 
-      <section class="panel activity-panel">
-        <div class="panel-head">
-          <h2>Atividade</h2>
-          <button type="button" id="btn-mcp-discover" class="btn-ghost">Descobrir MCP</button>
-          <button type="button" id="btn-refresh-all" class="btn-ghost">Atualizar</button>
+      <form id="form-task" class="composer-dock">
+        <input name="title" class="visually-hidden" />
+        <textarea name="objective" rows="2" placeholder="Pedir ao agente…  (Enter envia, Shift+Enter quebra linha)" required></textarea>
+        <div class="composer-bar">
+          <select id="sel-provider" aria-label="Provedor">
+            <option value="ollama">Ollama</option>
+            <option value="mock">Mock</option>
+          </select>
+          <select id="sel-model" aria-label="Modelo"></select>
+          <select id="objective-template" aria-label="Template">
+            <option value="">Atalho…</option>
+            <option value="e2e">Demo E2E</option>
+          </select>
+          <label class="chk" title="Permite comandos e scripts"><input type="checkbox" id="chk-approve-tools" checked /> Ferramentas</label>
+          <button type="submit" class="btn-primary" id="btn-send">Enviar</button>
         </div>
-        <ul id="activity-feed" class="activity-feed"></ul>
-      </section>
+      </form>
     </div>
+
+    <aside class="details" id="details-panel" hidden>
+      <div class="panel-head">
+        <h2>Plano</h2>
+        <select id="task-filter-status" aria-label="Filtrar status">
+          <option value="">Todos</option>
+          <option value="RUNNING">Executando</option>
+          <option value="BLOCKED">Bloqueados</option>
+          <option value="COMPLETED">Prontos</option>
+        </select>
+      </div>
+      <div id="task-tree" class="task-tree" role="tree"></div>
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab active" data-tab="detail">Detalhe</button>
+        <button type="button" class="tab" data-tab="attempts">Tentativas</button>
+        <button type="button" class="tab" data-tab="evidence">Testes</button>
+        <button type="button" class="tab" data-tab="diff">Diff</button>
+        <button type="button" class="tab" data-tab="context">Contexto</button>
+        <button type="button" class="tab" data-tab="metrics">Métricas</button>
+        <button type="button" class="tab" data-tab="graph">Grafo</button>
+        <button type="button" class="tab" data-tab="tools">Tools</button>
+      </div>
+      <div id="tab-detail" class="tab-panel active"></div>
+      <div id="tab-attempts" class="tab-panel"><pre id="attempts-view"></pre></div>
+      <div id="tab-evidence" class="tab-panel"><pre id="evidence-view"></pre></div>
+      <div id="tab-diff" class="tab-panel">
+        <button type="button" id="btn-refresh-diff" class="btn-secondary">Atualizar diff</button>
+        <pre id="diff-view"></pre>
+      </div>
+      <div id="tab-tools" class="tab-panel"><pre id="tools-view"></pre></div>
+      <div id="tab-context" class="tab-panel"><pre id="context-view"></pre></div>
+      <div id="tab-metrics" class="tab-panel">
+        <button type="button" id="btn-refresh-metrics" class="btn-secondary">Métricas</button>
+        <pre id="metrics-view"></pre>
+      </div>
+      <div id="tab-graph" class="tab-panel">
+        <button type="button" id="btn-kg-reindex" class="btn-secondary">Reindexar</button>
+        <input type="search" id="kg-search" placeholder="Buscar símbolo…" />
+        <pre id="graph-view"></pre>
+      </div>
+      <div class="panel-head">
+        <h2>Linha do tempo</h2>
+        <button type="button" id="btn-mcp-discover" class="btn-ghost">MCP</button>
+        <button type="button" id="btn-refresh-all" class="btn-ghost">Atualizar</button>
+      </div>
+      <ul id="activity-feed" class="activity-feed"></ul>
+    </aside>
   </div>
   <footer class="statusbar" id="statusbar">
     <span id="status-action">parado</span>
     <span id="status-model">modelo —</span>
     <span id="status-tool">ferramenta —</span>
-    <span id="health-indicator-bar" class="muted">API</span>
+    <span id="health-indicator-bar" class="muted">local</span>
   </footer>
   <div id="toast-root" aria-live="polite"></div>
   <script type="module" src="/assets/app.js"></script>
