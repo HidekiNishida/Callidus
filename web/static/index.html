@@ -53,10 +53,11 @@
       <section id="live-board" class="live-board" hidden>
         <div class="live-dot" id="live-dot" aria-hidden="true"></div>
         <div class="live-copy">
-          <p class="live-kicker" id="live-kicker">Agora</p>
+          <p class="live-kicker" id="live-kicker">Agente</p>
           <h2 id="live-title">Aguardando uma execução</h2>
           <p id="live-how" class="muted"></p>
         </div>
+        <div class="live-meta" id="live-meta"></div>
       </section>
 
       <div class="workspace">
@@ -129,6 +130,12 @@
       </section>
     </div>
   </div>
+  <footer class="statusbar" id="statusbar">
+    <span id="status-action">parado</span>
+    <span id="status-model">modelo —</span>
+    <span id="status-tool">ferramenta —</span>
+    <span id="health-indicator-bar" class="muted">API</span>
+  </footer>
   <div id="toast-root" aria-live="polite"></div>
   <script type="module" src="/assets/app.js"></script>
 </body>

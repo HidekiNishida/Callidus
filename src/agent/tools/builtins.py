@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -74,6 +75,7 @@ async def _run_command(ctx: ToolContext, args: dict) -> dict:
     proc = await asyncio.create_subprocess_exec(
         *command,
         cwd=str(cwd_path),
+        env=args.get("env"),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -101,6 +103,31 @@ async def _git_diff(ctx: ToolContext, args: dict) -> dict:
         "stdout": proc.stdout,
         "stderr": proc.stderr,
     }
+
+
+async def _run_script(ctx: ToolContext, args: dict) -> dict:
+    """Executa um arquivo Python dentro do projeto. Testes em tests/ rodam com o pacote no PYTHONPATH."""
+    raw = args.get("path")
+    if not raw or not isinstance(raw, str):
+        return {"success": False, "error": "path obrigatório"}
+    try:
+        script = resolve_under_root(ctx.project_root, raw)
+    except PathSecurityError as exc:
+        return {"success": False, "error": str(exc)}
+    if not script.is_file():
+        return {"success": False, "error": f"arquivo inexistente: {script}"}
+    cwd = script.parent.parent if script.parent.name == "tests" else script.parent
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(cwd) + os.pathsep + env.get("PYTHONPATH", "")
+    return await _run_command(
+        ctx,
+        {
+            "command": ["python", str(script)],
+            "cwd": str(cwd),
+            "env": env,
+            "timeout": args.get("timeout", 90),
+        },
+    )
 
 
 async def _run_pytest(ctx: ToolContext, args: dict) -> dict:
@@ -138,6 +165,13 @@ def register_all(registry: ToolRegistry) -> None:
         ),
         ToolSpec(id="git_diff", description="Diff git resumido", input_schema={"staged": "bool?"}),
         ToolSpec(id="run_pytest", description="Executa pytest em path", input_schema={"path": "str?"}),
+        ToolSpec(
+            id="run_script",
+            description="Executa um arquivo Python local",
+            input_schema={"path": "str"},
+            requires_approval=True,
+            timeout_seconds=90,
+        ),
     ]
     handlers = {
         "read_file": _read_file,
@@ -146,6 +180,7 @@ def register_all(registry: ToolRegistry) -> None:
         "run_command": _run_command,
         "git_diff": _git_diff,
         "run_pytest": _run_pytest,
+        "run_script": _run_script,
     }
     for spec in specs:
         registry.register(spec, handlers[spec.id])

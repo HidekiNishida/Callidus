@@ -536,6 +536,19 @@ def project_live(project_id: uuid.UUID, session: Session = Depends(db_session)) 
         "headline": title,
         "how": how,
         "last_event_at": last.created_at.isoformat() if last else None,
+        "model": {
+            "provider": ((active or (runs[0] if runs else None)).config_json or {}).get("provider")
+            if (active or runs)
+            else None,
+            "model_id": ((active or (runs[0] if runs else None)).config_json or {}).get("model_id")
+            if (active or runs)
+            else None,
+            "autonomous": bool((active.config_json or {}).get("autonomous")) if active else False,
+        },
+        "operation": {
+            "tool": (focus.metadata_json or {}).get("tool") if focus else None,
+            "kind": focus.kind if focus else None,
+        },
     }
 
 

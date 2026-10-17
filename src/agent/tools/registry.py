@@ -50,6 +50,8 @@ class ToolRegistry:
         *,
         approved: bool = False,
     ) -> dict[str, Any]:
+        if tool_id not in self._specs:
+            return {"success": False, "error": f"ferramenta desconhecida: {tool_id}"}
         spec = self.get_spec(tool_id)
         if spec.requires_approval and not approved:
             return {

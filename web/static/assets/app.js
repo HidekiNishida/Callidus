@@ -255,11 +255,24 @@ function renderLive(live) {
   if (["run_completed"].includes(action)) board.classList.add("ok");
   else if (String(action).startsWith("blocked") || action === "verify_failed" || action === "global_verify_failed") board.classList.add("bad");
   else if (live?.run || ["RUNNING", "VERIFYING", "PLANNING"].includes(live?.focus?.status)) board.classList.add("busy");
+  const model = live?.model?.model_id || state.uiDefaults?.model_id || "—";
+  const provider = live?.model?.provider || document.getElementById("sel-provider")?.value || "—";
+  const tool = live?.operation?.tool || "—";
   document.getElementById("live-kicker").textContent = live?.run
-    ? `Execução ${live.run.autonomous ? "autônoma" : "manual"} · ${live.run.status}`
-    : "Agora";
+    ? `Agente · ${provider} · ${live.run.status}`
+    : "Agente";
   document.getElementById("live-title").textContent = live?.headline || "Aguardando uma execução";
   document.getElementById("live-how").textContent = live?.how || "";
+  const meta = document.getElementById("live-meta");
+  if (meta) {
+    meta.innerHTML = `<strong>${escapeHtml(model)}</strong><span>${escapeHtml(provider)} · ${escapeHtml(tool)}</span>`;
+  }
+  const statusAction = document.getElementById("status-action");
+  const statusModel = document.getElementById("status-model");
+  const statusTool = document.getElementById("status-tool");
+  if (statusAction) statusAction.textContent = live?.headline || "parado";
+  if (statusModel) statusModel.textContent = `${provider} · ${model}`;
+  if (statusTool) statusTool.textContent = tool === "—" ? "sem ferramenta" : tool;
 }
 
 async function refreshActivity() {
