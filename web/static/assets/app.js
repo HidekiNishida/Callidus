@@ -119,6 +119,9 @@ const ICONS = {
   up: '<path d="M8 12V4M4.5 7.5L8 4l3.5 3.5"/>',
   chevron: '<path d="M6 4l4 4-4 4"/>',
   globe: '<circle cx="8" cy="8" r="5.2"/><path d="M3 8h10M8 2.8c1.5 1.7 1.5 8.7 0 10.4M8 2.8c-1.5 1.7-1.5 8.7 0 10.4"/>',
+  clock: '<circle cx="8" cy="8" r="5.2"/><path d="M8 4.8V8l2.2 1.4"/>',
+  timer: '<circle cx="8" cy="9.2" r="4.3"/><path d="M8 4.9V3.1M6.3 3.1h3.4M8 7.2v2.2"/>',
+  token: '<rect x="3" y="3" width="10" height="10" rx="2.2"/><circle cx="8" cy="8" r="1.7"/>',
 };
 
 function icon(name) {
@@ -207,19 +210,26 @@ function formatTokens(value) {
   return `${text}k`;
 }
 
-function meterText(startIso, endIso, tokens, live) {
+function meterParts(startIso, endIso, tokens, live) {
   const start = parseStamp(startIso);
-  if (!start) return "";
+  if (!start) return null;
   const end = live ? new Date() : parseStamp(endIso) || new Date();
-  const span = formatSpan(end - start);
-  const spent = formatTokens(tokens);
-  return spent ? `${span} · ${spent}` : span;
+  return { span: formatSpan(end - start), spent: formatTokens(tokens) };
+}
+
+function stampTag(iso) {
+  const when = formatWhen(iso);
+  if (!when) return "";
+  return `<time class="stamp" title="Horário">${icon("clock")}<span>${escapeHtml(when)}</span></time>`;
 }
 
 function meterTag(startIso, endIso, tokens, live) {
-  const text = meterText(startIso, endIso, tokens, live);
-  if (!text) return "";
-  return `<time class="meter" data-meter-start="${escapeHtml(startIso || "")}" data-meter-end="${escapeHtml(endIso || "")}" data-meter-tokens="${Number(tokens) || 0}" data-meter-live="${live ? "1" : "0"}">${escapeHtml(text)}</time>`;
+  const parts = meterParts(startIso, endIso, tokens, live);
+  if (!parts) return "";
+  const spent = parts.spent
+    ? `${icon("token")}<span class="spent" title="Tokens">${escapeHtml(parts.spent)}</span>`
+    : "";
+  return `<time class="meter" title="Tempo" data-meter-start="${escapeHtml(startIso || "")}" data-meter-end="${escapeHtml(endIso || "")}" data-meter-tokens="${Number(tokens) || 0}" data-meter-live="${live ? "1" : "0"}">${icon("timer")}<span class="span">${escapeHtml(parts.span)}</span>${spent}</time>`;
 }
 
 function taskTokens(task) {
@@ -317,8 +327,7 @@ function appendChat(list, conversation, onOpen) {
   const chatBtn = document.createElement("button");
   chatBtn.type = "button";
   if (state.conversation?.id === conversation.id) chatBtn.classList.add("active");
-  const when = formatWhen(conversation.updated_at);
-  chatBtn.innerHTML = `${icon("chat")}<span class="chat-title">${escapeHtml(conversation.title)}</span>${when ? `<time>${escapeHtml(when)}</time>` : ""}`;
+  chatBtn.innerHTML = `${icon("chat")}<span class="chat-title">${escapeHtml(conversation.title)}</span>${stampTag(conversation.updated_at)}`;
   chatBtn.onclick = () => onOpen(conversation);
   item.appendChild(chatBtn);
   item.appendChild(chatMenu(conversation));
@@ -863,7 +872,7 @@ async function refreshActivity() {
   ul.innerHTML = "";
   events.slice(0, 40).forEach((ev) => {
     const li = document.createElement("li");
-    li.innerHTML = `<time>${formatTime(ev.created_at)}</time><span>${icon("circle")}${escapeHtml(eventLabel(ev))}</span>`;
+    li.innerHTML = `${stampTag(ev.created_at)}<span>${icon("circle")}${escapeHtml(eventLabel(ev))}</span>`;
     ul.appendChild(li);
   });
 }
@@ -1295,13 +1304,13 @@ function renderChat() {
         ? `<form class="edit-box" data-edit-form="${root.id}"><textarea>${escapeHtml(spoken)}</textarea><button type="submit">Salvar e ramificar</button></form>`
         : `<div>${escapeHtml(spoken)}</div>`;
       const editBtn = `<button type="button" class="icon-btn edit-msg" data-edit="${root.id}" title="Editar mensagem" aria-label="Editar mensagem">${icon("pencil")}</button>`;
-      const asked = formatWhen(root.created_at);
-      const answered = formatWhen((last || root).updated_at || root.updated_at);
+      const asked = stampTag(root.created_at);
+      const answered = stampTag((last || root).updated_at || root.updated_at);
       const reply = answerHtml(root);
       const pendingLine = glowing && !reply ? `<p class="muted">${escapeHtml(copy.planning)}</p>` : "";
       const process = reply ? "" : `${thoughts}${cards}`;
-      return `<div class="bubble user"><div class="who"><span>${copy.you}</span>${asked ? `<time>${escapeHtml(asked)}</time>` : ""}${editBtn}</div>${message}${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
-        <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who"><span>${copy.agent}${model}</span>${answered ? `<time>${escapeHtml(answered)}</time>` : ""}${runMeter(root)}</div>${process}${pendingLine}${resumeHtml(root)}${reply}</div></div>`;
+      return `<div class="bubble user"><div class="who"><span>${copy.you}</span>${asked}${editBtn}</div>${message}${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
+        <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who"><span>${copy.agent}${model}</span>${answered}${runMeter(root)}</div>${process}${pendingLine}${resumeHtml(root)}${reply}</div></div>`;
     })
     .join("");
   if (stick) log.scrollTop = log.scrollHeight;
@@ -1426,7 +1435,9 @@ async function continueResume(taskId) {
 
 function tickMeters() {
   document.querySelectorAll("time.meter[data-meter-live='1']").forEach((el) => {
-    el.textContent = meterText(el.dataset.meterStart, el.dataset.meterEnd, el.dataset.meterTokens, true);
+    const parts = meterParts(el.dataset.meterStart, el.dataset.meterEnd, el.dataset.meterTokens, true);
+    const span = el.querySelector(".span");
+    if (parts && span) span.textContent = parts.span;
   });
 }
 
