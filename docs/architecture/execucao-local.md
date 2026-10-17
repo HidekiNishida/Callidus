@@ -52,7 +52,7 @@ A memória fica em dois escopos: do projeto inteiro e da conversa atual. Ao grav
 
 Se uma etapa para no meio com bloqueio ou falha, o orquestrador replaneja o que falta. O que já foi concluído permanece, o trecho ainda não iniciado do plano antigo é cancelado e entram etapas novas para seguir.
 
-Pensamentos, títulos de etapa e a resposta final seguem o idioma do pedido (português, inglês ou espanhol). Enquanto uma etapa roda, a mensagem do agente e o cartão da etapa ganham o brilho de tarefa em andamento.
+Cada conversa, mensagem e ação mostra a data e a hora. Uma pergunta curta, sem pedido de alteração, recebe a resposta final direto. Se o modelo não escrever essa resposta, o fechamento ainda deixa um texto com a data local. Pensamentos, títulos de etapa e a resposta final seguem o idioma do pedido (português, inglês ou espanhol). Enquanto uma etapa roda, a mensagem do agente e o cartão da etapa ganham o brilho de tarefa em andamento.
 
 A etapa aparece só com o título. O detalhe, inclusive o diff do arquivo editado, abre no clique. Se a última etapa estiver aberta, as próximas já chegam abertas; se ela estiver resumida, as próximas também ficam fechadas.
 

@@ -1,6 +1,7 @@
 # src/agent/orchestrator/decomposition.py — decomposição hierárquica
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any
 
@@ -136,6 +137,34 @@ async def plan_with_model(
         return None
 
 
+_CHANGE_REQUEST = re.compile(
+    r"\b(arquiv|código|codigo|implement|cri[ae]|corrig|bug|teste|refactor|fun[cç]|classe|pasta|diret[oó]ri|edite|script|módulo|modulo)\b",
+    re.IGNORECASE,
+)
+_QUESTION = re.compile(
+    r"^(que|qual|quais|quando|onde|quem|como|por que|porque|me diga|me fala|what|when|where|who|how)\b",
+    re.IGNORECASE,
+)
+
+
+def direct_answer_plan(objective: str) -> DecompositionResult | None:
+    """Pergunta curta, sem pedido de alteração, responde direto em vez de editar arquivos."""
+    text = " ".join((objective or "").strip().split())
+    if not text or len(text) > 280 or _CHANGE_REQUEST.search(text):
+        return None
+    if "?" not in text and _QUESTION.match(text) is None:
+        return None
+    return DecompositionResult(
+        subtasks=[
+            SubTaskSpec(
+                title="Responder",
+                objective=text,
+                metadata={"final_answer": True, "model_operation": True},
+            )
+        ]
+    )
+
+
 async def resolve_decomposition_plan(
     *,
     settings: Settings,
@@ -147,6 +176,8 @@ async def resolve_decomposition_plan(
     """Ordem: builtin e2e → Ollama (padrão) → template genérico → mock (se permitido)."""
     if builtin := builtin_plan_for_objective(objective):
         return builtin, "builtin-e2e"
+    if direct := direct_answer_plan(objective):
+        return direct, "direct-answer"
 
     from agent.orchestrator.closing import ensure_closing_stages
 

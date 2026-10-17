@@ -133,7 +133,9 @@ label.icon-btn:has(input:checked) { color: var(--accent); }
 #project-list { flex: 1; overflow-y: auto; }
 #loose-list { overflow: visible; }
 .chat-row { display: flex; align-items: center; }
-.chat-row > button:first-child { flex: 1; min-width: 0; }
+.chat-row > button:first-child { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.35rem; }
+.chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-row time, .bubble time, .tool-card time, .thought time { margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .chat-menu { position: relative; }
 .chat-menu summary { list-style: none; cursor: pointer; color: var(--muted); width: 22px; height: 22px; display: grid; place-items: center; }
 .chat-menu summary::-webkit-details-marker { display: none; }

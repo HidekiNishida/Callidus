@@ -213,6 +213,7 @@ class RunOrchestrator:
                         return {"action": "global_verify_reopen", "reopened": [str(x) for x in reopened]}
                     return {"action": "global_verify_failed", "reason": reason}
                 run.status = RunStatus.COMPLETED.value
+                self._ensure_final_message(root)
                 self._capture_outcome_memory(project, root)
                 return {"action": "run_completed", "run_id": str(run_id)}
             return {"action": "waiting", "run_id": str(run_id)}
@@ -567,6 +568,29 @@ class RunOrchestrator:
         self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
         return {"action": "skipped_to_verify", "task_id": str(task.id)}
 
+    def _ensure_final_message(self, root: TaskModel) -> None:
+        report = dict(root.consolidated_result_json or {})
+        current = report.get("final_answer")
+        if isinstance(current, str) and current.strip():
+            return
+        for child in children_of(self._session, root.id):
+            meta = child.metadata_json or {}
+            result = child.consolidated_result_json or {}
+            markdown = result.get("markdown")
+            if meta.get("final_answer") and isinstance(markdown, str) and markdown.strip():
+                report["final_answer"] = markdown
+                report["sources"] = result.get("sources") or []
+                root.consolidated_result_json = report
+                return
+        from agent.orchestrator.closing import compose_final_markdown
+
+        stages = [
+            {"title": child.title, "status": child.status, "sources": []}
+            for child in children_of(self._session, root.id)
+        ]
+        report["final_answer"] = compose_final_markdown(objective=root.objective or root.title, stages=stages)
+        root.consolidated_result_json = report
+
     def _work_root(self, project: ProjectModel, task: TaskModel | None) -> str:
         conversation = None
         if task is not None and task.conversation_id:
@@ -581,7 +605,12 @@ class RunOrchestrator:
         config: dict,
     ) -> dict[str, Any]:
         from agent.guides.discover import capability_line
-        from agent.orchestrator.closing import compose_final_markdown, extract_sources, usable_markdown
+        from agent.orchestrator.closing import (
+            compose_final_markdown,
+            extract_sources,
+            local_now_line,
+            usable_reply,
+        )
         from agent.providers.base import ChatCompletionRequest, ChatMessage
 
         siblings = children_of(self._session, task.parent_id) if task.parent_id else []
@@ -608,7 +637,8 @@ class RunOrchestrator:
             "Escreva a resposta final em Markdown para a pessoa que pediu a tarefa. "
             "Use título, uma tabela das etapas, lista do que foi verificado e uma seção Fontes com caminhos de arquivo. "
             "Se ajudar a explicar o fluxo, inclua um bloco ```mermaid com flowchart TD. "
-            "Não invente testes que não aparecem abaixo.\n\n"
+            "Não invente testes nem caminhos de arquivo que não aparecem abaixo.\n"
+            f"Data e hora locais agora: {local_now_line()}.\n\n"
             f"Pedido:\n{objective[:1500]}\n\nEtapas:\n{stages}"
         )
         model_text = ""
@@ -623,7 +653,7 @@ class RunOrchestrator:
             model_text = (resp.content or "").strip()
         except Exception:
             model_text = ""
-        markdown = model_text if usable_markdown(model_text) else compose_final_markdown(
+        markdown = model_text if usable_reply(model_text) else compose_final_markdown(
             objective=objective,
             stages=stages,
             model_text=model_text,

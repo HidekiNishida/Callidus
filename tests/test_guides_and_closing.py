@@ -8,7 +8,7 @@ from agent.domain.enums import TaskStatus
 from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate
 from agent.guides.discover import discover_guides, reply_capabilities
 from agent.orchestrator.closing import compose_final_markdown, ensure_closing_stages, usable_markdown
-from agent.orchestrator.decomposition import GENERIC_TEMPLATE, resolve_decomposition_plan
+from agent.orchestrator.decomposition import GENERIC_TEMPLATE, direct_answer_plan, resolve_decomposition_plan
 from agent.orchestrator.runner import RunOrchestrator
 from agent.persistence.database import build_session_factory, init_db
 from agent.services.project_service import ProjectService
@@ -69,6 +69,15 @@ def test_fallback_answer_uses_table_and_sources():
     assert usable_markdown(text)
     assert "| Etapa | Estado |" in text
     assert "`calculator.py`" in text
+    assert "Agora:" in text
+
+
+def test_short_question_answers_without_editing_files():
+    plan = direct_answer_plan("Que dia é hoje?")
+    assert plan is not None
+    assert plan.subtasks[0].metadata["final_answer"] is True
+    assert "tool" not in plan.subtasks[0].metadata
+    assert direct_answer_plan("crie um arquivo main.py") is None
 
 
 @pytest.mark.asyncio

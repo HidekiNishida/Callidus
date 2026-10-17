@@ -62,10 +62,14 @@ async def _system_info(ctx: ToolContext, args: dict) -> dict:
     import getpass
     import platform
 
+    from datetime import datetime
+
     home = str(Path.home())
+    now = datetime.now().astimezone()
     return {
         "success": True,
         "system": platform.system(),
+        "now": now.isoformat(timespec="minutes"),
         "release": platform.release(),
         "machine": platform.machine(),
         "python": platform.python_version(),

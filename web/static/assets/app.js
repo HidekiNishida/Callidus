@@ -167,13 +167,28 @@ const TOOL_ICON = {
   browser: "globe",
 };
 
+function parseStamp(iso) {
+  if (!iso) return null;
+  const text = String(iso).trim().replace(" ", "T");
+  const hasZone = /[zZ]$|[+-]\d\d:?\d\d$/.test(text);
+  const date = new Date(hasZone ? text : `${text}Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatWhen(iso) {
+  const date = parseStamp(iso);
+  if (!date) return "";
+  return date.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function formatTime(iso) {
-  if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return iso;
-  }
+  return formatWhen(iso);
 }
 
 function runConfigFromUI(objective) {
@@ -248,7 +263,8 @@ function appendChat(list, conversation, onOpen) {
   const chatBtn = document.createElement("button");
   chatBtn.type = "button";
   if (state.conversation?.id === conversation.id) chatBtn.classList.add("active");
-  chatBtn.innerHTML = `${icon("chat")}<span>${escapeHtml(conversation.title)}</span>`;
+  const when = formatWhen(conversation.updated_at);
+  chatBtn.innerHTML = `${icon("chat")}<span class="chat-title">${escapeHtml(conversation.title)}</span>${when ? `<time>${escapeHtml(when)}</time>` : ""}`;
   chatBtn.onclick = () => onOpen(conversation);
   item.appendChild(chatBtn);
   item.appendChild(chatMenu(conversation));
@@ -828,7 +844,8 @@ function thoughtBlock(root) {
   const items = lines
     .map((item) => {
       const glyph = item.phase === "thinking" || item.phase === "model" ? "spark" : item.phase === "tool" ? "terminal" : "check";
-      return `<li class="${escapeHtml(item.phase || "step")}">${icon(glyph)}<span>${escapeHtml(item.text || "")}</span></li>`;
+      const when = formatWhen(item.at);
+      return `<li class="${escapeHtml(item.phase || "step")}">${icon(glyph)}<span>${escapeHtml(item.text || "")}</span>${when ? `<time>${escapeHtml(when)}</time>` : ""}</li>`;
     })
     .join("");
   const pending = live.thinking ? `<li class="thinking">${icon("spark")}<span>${copy.pending}</span></li>` : "";
@@ -1060,7 +1077,8 @@ function renderChat() {
           const active = busy.includes(task.status) ? " busy" : "";
           const open = state.openStageIds.has(task.id);
           const detail = open ? stageDetail(task) : "";
-          return `<div class="tool-card${active}${open ? " open" : ""}"><button type="button" class="row" data-stage="${task.id}" data-last="${index === kids.length - 1 ? "1" : "0"}">${statusBadge(task.status)}${icon(glyph)}<strong>${escapeHtml(titleOf(task))}</strong></button>${detail ? `<div class="stage-detail">${detail}</div>` : ""}</div>`;
+          const when = formatWhen(task.updated_at || task.created_at);
+          return `<div class="tool-card${active}${open ? " open" : ""}"><button type="button" class="row" data-stage="${task.id}" data-last="${index === kids.length - 1 ? "1" : "0"}">${statusBadge(task.status)}${icon(glyph)}<strong>${escapeHtml(titleOf(task))}</strong>${when ? `<time>${escapeHtml(when)}</time>` : ""}</button>${detail ? `<div class="stage-detail">${detail}</div>` : ""}</div>`;
         })
         .join("");
       const thoughts = thoughtBlock(root);
@@ -1073,8 +1091,11 @@ function renderChat() {
         ? `<form class="edit-box" data-edit-form="${root.id}"><textarea>${escapeHtml(spoken)}</textarea><button type="submit">Salvar e ramificar</button></form>`
         : `<div>${escapeHtml(spoken)}</div>`;
       const editBtn = `<button type="button" class="icon-btn edit-msg" data-edit="${root.id}" title="Editar mensagem" aria-label="Editar mensagem">${icon("pencil")}</button>`;
-      return `<div class="bubble user"><div class="who">${copy.you}${editBtn}</div>${message}${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
-        <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who">${copy.agent}${model}</div>${thoughts}${cards || (thoughts ? "" : `<p class="muted">${escapeHtml(copy.planning)}</p>`)}${resumeHtml(root)}${answerHtml(root)}</div></div>`;
+      const asked = formatWhen(root.created_at);
+      const answered = formatWhen((last || root).updated_at || root.updated_at);
+      const pendingLine = !cards && !thoughts && glowing ? `<p class="muted">${escapeHtml(copy.planning)}</p>` : "";
+      return `<div class="bubble user"><div class="who"><span>${copy.you}</span>${asked ? `<time>${escapeHtml(asked)}</time>` : ""}${editBtn}</div>${message}${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
+        <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who"><span>${copy.agent}${model}</span>${answered ? `<time>${escapeHtml(answered)}</time>` : ""}</div>${thoughts}${cards}${pendingLine}${resumeHtml(root)}${answerHtml(root)}</div></div>`;
     })
     .join("");
   if (stick) log.scrollTop = log.scrollHeight;
@@ -1561,22 +1582,29 @@ async function init() {
     renderAttachmentChips();
     e.target.reset();
     renderChat();
-    document.getElementById("btn-run").click();
+    try {
+      await startRun();
+    } catch (err) {
+      toast(err.message || "Falha ao iniciar", "error");
+    }
   };
 
   document.getElementById("task-filter-status").onchange = () => renderTaskTree();
 
-  document.getElementById("btn-run").onclick = async () => {
+  document.getElementById("btn-run").onclick = () => startRun().catch((err) => toast(err.message, "error"));
+
+  async function startRun() {
     const root = state.tasks.find((t) => t.id === state.selectedTaskId) || state.tasks.find((t) => !t.parent_id);
     const workspace = workspaceId();
-    if (!root || !workspace) return;
+    if (!root || !workspace) throw new Error("Não há mensagem para executar");
     const cfg = runConfigFromUI(root.objective || "");
     state.currentRun = await api(`/projects/${workspace}/runs`, {
       method: "POST",
       body: JSON.stringify({ root_task_id: root.id, config: cfg }),
     });
     await api(`/runs/${state.currentRun.id}/autonomous/enable`, { method: "POST" });
-    document.getElementById("chk-autonomous").checked = true;
+    const auto = document.getElementById("chk-autonomous");
+    if (auto) auto.checked = true;
     updateRunButtons();
     startPolling();
     toast("Execução iniciada — primeiro passo");
