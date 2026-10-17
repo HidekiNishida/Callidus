@@ -42,14 +42,22 @@ class TaskService:
             if parent is None or parent.project_id != project_id:
                 raise TaskNotFoundError("Tarefa pai inválida para este projeto")
             conversation_id = parent.conversation_id or conversation_id
+        branch_id = data.branch_id
+        if data.parent_id is not None:
+            parent = self._session.get(TaskModel, data.parent_id)
+            if parent is not None:
+                branch_id = parent.branch_id or branch_id
         if conversation_id is not None:
             conversation = self._session.get(ConversationModel, conversation_id)
             if conversation is None or conversation.project_id != project_id:
                 raise TaskNotFoundError("Conversa inválida para este projeto")
+            if branch_id is None:
+                branch_id = conversation.active_branch_id
 
         task = TaskModel(
             project_id=project_id,
             conversation_id=conversation_id,
+            branch_id=branch_id,
             parent_id=data.parent_id,
             title=data.title,
             objective=data.objective,

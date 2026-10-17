@@ -23,8 +23,17 @@
     <div class="main chat-main">
       <header class="topbar">
         <div class="topbar-left">
-          <h1 id="workspace-title">Novo chat</h1>
-          <p class="muted" id="workspace-subtitle">Escolha uma pasta e descreva o que fazer.</p>
+          <div class="title-row">
+            <h1 id="workspace-title">Novo chat</h1>
+            <button type="button" id="btn-rename" class="icon-btn" data-icon="pencil" title="Renomear conversa" aria-label="Renomear conversa"></button>
+            <button type="button" id="btn-folder" class="icon-btn" data-icon="folder" title="Alterar pasta" aria-label="Alterar pasta"></button>
+          </div>
+          <p class="muted" id="workspace-subtitle">Sem pasta escolhida, vale a pasta do usuário.</p>
+          <div id="branch-switch" class="branch-switch" hidden>
+            <button type="button" id="branch-prev" aria-label="Ramo anterior">‹</button>
+            <span id="branch-label">1/1</span>
+            <button type="button" id="branch-next" aria-label="Próximo ramo">›</button>
+          </div>
         </div>
         <button type="button" id="btn-new-chat" class="icon-btn" data-icon="chat" title="Nova conversa" aria-label="Nova conversa"></button>
         <div class="topbar-run" id="run-toolbar" hidden>

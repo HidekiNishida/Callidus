@@ -25,12 +25,14 @@ from agent.orchestrator.replan import replan_under
 from agent.context.operation_builder import OperationContextBuilder
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.persistence.models import (
+    ConversationModel,
     EventLogModel,
     EvidenceModel,
     ExecutionRunModel,
     ProjectModel,
     TaskModel,
 )
+from agent.services.inbox import effective_root
 from agent.providers.base import LLMProvider, ModelProfile
 from agent.providers.mock import MockProvider
 from agent.providers.llamacpp import LlamaCppProvider
@@ -195,6 +197,7 @@ class RunOrchestrator:
         profile = _profile_from_config(config, self._settings)
 
         root = self._tasks.get_task(run.root_task_id)
+        work_root = self._work_root(project, root)
         revised = replan_under(self._session, root.id)
         if revised:
             self._note_thought(run, root, str(revised.get("thought") or "Replanejei o que ainda falta."))
@@ -267,7 +270,7 @@ class RunOrchestrator:
                         settings=self._settings,
                         run_config=config,
                         objective=task.objective,
-                        project_root=project.root_path,
+                        project_root=work_root,
                         provider=provider
                         if (config.get("provider") or self._settings.default_provider) in {"ollama", "llamacpp"}
                         else None,
@@ -310,11 +313,11 @@ class RunOrchestrator:
             status = TaskStatus.RUNNING
 
         if status == TaskStatus.RUNNING:
-            result = await self._execute_task(run, project, task, config)
+            result = await self._execute_task(run, project, task, config, work_root)
             return result
 
         if status == TaskStatus.VERIFYING:
-            return await self._finalize_verification(run, project, task)
+            return await self._finalize_verification(run, project, task, work_root)
 
         if status == TaskStatus.RETRY_PENDING:
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.READY))
@@ -397,7 +400,9 @@ class RunOrchestrator:
         project: ProjectModel,
         task: TaskModel,
         config: dict,
+        work_root: str | None = None,
     ) -> dict[str, Any]:
+        root_path = work_root or self._work_root(project, task)
         if self._attempts.attempts_exhausted(task.id):
             self._tasks.update_status(
                 task.id,
@@ -407,7 +412,7 @@ class RunOrchestrator:
 
         meta = task.metadata_json or {}
         ctx = ToolContext(
-            project_root=project.root_path,
+            project_root=root_path,
             run_id=str(run.id),
             task_id=str(task.id),
             memory_saver=lambda args, task=task, project=project: self._save_requested_memory(
@@ -435,7 +440,7 @@ class RunOrchestrator:
             task.consolidated_result_json = {"mcp": meta["mcp_tool"], "result": out}
             if out.get("success"):
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                return await self._finalize_verification(run, project, task)
+                return await self._finalize_verification(run, project, task, root_path)
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
             return {"action": "mcp_tool", "task_id": str(task.id), "success": False}
 
@@ -451,7 +456,7 @@ class RunOrchestrator:
             builder = OperationContextBuilder(self._session)
             budget, snap = builder.build_for_task(
                 project_id=project.id,
-                root_path=project.root_path,
+                root_path=root_path,
                 task=task,
                 profile=profile,
                 run_id=run.id,
@@ -496,10 +501,10 @@ class RunOrchestrator:
                 "context_snapshot_id": str(snap.id),
             }
             if out.get("success") and isinstance(data.get("path"), str):
-                KnowledgeGraphService(self._session).touch_file(project.id, project.root_path, data["path"])
+                KnowledgeGraphService(self._session).touch_file(project.id, root_path, data["path"])
             if out.get("success"):
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                done = await self._finalize_verification(run, project, task)
+                done = await self._finalize_verification(run, project, task, root_path)
                 if excerpt:
                     done["thought"] = excerpt
                 return done
@@ -536,16 +541,16 @@ class RunOrchestrator:
             if out.get("success") and tool_id in {"write_file", "edit_file", "move_file"}:
                 p = args.get("path") or args.get("to") or args.get("dest")
                 if isinstance(p, str):
-                    KnowledgeGraphService(self._session).touch_file(project.id, project.root_path, p)
+                    KnowledgeGraphService(self._session).touch_file(project.id, root_path, p)
             if out.get("success"):
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                return await self._finalize_verification(run, project, task)
+                return await self._finalize_verification(run, project, task, root_path)
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
             return {"action": "tool_executed", "task_id": str(task.id), "success": False}
 
         if meta.get("verification"):
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-            return await self._finalize_verification(run, project, task)
+            return await self._finalize_verification(run, project, task, root_path)
 
         kids = children_of(self._session, task.id)
         if kids:
@@ -561,6 +566,12 @@ class RunOrchestrator:
 
         self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
         return {"action": "skipped_to_verify", "task_id": str(task.id)}
+
+    def _work_root(self, project: ProjectModel, task: TaskModel | None) -> str:
+        conversation = None
+        if task is not None and task.conversation_id:
+            conversation = self._session.get(ConversationModel, task.conversation_id)
+        return effective_root(project, conversation)
 
     async def _write_final_answer(
         self,
@@ -630,7 +641,9 @@ class RunOrchestrator:
         run: ExecutionRunModel,
         project: ProjectModel,
         task: TaskModel,
+        work_root: str | None = None,
     ) -> dict[str, Any]:
+        root_path = work_root or self._work_root(project, task)
         meta = task.metadata_json or {}
         spec = meta.get("verification")
         if not spec:
@@ -641,7 +654,7 @@ class RunOrchestrator:
         config = self._run_config(run)
         approved = bool(config.get("approve_risky_tools"))
         vresult = await run_verification(
-            project_root=project.root_path,
+            project_root=root_path,
             spec=spec,
             approved=approved,
         )

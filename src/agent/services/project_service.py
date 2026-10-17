@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,7 +11,7 @@ from agent.domain.enums import MemoryKind
 from agent.domain.schemas import MemoryCreate, ProjectCreate
 from agent.memory.store import structure_memory
 from agent.persistence.models import ConversationModel, EventLogModel, MemoryRecordModel, ProjectModel
-from agent.services.inbox import is_inbox_path
+from agent.services.inbox import is_inbox_path, is_inbox_project, user_home
 
 
 def _is_leaked_test_project(root_path: str) -> bool:
@@ -22,11 +23,22 @@ class ProjectService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def create_project(self, data: ProjectCreate) -> ProjectModel:
+    def create_project(self, data: ProjectCreate, *, origin: str | None = None) -> ProjectModel:
+        raw = (data.root_path or "").strip()
+        if origin == "inbox":
+            root = user_home()
+            path_origin = "inbox"
+        elif not raw:
+            root = user_home()
+            path_origin = "home"
+        else:
+            root = str(Path(raw).expanduser().resolve())
+            path_origin = origin or "chosen"
         project = ProjectModel(
             name=data.name,
-            root_path=data.root_path,
+            root_path=root,
             description=data.description,
+            path_origin=path_origin,
         )
         self._session.add(project)
         self._session.flush()
@@ -39,9 +51,29 @@ class ProjectService:
         )
         return project
 
+    def update_project(self, project_id: uuid.UUID, *, name: str | None = None, root_path: str | None = None) -> ProjectModel:
+        project = self.get_project(project_id)
+        if is_inbox_project(project):
+            raise ValueError("a pasta das conversas soltas não se altera por aqui")
+        if name is not None and name.strip():
+            project.name = name.strip()[:200]
+        if root_path is not None:
+            raw = root_path.strip()
+            if not raw:
+                project.root_path = user_home()
+                project.path_origin = "home"
+            else:
+                path = Path(raw).expanduser().resolve()
+                if not path.is_dir():
+                    raise ValueError("a pasta não existe")
+                project.root_path = str(path)
+                project.path_origin = "chosen"
+        self._session.flush()
+        return project
+
     def list_projects(self) -> list[ProjectModel]:
         rows = list(self._session.scalars(select(ProjectModel).order_by(ProjectModel.created_at)).all())
-        return [p for p in rows if not _is_leaked_test_project(p.root_path)]
+        return [p for p in rows if not _is_leaked_test_project(p.root_path) and not is_inbox_project(p)]
 
     def get_project(self, project_id: uuid.UUID) -> ProjectModel:
         project = self._session.get(ProjectModel, project_id)
@@ -56,9 +88,15 @@ class ProjectService:
             if conversation is None or conversation.project_id != project_id:
                 raise LookupError("Conversa inválida para este projeto")
         outline = structure_memory(data.content)
+        branch_id = data.branch_id
+        if branch_id is None and data.conversation_id is not None:
+            conversation = self._session.get(ConversationModel, data.conversation_id)
+            if conversation is not None:
+                branch_id = conversation.active_branch_id
         record = MemoryRecordModel(
             project_id=project_id,
             conversation_id=data.conversation_id,
+            branch_id=branch_id,
             task_id=data.task_id,
             kind=data.kind.value,
             title=data.title,

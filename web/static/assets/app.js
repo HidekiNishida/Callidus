@@ -42,6 +42,9 @@ const state = {
   loose: [],
   conversation: null,
   pendingSend: null,
+  folderTarget: null,
+  viewBranchId: null,
+  editingTaskId: null,
   selectedProject: null,
   tasks: [],
   selectedTaskId: null,
@@ -199,7 +202,11 @@ function chatMenu(conversation) {
         .filter((project) => project.id !== conversation.project_id)
         .map((project) => `<button type="button" data-move="${project.id}">${escapeHtml(project.name)}</button>`)
     )
-    .concat([`<button type="button" data-remove="${conversation.id}">Remover</button>`]);
+    .concat([
+      `<button type="button" data-rename="${conversation.id}">Renomear</button>`,
+      `<button type="button" data-folder="${conversation.id}">Alterar pasta</button>`,
+      `<button type="button" data-remove="${conversation.id}">Remover</button>`,
+    ]);
   if (!conversation.project_id) targets.shift();
   menu.innerHTML = `<summary title="Mover ou remover" aria-label="Mover ou remover">${icon("more")}</summary><div class="more-panel">${targets.join("")}</div>`;
   menu.onclick = (event) => event.stopPropagation();
@@ -217,11 +224,17 @@ function chatMenu(conversation) {
   menu.addEventListener("click", async (event) => {
     const move = event.target.closest("[data-move]");
     const remove = event.target.closest("[data-remove]");
-    if (!move && !remove) return;
+    const rename = event.target.closest("[data-rename]");
+    const folder = event.target.closest("[data-folder]");
+    if (!move && !remove && !rename && !folder) return;
     event.preventDefault();
     try {
       if (remove) await removeConversation(conversation);
-      else await moveConversation(conversation, move.dataset.move || null);
+      else if (rename) beginRename();
+      else if (folder) {
+        state.folderTarget = { type: "conversation", id: conversation.id };
+        await openFolderPicker(conversation.root_path || "");
+      } else await moveConversation(conversation, move.dataset.move || null);
     } catch (err) {
       toast(err.message, "error");
     }
@@ -270,6 +283,29 @@ function renderProjects(filter = "") {
       btn.onclick = () => selectProject(p);
       row.appendChild(btn);
       if (state.selectedProject?.id === p.id) {
+        const folder = document.createElement("button");
+        folder.type = "button";
+        folder.className = "icon-btn";
+        folder.title = "Alterar pasta";
+        folder.setAttribute("aria-label", "Alterar pasta do projeto");
+        folder.innerHTML = icon("folder");
+        folder.onclick = (event) => {
+          event.stopPropagation();
+          state.folderTarget = { type: "project", id: p.id };
+          openFolderPicker(p.root_path).catch((err) => toast(err.message, "error"));
+        };
+        row.appendChild(folder);
+        const rename = document.createElement("button");
+        rename.type = "button";
+        rename.className = "icon-btn";
+        rename.title = "Renomear projeto";
+        rename.setAttribute("aria-label", "Renomear projeto");
+        rename.innerHTML = icon("pencil");
+        rename.onclick = (event) => {
+          event.stopPropagation();
+          beginRenameProject(p);
+        };
+        row.appendChild(rename);
         const add = document.createElement("button");
         add.type = "button";
         add.className = "icon-btn";
@@ -312,10 +348,7 @@ async function selectProject(p) {
   state.conversation =
     state.conversations.find((item) => item.id === prefs.lastConversationId) || state.conversations[0] || null;
   if (state.conversation) savePrefs({ lastConversationId: state.conversation.id });
-  document.getElementById("workspace-title").textContent = state.conversation?.title || p.name;
-  const subtitle = document.getElementById("workspace-subtitle");
-  subtitle.textContent = p.name;
-  subtitle.title = p.root_path;
+  paintWorkspace();
   renderProjects(document.getElementById("project-search").value);
   await refreshAll();
   updateRunButtons();
@@ -327,15 +360,132 @@ function selectConversation(conversation) {
   state.openStageIds = new Set();
   state.followLatest = false;
   state.resumeBrief = null;
+  state.viewBranchId = conversation.active_branch_id || null;
+  state.editingTaskId = null;
   savePrefs({ lastConversationId: conversation.id });
-  document.getElementById("workspace-title").textContent = conversation.title;
-  const subtitle = document.getElementById("workspace-subtitle");
-  if (state.selectedProject) {
-    subtitle.textContent = state.selectedProject.name;
-    subtitle.title = state.selectedProject.root_path;
-  }
+  paintWorkspace();
   renderProjects(document.getElementById("project-search").value);
-  renderChat();
+  refreshTasks().catch((err) => toast(err.message, "error"));
+}
+
+function paintWorkspace() {
+  const conversation = state.conversation;
+  const title = document.getElementById("workspace-title");
+  if (title && title.tagName === "H1") {
+    title.textContent = conversation?.title || state.selectedProject?.name || "Novo chat";
+  }
+  const subtitle = document.getElementById("workspace-subtitle");
+  if (subtitle) {
+    const home = !state.selectedProject || state.selectedProject.path_origin === "home";
+    const path = conversation?.root_path || state.selectedProject?.root_path || "";
+    subtitle.textContent = home && conversation?.path_origin !== "chosen" ? "Pasta do usuário" : path || "Pasta do usuário";
+    subtitle.title = path;
+  }
+  paintBranches();
+}
+
+function paintBranches() {
+  const box = document.getElementById("branch-switch");
+  const branches = state.conversation?.branches || [];
+  if (!box) return;
+  box.hidden = branches.length < 2;
+  if (branches.length < 2) return;
+  const active = state.viewBranchId || state.conversation.active_branch_id;
+  const index = Math.max(0, branches.findIndex((item) => item.id === active));
+  const label = document.getElementById("branch-label");
+  if (label) label.textContent = `${index + 1}/${branches.length}`;
+}
+
+function applyConversation(updated) {
+  if (!updated) return;
+  if (updated.project_id) {
+    state.conversations = state.conversations.map((item) => (item.id === updated.id ? updated : item));
+  } else {
+    state.loose = state.loose.map((item) => (item.id === updated.id ? updated : item));
+    if (!state.loose.some((item) => item.id === updated.id)) state.loose = [updated, ...state.loose];
+  }
+  if (state.conversation?.id === updated.id) {
+    state.conversation = updated;
+    state.viewBranchId = updated.active_branch_id;
+  }
+}
+
+function workspaceId() {
+  return state.selectedProject?.id || state.conversation?.workspace_id || null;
+}
+
+function beginRename() {
+  if (!state.conversation) return;
+  const title = document.getElementById("workspace-title");
+  if (!title || title.tagName !== "H1") return;
+  const input = document.createElement("input");
+  input.className = "rename-input";
+  input.value = state.conversation.title || "";
+  input.setAttribute("aria-label", "Nome da conversa");
+  title.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    const value = input.value.trim();
+    const h1 = document.createElement("h1");
+    h1.id = "workspace-title";
+    input.replaceWith(h1);
+    if (save && value && value !== state.conversation.title) {
+      const updated = await api(`/conversations/${state.conversation.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title: value }),
+      });
+      applyConversation(updated);
+      renderProjects(document.getElementById("project-search").value);
+      toast("Conversa renomeada");
+    }
+    paintWorkspace();
+  };
+  input.onkeydown = (event) => {
+    if (event.key === "Enter") finish(true);
+    if (event.key === "Escape") finish(false);
+  };
+  input.onblur = () => finish(true);
+}
+
+function beginRenameProject(project) {
+  const field = document.createElement("input");
+  field.className = "rename-input";
+  field.value = project.name;
+  field.setAttribute("aria-label", "Nome do projeto");
+  const title = document.getElementById("workspace-title");
+  if (!title || title.tagName !== "H1") return;
+  title.replaceWith(field);
+  field.focus();
+  field.select();
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    const value = field.value.trim();
+    const h1 = document.createElement("h1");
+    h1.id = "workspace-title";
+    field.replaceWith(h1);
+    if (save && value && value !== project.name) {
+      const updated = await api(`/projects/${project.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: value }),
+      });
+      state.projects = state.projects.map((item) => (item.id === updated.id ? updated : item));
+      if (state.selectedProject?.id === updated.id) state.selectedProject = updated;
+      renderProjects(document.getElementById("project-search").value);
+      toast("Projeto renomeado");
+    }
+    paintWorkspace();
+  };
+  field.onkeydown = (event) => {
+    if (event.key === "Enter") finish(true);
+    if (event.key === "Escape") finish(false);
+  };
+  field.onblur = () => finish(true);
 }
 
 function selectLoose(conversation) {
@@ -346,8 +496,6 @@ function selectLoose(conversation) {
   document.getElementById("run-toolbar").hidden = true;
   document.getElementById("stats-bar").hidden = true;
   selectConversation(conversation);
-  document.getElementById("workspace-subtitle").textContent = "Sem projeto";
-  document.getElementById("workspace-subtitle").title = "";
   savePrefs({ lastProjectId: null, lastConversationId: conversation.id });
 }
 
@@ -387,10 +535,10 @@ async function removeConversation(conversation) {
   toast("Conversa removida");
 }
 
-async function openFolderPicker() {
+async function openFolderPicker(start) {
   document.getElementById("folder-modal").hidden = false;
   paintIcons(document.getElementById("folder-modal"));
-  await loadFolder(state.selectedProject?.root_path || "");
+  await loadFolder(start || state.conversation?.root_path || state.selectedProject?.root_path || "");
 }
 
 async function loadFolder(path) {
@@ -415,54 +563,44 @@ async function loadFolder(path) {
 async function useFolder(path) {
   if (!path) return;
   document.getElementById("folder-modal").hidden = true;
-  const pendingConversation = state.pendingSend ? state.conversation : null;
-  const existing = state.projects.find((project) => project.root_path === path);
-  if (existing) {
-    await selectProject(existing);
-    if (pendingConversation) state.conversation = pendingConversation;
-    await finishPendingSend(existing);
-    return;
+  const target = state.folderTarget;
+  state.folderTarget = null;
+  if (!target) return;
+  if (target.type === "project") {
+    const updated = await api(`/projects/${target.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ root_path: path }),
+    });
+    state.projects = state.projects.map((item) => (item.id === updated.id ? updated : item));
+    if (state.selectedProject?.id === updated.id) state.selectedProject = updated;
+    toast("Pasta do projeto atualizada");
+  } else {
+    const updated = await api(`/conversations/${target.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ root_path: path }),
+    });
+    applyConversation(updated);
+    toast("Pasta da conversa atualizada");
   }
-  const name = path.split("/").filter(Boolean).pop() || "projeto";
-  const created = await api("/projects", {
-    method: "POST",
-    body: JSON.stringify({ name, root_path: path }),
-  });
-  state.projects = await api("/projects");
-  await selectProject(created);
-  if (pendingConversation) state.conversation = pendingConversation;
-  await finishPendingSend(created);
-  toast("Projeto aberto");
+  paintWorkspace();
+  renderProjects(document.getElementById("project-search").value);
 }
 
-async function finishPendingSend(project) {
-  const pending = state.pendingSend;
-  const conversation = state.conversation;
-  if (!pending || !conversation || conversation.project_id) return;
-  state.pendingSend = null;
-  const moved = await api(`/conversations/${conversation.id}/move`, {
+async function shiftBranch(delta) {
+  const branches = state.conversation?.branches || [];
+  if (branches.length < 2) return;
+  const active = state.viewBranchId || state.conversation.active_branch_id;
+  let index = branches.findIndex((item) => item.id === active);
+  if (index < 0) index = 0;
+  index = (index + delta + branches.length) % branches.length;
+  const branch = branches[index];
+  const updated = await api(`/conversations/${state.conversation.id}/branches/${branch.id}/activate`, {
     method: "POST",
-    body: JSON.stringify({ project_id: project.id }),
   });
-  state.loose = await api("/conversations");
-  state.conversations = await api(`/projects/${project.id}/conversations`);
-  state.conversation = state.conversations.find((item) => item.id === moved.id) || moved;
-  const task = await api(`/projects/${project.id}/tasks`, {
-    method: "POST",
-    body: JSON.stringify({
-      title: pending.title,
-      objective: pending.objective,
-      kind: "objective",
-      conversation_id: state.conversation.id,
-      metadata: pending.metadata,
-    }),
-  });
-  state.selectedTaskId = task.id;
-  state.tasks = [...state.tasks, { ...task, parent_id: task.parent_id || null }];
-  document.getElementById("workspace-title").textContent = state.conversation.title;
-  renderProjects(document.getElementById("project-search").value);
-  renderChat();
-  document.getElementById("btn-run").click();
+  applyConversation(updated);
+  state.viewBranchId = branch.id;
+  await refreshTasks();
+  paintWorkspace();
 }
 
 async function startLooseConversation() {
@@ -561,8 +699,9 @@ async function loadInspector(taskId) {
 }
 
 async function refreshOverview() {
-  if (!state.selectedProject) return;
-  const ov = await api(`/projects/${state.selectedProject.id}/overview`);
+  const workspace = workspaceId();
+  if (!workspace) return;
+  const ov = await api(`/projects/${workspace}/overview`);
   const bar = document.getElementById("stats-bar");
   const chips = Object.entries(ov.tasks_by_status || {})
     .map(([st, n]) => `<span class="stat-chip">${st}: ${n}</span>`)
@@ -576,8 +715,19 @@ async function refreshOverview() {
 }
 
 async function refreshTasks() {
-  if (!state.selectedProject) return;
-  state.tasks = await api(`/projects/${state.selectedProject.id}/tasks`);
+  if (state.conversation) {
+    const branch = state.viewBranchId || state.conversation.active_branch_id;
+    const query = branch ? `?branch_id=${encodeURIComponent(branch)}` : "";
+    state.tasks = await api(`/conversations/${state.conversation.id}/tasks${query}`);
+    renderTaskTree();
+    renderChat();
+    paintBranches();
+    updateRunButtons();
+    return;
+  }
+  const workspace = workspaceId();
+  if (!workspace) return;
+  state.tasks = await api(`/projects/${workspace}/tasks`);
   renderTaskTree();
   renderChat();
 }
@@ -636,8 +786,9 @@ function renderLive(live) {
 }
 
 async function refreshActivity() {
-  if (!state.selectedProject) return;
-  const events = await api(`/projects/${state.selectedProject.id}/events`);
+  const workspace = workspaceId();
+  if (!workspace) return;
+  const events = await api(`/projects/${workspace}/events`);
   const ul = document.getElementById("activity-feed");
   ul.innerHTML = "";
   events.slice(0, 40).forEach((ev) => {
@@ -648,8 +799,9 @@ async function refreshActivity() {
 }
 
 async function refreshLive() {
-  if (!state.selectedProject) return;
-  const live = await api(`/projects/${state.selectedProject.id}/live`);
+  const workspace = workspaceId();
+  if (!workspace) return;
+  const live = await api(`/projects/${workspace}/live`);
   state.live = live;
   renderLive(live);
   if (live.run && !state.currentRun) {
@@ -882,7 +1034,7 @@ function renderChat() {
   );
   if (!roots.length) {
     const body = state.conversation && !state.selectedProject
-      ? "Esta conversa está fora de um projeto. Ao enviar, escolha a pasta."
+      ? "Esta conversa usa a pasta do usuário. A pasta pode ser trocada quando quiser."
       : copy.emptyBody;
     log.innerHTML = `<div class="chat-empty"><h2>${escapeHtml(copy.emptyTitle)}</h2><p>${escapeHtml(body)}</p></div>`;
     return;
@@ -916,7 +1068,12 @@ function renderChat() {
       const chips = ((root.metadata_json || {}).attachments || [])
         .map((item) => `<span class="chip">${escapeHtml(item.name || item.path || "anexo")}</span>`)
         .join("");
-      return `<div class="bubble user"><div class="who">${copy.you}</div><div>${escapeHtml(spoken)}</div>${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
+      const editing = state.editingTaskId === root.id;
+      const message = editing
+        ? `<form class="edit-box" data-edit-form="${root.id}"><textarea>${escapeHtml(spoken)}</textarea><button type="submit">Salvar e ramificar</button></form>`
+        : `<div>${escapeHtml(spoken)}</div>`;
+      const editBtn = `<button type="button" class="icon-btn edit-msg" data-edit="${root.id}" title="Editar mensagem" aria-label="Editar mensagem">${icon("pencil")}</button>`;
+      return `<div class="bubble user"><div class="who">${copy.you}${editBtn}</div>${message}${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
         <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who">${copy.agent}${model}</div>${thoughts}${cards || (thoughts ? "" : `<p class="muted">${escapeHtml(copy.planning)}</p>`)}${resumeHtml(root)}${answerHtml(root)}</div></div>`;
     })
     .join("");
@@ -936,7 +1093,7 @@ async function refreshAll() {
 }
 
 function updateRunButtons() {
-  const hasProject = Boolean(state.selectedProject);
+  const hasProject = Boolean(workspaceId());
   const root = currentRoot();
   const resume = document.getElementById("btn-resume");
   if (resume) {
@@ -1053,6 +1210,13 @@ async function init() {
       }
       return;
     }
+    const edit = event.target.closest("[data-edit]");
+    if (edit) {
+      event.preventDefault();
+      state.editingTaskId = edit.dataset.edit;
+      renderChat();
+      return;
+    }
     const row = event.target.closest("[data-stage]");
     if (!row) return;
     const id = row.dataset.stage;
@@ -1065,6 +1229,35 @@ async function init() {
       if (isLast) state.followLatest = true;
     }
     renderChat();
+  });
+  document.getElementById("chat-log").addEventListener("submit", async (event) => {
+    const form = event.target.closest("[data-edit-form]");
+    if (!form || !state.conversation) return;
+    event.preventDefault();
+    const taskId = form.dataset.editForm;
+    const text = form.querySelector("textarea").value.trim();
+    const original = state.tasks.find((task) => task.id === taskId);
+    const spoken = String(original?.objective || "").split("\n\nAnexos do usuário:")[0].trim();
+    state.editingTaskId = null;
+    if (!text || text === spoken) {
+      renderChat();
+      return;
+    }
+    try {
+      const forked = await api(`/conversations/${state.conversation.id}/fork`, {
+        method: "POST",
+        body: JSON.stringify({ task_id: taskId, objective: text }),
+      });
+      applyConversation(forked.conversation);
+      state.viewBranchId = forked.conversation.active_branch_id;
+      state.selectedTaskId = forked.task.id;
+      renderProjects(document.getElementById("project-search").value);
+      await refreshTasks();
+      document.getElementById("btn-run").click();
+    } catch (err) {
+      toast(err.message, "error");
+      renderChat();
+    }
   });
   state.uiDefaults = await api("/config/ui-defaults");
   const health = await api("/health");
@@ -1128,11 +1321,37 @@ async function init() {
   }
 
   document.getElementById("project-search").oninput = (e) => renderProjects(e.target.value);
-  document.getElementById("btn-toggle-project-form").onclick = () => openFolderPicker();
+  document.getElementById("btn-toggle-project-form").onclick = async () => {
+    try {
+      const created = await api("/projects", {
+        method: "POST",
+        body: JSON.stringify({ name: "Projeto", root_path: "" }),
+      });
+      state.projects = await api("/projects");
+      await selectProject(created);
+      toast("Projeto na pasta do usuário");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  };
   document.getElementById("btn-new-chat").onclick = () => startConversation().catch((err) => toast(err.message, "error"));
   document.getElementById("btn-loose-chat").onclick = () => startLooseConversation().catch((err) => toast(err.message, "error"));
+  document.getElementById("btn-rename").onclick = () => beginRename();
+  document.getElementById("btn-folder").onclick = () => {
+    if (state.conversation) {
+      state.folderTarget = { type: "conversation", id: state.conversation.id };
+      openFolderPicker(state.conversation.root_path).catch((err) => toast(err.message, "error"));
+      return;
+    }
+    if (state.selectedProject) {
+      state.folderTarget = { type: "project", id: state.selectedProject.id };
+      openFolderPicker(state.selectedProject.root_path).catch((err) => toast(err.message, "error"));
+    }
+  };
+  document.getElementById("branch-prev").onclick = () => shiftBranch(-1).catch((err) => toast(err.message, "error"));
+  document.getElementById("branch-next").onclick = () => shiftBranch(1).catch((err) => toast(err.message, "error"));
   document.getElementById("folder-close").onclick = () => {
-    state.pendingSend = null;
+    state.folderTarget = null;
     document.getElementById("folder-modal").hidden = true;
   };
   document.getElementById("folder-up").onclick = () => {
@@ -1149,7 +1368,10 @@ async function init() {
     }
   };
   document.getElementById("folder-modal").onclick = (event) => {
-    if (event.target.id === "folder-modal") event.currentTarget.hidden = true;
+    if (event.target.id === "folder-modal") {
+      state.folderTarget = null;
+      event.currentTarget.hidden = true;
+    }
   };
 
   document.getElementById("objective-template").onchange = (e) => {
@@ -1292,23 +1514,25 @@ async function init() {
           })),
         }
       : undefined;
-    if (!state.selectedProject) {
-      if (!state.conversation || state.conversation.project_id) await startLooseConversation();
-      state.pendingSend = { title, objective, metadata };
-      openFolderPicker();
-      toast("Escolha a pasta desta conversa");
-      return;
-    }
     if (!state.conversation) {
-      state.conversation = await api(`/projects/${state.selectedProject.id}/conversations`, {
-        method: "POST",
-        body: JSON.stringify({ title }),
-      });
-      state.conversations = [state.conversation, ...state.conversations];
+      if (state.selectedProject) {
+        state.conversation = await api(`/projects/${state.selectedProject.id}/conversations`, {
+          method: "POST",
+          body: JSON.stringify({ title }),
+        });
+        state.conversations = [state.conversation, ...state.conversations];
+      } else {
+        await startLooseConversation();
+      }
+    }
+    const workspace = workspaceId();
+    if (!workspace || !state.conversation) {
+      toast("Não foi possível abrir a conversa", "error");
+      return;
     }
     let task;
     try {
-      task = await api(`/projects/${state.selectedProject.id}/tasks`, {
+      task = await api(`/projects/${workspace}/tasks`, {
         method: "POST",
         body: JSON.stringify({
           title,
@@ -1324,9 +1548,14 @@ async function init() {
     }
     state.selectedTaskId = task.id;
     state.tasks = [...state.tasks, { ...task, parent_id: task.parent_id || null }];
-    state.conversations = await api(`/projects/${state.selectedProject.id}/conversations`);
-    state.conversation = state.conversations.find((item) => item.id === state.conversation.id) || state.conversation;
-    document.getElementById("workspace-title").textContent = state.conversation.title;
+    if (state.selectedProject) {
+      state.conversations = await api(`/projects/${state.selectedProject.id}/conversations`);
+      state.conversation = state.conversations.find((item) => item.id === state.conversation.id) || state.conversation;
+    } else {
+      state.loose = await api("/conversations");
+      state.conversation = state.loose.find((item) => item.id === state.conversation.id) || state.conversation;
+    }
+    paintWorkspace();
     renderProjects(document.getElementById("project-search").value);
     attachments.splice(0, attachments.length);
     renderAttachmentChips();
@@ -1339,9 +1568,10 @@ async function init() {
 
   document.getElementById("btn-run").onclick = async () => {
     const root = state.tasks.find((t) => t.id === state.selectedTaskId) || state.tasks.find((t) => !t.parent_id);
-    if (!root) return;
+    const workspace = workspaceId();
+    if (!root || !workspace) return;
     const cfg = runConfigFromUI(root.objective || "");
-    state.currentRun = await api(`/projects/${state.selectedProject.id}/runs`, {
+    state.currentRun = await api(`/projects/${workspace}/runs`, {
       method: "POST",
       body: JSON.stringify({ root_task_id: root.id, config: cfg }),
     });

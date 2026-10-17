@@ -11,8 +11,13 @@ from agent.domain.enums import MemoryKind, RunStatus, TaskKind, TaskStatus
 
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    root_path: str = Field(min_length=1, description="Diretório raiz autorizado do projeto")
+    root_path: str = ""
     description: str | None = None
+
+
+class ProjectUpdate(BaseModel):
+    name: str | None = None
+    root_path: str | None = None
 
 
 class ConversationCreate(BaseModel):
@@ -24,11 +29,36 @@ class ConversationMove(BaseModel):
     project_id: UUID | None = None
 
 
+class ConversationUpdate(BaseModel):
+    title: str | None = None
+    root_path: str | None = None
+    clear_root: bool = False
+
+
+class BranchRead(BaseModel):
+    id: UUID
+    parent_id: UUID | None = None
+    fork_task_id: UUID | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationFork(BaseModel):
+    task_id: UUID
+    objective: str = Field(min_length=1)
+
+
 class ConversationRead(BaseModel):
     id: UUID
     project_id: UUID | None = None
+    workspace_id: UUID | None = None
     title: str
     locale: str
+    root_path: str | None = None
+    path_origin: str = "home"
+    active_branch_id: UUID | None = None
+    branches: list[BranchRead] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -40,6 +70,7 @@ class ProjectRead(BaseModel):
     name: str
     root_path: str
     description: str | None
+    path_origin: str = "chosen"
     created_at: datetime
     updated_at: datetime
 
@@ -54,6 +85,7 @@ class TaskCreate(BaseModel):
     kind: TaskKind = TaskKind.OBJECTIVE
     parent_id: UUID | None = None
     conversation_id: UUID | None = None
+    branch_id: UUID | None = None
     metadata: dict | None = None
 
 
@@ -61,6 +93,7 @@ class TaskRead(BaseModel):
     id: UUID
     project_id: UUID
     conversation_id: UUID | None = None
+    branch_id: UUID | None = None
     parent_id: UUID | None
     title: str
     display_title: str | None = None
@@ -122,6 +155,7 @@ class MemoryCreate(BaseModel):
     content: str
     task_id: UUID | None = None
     conversation_id: UUID | None = None
+    branch_id: UUID | None = None
     source_refs: list[str] | None = None
 
 
@@ -129,6 +163,7 @@ class MemoryRead(BaseModel):
     id: UUID
     project_id: UUID
     conversation_id: UUID | None = None
+    branch_id: UUID | None = None
     task_id: UUID | None
     kind: MemoryKind
     title: str

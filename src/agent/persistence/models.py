@@ -26,6 +26,7 @@ class ProjectModel(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     root_path: Mapped[str] = mapped_column(String(2048), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    path_origin: Mapped[str] = mapped_column(String(16), default="chosen")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -41,6 +42,8 @@ class ConversationModel(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     locale: Mapped[str] = mapped_column(String(8), default="pt")
+    root_path: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    active_branch_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -55,6 +58,7 @@ class TaskModel(Base):
     conversation_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("conversations.id"), nullable=True
     )
+    branch_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     objective: Mapped[str] = mapped_column(Text, nullable=False)
@@ -74,6 +78,16 @@ class TaskModel(Base):
 
     project: Mapped[ProjectModel] = relationship(back_populates="tasks")
     parent: Mapped[TaskModel | None] = relationship(remote_side=[id])
+
+
+class BranchModel(Base):
+    __tablename__ = "branches"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id"), nullable=False)
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
+    fork_task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class TaskDependencyModel(Base):
@@ -134,6 +148,7 @@ class MemoryRecordModel(Base):
     conversation_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("conversations.id"), nullable=True
     )
+    branch_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)

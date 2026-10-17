@@ -36,6 +36,7 @@ TOOL_CATALOG = (
     "run_script executa um .py. run_command aceita command como lista ou string e exige aprovação. "
     "delete_file e move_file exigem aprovação. "
     "remember grava uma memória: content, title opcional e scope project ou conversation. "
+    "system_info descreve o sistema, o usuário e a pasta pessoal, em qualquer sistema operacional. "
     "browser: action navigate, snapshot, click, type, press, scroll, search ou close. "
     "search usa query. navigate usa url http(s). click usa text ou selector. "
     "Não invente outros nomes."
@@ -55,6 +56,23 @@ def _resolve(ctx: ToolContext, raw: str) -> tuple[Path | None, dict | None]:
         return resolve_under_root(ctx.project_root, raw), None
     except PathSecurityError as exc:
         return None, {"success": False, "error": str(exc)}
+
+
+async def _system_info(ctx: ToolContext, args: dict) -> dict:
+    import getpass
+    import platform
+
+    home = str(Path.home())
+    return {
+        "success": True,
+        "system": platform.system(),
+        "release": platform.release(),
+        "machine": platform.machine(),
+        "python": platform.python_version(),
+        "user": getpass.getuser(),
+        "home": home,
+        "workspace": ctx.project_root,
+    }
 
 
 async def _browser(ctx: ToolContext, args: dict) -> dict:
@@ -456,6 +474,11 @@ def register_all(registry: ToolRegistry) -> None:
             input_schema={"content": "str", "title": "str?", "scope": "project|conversation"},
         ),
         ToolSpec(
+            id="system_info",
+            description="Informa sistema, usuário e pasta pessoal",
+            input_schema={},
+        ),
+        ToolSpec(
             id="browser",
             description="Pesquisa e age no navegador quando ele está ligado",
             input_schema={"action": "str", "url": "str?", "text": "str?", "selector": "str?", "query": "str?"},
@@ -478,6 +501,7 @@ def register_all(registry: ToolRegistry) -> None:
         "git_status": _git_status,
         "remember": _remember,
         "browser": _browser,
+        "system_info": _system_info,
     }
     for spec in specs:
         registry.register(spec, handlers[spec.id])

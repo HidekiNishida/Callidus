@@ -58,6 +58,9 @@ TOOL_ALIASES: dict[str, str] = {
     "browse": "browser",
     "web": "browser",
     "open_url": "browser",
+    "sysinfo": "system_info",
+    "os_info": "system_info",
+    "whoami": "system_info",
 }
 
 

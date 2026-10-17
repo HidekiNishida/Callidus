@@ -209,6 +209,14 @@ label.icon-btn:has(input:checked) { color: var(--accent); }
   padding: 0.85rem 1rem; border-bottom: 1px solid var(--border); background: var(--surface);
 }
 .topbar h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+.title-row { display: flex; align-items: center; gap: 0.25rem; }
+.rename-input { font: inherit; font-size: 1.1rem; font-weight: 600; background: transparent; color: inherit; border: 0; border-bottom: 1px solid var(--border); min-width: 12rem; }
+.branch-switch { display: inline-flex; align-items: center; gap: 0.35rem; margin-top: 0.25rem; color: var(--muted); font-size: 0.8rem; }
+.branch-switch button { background: transparent; color: inherit; border: 1px solid var(--border); border-radius: 6px; min-width: 1.6rem; cursor: pointer; }
+.edit-box { display: flex; flex-direction: column; gap: 0.35rem; }
+.edit-box textarea { width: 100%; min-height: 4.5rem; }
+.bubble.user .who { display: flex; align-items: center; gap: 0.35rem; }
+.edit-msg { margin-left: auto; }
 .topbar-run, .topbar-model { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
 .topbar-left { flex: 1; min-width: 180px; }
 

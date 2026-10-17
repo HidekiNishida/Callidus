@@ -54,6 +54,11 @@ def _migrate_sqlite(engine: Engine) -> None:
         _add_column(conn, "memory_records", "conversation_id", "CHAR(32)")
         _add_column(conn, "memory_records", "summary", "TEXT")
         _add_column(conn, "memory_records", "outline_json", "JSON")
+        _add_column(conn, "projects", "path_origin", "VARCHAR(16) DEFAULT 'chosen'")
+        _add_column(conn, "conversations", "root_path", "VARCHAR(2048)")
+        _add_column(conn, "conversations", "active_branch_id", "CHAR(32)")
+        _add_column(conn, "tasks", "branch_id", "CHAR(32)")
+        _add_column(conn, "memory_records", "branch_id", "CHAR(32)")
         conn.commit()
 
 

@@ -44,7 +44,9 @@ Demo sem Ollama: objetivo com `e2e` usa provider `mock` automaticamente na UI.
 
 ## Conversas, memória e idioma
 
-Cada projeto é a pasta do código. Dentro dele, cada conversa é um chat separado. Também dá para abrir uma conversa sem pasta, na lista Conversas. O menu de cada chat move ela para outro projeto ou para fora de todos, e também remove. A memória da conversa acompanha a mudança; a memória do projeto fica na pasta de origem. O botão **+** do topo abre um navegador de pastas (e, no macOS, o Finder).
+Cada projeto é um grupo de conversas. A pasta pode ficar em branco: nesse caso o agente usa a pasta do usuário do sistema. O botão **+** cria o projeto assim, e **Alterar pasta** troca o diretório depois, no projeto ou numa conversa. Uma conversa nova sem projeto também não pede pasta; usa a mesma pasta do usuário até alguém escolher outra. A ferramenta `system_info` informa sistema, usuário e essa pasta.
+
+O menu de cada chat renomeia, troca a pasta, move para outro projeto ou remove. A memória da conversa acompanha a mudança de projeto; a memória do projeto fica na origem. Editar uma mensagem abre um ramo novo a partir dali, no estilo de duas continuações: o ramo antigo guarda o texto original e o que veio depois; o novo recomeça na mensagem editada. A memória do projeto vale para os dois. A memória da conversa segue o ramo e os ramos anteriores até o ponto da divisão; o que for gravado no ramo antigo depois da divisão não entra no novo.
 
 A memória fica em dois escopos: do projeto inteiro e da conversa atual. Ao gravar, o texto completo permanece e um índice curto (resumo, fatos e tópicos) é guardado junto. Na hora de usar, o agente olha só esse índice, escolhe o que serve ao objetivo e só então quebra o texto das memórias escolhidas. O agente grava memória quando o pedido pede para lembrar, quando uma etapa usa a ferramenta `remember`, e ao concluir a conversa.
 

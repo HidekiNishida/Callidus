@@ -16,6 +16,8 @@ from agent.providers.base import ModelProfile
 from agent.security.paths import PathSecurityError, resolve_under_root
 from agent.guides.discover import guide_digest
 from agent.memory.store import choose_memory_index, fragments_for_prompt, structure_memory
+from agent.persistence.models import BranchModel
+from agent.services.branches import memory_visible
 from agent.tools.builtins import TOOL_CATALOG
 from sqlalchemy import select
 
@@ -89,7 +91,7 @@ class OperationContextBuilder:
         return budget, snap
 
     def _memory_block(self, project_id: uuid.UUID, task: TaskModel) -> tuple[str, str]:
-        index = self._memory_index(project_id, task.conversation_id)
+        index = self._memory_index(project_id, task)
         chosen = choose_memory_index(index, task.objective)
         note = f"memória: índice {len(index)}, escolhidas {len(chosen)}"
         if not chosen:
@@ -110,7 +112,8 @@ class OperationContextBuilder:
             return "(sem memória registrada)", note
         return "\n".join(lines), note
 
-    def _memory_index(self, project_id: uuid.UUID, conversation_id: uuid.UUID | None) -> list[dict]:
+    def _memory_index(self, project_id: uuid.UUID, task) -> list[dict]:
+        conversation_id = task.conversation_id
         stmt = (
             select(
                 MemoryRecordModel.id,
@@ -119,6 +122,8 @@ class OperationContextBuilder:
                 MemoryRecordModel.outline_json,
                 MemoryRecordModel.kind,
                 MemoryRecordModel.conversation_id,
+                MemoryRecordModel.branch_id,
+                MemoryRecordModel.created_at,
             )
             .where(MemoryRecordModel.project_id == project_id)
             .where(
@@ -128,8 +133,24 @@ class OperationContextBuilder:
             .order_by(MemoryRecordModel.created_at.desc())
             .limit(24)
         )
+        catalog: dict = {}
+        if task.conversation_id and task.branch_id:
+            catalog = {
+                item.id: item
+                for item in self._session.scalars(
+                    select(BranchModel).where(BranchModel.conversation_id == task.conversation_id)
+                ).all()
+            }
         rows: list[dict] = []
         for record in self._session.execute(stmt):
+            if not memory_visible(
+                memory_branch_id=record.branch_id,
+                memory_created_at=record.created_at,
+                conversation_id=record.conversation_id,
+                task_branch_id=task.branch_id,
+                branches=catalog,
+            ):
+                continue
             outline = record.outline_json or structure_memory(record.summary or record.title or "")
             rows.append(
                 {

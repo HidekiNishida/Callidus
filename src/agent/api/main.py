@@ -16,9 +16,12 @@ from agent.api.deps import db_session, get_engine, read_settings
 from agent.config import Settings
 from agent.domain.enums import MemoryKind, TaskStatus
 from agent.domain.schemas import (
+    BranchRead,
     ConversationCreate,
+    ConversationFork,
     ConversationMove,
     ConversationRead,
+    ConversationUpdate,
     EventRead,
     ExecutionRunCreate,
     ExecutionRunRead,
@@ -26,6 +29,7 @@ from agent.domain.schemas import (
     MemoryRead,
     ProjectCreate,
     ProjectRead,
+    ProjectUpdate,
     TaskCreate,
     TaskDependencyCreate,
     TaskRead,
@@ -56,7 +60,7 @@ from agent.services.metrics_service import MetricsService
 from agent.i18n.locale import detect_language, translate
 from agent.memory.store import extract_memory_request
 from agent.services.conversation_service import ConversationService, locale_for_task
-from agent.services.inbox import is_inbox_path
+from agent.services.inbox import effective_root, is_inbox_project
 from agent.services.fs_browse import browse_directories, pick_folder_native
 from agent.services.project_service import ProjectService
 from agent.services.run_service import RunService
@@ -178,12 +182,41 @@ def get_project(project_id: uuid.UUID, session: Session = Depends(db_session)) -
     return ProjectRead.model_validate(project)
 
 
+@app.patch("/projects/{project_id}", response_model=ProjectRead)
+def update_project(
+    project_id: uuid.UUID, body: ProjectUpdate, session: Session = Depends(db_session)
+) -> ProjectRead:
+    try:
+        project = ProjectService(session).update_project(
+            project_id, name=body.name, root_path=body.root_path
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ProjectRead.model_validate(project)
+
+
 def _present_conversation(session: Session, item: ConversationModel) -> ConversationRead:
-    data = ConversationRead.model_validate(item)
+    service = ConversationService(session)
+    service.ensure_branch(item)
     project = session.get(ProjectModel, item.project_id)
-    if project is not None and is_inbox_path(project.root_path):
-        return data.model_copy(update={"project_id": None})
-    return data
+    inbox = is_inbox_project(project)
+    chosen = bool(item.root_path) or (
+        project is not None and project.path_origin == "chosen" and not inbox
+    )
+    branches = [BranchRead.model_validate(branch) for branch in service.branches_of(item.id)]
+    data = ConversationRead.model_validate(item)
+    return data.model_copy(
+        update={
+            "project_id": None if inbox else item.project_id,
+            "workspace_id": item.project_id,
+            "root_path": effective_root(project, item),
+            "path_origin": "chosen" if chosen else "home",
+            "active_branch_id": item.active_branch_id,
+            "branches": branches,
+        }
+    )
 
 
 @app.get("/conversations", response_model=list[ConversationRead])
@@ -218,6 +251,67 @@ def delete_conversation(conversation_id: uuid.UUID, session: Session = Depends(d
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"deleted": True}
+
+
+@app.patch("/conversations/{conversation_id}", response_model=ConversationRead)
+def update_conversation(
+    conversation_id: uuid.UUID, body: ConversationUpdate, session: Session = Depends(db_session)
+) -> ConversationRead:
+    service = ConversationService(session)
+    try:
+        if body.title is not None:
+            service.rename(conversation_id, body.title)
+        if body.clear_root:
+            item = service.set_root(conversation_id, None)
+        elif body.root_path is not None:
+            item = service.set_root(conversation_id, body.root_path)
+        else:
+            item = service.get_conversation(conversation_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _present_conversation(session, item)
+
+
+@app.get("/conversations/{conversation_id}/tasks", response_model=list[TaskRead])
+def conversation_tasks(
+    conversation_id: uuid.UUID,
+    branch_id: uuid.UUID | None = None,
+    session: Session = Depends(db_session),
+) -> list[TaskRead]:
+    try:
+        tasks = ConversationService(session).tasks_for_branch(conversation_id, branch_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return [_present_task(session, task) for task in tasks]
+
+
+@app.post("/conversations/{conversation_id}/fork")
+def fork_conversation(
+    conversation_id: uuid.UUID, body: ConversationFork, session: Session = Depends(db_session)
+) -> dict:
+    service = ConversationService(session)
+    try:
+        task = service.fork_message(conversation_id, body.task_id, body.objective)
+        item = service.get_conversation(conversation_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "conversation": _present_conversation(session, item),
+        "task": _present_task(session, task),
+    }
+
+
+@app.post("/conversations/{conversation_id}/branches/{branch_id}/activate", response_model=ConversationRead)
+def activate_branch(
+    conversation_id: uuid.UUID, branch_id: uuid.UUID, session: Session = Depends(db_session)
+) -> ConversationRead:
+    try:
+        item = ConversationService(session).activate_branch(conversation_id, branch_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _present_conversation(session, item)
 
 
 @app.get("/projects/{project_id}/conversations", response_model=list[ConversationRead])
