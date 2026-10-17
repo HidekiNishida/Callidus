@@ -47,6 +47,10 @@ const state = {
   uiDefaults: null,
   pollTimer: null,
   browsePath: "",
+  openStageIds: new Set(),
+  followLatest: false,
+  resumeBrief: null,
+  browserMode: "off",
 };
 
 const CHAT = {
@@ -105,6 +109,8 @@ const ICONS = {
   git: '<circle cx="4" cy="4" r="1.3"/><circle cx="4" cy="12" r="1.3"/><circle cx="12" cy="8" r="1.3"/><path d="M4 5.3v5.4M5.2 4h3.2a3.6 3.6 0 0 1 0 4H4"/>',
   chat: '<path d="M3 3.5h10v7H6.2L3 13z"/>',
   up: '<path d="M8 12V4M4.5 7.5L8 4l3.5 3.5"/>',
+  chevron: '<path d="M6 4l4 4-4 4"/>',
+  globe: '<circle cx="8" cy="8" r="5.2"/><path d="M3 8h10M8 2.8c1.5 1.7 1.5 8.7 0 10.4M8 2.8c-1.5 1.7-1.5 8.7 0 10.4"/>',
 };
 
 function icon(name) {
@@ -151,6 +157,7 @@ const TOOL_ICON = {
   delete_file: "alert",
   verificação: "check",
   modelo: "spark",
+  browser: "globe",
 };
 
 function formatTime(iso) {
@@ -175,6 +182,7 @@ function runConfigFromUI(objective) {
     model_id,
     approve_risky_tools: approve,
     use_generic_template: true,
+    browser_mode: state.browserMode || "off",
   };
 }
 
@@ -188,11 +196,13 @@ function renderProjects(filter = "") {
       const li = document.createElement("li");
       const row = document.createElement("div");
       row.className = "project-row";
+      const open = state.selectedProject?.id === p.id;
       const btn = document.createElement("button");
       btn.type = "button";
+      btn.className = "project-name";
       btn.title = p.root_path;
-      if (state.selectedProject?.id === p.id) btn.classList.add("active");
-      btn.innerHTML = `<span>${escapeHtml(p.name)}</span>`;
+      if (open) btn.classList.add("active");
+      btn.innerHTML = `<span class="chevron${open ? " open" : ""}">${icon("chevron")}</span>${icon("folder")}<span>${escapeHtml(p.name)}</span>`;
       btn.onclick = () => selectProject(p);
       row.appendChild(btn);
       if (state.selectedProject?.id === p.id) {
@@ -217,7 +227,7 @@ function renderProjects(filter = "") {
           const chatBtn = document.createElement("button");
           chatBtn.type = "button";
           if (state.conversation?.id === conversation.id) chatBtn.classList.add("active");
-          chatBtn.textContent = conversation.title;
+          chatBtn.innerHTML = `${icon("chat")}<span>${escapeHtml(conversation.title)}</span>`;
           chatBtn.onclick = () => selectConversation(conversation);
           item.appendChild(chatBtn);
           chats.appendChild(item);
@@ -259,6 +269,9 @@ async function selectProject(p) {
 function selectConversation(conversation) {
   state.conversation = conversation;
   state.selectedTaskId = null;
+  state.openStageIds = new Set();
+  state.followLatest = false;
+  state.resumeBrief = null;
   savePrefs({ lastConversationId: conversation.id });
   document.getElementById("workspace-title").textContent = conversation.title;
   renderProjects(document.getElementById("project-search").value);
@@ -669,6 +682,45 @@ function titleOf(task) {
   return task.display_title || task.title;
 }
 
+function diffHtml(diff) {
+  return String(diff)
+    .split("\n")
+    .map((line) => {
+      let kind = "ctx";
+      if (line.startsWith("+") && !line.startsWith("+++")) kind = "add";
+      else if (line.startsWith("-") && !line.startsWith("---")) kind = "del";
+      return `<div class="${kind}">${escapeHtml(line || " ")}</div>`;
+    })
+    .join("");
+}
+
+function stageDetail(task) {
+  const result = task.consolidated_result_json?.result || task.consolidated_result_json || {};
+  const diff = typeof result.diff === "string" ? result.diff : "";
+  const line = resultLine(task);
+  const counts = result.added != null ? ` +${result.added} −${result.removed || 0}` : "";
+  const path = result.path ? `<p class="stage-path">${escapeHtml(result.path)}${escapeHtml(counts)}</p>` : "";
+  const diffBlock = diff ? `<div class="diff">${diffHtml(diff)}</div>` : "";
+  const note = line && !diff ? `<p>${escapeHtml(String(line).slice(0, 500))}</p>` : "";
+  return `${path}${diffBlock}${note}`;
+}
+
+function currentRoot() {
+  const inChat = (task) => !task.parent_id && (!state.conversation || task.conversation_id === state.conversation.id);
+  return state.tasks.find((task) => task.id === state.selectedTaskId && inChat(task)) || state.tasks.find(inChat);
+}
+
+function resumeHtml(root) {
+  const brief = state.resumeBrief;
+  if (!brief || brief.root_id !== root.id) return "";
+  const done = (brief.done || []).map((item) => escapeHtml(item)).join(", ") || "—";
+  const missing = (brief.missing || []).map((item) => escapeHtml(item)).join(", ") || "—";
+  const fix = brief.corrected_instruction ? `<p>${escapeHtml(brief.corrected_instruction)}</p>` : "";
+  const reason = brief.reason ? `<p>Motivo: ${escapeHtml(brief.reason)}</p>` : "";
+  const action = brief.can_continue ? `<button type="button" data-continue="${root.id}">Continuar</button>` : "";
+  return `<div class="resume"><strong>Parou em ${escapeHtml(brief.stopped_at || "um ponto intermediário")}</strong><p>Feito: ${done}</p><p>Falta: ${missing}</p>${reason}${fix}${action}</div>`;
+}
+
 function renderChat() {
   const log = document.getElementById("chat-log");
   if (!log) return;
@@ -692,13 +744,16 @@ function renderChat() {
         busy.includes(root.status) ||
         kids.some((task) => busy.includes(task.status)) ||
         Boolean(state.live?.thinking && focusHere);
+      const last = kids[kids.length - 1];
+      if (state.followLatest && last) state.openStageIds.add(last.id);
       const cards = kids
-        .map((task) => {
-          const line = resultLine(task);
+        .map((task, index) => {
           const tool = toolOf(task);
           const glyph = TOOL_ICON[tool] || "circle";
           const active = busy.includes(task.status) ? " busy" : "";
-          return `<div class="tool-card${active}"><div class="row">${statusBadge(task.status)}${icon(glyph)}<strong>${escapeHtml(titleOf(task))}</strong></div>${line ? `<p>${escapeHtml(line.slice(0, 220))}</p>` : ""}</div>`;
+          const open = state.openStageIds.has(task.id);
+          const detail = open ? stageDetail(task) : "";
+          return `<div class="tool-card${active}${open ? " open" : ""}"><button type="button" class="row" data-stage="${task.id}" data-last="${index === kids.length - 1 ? "1" : "0"}">${statusBadge(task.status)}${icon(glyph)}<strong>${escapeHtml(titleOf(task))}</strong></button>${detail ? `<div class="stage-detail">${detail}</div>` : ""}</div>`;
         })
         .join("");
       const thoughts = thoughtBlock(root);
@@ -707,7 +762,7 @@ function renderChat() {
         .map((item) => `<span class="chip">${escapeHtml(item.name || item.path || "anexo")}</span>`)
         .join("");
       return `<div class="bubble user"><div class="who">${copy.you}</div><div>${escapeHtml(spoken)}</div>${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
-        <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who">${copy.agent}${model}</div>${thoughts}${cards || (thoughts ? "" : `<p class="muted">${escapeHtml(copy.planning)}</p>`)}${answerHtml(root)}</div></div>`;
+        <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who">${copy.agent}${model}</div>${thoughts}${cards || (thoughts ? "" : `<p class="muted">${escapeHtml(copy.planning)}</p>`)}${resumeHtml(root)}${answerHtml(root)}</div></div>`;
     })
     .join("");
   if (stick) log.scrollTop = log.scrollHeight;
@@ -727,7 +782,12 @@ async function refreshAll() {
 
 function updateRunButtons() {
   const hasProject = Boolean(state.selectedProject);
-  const root = state.tasks.find((t) => t.id === state.selectedTaskId) || state.tasks.find((t) => !t.parent_id);
+  const root = currentRoot();
+  const resume = document.getElementById("btn-resume");
+  if (resume) {
+    const incomplete = Boolean(root && !["COMPLETED", "CANCELLED"].includes(root.status));
+    resume.hidden = !incomplete || Boolean(state.live?.thinking);
+  }
   const hasRoot = Boolean(root);
   document.getElementById("btn-run").disabled = !hasProject || !hasRoot;
   const runActive = Boolean(state.currentRun);
@@ -797,9 +857,60 @@ function setupTabs() {
   });
 }
 
+function paintBrowser() {
+  const chip = document.getElementById("browser-chip");
+  if (!chip) return;
+  const labels = { off: "Desligado", headless: "Invisível", visible: "Janela" };
+  chip.title = `Navegador ${labels[state.browserMode] || "Desligado"}`;
+  chip.classList.toggle("on", state.browserMode !== "off");
+  const text = chip.querySelector("span");
+  if (text) text.textContent = labels[state.browserMode] || "Desligado";
+}
+
+async function continueResume(taskId) {
+  const brief = await api(`/tasks/${taskId}/resume-brief`, {
+    method: "POST",
+    body: JSON.stringify({ apply: true }),
+  });
+  state.resumeBrief = brief;
+  if (brief.reactivated_run_id) {
+    state.currentRun = { id: brief.reactivated_run_id, status: "active" };
+    updateRunButtons();
+    startPolling();
+    await api(`/runs/${brief.reactivated_run_id}/step`, { method: "POST" });
+    await refreshAll();
+    return;
+  }
+  state.selectedTaskId = taskId;
+  await document.getElementById("btn-run").onclick();
+}
+
 async function init() {
   paintIcons();
   setupTabs();
+  document.getElementById("chat-log").addEventListener("click", async (event) => {
+    const cont = event.target.closest("[data-continue]");
+    if (cont) {
+      try {
+        await continueResume(cont.dataset.continue);
+      } catch (err) {
+        toast(err.message, "error");
+      }
+      return;
+    }
+    const row = event.target.closest("[data-stage]");
+    if (!row) return;
+    const id = row.dataset.stage;
+    const isLast = row.dataset.last === "1";
+    if (state.openStageIds.has(id)) {
+      state.openStageIds.delete(id);
+      if (isLast) state.followLatest = false;
+    } else {
+      state.openStageIds.add(id);
+      if (isLast) state.followLatest = true;
+    }
+    renderChat();
+  });
   state.uiDefaults = await api("/config/ui-defaults");
   const health = await api("/health");
   const healthEl = document.getElementById("health-indicator");
@@ -812,6 +923,29 @@ async function init() {
   }
 
   const prefs = loadPrefs();
+  state.browserMode = prefs.browserMode || "off";
+  paintBrowser();
+  document.getElementById("browser-menu").addEventListener("click", (event) => {
+    const choice = event.target.closest("[data-browser]");
+    if (!choice) return;
+    state.browserMode = choice.dataset.browser;
+    savePrefs({ browserMode: state.browserMode });
+    paintBrowser();
+    document.getElementById("browser-menu").open = false;
+  });
+  document.getElementById("btn-resume").onclick = async () => {
+    const root = currentRoot();
+    if (!root) return;
+    try {
+      state.resumeBrief = await api(`/tasks/${root.id}/resume-brief`, {
+        method: "POST",
+        body: JSON.stringify({ apply: false }),
+      });
+      renderChat();
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  };
   if (prefs.provider) document.getElementById("sel-provider").value = prefs.provider;
   document.getElementById("sel-provider").onchange = async () => {
     savePrefs({ provider: document.getElementById("sel-provider").value });

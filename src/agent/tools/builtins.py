@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 from agent.security.paths import PathSecurityError, resolve_under_root
+from agent.tools.diffing import unified_diff_text
 from agent.tools.registry import ToolContext, ToolRegistry, ToolSpec
 
 SKIP_DIRS = {
@@ -35,6 +36,8 @@ TOOL_CATALOG = (
     "run_script executa um .py. run_command aceita command como lista ou string e exige aprovação. "
     "delete_file e move_file exigem aprovação. "
     "remember grava uma memória: content, title opcional e scope project ou conversation. "
+    "browser: action navigate, snapshot, click, type, press, scroll, search ou close. "
+    "search usa query. navigate usa url http(s). click usa text ou selector. "
     "Não invente outros nomes."
 )
 
@@ -52,6 +55,22 @@ def _resolve(ctx: ToolContext, raw: str) -> tuple[Path | None, dict | None]:
         return resolve_under_root(ctx.project_root, raw), None
     except PathSecurityError as exc:
         return None, {"success": False, "error": str(exc)}
+
+
+async def _browser(ctx: ToolContext, args: dict) -> dict:
+    from agent.tools.browser import browser_call
+
+    mode = ctx.browser_mode or "off"
+    action = str(args.get("action") or "snapshot").lower()
+    if mode == "off":
+        return {"success": False, "error": "navegador desligado no compositor"}
+    if action == "search":
+        from agent.tools.browser import search_web
+
+        result = search_web(str(args.get("query") or args.get("text") or ""))
+        result["mode"] = mode
+        return result
+    return await asyncio.to_thread(browser_call, action, args, headed=mode == "visible")
 
 
 async def _remember(ctx: ToolContext, args: dict) -> dict:
@@ -108,9 +127,11 @@ async def _write_file(ctx: ToolContext, args: dict) -> dict:
         full = resolve_under_root(ctx.project_root, path)
     except PathSecurityError as exc:
         return {"success": False, "error": str(exc)}
+    before = full.read_text(encoding="utf-8", errors="replace") if full.is_file() else ""
     full.parent.mkdir(parents=True, exist_ok=True)
     full.write_text(content, encoding="utf-8")
-    return {"success": True, "path": path, "bytes": len(content.encode("utf-8"))}
+    diff = unified_diff_text(str(path), before, content)
+    return {"success": True, "path": path, "bytes": len(content.encode("utf-8")), **diff}
 
 
 async def _search_grep(ctx: ToolContext, args: dict) -> dict:
@@ -292,7 +313,13 @@ async def _edit_file(ctx: ToolContext, args: dict) -> dict:
         return {"success": False, "error": f"trecho ambíguo ({count} vezes); use replace_all ou um trecho único"}
     updated = content.replace(old, new) if args.get("replace_all") else content.replace(old, new, 1)
     full.write_text(updated, encoding="utf-8")
-    return {"success": True, "path": str(raw), "replacements": count if args.get("replace_all") else 1}
+    diff = unified_diff_text(str(raw), content, updated)
+    return {
+        "success": True,
+        "path": str(raw),
+        "replacements": count if args.get("replace_all") else 1,
+        **diff,
+    }
 
 
 async def _delete_file(ctx: ToolContext, args: dict) -> dict:
@@ -428,6 +455,11 @@ def register_all(registry: ToolRegistry) -> None:
             description="Grava uma memória do projeto ou da conversa",
             input_schema={"content": "str", "title": "str?", "scope": "project|conversation"},
         ),
+        ToolSpec(
+            id="browser",
+            description="Pesquisa e age no navegador quando ele está ligado",
+            input_schema={"action": "str", "url": "str?", "text": "str?", "selector": "str?", "query": "str?"},
+        ),
     ]
     handlers = {
         "read_file": _read_file,
@@ -445,6 +477,7 @@ def register_all(registry: ToolRegistry) -> None:
         "move_file": _move_file,
         "git_status": _git_status,
         "remember": _remember,
+        "browser": _browser,
     }
     for spec in specs:
         registry.register(spec, handlers[spec.id])

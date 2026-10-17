@@ -123,28 +123,50 @@ label.icon-btn:has(input:checked) { color: var(--accent); }
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: 0.75rem;
-  gap: 0.5rem;
+  padding: 0.45rem 0.35rem;
+  gap: 0.35rem;
 }
 .sidebar-head { display: flex; justify-content: space-between; align-items: center; }
 .sidebar-foot { margin-top: auto; font-size: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
 .project-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
 .project-list li { margin-bottom: 0.25rem; }
 .project-list button {
-  width: 100%; text-align: left; padding: 0.55rem 0.65rem;
-  background: transparent; border: 1px solid transparent; border-radius: var(--radius);
-  color: inherit; cursor: pointer;
+  width: 100%; text-align: left; padding: 0.28rem 0.35rem;
+  background: transparent; border: 0; border-radius: 6px;
+  color: inherit; cursor: pointer; display: flex; align-items: center; gap: 0.35rem;
 }
 .project-list button:hover { background: var(--surface-2); }
-.project-list button.active { border-color: var(--accent); background: var(--surface-2); }
-.project-row { display: flex; align-items: center; gap: 0.15rem; }
+.project-list button.active { background: var(--surface-2); }
+.project-row { display: flex; align-items: center; gap: 0.1rem; }
 .project-row > button:first-child { flex: 1; }
-.chats { list-style: none; margin: 0 0 0.35rem 0.85rem; padding: 0; }
-.chats button {
-  width: 100%; text-align: left; background: transparent; color: var(--muted);
-  border: 0; border-radius: 6px; padding: 0.28rem 0.45rem; cursor: pointer;
-}
+.chevron { display: inline-flex; color: var(--muted); transition: transform 0.15s ease; }
+.chevron.open { transform: rotate(90deg); }
+.chats { list-style: none; margin: 0 0 0.2rem 0.7rem; padding: 0; }
+.chats button { color: var(--muted); font-size: 12px; }
 .chats button.active, .chats button:hover { color: var(--text); background: var(--surface-2); }
+.tool-card .row {
+  width: 100%; background: transparent; border: 0; color: inherit; cursor: pointer;
+  text-align: left; font: inherit; padding: 0;
+}
+.stage-detail { margin-top: 0.35rem; }
+.stage-path { margin: 0.2rem 0 0.3rem; color: var(--muted); font-size: 11px; }
+.diff {
+  background: #141414; border-radius: 6px; padding: 0.35rem 0.45rem; overflow: auto;
+  max-height: 240px; font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.35;
+}
+.diff .add { color: var(--ok); }
+.diff .del { color: var(--bad); }
+.diff .ctx { color: var(--muted); }
+.resume { margin-top: 0.7rem; border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.7rem; }
+.resume p { margin: 0.3rem 0; }
+.resume button { margin-top: 0.45rem; background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 0.3rem 0.6rem; cursor: pointer; }
+#browser-chip { display: inline-flex; align-items: center; gap: 0.3rem; }
+#browser-chip.on { color: var(--accent); }
+#browser-menu .more-panel button {
+  text-align: left; background: transparent; color: inherit; border: 0; padding: 0.35rem 0.4rem;
+  border-radius: 6px; cursor: pointer;
+}
+#browser-menu .more-panel button:hover { background: var(--surface-2); }
 .composer-more { position: relative; }
 .composer-more summary {
   cursor: pointer; list-style: none; color: var(--muted); max-width: 180px;

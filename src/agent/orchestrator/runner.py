@@ -408,6 +408,7 @@ class RunOrchestrator:
             memory_saver=lambda args, task=task, project=project: self._save_requested_memory(
                 project, task, args
             ),
+            browser_mode=str(config.get("browser_mode") or "off"),
         )
         approved = bool(config.get("approve_risky_tools") or meta.get("approved"))
 

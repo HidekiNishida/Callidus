@@ -21,6 +21,7 @@ class ToolContext:
     run_id: str | None = None
     task_id: str | None = None
     memory_saver: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+    browser_mode: str = "off"
 
 
 ToolHandler = Callable[[ToolContext, dict[str, Any]], Awaitable[dict[str, Any]]]
@@ -54,6 +55,9 @@ TOOL_ALIASES: dict[str, str] = {
     "mv": "move_file",
     "rename": "move_file",
     "git": "git_status",
+    "browse": "browser",
+    "web": "browser",
+    "open_url": "browser",
 }
 
 

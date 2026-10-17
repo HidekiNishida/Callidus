@@ -50,6 +50,12 @@ A memória fica em dois escopos: do projeto inteiro e da conversa atual. Ao grav
 
 Pensamentos, títulos de etapa e a resposta final seguem o idioma do pedido (português, inglês ou espanhol). Enquanto uma etapa roda, a mensagem do agente e o cartão da etapa ganham o brilho de tarefa em andamento.
 
+A etapa aparece só com o título. O detalhe, inclusive o diff do arquivo editado, abre no clique. Se a última etapa estiver aberta, as próximas já chegam abertas; se ela estiver resumida, as próximas também ficam fechadas.
+
+Quando a tarefa para no meio, o botão de resumo lista onde parou, o que foi feito e o que falta. Se a parada foi bloqueio ou falha, a instrução ganha um complemento para continuar sem refazer o que já passou.
+
+O navegador no compositor tem três modos: desligado, invisível e janela. Ligado, a ferramenta `browser` pesquisa, abre páginas, lê, clica, digita e rola. A janela usa o Chrome instalado quando o Playwright está disponível.
+
 ## MCP
 
 ```bash

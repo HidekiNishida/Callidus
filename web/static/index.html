@@ -28,6 +28,7 @@
         <div class="topbar-run" id="run-toolbar" hidden>
           <button type="button" id="btn-step" class="icon-btn" data-icon="play" disabled title="Um passo" aria-label="Um passo"></button>
           <button type="button" id="btn-pause" class="icon-btn" data-icon="pause" disabled title="Pausar" aria-label="Pausar"></button>
+          <button type="button" id="btn-resume" class="icon-btn" data-icon="file" hidden title="Resumo de onde parou" aria-label="Resumo"></button>
           <button type="button" id="btn-cancel-run" class="icon-btn danger" data-icon="stop" disabled title="Parar" aria-label="Parar"></button>
           <button type="button" id="btn-toggle-details" class="icon-btn" data-icon="panel" title="Plano" aria-label="Plano"></button>
         </div>
@@ -76,6 +77,14 @@
                 <option value="">Atalho…</option>
                 <option value="e2e">Demo E2E</option>
               </select>
+            </div>
+          </details>
+          <details class="composer-more" id="browser-menu">
+            <summary id="browser-chip" data-icon="globe" title="Navegador desligado"><span>Desligado</span></summary>
+            <div class="more-panel">
+              <button type="button" data-browser="off">Desligado</button>
+              <button type="button" data-browser="headless">Invisível</button>
+              <button type="button" data-browser="visible">Janela</button>
             </div>
           </details>
           <label class="icon-btn" id="lbl-tools" title="Permitir comandos e scripts">

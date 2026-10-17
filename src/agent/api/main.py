@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
@@ -31,6 +32,7 @@ from agent.domain.schemas import (
 )
 from agent.domain.state_machine import InvalidTransitionError
 from agent.mcp.manager import McpManager
+from agent.orchestrator.resume import resume_root
 from agent.orchestrator.runner import RunOrchestrator
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.services.attachments import attachment_note, materialize_attachments
@@ -734,6 +736,20 @@ def get_task(task_id: uuid.UUID, session: Session = Depends(db_session)) -> Task
     except TaskNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _present_task(session, task)
+
+
+class ResumeBody(BaseModel):
+    apply: bool = False
+
+
+@app.post("/tasks/{task_id}/resume-brief")
+def task_resume_brief(
+    task_id: uuid.UUID, body: ResumeBody, session: Session = Depends(db_session)
+) -> dict:
+    try:
+        return resume_root(session, task_id, apply=body.apply)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/projects/{project_id}/git-diff")

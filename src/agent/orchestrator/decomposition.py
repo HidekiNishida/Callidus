@@ -94,9 +94,16 @@ async def plan_with_model(
     context_snippet: str,
     *,
     language: str = "pt",
+    browser_mode: str = "off",
 ) -> DecompositionResult | None:
+    browser_line = (
+        "O navegador está ligado. Use browser para pesquisa, checagem, demonstração ou teste. "
+        "action: search, navigate, snapshot, click, type, press, scroll ou close."
+        if browser_mode in {"headless", "visible"}
+        else "O navegador está desligado. Não use a ferramenta browser."
+    )
     prompt = (
-        f"{language_instruction(language)}\n"
+        f"{language_instruction(language)}\n{browser_line}\n"
         f"Objetivo: {objective}\n\nContexto do projeto:\n{context_snippet}\n\n"
         "Decomponha TODAS as etapas, do entendimento do pedido até a verificação e a conclusão.\n"
         "A última subtarefa deve ser a resposta final ao usuário "
@@ -161,6 +168,7 @@ async def resolve_decomposition_plan(
                 objective,
                 f"{project_root}\n\n{digest}",
                 language=language,
+                browser_mode=str(run_config.get("browser_mode") or "off"),
             )
             if plan:
                 return ensure_closing_stages(plan), provider_name
