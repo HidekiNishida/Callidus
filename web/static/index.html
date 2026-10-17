@@ -11,7 +11,7 @@
     <aside class="sidebar" aria-label="Projetos">
       <div class="sidebar-head">
         <strong>Agente</strong>
-        <button type="button" id="btn-toggle-project-form" class="btn-ghost" title="Novo projeto">+</button>
+        <button type="button" id="btn-toggle-project-form" class="icon-btn" data-icon="plus" title="Novo projeto" aria-label="Novo projeto"></button>
       </div>
       <input type="search" id="project-search" placeholder="Buscar projeto…" autocomplete="off" />
       <form id="form-project" class="collapsed">
@@ -30,10 +30,10 @@
           <p class="muted" id="workspace-subtitle">Escolha um projeto e descreva o que fazer.</p>
         </div>
         <div class="topbar-run" id="run-toolbar" hidden>
-          <button type="button" id="btn-step" class="btn-secondary" disabled title="Um passo">Passo</button>
-          <button type="button" id="btn-pause" class="btn-secondary" disabled>Pausar</button>
-          <button type="button" id="btn-cancel-run" class="btn-danger" disabled>Parar</button>
-          <button type="button" id="btn-toggle-details" class="btn-secondary">Plano</button>
+          <button type="button" id="btn-step" class="icon-btn" data-icon="play" disabled title="Um passo" aria-label="Um passo"></button>
+          <button type="button" id="btn-pause" class="icon-btn" data-icon="pause" disabled title="Pausar" aria-label="Pausar"></button>
+          <button type="button" id="btn-cancel-run" class="icon-btn danger" data-icon="stop" disabled title="Parar" aria-label="Parar"></button>
+          <button type="button" id="btn-toggle-details" class="icon-btn" data-icon="panel" title="Plano" aria-label="Plano"></button>
         </div>
         <button type="button" id="btn-run" class="btn-primary" hidden>Iniciar</button>
         <button type="button" id="btn-execute" class="btn-secondary" hidden>Auto</button>
@@ -65,7 +65,7 @@
         <div id="attach-row" class="attach-row" hidden></div>
         <textarea name="objective" rows="2" placeholder="Pedir ao agente…  (Enter envia, Shift+Enter quebra linha)"></textarea>
         <div class="composer-bar">
-          <button type="button" class="btn-ghost" id="btn-attach" title="Anexar imagem ou documento">Anexo</button>
+          <button type="button" class="icon-btn" id="btn-attach" data-icon="paperclip" title="Anexar imagem ou documento" aria-label="Anexar"></button>
           <input id="file-attach" type="file" multiple hidden accept="image/*,.pdf,.txt,.md,.py,.json,.csv,.js,.ts,.tsx,.html,.css,.xml,.yaml,.yml,.toml,.zip,.doc,.docx,.svg" />
           <select id="sel-provider" aria-label="Provedor">
             <option value="ollama">Ollama</option>
@@ -76,8 +76,12 @@
             <option value="">Atalho…</option>
             <option value="e2e">Demo E2E</option>
           </select>
-          <label class="chk" title="Permite comandos e scripts"><input type="checkbox" id="chk-approve-tools" checked /> Ferramentas</label>
-          <button type="submit" class="btn-primary" id="btn-send">Enviar</button>
+          <label class="icon-btn" id="lbl-tools" title="Permitir comandos e scripts">
+            <input type="checkbox" id="chk-approve-tools" checked class="visually-hidden" />
+            <span data-icon="wrench" aria-hidden="true"></span>
+            <span class="visually-hidden">Ferramentas</span>
+          </label>
+          <button type="submit" class="icon-btn primary" id="btn-send" data-icon="send" title="Enviar" aria-label="Enviar"></button>
         </div>
       </form>
     </div>
@@ -94,14 +98,14 @@
       </div>
       <div id="task-tree" class="task-tree" role="tree"></div>
       <div class="tabs" role="tablist">
-        <button type="button" class="tab active" data-tab="detail">Detalhe</button>
-        <button type="button" class="tab" data-tab="attempts">Tentativas</button>
-        <button type="button" class="tab" data-tab="evidence">Testes</button>
-        <button type="button" class="tab" data-tab="diff">Diff</button>
-        <button type="button" class="tab" data-tab="context">Contexto</button>
-        <button type="button" class="tab" data-tab="metrics">Métricas</button>
-        <button type="button" class="tab" data-tab="graph">Grafo</button>
-        <button type="button" class="tab" data-tab="tools">Tools</button>
+        <button type="button" class="tab active" data-tab="detail" data-icon="file" title="Detalhe" aria-label="Detalhe"></button>
+        <button type="button" class="tab" data-tab="attempts" data-icon="refresh" title="Tentativas" aria-label="Tentativas"></button>
+        <button type="button" class="tab" data-tab="evidence" data-icon="check" title="Testes" aria-label="Testes"></button>
+        <button type="button" class="tab" data-tab="diff" data-icon="diff" title="Diff" aria-label="Diff"></button>
+        <button type="button" class="tab" data-tab="context" data-icon="layers" title="Contexto" aria-label="Contexto"></button>
+        <button type="button" class="tab" data-tab="metrics" data-icon="chart" title="Métricas" aria-label="Métricas"></button>
+        <button type="button" class="tab" data-tab="graph" data-icon="share" title="Grafo" aria-label="Grafo"></button>
+        <button type="button" class="tab" data-tab="tools" data-icon="wrench" title="Ferramentas" aria-label="Ferramentas"></button>
       </div>
       <div id="tab-detail" class="tab-panel active"></div>
       <div id="tab-attempts" class="tab-panel"><pre id="attempts-view"></pre></div>
@@ -123,16 +127,16 @@
       </div>
       <div class="panel-head">
         <h2>Linha do tempo</h2>
-        <button type="button" id="btn-mcp-discover" class="btn-ghost">MCP</button>
-        <button type="button" id="btn-refresh-all" class="btn-ghost">Atualizar</button>
+        <button type="button" id="btn-mcp-discover" class="icon-btn" data-icon="plug" title="MCP" aria-label="MCP"></button>
+        <button type="button" id="btn-refresh-all" class="icon-btn" data-icon="refresh" title="Atualizar" aria-label="Atualizar"></button>
       </div>
       <ul id="activity-feed" class="activity-feed"></ul>
     </aside>
   </div>
   <footer class="statusbar" id="statusbar">
-    <span id="status-action">parado</span>
-    <span id="status-model">modelo —</span>
-    <span id="status-tool">ferramenta —</span>
+    <span id="status-action" title="Parado"></span>
+    <span id="status-model" title="Modelo"></span>
+    <span id="status-tool" title="Ferramenta"></span>
     <span id="health-indicator-bar" class="muted">local</span>
   </footer>
   <div id="toast-root" aria-live="polite"></div>

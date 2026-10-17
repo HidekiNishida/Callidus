@@ -56,9 +56,78 @@ const templates = {
   },
 };
 
-function statusBadge(status) {
-  return `<span class="badge badge-${status}">${status}</span>`;
+const ICONS = {
+  plus: '<path d="M8 3v10M3 8h10"/>',
+  play: '<path d="M5 3.5v9l8-4.5-8-4.5z"/>',
+  pause: '<path d="M5 3.5h2.2v9H5zM8.8 3.5H11v9H8.8z"/>',
+  stop: '<rect x="4" y="4" width="8" height="8" rx="1"/>',
+  panel: '<rect x="2.5" y="3" width="11" height="10" rx="1"/><path d="M8 3v10"/>',
+  paperclip: '<path d="M6 8.5l4.2-4.2a2 2 0 0 1 2.8 2.8L7.2 13a3 3 0 0 1-4.2-4.2l5.6-5.6"/>',
+  wrench: '<path d="M10.5 3.2a2.4 2.4 0 0 0-3.2 3.2L3.2 10.5 5.5 12.8l4.1-4.1a2.4 2.4 0 0 0 3.2-3.2L11 7.3 8.7 5l1.8-1.8z"/>',
+  send: '<path d="M8 13V3M4 7l4-4 4 4"/>',
+  file: '<path d="M4 2.5h5l3 3V13.5H4z"/><path d="M9 2.5V6h3"/>',
+  refresh: '<path d="M13 8a5 5 0 1 1-1.4-3.4"/><path d="M13 2.5V5.5H10"/>',
+  check: '<path d="M3 8.5l3.2 3.2L13 4.5"/>',
+  diff: '<path d="M4 3h8M4 8h8M4 13h5"/>',
+  layers: '<path d="M8 2.5l6 3-6 3-6-3 6-3zM2 8l6 3 6-3M2 11.5l6 3 6-3"/>',
+  chart: '<path d="M3 13V8M8 13V3M13 13V6"/>',
+  share: '<circle cx="4" cy="8" r="1.4"/><circle cx="12" cy="4" r="1.4"/><circle cx="12" cy="12" r="1.4"/><path d="M5.3 7.2l5.4-2.4M5.3 8.8l5.4 2.4"/>',
+  plug: '<path d="M6 2.5v3M10 2.5v3M4.5 6h7v2.2a3.5 3.5 0 0 1-7 0zM8 11.7V14"/>',
+  spark: '<path d="M8 1.8l1.2 3.6L13 6.6 9.2 8l-1.2 3.6L6.8 8 3 6.6l3.8-1.2z"/>',
+  terminal: '<path d="M3 4l4 4-4 4M8 12h5"/>',
+  search: '<circle cx="7" cy="7" r="3.2"/><path d="M9.5 9.5L13 13"/>',
+  pencil: '<path d="M10 3.5l2.5 2.5L6 12.5H3.5V10z"/>',
+  folder: '<path d="M2.5 4.5h4l1.2 1.5H13.5v7H2.5z"/>',
+  alert: '<path d="M8 2.5l6 11H2zM8 7v3M8 12h.01"/>',
+  circle: '<circle cx="8" cy="8" r="3"/>',
+  git: '<circle cx="4" cy="4" r="1.3"/><circle cx="4" cy="12" r="1.3"/><circle cx="12" cy="8" r="1.3"/><path d="M4 5.3v5.4M5.2 4h3.2a3.6 3.6 0 0 1 0 4H4"/>',
+};
+
+function icon(name) {
+  const body = ICONS[name] || ICONS.circle;
+  return `<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 }
+
+function paintIcons(root = document) {
+  root.querySelectorAll("[data-icon]").forEach((el) => {
+    if (el.querySelector("svg")) return;
+    el.insertAdjacentHTML("afterbegin", icon(el.dataset.icon));
+  });
+}
+
+const STATUS_ICON = {
+  PENDING: "circle",
+  READY: "circle",
+  PLANNING: "spark",
+  RUNNING: "refresh",
+  VERIFYING: "check",
+  COMPLETED: "check",
+  FAILED: "alert",
+  BLOCKED: "alert",
+  CANCELLED: "stop",
+  RETRY_PENDING: "refresh",
+};
+
+function statusBadge(status) {
+  return `<span class="status-ico status-${status}" title="${escapeHtml(status)}">${icon(STATUS_ICON[status] || "circle")}</span>`;
+}
+
+const TOOL_ICON = {
+  read_file: "file",
+  write_file: "pencil",
+  edit_file: "pencil",
+  search_grep: "search",
+  list_dir: "folder",
+  glob_files: "search",
+  run_command: "terminal",
+  run_script: "terminal",
+  run_pytest: "check",
+  git_diff: "git",
+  git_status: "git",
+  delete_file: "alert",
+  verificação: "check",
+  modelo: "spark",
+};
 
 function formatTime(iso) {
   if (!iso) return "";
@@ -118,7 +187,6 @@ async function selectProject(p) {
   document.getElementById("workspace-title").textContent = p.name;
   document.getElementById("workspace-subtitle").textContent = p.root_path;
   document.getElementById("run-toolbar").hidden = false;
-  document.getElementById("stats-bar").hidden = false;
   renderProjects(document.getElementById("project-search").value);
   await refreshAll();
   updateRunButtons();
@@ -246,34 +314,27 @@ function eventLabel(ev) {
 
 function renderLive(live) {
   const board = document.getElementById("live-board");
-  if (!state.selectedProject) {
-    board.hidden = true;
-    return;
-  }
-  board.hidden = false;
-  const action = live?.action || "idle";
-  board.classList.remove("busy", "ok", "bad");
-  if (["run_completed"].includes(action)) board.classList.add("ok");
-  else if (String(action).startsWith("blocked") || action === "verify_failed" || action === "global_verify_failed") board.classList.add("bad");
-  else if (live?.run || ["RUNNING", "VERIFYING", "PLANNING"].includes(live?.focus?.status)) board.classList.add("busy");
-  const model = live?.model?.model_id || state.uiDefaults?.model_id || "—";
-  const provider = live?.model?.provider || document.getElementById("sel-provider")?.value || "—";
-  const tool = live?.operation?.tool || "—";
-  document.getElementById("live-kicker").textContent = live?.run
-    ? `Agente · ${provider} · ${live.run.status}`
-    : "Agente";
-  document.getElementById("live-title").textContent = live?.headline || "Aguardando uma execução";
-  document.getElementById("live-how").textContent = live?.how || "";
-  const meta = document.getElementById("live-meta");
-  if (meta) {
-    meta.innerHTML = `<strong>${escapeHtml(model)}</strong><span>${escapeHtml(provider)} · ${escapeHtml(tool)}</span>`;
-  }
+  if (board) board.hidden = true;
+  const model = live?.model?.model_id || "—";
+  const provider = live?.model?.provider || "";
+  const tool = live?.operation?.tool || "";
   const statusAction = document.getElementById("status-action");
   const statusModel = document.getElementById("status-model");
   const statusTool = document.getElementById("status-tool");
-  if (statusAction) statusAction.textContent = live?.headline || "parado";
-  if (statusModel) statusModel.textContent = `${provider} · ${model}`;
-  if (statusTool) statusTool.textContent = tool === "—" ? "sem ferramenta" : tool;
+  const headline = live?.headline || "Parado";
+  if (statusAction) {
+    const glyph = live?.thinking ? "spark" : live?.action === "run_completed" ? "check" : "circle";
+    statusAction.innerHTML = icon(glyph);
+    statusAction.title = headline;
+  }
+  if (statusModel) {
+    statusModel.innerHTML = icon("spark");
+    statusModel.title = provider ? `${provider} · ${model}` : model;
+  }
+  if (statusTool) {
+    statusTool.innerHTML = icon(TOOL_ICON[tool] || "wrench");
+    statusTool.title = tool || "sem ferramenta";
+  }
 }
 
 async function refreshActivity() {
@@ -283,7 +344,7 @@ async function refreshActivity() {
   ul.innerHTML = "";
   events.slice(0, 40).forEach((ev) => {
     const li = document.createElement("li");
-    li.innerHTML = `<time>${formatTime(ev.created_at)}</time><span><strong>${escapeHtml(ev.event_type)}</strong> — ${escapeHtml(eventLabel(ev))}</span>`;
+    li.innerHTML = `<time>${formatTime(ev.created_at)}</time><span>${icon("circle")}${escapeHtml(eventLabel(ev))}</span>`;
     ul.appendChild(li);
   });
 }
@@ -297,6 +358,26 @@ async function refreshLive() {
     state.currentRun = { id: live.run.id, status: live.run.status };
     updateRunButtons();
   }
+}
+
+function thoughtBlock(root) {
+  const live = state.live;
+  if (!live) return "";
+  const focusHere = !live.focus || live.focus.id === root.id || state.tasks.some((t) => t.id === live.focus.id && t.parent_id === root.id);
+  if (!focusHere && state.tasks.filter((t) => !t.parent_id).length > 1) return "";
+  const noisy = /^(Planejando|Pronta para executar|Concluída sem teste|Liberada|Aguardando|Começando)/;
+  const lines = (live.thoughts || []).filter((item) => item.phase !== "step" || !noisy.test(item.text || ""));
+  if (!lines.length && !live.thinking) return "";
+  const open = live.thinking ? " open" : "";
+  const items = lines
+    .map((item) => {
+      const glyph = item.phase === "thinking" || item.phase === "model" ? "spark" : item.phase === "tool" ? "terminal" : "check";
+      return `<li class="${escapeHtml(item.phase || "step")}">${icon(glyph)}<span>${escapeHtml(item.text || "")}</span></li>`;
+    })
+    .join("");
+  const pending = live.thinking ? `<li class="thinking">${icon("spark")}<span>Pensando…</span></li>` : "";
+  const label = live.thinking ? "Pensando" : "Pensou";
+  return `<details class="thought"${open}><summary>${live.thinking ? '<i class="spin"></i>' : icon("spark")}<span>${label}</span></summary><ol>${items}${pending}</ol></details>`;
 }
 
 function toolOf(task) {
@@ -314,7 +395,7 @@ function resultLine(task) {
   if (inner.stderr && inner.success) return String(inner.stderr).split("\n").slice(-3).join(" ");
   if (inner.error) return String(inner.error);
   if (inner.summary) return String(inner.summary);
-  if (inner.path) return String(inner.path);
+  if (inner.stdout) return String(inner.stdout).trim().split("\n").slice(-2).join(" ");
   return "";
 }
 
@@ -335,19 +416,17 @@ function renderChat() {
         .map((k) => {
           const line = resultLine(k);
           const tool = toolOf(k);
-          return `<div class="tool-card"><div class="row">${statusBadge(k.status)} <strong>${escapeHtml(k.title)}</strong>${tool ? ` <span class="muted">${escapeHtml(tool)}</span>` : ""}</div>${line ? `<p>${escapeHtml(line.slice(0, 320))}</p>` : ""}</div>`;
+          const glyph = TOOL_ICON[tool] || "circle";
+          return `<div class="tool-card"><div class="row">${statusBadge(k.status)}${icon(glyph)}<strong>${escapeHtml(k.title)}</strong></div>${line ? `<p>${escapeHtml(line.slice(0, 220))}</p>` : ""}</div>`;
         })
         .join("");
-      const live =
-        state.live?.headline && state.live.action !== "run_completed"
-          ? `<div class="tool-card"><div class="row"><strong>${escapeHtml(state.live.headline)}</strong></div><p>${escapeHtml(state.live.how || "")}</p></div>`
-          : "";
+      const thoughts = thoughtBlock(root);
       const spoken = String(root.objective || "").split("\n\nAnexos do usuário:")[0];
       const chips = ((root.metadata_json || {}).attachments || [])
         .map((a) => `<span class="chip">${escapeHtml(a.name || a.path || "anexo")}</span>`)
         .join("");
       return `<div class="bubble user"><div class="who">Você</div><div>${escapeHtml(spoken)}</div>${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
-        <div class="bubble agent"><div class="who">Agente${model}</div>${cards || `<p class="muted">Vou planejar e dividir isso em passos.</p>`}${live}</div>`;
+        <div class="bubble agent"><div class="who">Agente${model}</div>${thoughts}${cards || (thoughts ? "" : `<p class="muted">Vou planejar e dividir isso em passos.</p>`)}</div>`;
     })
     .join("");
   if (stick) log.scrollTop = log.scrollHeight;
@@ -383,7 +462,8 @@ function startPolling() {
   state.pollTimer = setInterval(async () => {
     try {
       await refreshAll();
-      if (state.selectedTaskId) await loadInspector(state.selectedTaskId);
+      const panel = document.getElementById("details-panel");
+      if (state.selectedTaskId && panel && !panel.hidden) await loadInspector(state.selectedTaskId);
     } catch (e) {
       console.warn(e);
     }
@@ -433,12 +513,18 @@ function setupTabs() {
 }
 
 async function init() {
+  paintIcons();
   setupTabs();
   state.uiDefaults = await api("/config/ui-defaults");
   const health = await api("/health");
-  document.getElementById("health-indicator").textContent = `API ${health.status} · v${health.version || "?"}`;
+  const healthEl = document.getElementById("health-indicator");
+  healthEl.innerHTML = icon("check");
+  healthEl.title = `API ${health.status} · v${health.version || "?"}`;
   const barHealth = document.getElementById("health-indicator-bar");
-  if (barHealth) barHealth.textContent = `API ${health.status}`;
+  if (barHealth) {
+    barHealth.innerHTML = icon("check");
+    barHealth.title = healthEl.title;
+  }
 
   const prefs = loadPrefs();
   if (prefs.provider) document.getElementById("sel-provider").value = prefs.provider;

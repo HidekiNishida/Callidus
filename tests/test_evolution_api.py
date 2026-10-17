@@ -73,6 +73,8 @@ def test_live_board_after_step(client: TestClient, tmp_path: Path):
     assert body["headline"]
     assert body["how"]
     assert body["action"] != "idle"
+    assert isinstance(body["thoughts"], list)
+    assert "thinking" in body
 
 
 def test_autonomous_toggle(client: TestClient, tmp_path: Path):

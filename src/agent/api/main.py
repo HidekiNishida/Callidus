@@ -449,6 +449,64 @@ def ui_defaults(settings: Settings = Depends(read_settings)) -> dict:
     }
 
 
+def _thought_trace(session: Session, project_id: uuid.UUID, tasks: list) -> list[dict]:
+    titles = {task.id: task.title for task in tasks}
+    stmt = (
+        select(EventLogModel)
+        .where(
+            EventLogModel.project_id == project_id,
+            EventLogModel.event_type.in_(("agent.thought", "orchestrator.action")),
+        )
+        .order_by(EventLogModel.created_at.desc())
+        .limit(24)
+    )
+    rows = list(session.scalars(stmt).all())
+    rows.reverse()
+    thoughts: list[dict] = []
+    for event in rows:
+        payload = event.payload_json or {}
+        task_title = titles.get(event.task_id)
+        if event.event_type == "agent.thought":
+            text = str(payload.get("text") or "")
+            phase = payload.get("phase") or "thinking"
+        else:
+            custom = payload.get("thought")
+            if custom:
+                text = str(custom)[:280]
+                phase = "model"
+            else:
+                action = payload.get("action") or "passo"
+                if action in {
+                    "operation_ready",
+                    "promoted_ready",
+                    "planning_wait_children",
+                    "started_planning",
+                    "operation_wait_deps",
+                    "retry_ready",
+                    "skipped_to_verify",
+                    "completed_without_verification",
+                    "waiting",
+                    "run_terminal",
+                }:
+                    continue
+                text = ACTION_COPY.get(action, (action, ""))[0]
+                if task_title and action != "run_completed":
+                    text = f"{text} — {task_title}"
+                phase = "step"
+        text = text.strip()
+        if not text or (thoughts and thoughts[-1]["text"] == text):
+            continue
+        thoughts.append(
+            {
+                "phase": phase,
+                "text": text,
+                "task": task_title,
+                "at": event.created_at.isoformat() if event.created_at else None,
+            }
+        )
+    return thoughts[-16:]
+
+
 ACTION_COPY = {
     "started_planning": ("Planejando", "O orquestrador abriu o objetivo e registrou a memória canônica."),
     "decomposed": ("Dividindo o trabalho", "A tarefa foi quebrada em subtarefas menores e verificáveis."),
@@ -533,8 +591,13 @@ def project_live(project_id: uuid.UUID, session: Session = Depends(db_session)) 
         how = _how_for_task(focus)
     elif focus and action not in {"run_completed", "run_terminal"}:
         how = f"{how} Tarefa atual: {focus.title}. {_how_for_task(focus)}"
+    thoughts = _thought_trace(session, project_id, tasks)
+    busy = {"PENDING", "PLANNING", "READY", "RUNNING", "VERIFYING", "RETRY_PENDING"}
+    thinking = bool(active and focus and focus.status in busy)
     return {
         "project_id": str(project.id),
+        "thoughts": thoughts,
+        "thinking": thinking,
         "run": {
             "id": str(active.id),
             "status": active.status,

@@ -107,6 +107,19 @@ class RunOrchestrator:
             )
         )
 
+    def _note_thought(self, run: ExecutionRunModel, task: TaskModel | None, text: str, *, phase: str = "thinking") -> None:
+        """Grava o que está acontecendo e libera o banco para a interface ler durante a inferência."""
+        self._session.add(
+            EventLogModel(
+                project_id=run.project_id,
+                run_id=run.id,
+                task_id=task.id if task is not None else None,
+                event_type="agent.thought",
+                payload_json={"phase": phase, "text": text[:400], "task": task.title if task is not None else None},
+            )
+        )
+        self._session.commit()
+
     async def _step_body(self, run_id: uuid.UUID) -> dict[str, Any]:
         run = self._session.get(ExecutionRunModel, run_id)
         if run is None:
@@ -180,7 +193,7 @@ class RunOrchestrator:
                     plan = micro_decompose_operation(task.objective)
                     source = "atomizer-micro"
                 else:
-                    self._session.commit()
+                    self._note_thought(run, task, f"Pensando em como dividir «{task.title}».")
                     plan, source = await resolve_decomposition_plan(
                         settings=self._settings,
                         run_config=config,
@@ -197,11 +210,13 @@ class RunOrchestrator:
                     )
                     return {"action": "blocked_decompose", "task_id": str(task.id)}
                 apply_decomposition(self._session, project.id, task.id, plan)
+                titles = ", ".join(spec.title for spec in plan.subtasks[:6])
                 return {
                     "action": "decomposed",
                     "task_id": str(task.id),
                     "count": len(plan.subtasks),
                     "source": source,
+                    "thought": f"Vou fazer: {titles}.",
                 }
 
             if self._tasks.dependencies_satisfied(task.id):
@@ -361,6 +376,7 @@ class RunOrchestrator:
                 profile=profile,
                 run_id=run.id,
             )
+            self._note_thought(run, task, f"Pensando na alteração «{task.title}».")
             resp = await provider.chat(
                 ChatCompletionRequest(messages=budget.messages, profile=profile)
             )
@@ -374,10 +390,16 @@ class RunOrchestrator:
                 success=True,
                 project_id=project.id,
             )
+            excerpt = " ".join((resp.content or "").split())[:280]
             data, err = parse_json_object(resp.content)
             if err or not data or "path" not in data:
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-                return {"action": "model_operation_invalid", "task_id": str(task.id), "error": err}
+                return {
+                    "action": "model_operation_invalid",
+                    "task_id": str(task.id),
+                    "error": err,
+                    "thought": excerpt,
+                }
             old = data.get("old_string", data.get("old"))
             new = data["new_string"] if "new_string" in data else data.get("new")
             if isinstance(old, str) and isinstance(new, str):
@@ -397,15 +419,21 @@ class RunOrchestrator:
                 KnowledgeGraphService(self._session).touch_file(project.id, project.root_path, data["path"])
             if out.get("success"):
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                return await self._finalize_verification(run, project, task)
+                done = await self._finalize_verification(run, project, task)
+                if excerpt:
+                    done["thought"] = excerpt
+                return done
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-            return {"action": "model_operation_failed", "task_id": str(task.id)}
+            return {"action": "model_operation_failed", "task_id": str(task.id), "thought": excerpt}
 
         if meta.get("tool"):
             from agent.tools.registry import canonical_tool_id
 
             tool_id = canonical_tool_id(meta["tool"])
             args = meta.get("tool_args") or {}
+            target = args.get("path") or args.get("pattern") or args.get("command") or ""
+            where = f" em {target}" if isinstance(target, str) and target else ""
+            self._note_thought(run, task, f"Usando {tool_id}{where}.", phase="tool")
             out = await self._tools.execute(tool_id, ctx, args, approved=approved)
             fp = AttemptService.fingerprint(out)
             if self._attempts.repeated_output_detected(task.id, fp):
