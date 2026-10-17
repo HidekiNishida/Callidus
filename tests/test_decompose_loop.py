@@ -23,6 +23,25 @@ from agent.services.run_service import RunService
 from agent.services.task_service import TaskService
 
 
+@pytest.mark.asyncio
+async def test_page_request_checks_html_instead_of_pytest(tmp_path: Path):
+    from agent.config import Settings
+    from agent.orchestrator.decomposition import resolve_decomposition_plan
+
+    plan, source = await resolve_decomposition_plan(
+        settings=Settings(use_generic_decomposition_template=True, allow_mock_fallback=False),
+        run_config={"provider": "mock", "use_generic_template": True},
+        objective="Crie um modelo de site de vendas",
+        project_root=str(tmp_path),
+    )
+    assert source == "page-template"
+    checks = [(item.metadata or {}).get("verification") for item in plan.subtasks]
+    assert any(isinstance(item, dict) and item.get("type") == "file_contains" for item in checks)
+    assert not any(isinstance(item, dict) and item.get("type") == "pytest" for item in checks)
+    write = next(item for item in plan.subtasks if (item.metadata or {}).get("prompt_key") == "page")
+    assert "index.html" in write.objective
+
+
 def test_same_title_becomes_a_leaf_change():
     plan = seal_repeated_steps(
         "Aplicar alterações",

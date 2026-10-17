@@ -52,17 +52,25 @@ class OperationContextBuilder:
             technical = f"{technical}\n\n{attached}".strip()
         acceptance = task.acceptance_criteria or "Atender o objetivo sem violar requisitos canônicos."
         tools_summary = TOOL_CATALOG
+        page = (task.metadata_json or {}).get("prompt_key") == "page"
         output_format = (
-            'Criar arquivo: {"path":"...","content":"..."}. '
-            'Editar: {"path":"...","old_string":"...","new_string":"..."}. '
-            "Responda só JSON."
-            if (task.metadata_json or {}).get("model_operation")
-            else "JSON estruturado quando solicitado."
+            'Grave a página inteira: {"path":"index.html","content":"..."}. '
+            "O content é o HTML completo, com cabeçalho, seções, estilo e chamado para ação. "
+            "Não entregue um esboço de um parágrafo. Responda só JSON."
+            if page
+            else (
+                'Criar arquivo: {"path":"...","content":"..."}. '
+                'Editar: {"path":"...","old_string":"...","new_string":"..."}. '
+                "Responda só JSON."
+                if (task.metadata_json or {}).get("model_operation")
+                else "JSON estruturado quando solicitado."
+            )
         )
+        rules = GLOBAL_RULES if not page else f"{GLOBAL_RULES} O arquivo pedido é o produto completo."
 
         budget = build_operation_context(
             profile,
-            global_rules=GLOBAL_RULES,
+            global_rules=rules,
             project_rules=project_rules,
             objective=task.objective,
             technical=technical,

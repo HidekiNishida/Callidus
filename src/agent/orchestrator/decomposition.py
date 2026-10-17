@@ -145,6 +145,71 @@ _QUESTION = re.compile(
     r"^(que|qual|quais|quando|onde|quem|como|por que|porque|me diga|me fala|what|when|where|who|how)\b",
     re.IGNORECASE,
 )
+_PAGE_REQUEST = re.compile(r"\b(site|p[aá]gina|html|landing|website|loja)\b", re.IGNORECASE)
+
+
+def _is_page_request(objective: str) -> bool:
+    text = objective or ""
+    return _PAGE_REQUEST.search(text) is not None and ".py" not in text.lower()
+
+
+def page_plan(objective: str) -> DecompositionResult:
+    """Página ou site: escrever o HTML e conferir o arquivo, sem pytest."""
+    order = " ".join((objective or "").strip().split())
+    return DecompositionResult(
+        subtasks=[
+            SubTaskSpec(
+                title="Ver a pasta",
+                objective="Listar o que já existe na pasta do projeto",
+                metadata={"tool": "list_dir", "tool_args": {"path": "."}, "atomic": True},
+            ),
+            SubTaskSpec(
+                title="Escrever a página",
+                objective=(
+                    f"{order}\n\n"
+                    "Grave index.html completo, no idioma do pedido, com cabeçalho, seções e um chamado para ação. "
+                    "O estilo fica no próprio arquivo."
+                ),
+                metadata={"model_operation": True, "atomic": True, "prompt_key": "page"},
+                depends_on_indices=[0],
+            ),
+            SubTaskSpec(
+                title="Conferir a página",
+                objective="index.html precisa existir e ter a estrutura HTML.",
+                metadata={
+                    "verification": {"type": "file_contains", "path": "index.html", "contains": "<html"},
+                    "atomic": True,
+                },
+                depends_on_indices=[1],
+            ),
+        ]
+    )
+
+
+def align_verification(objective: str, plan: DecompositionResult) -> DecompositionResult:
+    """Pedido de página não herda a verificação de pytest do plano genérico."""
+    if not _is_page_request(objective):
+        return plan
+    subtasks: list[SubTaskSpec] = []
+    changed = False
+    for spec in plan.subtasks:
+        meta = dict(spec.metadata or {})
+        verification = meta.get("verification")
+        if isinstance(verification, dict) and verification.get("type") == "pytest":
+            meta["verification"] = {"type": "file_contains", "path": "index.html", "contains": "<html"}
+            changed = True
+        if meta.get("model_operation") and not meta.get("final_answer"):
+            meta["prompt_key"] = "page"
+            meta["atomic"] = True
+            changed = True
+        subtasks.append(spec.model_copy(update={"metadata": meta}) if changed else spec)
+    return DecompositionResult(subtasks=subtasks) if changed else plan
+
+
+def fallback_plan(objective: str) -> tuple[DecompositionResult, str]:
+    if _is_page_request(objective):
+        return page_plan(objective), "page-template"
+    return GENERIC_TEMPLATE.model_copy(deep=True), "generic-template"
 
 
 def direct_answer_plan(objective: str) -> DecompositionResult | None:
@@ -202,16 +267,21 @@ async def resolve_decomposition_plan(
                 browser_mode=str(run_config.get("browser_mode") or "off"),
             )
             if plan:
-                return ensure_closing_stages(plan), provider_name
+                return ensure_closing_stages(align_verification(objective, plan)), provider_name
         except Exception:
             pass
 
     if run_config.get("use_generic_template", settings.use_generic_decomposition_template):
-        return ensure_closing_stages(GENERIC_TEMPLATE.model_copy(deep=True)), "generic-template"
+        plan, source = fallback_plan(objective)
+        return ensure_closing_stages(align_verification(objective, plan)), source
 
     if run_config.get("provider") == "mock" or settings.allow_mock_fallback:
-        base = BUILTIN_E2E_PLAN if "e2e" in objective.lower() else GENERIC_TEMPLATE
-        return ensure_closing_stages(base.model_copy(deep=True)), "mock-fallback"
+        if "e2e" in objective.lower():
+            base, source = BUILTIN_E2E_PLAN.model_copy(deep=True), "mock-fallback"
+        else:
+            base, source = fallback_plan(objective)
+            source = "mock-fallback"
+        return ensure_closing_stages(align_verification(objective, base)), source
 
     return None, "none"
 
