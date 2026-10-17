@@ -109,6 +109,7 @@ class TaskRead(BaseModel):
     updated_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+    usage_tokens: int = 0
 
     model_config = {"from_attributes": True}
 

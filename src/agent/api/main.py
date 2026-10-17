@@ -67,9 +67,28 @@ from agent.services.run_service import RunService
 from agent.services.task_service import DependencyError, TaskNotFoundError, TaskService
 
 
+def _usage_tokens(session: Session, task) -> int:
+    meta = task.metadata_json or {}
+    usage = meta.get("usage") if isinstance(meta.get("usage"), dict) else None
+    if usage and usage.get("total"):
+        return int(usage["total"])
+    latest = session.scalar(
+        select(ContextSnapshotModel.estimated_tokens)
+        .where(ContextSnapshotModel.task_id == task.id)
+        .order_by(ContextSnapshotModel.created_at.desc())
+        .limit(1)
+    )
+    return int(latest or 0)
+
+
 def _present_task(session: Session, task) -> TaskRead:
     data = TaskRead.model_validate(task)
-    return data.model_copy(update={"display_title": translate(task.title, locale_for_task(session, task))})
+    return data.model_copy(
+        update={
+            "display_title": translate(task.title, locale_for_task(session, task)),
+            "usage_tokens": _usage_tokens(session, task),
+        }
+    )
 
 
 def _web_dir(settings: Settings) -> Path | None:

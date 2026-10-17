@@ -68,9 +68,13 @@ class LlamaCppProvider(LLMProvider):
         if choices:
             content = (choices[0].get("message") or {}).get("content") or ""
         usage = data.get("usage") or {}
-        return ChatCompletionResponse(
+        response = ChatCompletionResponse(
             content=content,
             raw=data,
             prompt_tokens_estimate=usage.get("prompt_tokens"),
             completion_tokens_estimate=usage.get("completion_tokens"),
         )
+        from agent.orchestrator.usage import remember_usage
+
+        remember_usage(self, response.prompt_tokens_estimate, response.completion_tokens_estimate)
+        return response

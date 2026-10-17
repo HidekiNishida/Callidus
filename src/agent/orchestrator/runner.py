@@ -28,6 +28,7 @@ from agent.orchestrator.decomposition import (
 )
 from agent.orchestrator.planner import ensure_canonical_memory_for_objective
 from agent.orchestrator.replan import replan_under
+from agent.orchestrator.usage import accumulate_usage
 from agent.context.operation_builder import OperationContextBuilder
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.persistence.models import (
@@ -39,7 +40,7 @@ from agent.persistence.models import (
     TaskModel,
 )
 from agent.services.inbox import effective_root
-from agent.providers.base import LLMProvider, ModelProfile
+from agent.providers.base import LLMProvider, ModelProfile, ProviderError
 from agent.providers.mock import MockProvider
 from agent.providers.llamacpp import LlamaCppProvider
 from agent.providers.ollama import OllamaProvider
@@ -93,6 +94,13 @@ class RunOrchestrator:
             return {"action": "blocked_contract", "task_id": str(task_id), "errors": errs}
         self._tasks.update_status(task_id, TaskStatusUpdate(status=TaskStatus.READY))
         return None
+
+    def _apply_provider_usage(self, task: TaskModel, provider) -> None:
+        usage = getattr(provider, "last_usage", None)
+        provider.last_usage = None
+        if not usage:
+            return
+        task.metadata_json = accumulate_usage(task.metadata_json, usage[0], usage[1])
 
     def _same_title_above(self, task: TaskModel) -> bool:
         title = task.title.strip().casefold()
@@ -329,6 +337,7 @@ class RunOrchestrator:
                         if (config.get("provider") or self._settings.default_provider) in {"ollama", "llamacpp"}
                         else None,
                     )
+                self._apply_provider_usage(task, provider)
                 if plan is None or not plan.subtasks:
                     self._tasks.update_status(
                         task.id,
@@ -524,9 +533,25 @@ class RunOrchestrator:
                 run_id=run.id,
             )
             self._note_thought(run, task, f"Pensando na alteração «{task.title}».")
-            resp = await provider.chat(
-                ChatCompletionRequest(messages=budget.messages, profile=profile)
-            )
+            try:
+                resp = await provider.chat(
+                    ChatCompletionRequest(messages=budget.messages, profile=profile)
+                )
+            except ProviderError as exc:
+                response = {"error": str(exc)}
+                self._attempts.record(
+                    run_id=run.id,
+                    task_id=task.id,
+                    kind=AttemptKind.MODEL,
+                    provider=provider.name,
+                    request={"context_snapshot_id": str(snap.id), "tokens_est": budget.estimated_tokens},
+                    response=response,
+                    success=False,
+                    error=str(exc),
+                    project_id=project.id,
+                )
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
+                return {"action": "model_operation_error", "task_id": str(task.id), "error": str(exc)}
             self._attempts.record(
                 run_id=run.id,
                 task_id=task.id,
@@ -538,6 +563,7 @@ class RunOrchestrator:
                 project_id=project.id,
             )
             excerpt = " ".join((resp.content or "").split())[:280]
+            self._apply_provider_usage(task, provider)
             data, err = parse_json_object(resp.content)
             if err or not data or "path" not in data:
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
@@ -711,6 +737,7 @@ class RunOrchestrator:
                 )
             )
             model_text = (resp.content or "").strip()
+            self._apply_provider_usage(task, provider)
         except Exception:
             model_text = ""
         markdown = model_text if usable_reply(model_text) else compose_final_markdown(

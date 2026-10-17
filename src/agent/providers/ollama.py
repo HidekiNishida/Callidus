@@ -58,4 +58,13 @@ class OllamaProvider(LLMProvider):
 
         message = data.get("message") or {}
         content = message.get("content") or ""
-        return ChatCompletionResponse(content=content, raw=data)
+        response = ChatCompletionResponse(
+            content=content,
+            raw=data,
+            prompt_tokens_estimate=data.get("prompt_eval_count"),
+            completion_tokens_estimate=data.get("eval_count"),
+        )
+        from agent.orchestrator.usage import remember_usage
+
+        remember_usage(self, response.prompt_tokens_estimate, response.completion_tokens_estimate)
+        return response

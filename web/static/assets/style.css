@@ -148,7 +148,10 @@ label.icon-btn:has(input:checked) { color: var(--accent); }
 .chat-row { display: flex; align-items: center; }
 .chat-row > button:first-child { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.35rem; }
 .chat-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-row time, .bubble .who time { color: var(--muted); font-size: 10px; font-weight: 400; opacity: 0.7; white-space: nowrap; }
+.chat-row time, .bubble .who time, time.meter { color: var(--muted); font-size: 10px; font-weight: 400; opacity: 0.7; white-space: nowrap; }
+.tool-card time.meter { margin-left: auto; }
+.meters { display: flex; flex-wrap: wrap; gap: 0.15rem 0.75rem; margin: 0.45rem 0 0; }
+.meters span { color: var(--muted); font-size: 10px; opacity: 0.7; }
 .chat-menu { position: relative; }
 .chat-menu summary { list-style: none; cursor: pointer; color: var(--muted); width: 22px; height: 22px; display: grid; place-items: center; }
 .chat-menu summary::-webkit-details-marker { display: none; }

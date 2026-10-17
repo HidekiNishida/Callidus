@@ -189,6 +189,62 @@ function formatTime(iso) {
   return formatWhen(iso);
 }
 
+function formatSpan(ms) {
+  const sec = Math.max(0, Math.round(ms / 1000));
+  const hours = Math.floor(sec / 3600);
+  const minutes = Math.floor((sec % 3600) / 60);
+  const seconds = sec % 60;
+  if (hours) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatTokens(value) {
+  const count = Number(value) || 0;
+  if (count <= 0) return "";
+  if (count < 1000) return String(count);
+  const scaled = count / 1000;
+  const text = scaled >= 10 ? String(Math.round(scaled)) : scaled.toFixed(1).replace(".", ",");
+  return `${text}k`;
+}
+
+function meterText(startIso, endIso, tokens, live) {
+  const start = parseStamp(startIso);
+  if (!start) return "";
+  const end = live ? new Date() : parseStamp(endIso) || new Date();
+  const span = formatSpan(end - start);
+  const spent = formatTokens(tokens);
+  return spent ? `${span} · ${spent}` : span;
+}
+
+function meterTag(startIso, endIso, tokens, live) {
+  const text = meterText(startIso, endIso, tokens, live);
+  if (!text) return "";
+  return `<time class="meter" data-meter-start="${escapeHtml(startIso || "")}" data-meter-end="${escapeHtml(endIso || "")}" data-meter-tokens="${Number(tokens) || 0}" data-meter-live="${live ? "1" : "0"}">${escapeHtml(text)}</time>`;
+}
+
+function taskTokens(task) {
+  return Number(task?.usage_tokens) || Number(task?.metadata_json?.usage?.total) || 0;
+}
+
+function stageMeter(task) {
+  const live = ["PLANNING", "READY", "RUNNING", "VERIFYING", "RETRY_PENDING"].includes(task.status);
+  const start = task.started_at || (live ? task.created_at : null);
+  if (!start) return "";
+  return meterTag(start, task.completed_at || task.updated_at, taskTokens(task), live);
+}
+
+function runMeter(root) {
+  const ids = descendantIds(root.id);
+  const tasks = state.tasks.filter((task) => ids.has(task.id));
+  const live = tasks.some((task) => ["PLANNING", "READY", "RUNNING", "VERIFYING", "RETRY_PENDING"].includes(task.status));
+  const tokens = tasks.reduce((sum, task) => sum + taskTokens(task), 0);
+  const end = tasks.reduce((latest, task) => {
+    const stamp = task.completed_at || task.updated_at;
+    return !latest || (stamp && stamp > latest) ? stamp : latest;
+  }, root.completed_at || root.updated_at);
+  return meterTag(root.created_at, end, tokens, live);
+}
+
 function runConfigFromUI(objective) {
   const provider = document.getElementById("sel-provider").value;
   const model_id = document.getElementById("sel-model").value || state.uiDefaults?.model_id || "llama3.2";
@@ -1130,8 +1186,20 @@ function answerHtml(root) {
   const reply = visibleReply(markdown);
   const changes = changesHtml(root);
   const refs = refsHtml(markdown, root);
+  const meters = reply ? stageMetersHtml(root) : "";
   if (!reply && !changes && !refs) return "";
-  return `<div class="answer">${reply ? renderMarkdown(reply) : ""}${changes}${refs}</div>`;
+  return `<div class="answer">${reply ? renderMarkdown(reply) : ""}${changes}${refs}${meters}</div>`;
+}
+
+function stageMetersHtml(root) {
+  const kids = state.tasks.filter((task) => task.parent_id === root.id);
+  const bits = kids
+    .map((task) => {
+      const meter = stageMeter(task);
+      return meter ? `<span>${escapeHtml(titleOf(task))} ${meter}</span>` : "";
+    })
+    .filter(Boolean);
+  return bits.length ? `<p class="meters">${bits.join("")}</p>` : "";
 }
 
 function titleOf(task) {
@@ -1214,7 +1282,7 @@ function renderChat() {
           const detail = open ? stageDetail(task) : "";
           const copies = sameTitleCount(task);
           const same = copies ? `<em class="same">igual ×${copies}</em>` : "";
-          return `<div class="tool-card${active}${open ? " open" : ""}"><button type="button" class="row" data-stage="${task.id}" data-last="${index === kids.length - 1 ? "1" : "0"}">${statusBadge(task.status)}${icon(glyph)}<strong>${escapeHtml(titleOf(task))}</strong>${same}</button>${detail ? `<div class="stage-detail">${detail}</div>` : ""}</div>`;
+          return `<div class="tool-card${active}${open ? " open" : ""}"><button type="button" class="row" data-stage="${task.id}" data-last="${index === kids.length - 1 ? "1" : "0"}">${statusBadge(task.status)}${icon(glyph)}<strong>${escapeHtml(titleOf(task))}</strong>${stageMeter(task)}${same}</button>${detail ? `<div class="stage-detail">${detail}</div>` : ""}</div>`;
         })
         .join("");
       const thoughts = thoughtBlock(root);
@@ -1233,7 +1301,7 @@ function renderChat() {
       const pendingLine = glowing && !reply ? `<p class="muted">${escapeHtml(copy.planning)}</p>` : "";
       const process = reply ? "" : `${thoughts}${cards}`;
       return `<div class="bubble user"><div class="who"><span>${copy.you}</span>${asked ? `<time>${escapeHtml(asked)}</time>` : ""}${editBtn}</div>${message}${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
-        <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who"><span>${copy.agent}${model}</span>${answered ? `<time>${escapeHtml(answered)}</time>` : ""}</div>${process}${pendingLine}${resumeHtml(root)}${reply}</div></div>`;
+        <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who"><span>${copy.agent}${model}</span>${answered ? `<time>${escapeHtml(answered)}</time>` : ""}${runMeter(root)}</div>${process}${pendingLine}${resumeHtml(root)}${reply}</div></div>`;
     })
     .join("");
   if (stick) log.scrollTop = log.scrollHeight;
@@ -1356,8 +1424,15 @@ async function continueResume(taskId) {
   await document.getElementById("btn-run").onclick();
 }
 
+function tickMeters() {
+  document.querySelectorAll("time.meter[data-meter-live='1']").forEach((el) => {
+    el.textContent = meterText(el.dataset.meterStart, el.dataset.meterEnd, el.dataset.meterTokens, true);
+  });
+}
+
 async function init() {
   paintIcons();
+  setInterval(tickMeters, 1000);
   setupTabs();
   document.getElementById("chat-log").addEventListener("click", async (event) => {
     const cont = event.target.closest("[data-continue]");

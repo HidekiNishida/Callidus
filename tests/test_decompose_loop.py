@@ -42,6 +42,54 @@ async def test_page_request_checks_html_instead_of_pytest(tmp_path: Path):
     assert "index.html" in write.objective
 
 
+@pytest.mark.asyncio
+async def test_model_timeout_is_recorded_and_does_not_stay_running(session, tmp_path: Path, monkeypatch):
+    from agent.providers.base import ProviderError
+
+    project = ProjectService(session).create_project(ProjectCreate(name="site", root_path=str(tmp_path)))
+    root = TaskService(session).create_task(
+        project.id,
+        TaskCreate(title="Crie um modelo de site de vendas", objective="Crie um modelo de site de vendas"),
+    )
+    root.status = TaskStatus.COMPLETED.value
+    change = TaskService(session).create_task(
+        project.id,
+        TaskCreate(
+            title="Escrever a página",
+            objective="Escreva index.html",
+            parent_id=root.id,
+            metadata={"model_operation": True, "atomic": True, "prompt_key": "page"},
+        ),
+    )
+    change.status = TaskStatus.RUNNING.value
+    run = RunService(session).start_run(
+        project.id,
+        ExecutionRunCreate(root_task_id=root.id, config={"provider": "mock", "approve_risky_tools": True}),
+    )
+    session.commit()
+
+    class _Down:
+        name = "mock"
+
+        async def chat(self, request):
+            raise ProviderError("tempo esgotado")
+
+    monkeypatch.setattr("agent.orchestrator.runner._select_provider", lambda settings, config: _Down())
+    out = await RunOrchestrator(session, Settings(data_dir=tmp_path / "data")).step(run.id)
+    session.commit()
+
+    assert out["action"] == "model_operation_error"
+    assert TaskService(session).get_task(change.id).status == TaskStatus.RETRY_PENDING.value
+
+
+def test_usage_adds_prompt_and_completion():
+    from agent.orchestrator.usage import accumulate_usage
+
+    meta = accumulate_usage(None, 120, 30)
+    meta = accumulate_usage(meta, 10, 5)
+    assert meta["usage"] == {"prompt": 130, "completion": 35, "total": 165}
+
+
 def test_same_title_becomes_a_leaf_change():
     plan = seal_repeated_steps(
         "Aplicar alterações",
