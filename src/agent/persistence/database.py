@@ -1,0 +1,56 @@
+# src/agent/persistence/database.py — engine e sessões SQLAlchemy
+from __future__ import annotations
+
+from collections.abc import Generator
+from contextlib import contextmanager
+
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
+
+from agent.config import Settings, get_settings
+from agent.persistence.models import Base
+
+
+def _configure_sqlite(engine: Engine) -> None:
+    if engine.url.get_backend_name() != "sqlite":
+        return
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_conn, _connection_record) -> None:
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+
+def create_db_engine(settings: Settings | None = None) -> Engine:
+    settings = settings or get_settings()
+    engine = create_engine(
+        settings.resolved_database_url(),
+        connect_args={"check_same_thread": False},
+    )
+    _configure_sqlite(engine)
+    return engine
+
+
+def init_db(engine: Engine | None = None, settings: Settings | None = None) -> Engine:
+    engine = engine or create_db_engine(settings)
+    Base.metadata.create_all(engine)
+    return engine
+
+
+def build_session_factory(engine: Engine) -> sessionmaker[Session]:
+    return sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+
+
+@contextmanager
+def session_scope(session_factory: sessionmaker[Session]) -> Generator[Session, None, None]:
+    session = session_factory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()

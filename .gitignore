@@ -17,6 +17,17 @@
 .env.*
 !.env.example
 
+# Python / agent runtime
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+data/
+dist/
+*.egg-info/
+
 # OS / tooling noise
 Thumbs.db
 *.log

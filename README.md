@@ -1,6 +1,6 @@
-# Agente de IA Local — documentação versionada
+# Agente de IA Local
 
-Repositório **local git** com a documentação, regras operacionais, ícones e checklists do Cursor Project **Agente de IA Local**.
+Repositório **local git** do Project **Agente de IA Local**: documentação operacional, regras em `docs/` e **runtime do agente** (Python) para orquestrar trabalho de desenvolvimento com modelos locais pequenos.
 
 ## O que é este repo
 
@@ -31,18 +31,33 @@ Não há script de sync automático nesta fase; espelhamento manual ou tarefa fu
 ## Estrutura
 
 ```text
-docs/           regras e contexto estável
-media/icons/    SVGs referenciados pelos docs
-internal/       checklists e evidências (não normativas)
-preferences.md  preferências do Project (coordenador)
-notes.md        espelho de status; pode divergir do UI
+docs/              regras, contexto e arquitetura (`docs/architecture/`)
+src/agent/         núcleo: persistência, API, provedores, orquestrador
+tests/             pytest
+media/icons/       SVGs referenciados pelos docs
+internal/          checklists e evidências (não normativas)
+data/              SQLite e artefatos (gitignored; ver `.env.example`)
+preferences.md     preferências do Project (coordenador)
+notes.md           espelho de status; pode divergir do UI
 ```
 
-## Inicialização
+## Executar o agente (API)
 
 ```bash
 cd "~/Documents/Projetos/Agente de IA Local"
-git log -1   # histórico após clone/cópia inicial
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env   # opcional
+pytest
+agente-api               # http://127.0.0.1:8765 — docs em /docs
+```
+
+Arquitetura e fases: [docs/architecture/visao-geral.md](/docs/architecture/visao-geral.md).
+
+## Inicialização git
+
+```bash
+git log -1
 ```
 
 Remote GitHub é opcional; o repositório foi criado apenas localmente.

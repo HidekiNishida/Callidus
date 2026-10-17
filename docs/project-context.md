@@ -100,9 +100,9 @@ flowchart LR
 
 ## Estado atual e próximos passos
 
-**Estado:** hub de regras completo; repositório git local inicializado com espelho versionado do store (2026-10-17).
+**Estado:** hub de regras completo; **Fase 0–1** do runtime Python (SQLite, tarefas, máquina de estados, API FastAPI, provedores Ollama/llama.cpp, orçamento de contexto) com testes pytest (2026-10-17).
 
-**Próximo passo sugerido ao usuário:** definir o **propósito concreto** do agente, o **stack** previsto e quais **MCPs** devem ficar sempre disponíveis; opcionalmente configurar remote GitHub e rotina de sync store ↔ repo.
+**Próximo passo de implementação:** Fase 2–3 — orquestrador com tentativas persistidas, ferramentas (arquivo/shell/git/testes) e decomposição hierárquica; depois interface web (Fase 6).
 
 ---
 
