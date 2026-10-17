@@ -24,8 +24,9 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-data/
+data/*
 !data/mcp.example.json
+!data/README.md
 backups/
 dist/
 web/node_modules/
