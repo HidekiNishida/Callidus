@@ -28,8 +28,32 @@ body { margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; 
 .bubble { max-width: 720px; width: 100%; }
 .bubble.user { align-self: flex-end; background: #2a2d2e; border: 1px solid #3c3c3c; border-radius: 12px 12px 4px 12px; padding: 0.75rem 0.9rem; }
 .bubble.agent { align-self: flex-start; }
+.bubble.agent.live {
+  padding: 2px;
+  border-radius: 14px;
+  background: linear-gradient(110deg, rgba(0, 120, 212, 0.2) 0%, rgba(150, 200, 255, 0.95) 42%, rgba(255, 255, 255, 0.9) 50%, rgba(150, 200, 255, 0.95) 58%, rgba(0, 120, 212, 0.2) 100%);
+  background-size: 220% 100%;
+  animation: shine 2.2s linear infinite;
+  box-shadow: 0 0 22px rgba(80, 160, 255, 0.28);
+}
+.agent-body { border-radius: 12px; }
+.bubble.agent.live .agent-body { background: var(--bg); padding: 0.45rem 0.55rem 0.35rem; }
 .bubble .who { font-size: 11px; color: var(--muted); margin-bottom: 0.25rem; }
-.tool-card { border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 0.4rem 0.55rem; margin-top: 0.35rem; }
+.tool-card { border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 0.4rem 0.55rem; margin-top: 0.35rem; position: relative; overflow: hidden; }
+.tool-card.busy {
+  border-color: rgba(120, 180, 255, 0.65);
+  box-shadow: 0 0 16px rgba(80, 150, 255, 0.32);
+}
+.tool-card.busy::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.16) 50%, transparent 70%);
+  background-size: 220% 100%;
+  animation: shine 1.6s linear infinite;
+  pointer-events: none;
+}
+@keyframes shine { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 .tool-card .row { display: flex; gap: 0.4rem; align-items: center; }
 .tool-card p { margin: 0.25rem 0 0 1.4rem; color: var(--muted); font-size: 12px; }
 .thought { margin: 0.2rem 0 0.55rem; color: var(--muted); }
@@ -113,7 +137,38 @@ label.icon-btn:has(input:checked) { color: var(--accent); }
 }
 .project-list button:hover { background: var(--surface-2); }
 .project-list button.active { border-color: var(--accent); background: var(--surface-2); }
-.project-list .path { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 0.15rem; word-break: break-all; }
+.project-row { display: flex; align-items: center; gap: 0.15rem; }
+.project-row > button:first-child { flex: 1; }
+.chats { list-style: none; margin: 0 0 0.35rem 0.85rem; padding: 0; }
+.chats button {
+  width: 100%; text-align: left; background: transparent; color: var(--muted);
+  border: 0; border-radius: 6px; padding: 0.28rem 0.45rem; cursor: pointer;
+}
+.chats button.active, .chats button:hover { color: var(--text); background: var(--surface-2); }
+.composer-more { position: relative; }
+.composer-more summary {
+  cursor: pointer; list-style: none; color: var(--muted); max-width: 180px;
+  padding: 0.35rem 0.55rem; border-radius: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.composer-more summary::-webkit-details-marker { display: none; }
+.composer-more summary:hover { background: var(--surface-2); color: var(--text); }
+.more-panel {
+  position: absolute; bottom: 2.2rem; left: 0; z-index: 5; min-width: 200px;
+  display: flex; flex-direction: column; gap: 0.35rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 0.5rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+.more-panel select { width: 100%; }
+.modal { position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; }
+.modal-card { width: min(560px, 92vw); max-height: 72vh; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; }
+.modal-bar { display: flex; align-items: center; gap: 0.4rem; padding: 0.55rem; border-bottom: 1px solid var(--border); }
+.modal-bar strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.folder-list { list-style: none; margin: 0; padding: 0.35rem; overflow: auto; }
+.folder-list button {
+  width: 100%; display: flex; align-items: center; gap: 0.4rem; text-align: left;
+  background: transparent; color: inherit; border: 0; border-radius: 6px; padding: 0.4rem 0.5rem; cursor: pointer;
+}
+.folder-list button:hover { background: var(--surface-2); }
 
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 

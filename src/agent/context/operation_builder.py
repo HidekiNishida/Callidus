@@ -9,13 +9,13 @@ from sqlalchemy.orm import Session
 
 from agent.context.assembler import build_operation_context
 from agent.context.budget import BudgetResult
-from agent.domain.enums import MemoryKind
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.knowledge.indexer import grep_symbols_in_objective
 from agent.persistence.models import ContextSnapshotModel, MemoryRecordModel, TaskModel
 from agent.providers.base import ModelProfile
 from agent.security.paths import PathSecurityError, resolve_under_root
 from agent.guides.discover import guide_digest
+from agent.memory.store import fragments_for_prompt
 from agent.tools.builtins import TOOL_CATALOG
 from sqlalchemy import select
 
@@ -40,7 +40,7 @@ class OperationContextBuilder:
         profile: ModelProfile,
         run_id: uuid.UUID | None = None,
     ) -> tuple[BudgetResult, ContextSnapshotModel]:
-        project_rules = self._memory_block(project_id, MemoryKind.CANONICAL)
+        project_rules = self._memory_block(project_id, task)
         technical = self._technical_snippet(root_path, project_id, task.objective)
         guides = guide_digest(root_path, task.objective)
         if guides:
@@ -86,17 +86,32 @@ class OperationContextBuilder:
             budget.messages[-1].images = images
         return budget, snap
 
-    def _memory_block(self, project_id: uuid.UUID, kind: MemoryKind) -> str:
+    def _memory_block(self, project_id: uuid.UUID, task: TaskModel) -> str:
         stmt = (
             select(MemoryRecordModel)
-            .where(MemoryRecordModel.project_id == project_id, MemoryRecordModel.kind == kind.value)
+            .where(MemoryRecordModel.project_id == project_id)
             .order_by(MemoryRecordModel.created_at.desc())
-            .limit(5)
+            .limit(12)
         )
         rows = list(self._session.scalars(stmt).all())
-        if not rows:
-            return "(sem memória canônica registrada)"
-        return "\n".join(f"- {r.title}: {r.content[:400]}" for r in rows)
+        lines: list[str] = []
+        for record in rows:
+            if record.conversation_id not in (None, task.conversation_id):
+                continue
+            scope = "projeto" if record.conversation_id is None else "conversa"
+            fragment = fragments_for_prompt(
+                record.summary or "",
+                record.content,
+                task.objective,
+            )
+            if not fragment:
+                continue
+            lines.append(f"- ({scope}/{record.kind}) {record.title}: {fragment}")
+            if len(lines) >= 6:
+                break
+        if not lines:
+            return "(sem memória registrada)"
+        return "\n".join(lines)
 
     def _technical_snippet(self, root_path: str, project_id: uuid.UUID, objective: str) -> str:
         parts: list[str] = []

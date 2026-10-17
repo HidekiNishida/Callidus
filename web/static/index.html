@@ -14,11 +14,6 @@
         <button type="button" id="btn-toggle-project-form" class="icon-btn" data-icon="plus" title="Novo projeto" aria-label="Novo projeto"></button>
       </div>
       <input type="search" id="project-search" placeholder="Buscar projeto…" autocomplete="off" />
-      <form id="form-project" class="collapsed">
-        <input name="name" placeholder="Nome" required />
-        <input name="root_path" placeholder="Pasta do código" required />
-        <button type="submit" class="btn-primary">Criar</button>
-      </form>
       <ul id="project-list" class="project-list"></ul>
       <div class="sidebar-foot muted" id="health-indicator">—</div>
     </aside>
@@ -27,8 +22,9 @@
       <header class="topbar">
         <div class="topbar-left">
           <h1 id="workspace-title">Novo chat</h1>
-          <p class="muted" id="workspace-subtitle">Escolha um projeto e descreva o que fazer.</p>
+          <p class="muted" id="workspace-subtitle">Escolha uma pasta e descreva o que fazer.</p>
         </div>
+        <button type="button" id="btn-new-chat" class="icon-btn" data-icon="chat" title="Nova conversa" aria-label="Nova conversa" hidden></button>
         <div class="topbar-run" id="run-toolbar" hidden>
           <button type="button" id="btn-step" class="icon-btn" data-icon="play" disabled title="Um passo" aria-label="Um passo"></button>
           <button type="button" id="btn-pause" class="icon-btn" data-icon="pause" disabled title="Pausar" aria-label="Pausar"></button>
@@ -67,16 +63,21 @@
         <div class="composer-bar">
           <button type="button" class="icon-btn" id="btn-attach" data-icon="paperclip" title="Anexar imagem ou documento" aria-label="Anexar"></button>
           <input id="file-attach" type="file" multiple hidden accept="image/*,.pdf,.txt,.md,.py,.json,.csv,.js,.ts,.tsx,.html,.css,.xml,.yaml,.yml,.toml,.zip,.doc,.docx,.svg" />
-          <select id="sel-provider" aria-label="Provedor">
-            <option value="ollama">Ollama</option>
-            <option value="llamacpp">llama.cpp</option>
-            <option value="mock">Mock</option>
-          </select>
-          <select id="sel-model" aria-label="Modelo"></select>
-          <select id="objective-template" aria-label="Template">
-            <option value="">Atalho…</option>
-            <option value="e2e">Demo E2E</option>
-          </select>
+          <details class="composer-more" id="composer-more">
+            <summary id="model-chip">modelo</summary>
+            <div class="more-panel">
+              <select id="sel-provider" aria-label="Provedor">
+                <option value="ollama">Ollama</option>
+                <option value="llamacpp">llama.cpp</option>
+                <option value="mock">Mock</option>
+              </select>
+              <select id="sel-model" aria-label="Modelo"></select>
+              <select id="objective-template" aria-label="Template">
+                <option value="">Atalho…</option>
+                <option value="e2e">Demo E2E</option>
+              </select>
+            </div>
+          </details>
           <label class="icon-btn" id="lbl-tools" title="Permitir comandos e scripts">
             <input type="checkbox" id="chk-approve-tools" checked class="visually-hidden" />
             <span data-icon="wrench" aria-hidden="true"></span>
@@ -140,6 +141,18 @@
     <span id="status-tool" title="Ferramenta"></span>
     <span id="health-indicator-bar" class="muted">local</span>
   </footer>
+  <div id="folder-modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-label="Escolher pasta">
+      <div class="modal-bar">
+        <button type="button" id="folder-up" class="icon-btn" data-icon="up" title="Subir" aria-label="Subir"></button>
+        <strong id="folder-path"></strong>
+        <button type="button" id="folder-native" class="btn-ghost">Finder</button>
+        <button type="button" id="folder-use" class="btn-primary">Usar esta pasta</button>
+        <button type="button" id="folder-close" class="icon-btn" aria-label="Fechar">×</button>
+      </div>
+      <ul id="folder-entries" class="folder-list"></ul>
+    </div>
+  </div>
   <div id="toast-root" aria-live="polite"></div>
   <script type="module" src="/assets/app.js"></script>
 </body>

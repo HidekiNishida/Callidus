@@ -17,6 +17,7 @@ from agent.providers.llamacpp import LlamaCppProvider
 from agent.providers.ollama import OllamaProvider
 from agent.services.task_service import TaskService
 from agent.guides.discover import capability_line, guide_digest
+from agent.i18n.locale import detect_language, language_instruction
 from agent.tools.builtins import TOOL_CATALOG
 from agent.util.json_parse import parse_json_object
 
@@ -91,8 +92,11 @@ async def plan_with_model(
     profile: ModelProfile,
     objective: str,
     context_snippet: str,
+    *,
+    language: str = "pt",
 ) -> DecompositionResult | None:
     prompt = (
+        f"{language_instruction(language)}\n"
         f"Objetivo: {objective}\n\nContexto do projeto:\n{context_snippet}\n\n"
         "Decomponha TODAS as etapas, do entendimento do pedido até a verificação e a conclusão.\n"
         "A última subtarefa deve ser a resposta final ao usuário "
@@ -149,8 +153,15 @@ async def resolve_decomposition_plan(
         else:
             model = OllamaProvider(settings.ollama_base_url)
         digest = guide_digest(project_root, objective)
+        language = str(run_config.get("locale") or detect_language(objective))
         try:
-            plan = await plan_with_model(model, profile, objective, f"{project_root}\n\n{digest}")
+            plan = await plan_with_model(
+                model,
+                profile,
+                objective,
+                f"{project_root}\n\n{digest}",
+                language=language,
+            )
             if plan:
                 return ensure_closing_stages(plan), provider_name
         except Exception:

@@ -20,6 +20,7 @@ class ToolContext:
     project_root: str
     run_id: str | None = None
     task_id: str | None = None
+    memory_saver: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
 
 ToolHandler = Callable[[ToolContext, dict[str, Any]], Awaitable[dict[str, Any]]]

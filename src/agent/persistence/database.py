@@ -33,6 +33,15 @@ def create_db_engine(settings: Settings | None = None) -> Engine:
     return engine
 
 
+def _add_column(conn, table: str, column: str, ddl: str) -> None:
+    rows = conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
+    if not rows:
+        return
+    cols = {row[1] for row in rows}
+    if column not in cols:
+        conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
 def _migrate_sqlite(engine: Engine) -> None:
     if engine.url.get_backend_name() != "sqlite":
         return
@@ -41,7 +50,10 @@ def _migrate_sqlite(engine: Engine) -> None:
         cols = {r[1] for r in rows}
         if rows and "config_json" not in cols:
             conn.exec_driver_sql("ALTER TABLE execution_runs ADD COLUMN config_json JSON")
-            conn.commit()
+        _add_column(conn, "tasks", "conversation_id", "CHAR(32)")
+        _add_column(conn, "memory_records", "conversation_id", "CHAR(32)")
+        _add_column(conn, "memory_records", "summary", "TEXT")
+        conn.commit()
 
 
 def init_db(engine: Engine | None = None, settings: Settings | None = None) -> Engine:

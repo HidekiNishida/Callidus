@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from agent.domain.enums import MemoryKind
 from agent.domain.schemas import MemoryCreate, ProjectCreate
-from agent.persistence.models import EventLogModel, MemoryRecordModel, ProjectModel
+from agent.memory.store import summarize_text
+from agent.persistence.models import ConversationModel, EventLogModel, MemoryRecordModel, ProjectModel
 
 
 def _is_leaked_test_project(root_path: str) -> bool:
@@ -49,12 +50,18 @@ class ProjectService:
 
     def add_memory(self, project_id: uuid.UUID, data: MemoryCreate) -> MemoryRecordModel:
         self.get_project(project_id)
+        if data.conversation_id is not None:
+            conversation = self._session.get(ConversationModel, data.conversation_id)
+            if conversation is None or conversation.project_id != project_id:
+                raise LookupError("Conversa inválida para este projeto")
         record = MemoryRecordModel(
             project_id=project_id,
+            conversation_id=data.conversation_id,
             task_id=data.task_id,
             kind=data.kind.value,
             title=data.title,
             content=data.content,
+            summary=summarize_text(data.content),
             source_refs_json=data.source_refs,
         )
         self._session.add(record)

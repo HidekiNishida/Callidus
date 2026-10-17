@@ -8,8 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from agent.config import Settings
-from agent.domain.enums import AttemptKind, RunStatus, TaskKind, TaskStatus
-from agent.domain.schemas import TaskStatusUpdate
+from agent.domain.enums import AttemptKind, MemoryKind, RunStatus, TaskKind, TaskStatus
+from agent.domain.schemas import MemoryCreate, TaskStatusUpdate
+from agent.i18n.locale import detect_language, language_instruction
 from agent.orchestrator.consolidation import children_of, consolidate_parent
 from agent.orchestrator.global_verify import (
     ensure_global_verification_task,
@@ -34,6 +35,7 @@ from agent.providers.mock import MockProvider
 from agent.providers.llamacpp import LlamaCppProvider
 from agent.providers.ollama import OllamaProvider
 from agent.services.attempt_service import AttemptService
+from agent.services.project_service import ProjectService
 from agent.services.task_service import TaskService
 from agent.tools.registry import ToolContext, build_default_registry
 from agent.verification.runner import run_verification
@@ -123,6 +125,54 @@ class RunOrchestrator:
         )
         self._session.commit()
 
+    def _save_requested_memory(self, project: ProjectModel, task: TaskModel, args: dict) -> dict:
+        content = str(args.get("content") or args.get("text") or "").strip()
+        if not content:
+            return {"success": False, "error": "conteúdo vazio"}
+        scope = str(args.get("scope") or "conversation").lower()
+        title = str(args.get("title") or content[:80]).strip() or "Memória"
+        conversation_id = None if scope == "project" else task.conversation_id
+        kind = MemoryKind.CANONICAL if scope == "project" else MemoryKind.CONTEXTUAL
+        record = ProjectService(self._session).add_memory(
+            project.id,
+            MemoryCreate(
+                kind=kind,
+                title=title[:180],
+                content=content,
+                task_id=task.id,
+                conversation_id=conversation_id,
+            ),
+        )
+        return {
+            "success": True,
+            "id": str(record.id),
+            "summary": record.summary,
+            "scope": "project" if conversation_id is None else "conversation",
+        }
+
+    def _capture_outcome_memory(self, project: ProjectModel, root: TaskModel) -> None:
+        report = root.consolidated_result_json or {}
+        final = report.get("final_answer") or ""
+        if not isinstance(final, str):
+            final = ""
+        content = f"{root.objective}\n\n{final}".strip()
+        if not content:
+            return
+        existing = ProjectService(self._session).list_memory(project.id, MemoryKind.CONTEXTUAL)
+        if any(item.task_id == root.id and item.title == "Resultado da conversa" for item in existing):
+            return
+        ProjectService(self._session).add_memory(
+            project.id,
+            MemoryCreate(
+                kind=MemoryKind.CONTEXTUAL,
+                title="Resultado da conversa",
+                content=content,
+                task_id=root.id,
+                conversation_id=root.conversation_id,
+                source_refs=[f"task:{root.id}"],
+            ),
+        )
+
     async def _step_body(self, run_id: uuid.UUID) -> dict[str, Any]:
         run = self._session.get(ExecutionRunModel, run_id)
         if run is None:
@@ -135,6 +185,11 @@ class RunOrchestrator:
             raise LookupError("project")
 
         config = self._run_config(run)
+        root_for_locale = self._tasks.get_task(run.root_task_id)
+        locale = (root_for_locale.metadata_json or {}).get("locale") or detect_language(
+            root_for_locale.objective or ""
+        )
+        config = {**config, "locale": locale}
         provider = _select_provider(self._settings, config)
         profile = _profile_from_config(config, self._settings)
 
@@ -150,6 +205,7 @@ class RunOrchestrator:
                         return {"action": "global_verify_reopen", "reopened": [str(x) for x in reopened]}
                     return {"action": "global_verify_failed", "reason": reason}
                 run.status = RunStatus.COMPLETED.value
+                self._capture_outcome_memory(project, root)
                 return {"action": "run_completed", "run_id": str(run_id)}
             return {"action": "waiting", "run_id": str(run_id)}
 
@@ -345,7 +401,14 @@ class RunOrchestrator:
             return {"action": "blocked_attempts", "task_id": str(task.id)}
 
         meta = task.metadata_json or {}
-        ctx = ToolContext(project_root=project.root_path, run_id=str(run.id), task_id=str(task.id))
+        ctx = ToolContext(
+            project_root=project.root_path,
+            run_id=str(run.id),
+            task_id=str(task.id),
+            memory_saver=lambda args, task=task, project=project: self._save_requested_memory(
+                project, task, args
+            ),
+        )
         approved = bool(config.get("approve_risky_tools") or meta.get("approved"))
 
         if meta.get("mcp_tool"):
@@ -523,6 +586,7 @@ class RunOrchestrator:
         provider = _select_provider(self._settings, config)
         profile = _profile_from_config(config, self._settings)
         prompt = (
+            f"{language_instruction(str(config.get('locale') or 'pt'))}\n"
             f"{capability_line(profile.model_id)}\n"
             "Escreva a resposta final em Markdown para a pessoa que pediu a tarefa. "
             "Use título, uma tabela das etapas, lista do que foi verificado e uma seção Fontes com caminhos de arquivo. "

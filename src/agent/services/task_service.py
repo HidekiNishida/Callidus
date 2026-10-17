@@ -11,6 +11,7 @@ from agent.domain.enums import TaskStatus
 from agent.domain.schemas import TaskCreate, TaskDependencyCreate, TaskStatusUpdate
 from agent.domain.state_machine import InvalidTransitionError, transition
 from agent.persistence.models import (
+    ConversationModel,
     EventLogModel,
     ProjectModel,
     TaskDependencyModel,
@@ -35,13 +36,20 @@ class TaskService:
         if project is None:
             raise LookupError(f"Projeto não encontrado: {project_id}")
 
+        conversation_id = data.conversation_id
         if data.parent_id is not None:
             parent = self._session.get(TaskModel, data.parent_id)
             if parent is None or parent.project_id != project_id:
                 raise TaskNotFoundError("Tarefa pai inválida para este projeto")
+            conversation_id = parent.conversation_id or conversation_id
+        if conversation_id is not None:
+            conversation = self._session.get(ConversationModel, conversation_id)
+            if conversation is None or conversation.project_id != project_id:
+                raise TaskNotFoundError("Conversa inválida para este projeto")
 
         task = TaskModel(
             project_id=project_id,
+            conversation_id=conversation_id,
             parent_id=data.parent_id,
             title=data.title,
             objective=data.objective,

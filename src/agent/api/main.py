@@ -15,6 +15,8 @@ from agent.api.deps import db_session, get_engine, read_settings
 from agent.config import Settings
 from agent.domain.enums import MemoryKind, TaskStatus
 from agent.domain.schemas import (
+    ConversationCreate,
+    ConversationRead,
     EventRead,
     ExecutionRunCreate,
     ExecutionRunRead,
@@ -46,9 +48,18 @@ from agent.providers.ollama import OllamaProvider
 from agent.services.contract_service import ContractService
 from agent.services.autonomous_worker import enable_autonomous_on_run, start_background_worker, stop_background_worker
 from agent.services.metrics_service import MetricsService
+from agent.i18n.locale import detect_language, translate
+from agent.memory.store import extract_memory_request
+from agent.services.conversation_service import ConversationService, locale_for_task
+from agent.services.fs_browse import browse_directories, pick_folder_native
 from agent.services.project_service import ProjectService
 from agent.services.run_service import RunService
 from agent.services.task_service import DependencyError, TaskNotFoundError, TaskService
+
+
+def _present_task(session: Session, task) -> TaskRead:
+    data = TaskRead.model_validate(task)
+    return data.model_copy(update={"display_title": translate(task.title, locale_for_task(session, task))})
 
 
 def _web_dir(settings: Settings) -> Path | None:
@@ -161,17 +172,55 @@ def get_project(project_id: uuid.UUID, session: Session = Depends(db_session)) -
     return ProjectRead.model_validate(project)
 
 
+@app.get("/projects/{project_id}/conversations", response_model=list[ConversationRead])
+def list_conversations(project_id: uuid.UUID, session: Session = Depends(db_session)) -> list[ConversationRead]:
+    try:
+        ProjectService(session).get_project(project_id)
+        items = ConversationService(session).list_conversations(project_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return [ConversationRead.model_validate(item) for item in items]
+
+
+@app.post("/projects/{project_id}/conversations", response_model=ConversationRead)
+def create_conversation(
+    project_id: uuid.UUID, body: ConversationCreate, session: Session = Depends(db_session)
+) -> ConversationRead:
+    try:
+        ProjectService(session).get_project(project_id)
+        item = ConversationService(session).create_conversation(project_id, body)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ConversationRead.model_validate(item)
+
+
+@app.get("/fs/browse")
+def fs_browse(path: str | None = None) -> dict:
+    try:
+        return browse_directories(path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/fs/pick-folder")
+def fs_pick_folder() -> dict:
+    try:
+        return {"path": pick_folder_native()}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/projects/{project_id}/tasks", response_model=TaskRead)
 def create_task(
     project_id: uuid.UUID, body: TaskCreate, session: Session = Depends(db_session)
 ) -> TaskRead:
     raw_meta = dict(body.metadata or {})
     raw_attachments = raw_meta.get("attachments") or []
-    payload = body
-    if raw_attachments:
-        cleaned = dict(raw_meta)
-        cleaned.pop("attachments", None)
-        payload = body.model_copy(update={"metadata": cleaned or None})
+    locale = detect_language(body.objective)
+    raw_meta.setdefault("locale", locale)
+    cleaned = dict(raw_meta)
+    cleaned.pop("attachments", None)
+    payload = body.model_copy(update={"metadata": cleaned or None})
     try:
         project = ProjectService(session).get_project(project_id)
         task = TaskService(session).create_task(project_id, payload)
@@ -182,13 +231,28 @@ def create_task(
             task.metadata_json = meta
             task.objective = f"{task.objective.rstrip()}\n\n{attachment_note(refs)}"
             session.flush()
+        if task.conversation_id is not None:
+            ConversationService(session).touch_title(task.conversation_id, task.title, locale)
+        remembered = extract_memory_request(body.objective)
+        if remembered:
+            scope, fact = remembered
+            ProjectService(session).add_memory(
+                project_id,
+                MemoryCreate(
+                    kind=MemoryKind.CANONICAL if scope == "project" else MemoryKind.CONTEXTUAL,
+                    title=(fact[:80] or "Memória"),
+                    content=fact,
+                    task_id=task.id,
+                    conversation_id=None if scope == "project" else task.conversation_id,
+                ),
+            )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except TaskNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return TaskRead.model_validate(task)
+    return _present_task(session, task)
 
 
 @app.get("/projects/{project_id}/tasks", response_model=list[TaskRead])
@@ -198,7 +262,7 @@ def list_tasks(project_id: uuid.UUID, session: Session = Depends(db_session)) ->
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     tasks = TaskService(session).list_tasks(project_id)
-    return [TaskRead.model_validate(t) for t in tasks]
+    return [_present_task(session, t) for t in tasks]
 
 
 @app.patch("/tasks/{task_id}/status", response_model=TaskRead)
@@ -449,6 +513,7 @@ def ui_defaults(settings: Settings = Depends(read_settings)) -> dict:
 
 
 def _thought_trace(session: Session, project_id: uuid.UUID, tasks: list) -> list[dict]:
+    by_id = {task.id: task for task in tasks}
     titles = {task.id: task.title for task in tasks}
     stmt = (
         select(EventLogModel)
@@ -493,13 +558,20 @@ def _thought_trace(session: Session, project_id: uuid.UUID, tasks: list) -> list
                     text = f"{text} — {task_title}"
                 phase = "step"
         text = text.strip()
+        locale = locale_for_task(session, by_id.get(event.task_id))
+        if " — " in text:
+            head, tail = text.split(" — ", 1)
+            text = f"{translate(head, locale)} — {translate(tail, locale)}"
+        else:
+            text = translate(text, locale)
         if not text or (thoughts and thoughts[-1]["text"] == text):
             continue
         thoughts.append(
             {
                 "phase": phase,
                 "text": text,
-                "task": task_title,
+                "task": translate(task_title, locale) if task_title else None,
+                "task_id": str(event.task_id) if event.task_id else None,
                 "at": event.created_at.isoformat() if event.created_at else None,
             }
         )
@@ -661,7 +733,7 @@ def get_task(task_id: uuid.UUID, session: Session = Depends(db_session)) -> Task
         task = TaskService(session).get_task(task_id)
     except TaskNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return TaskRead.model_validate(task)
+    return _present_task(session, task)
 
 
 @app.get("/projects/{project_id}/git-diff")

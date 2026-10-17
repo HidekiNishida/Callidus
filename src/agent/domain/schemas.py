@@ -15,6 +15,22 @@ class ProjectCreate(BaseModel):
     description: str | None = None
 
 
+class ConversationCreate(BaseModel):
+    title: str | None = None
+    locale: str | None = None
+
+
+class ConversationRead(BaseModel):
+    id: UUID
+    project_id: UUID
+    title: str
+    locale: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class ProjectRead(BaseModel):
     id: UUID
     name: str
@@ -33,14 +49,17 @@ class TaskCreate(BaseModel):
     acceptance_criteria: str | None = None
     kind: TaskKind = TaskKind.OBJECTIVE
     parent_id: UUID | None = None
+    conversation_id: UUID | None = None
     metadata: dict | None = None
 
 
 class TaskRead(BaseModel):
     id: UUID
     project_id: UUID
+    conversation_id: UUID | None = None
     parent_id: UUID | None
     title: str
+    display_title: str | None = None
     objective: str
     scope: str | None
     acceptance_criteria: str | None
@@ -98,16 +117,19 @@ class MemoryCreate(BaseModel):
     title: str
     content: str
     task_id: UUID | None = None
+    conversation_id: UUID | None = None
     source_refs: list[str] | None = None
 
 
 class MemoryRead(BaseModel):
     id: UUID
     project_id: UUID
+    conversation_id: UUID | None = None
     task_id: UUID | None
     kind: MemoryKind
     title: str
     content: str
+    summary: str | None = None
     version: int
     source_refs_json: list[str] | None
     created_at: datetime

@@ -33,7 +33,9 @@ TOOL_CATALOG = (
     "edit_file: path, old_string, new_string. "
     "read_file: path, offset e limit opcionais. "
     "run_script executa um .py. run_command aceita command como lista ou string e exige aprovação. "
-    "delete_file e move_file exigem aprovação. Não invente outros nomes."
+    "delete_file e move_file exigem aprovação. "
+    "remember grava uma memória: content, title opcional e scope project ou conversation. "
+    "Não invente outros nomes."
 )
 
 
@@ -50,6 +52,12 @@ def _resolve(ctx: ToolContext, raw: str) -> tuple[Path | None, dict | None]:
         return resolve_under_root(ctx.project_root, raw), None
     except PathSecurityError as exc:
         return None, {"success": False, "error": str(exc)}
+
+
+async def _remember(ctx: ToolContext, args: dict) -> dict:
+    if ctx.memory_saver is None:
+        return {"success": False, "error": "memória indisponível neste contexto"}
+    return ctx.memory_saver(args)
 
 
 async def _read_file(ctx: ToolContext, args: dict) -> dict:
@@ -415,6 +423,11 @@ def register_all(registry: ToolRegistry) -> None:
             requires_approval=True,
         ),
         ToolSpec(id="git_status", description="git status --short", input_schema={}),
+        ToolSpec(
+            id="remember",
+            description="Grava uma memória do projeto ou da conversa",
+            input_schema={"content": "str", "title": "str?", "scope": "project|conversation"},
+        ),
     ]
     handlers = {
         "read_file": _read_file,
@@ -431,6 +444,7 @@ def register_all(registry: ToolRegistry) -> None:
         "make_dir": _make_dir,
         "move_file": _move_file,
         "git_status": _git_status,
+        "remember": _remember,
     }
     for spec in specs:
         registry.register(spec, handlers[spec.id])

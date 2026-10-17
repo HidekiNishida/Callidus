@@ -18,15 +18,29 @@ def ensure_canonical_memory_for_objective(
 ) -> None:
     ps = ProjectService(session)
     existing = ps.list_memory(project_id, MemoryKind.CANONICAL)
-    if any(m.title == "Objetivo global" for m in existing):
+    if not any(m.title == "Objetivo global" and m.conversation_id is None for m in existing):
+        ps.add_memory(
+            project_id,
+            MemoryCreate(
+                kind=MemoryKind.CANONICAL,
+                title="Objetivo global",
+                content=root_task.objective,
+                task_id=root_task.id,
+                source_refs=[f"task:{root_task.id}"],
+            ),
+        )
+    if root_task.conversation_id is None:
+        return
+    if any(m.conversation_id == root_task.conversation_id and m.task_id == root_task.id for m in existing):
         return
     ps.add_memory(
         project_id,
         MemoryCreate(
             kind=MemoryKind.CANONICAL,
-            title="Objetivo global",
+            title=root_task.title[:180] or "Conversa",
             content=root_task.objective,
             task_id=root_task.id,
+            conversation_id=root_task.conversation_id,
             source_refs=[f"task:{root_task.id}"],
         ),
     )
