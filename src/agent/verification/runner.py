@@ -25,6 +25,14 @@ async def run_verification(
     ctx = ToolContext(project_root=project_root)
     tools = build_default_registry()
 
+    if vtype == "stages":
+        return VerificationResult(
+            "stages",
+            True,
+            "etapas anteriores concluídas",
+            {"type": "stages"},
+        )
+
     if vtype == "pytest":
         path = spec.get("path", ".")
         out = await tools.execute("run_pytest", ctx, {"path": path}, approved=approved)

@@ -15,6 +15,7 @@ from agent.context.budget import ContextComponent, assemble_messages
 from agent.providers.base import ChatCompletionRequest
 from agent.providers.ollama import OllamaProvider
 from agent.services.task_service import TaskService
+from agent.guides.discover import capability_line, guide_digest
 from agent.tools.builtins import TOOL_CATALOG
 from agent.util.json_parse import parse_json_object
 
@@ -92,7 +93,11 @@ async def plan_with_model(
 ) -> DecompositionResult | None:
     prompt = (
         f"Objetivo: {objective}\n\nContexto do projeto:\n{context_snippet}\n\n"
-        "Decomponha em subtarefas pequenas e verificáveis para um modelo local.\n"
+        "Decomponha TODAS as etapas, do entendimento do pedido até a verificação e a conclusão.\n"
+        "A última subtarefa deve ser a resposta final ao usuário "
+        '(metadata.final_answer=true e metadata.model_operation=true). '
+        "Antes dela, inclua uma verificação concreta (pytest, script, command ou file_contains).\n"
+        f"{capability_line(profile.model_id)}\n"
         f"{TOOL_CATALOG}\n"
         "Cada subtarefa de ferramenta usa metadata.tool com um id real e metadata.tool_args. "
         "Para editar código use edit_file, não reescreva o arquivo inteiro. "
@@ -131,20 +136,26 @@ async def resolve_decomposition_plan(
     if builtin := builtin_plan_for_objective(objective):
         return builtin, "builtin-e2e"
 
+    from agent.orchestrator.closing import ensure_closing_stages
+
     profile = profile_from_run_config(run_config, settings)
-    ollama = provider or OllamaProvider(settings.ollama_base_url)
-    try:
-        plan = await plan_with_model(ollama, profile, objective, project_root)
-        if plan:
-            return plan, "ollama"
-    except Exception:
-        pass
+    provider_name = run_config.get("provider") or settings.default_provider
+    if provider_name == "ollama":
+        ollama = provider or OllamaProvider(settings.ollama_base_url)
+        digest = guide_digest(project_root, objective)
+        try:
+            plan = await plan_with_model(ollama, profile, objective, f"{project_root}\n\n{digest}")
+            if plan:
+                return ensure_closing_stages(plan), "ollama"
+        except Exception:
+            pass
 
     if run_config.get("use_generic_template", settings.use_generic_decomposition_template):
-        return GENERIC_TEMPLATE.model_copy(deep=True), "generic-template"
+        return ensure_closing_stages(GENERIC_TEMPLATE.model_copy(deep=True)), "generic-template"
 
     if run_config.get("provider") == "mock" or settings.allow_mock_fallback:
-        return BUILTIN_E2E_PLAN if "e2e" in objective.lower() else GENERIC_TEMPLATE, "mock-fallback"
+        base = BUILTIN_E2E_PLAN if "e2e" in objective.lower() else GENERIC_TEMPLATE
+        return ensure_closing_stages(base.model_copy(deep=True)), "mock-fallback"
 
     return None, "none"
 

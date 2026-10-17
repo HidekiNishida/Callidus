@@ -55,6 +55,12 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
         "children": summaries,
         "evidences": collect_evidences(session, parent_id),
     }
+    for child in kids:
+        meta = child.metadata_json or {}
+        result = child.consolidated_result_json or {}
+        if meta.get("final_answer") and result.get("markdown"):
+            report["final_answer"] = result["markdown"]
+            report["sources"] = result.get("sources") or []
     parent.consolidated_result_json = report
     current = TaskStatus(parent.status)
     if current == TaskStatus.PLANNING and report["achieved"]:

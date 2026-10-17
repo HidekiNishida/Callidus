@@ -529,6 +529,7 @@ ACTION_COPY = {
     "blocked_no_metadata": ("Sem instrução", "A operação não diz qual ferramenta ou verificação usar."),
     "global_verify_reopen": ("Reabrindo", "A checagem global achou evidência faltando e reabriu tarefas."),
     "global_verify_failed": ("Objetivo incompleto", "Os critérios globais não foram atendidos."),
+    "final_answer": ("Resposta final", "A conclusão foi escrita para o usuário."),
     "run_completed": ("Concluído", "O objetivo e as evidências foram aceitos."),
     "run_terminal": ("Encerrado", "Este run já estava finalizado."),
     "waiting": ("Aguardando", "Não há tarefa pronta neste instante."),

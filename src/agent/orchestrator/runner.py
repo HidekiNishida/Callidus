@@ -171,6 +171,11 @@ class RunOrchestrator:
         if status == TaskStatus.PLANNING:
             kids = children_of(self._session, task.id)
             meta = task.metadata_json or {}
+            if not kids and meta.get("final_answer"):
+                if self._tasks.dependencies_satisfied(task.id):
+                    self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.READY))
+                    return {"action": "operation_ready", "task_id": str(task.id)}
+                return {"action": "operation_wait_deps", "task_id": str(task.id)}
             if not kids and (meta.get("tool") or meta.get("verification")):
                 if self._tasks.dependencies_satisfied(task.id):
                     blocked = self._promote_ready_or_block(task.id)
@@ -362,6 +367,9 @@ class RunOrchestrator:
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
             return {"action": "mcp_tool", "task_id": str(task.id), "success": False}
 
+        if meta.get("final_answer"):
+            return await self._write_final_answer(run, project, task, config)
+
         if meta.get("model_operation"):
             provider = _select_provider(self._settings, config)
             profile = _profile_from_config(config, self._settings)
@@ -481,6 +489,68 @@ class RunOrchestrator:
 
         self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
         return {"action": "skipped_to_verify", "task_id": str(task.id)}
+
+    async def _write_final_answer(
+        self,
+        run: ExecutionRunModel,
+        project: ProjectModel,
+        task: TaskModel,
+        config: dict,
+    ) -> dict[str, Any]:
+        from agent.guides.discover import capability_line
+        from agent.orchestrator.closing import compose_final_markdown, extract_sources, usable_markdown
+        from agent.providers.base import ChatCompletionRequest, ChatMessage
+
+        siblings = children_of(self._session, task.parent_id) if task.parent_id else []
+        stages: list[dict] = []
+        for sibling in siblings:
+            if sibling.id == task.id:
+                continue
+            result = sibling.consolidated_result_json or {}
+            blob = str(result)
+            stages.append(
+                {
+                    "title": sibling.title,
+                    "status": sibling.status,
+                    "sources": extract_sources(blob, sibling.objective or ""),
+                }
+            )
+        parent = self._tasks.get_task(task.parent_id) if task.parent_id else task
+        objective = parent.objective if parent else task.objective
+        provider = _select_provider(self._settings, config)
+        profile = _profile_from_config(config, self._settings)
+        prompt = (
+            f"{capability_line(profile.model_id)}\n"
+            "Escreva a resposta final em Markdown para a pessoa que pediu a tarefa. "
+            "Use título, uma tabela das etapas, lista do que foi verificado e uma seção Fontes com caminhos de arquivo. "
+            "Se ajudar a explicar o fluxo, inclua um bloco ```mermaid com flowchart TD. "
+            "Não invente testes que não aparecem abaixo.\n\n"
+            f"Pedido:\n{objective[:1500]}\n\nEtapas:\n{stages}"
+        )
+        model_text = ""
+        try:
+            self._note_thought(run, task, "Escrevendo a resposta final.")
+            resp = await provider.chat(
+                ChatCompletionRequest(
+                    messages=[ChatMessage(role="user", content=prompt)],
+                    profile=profile,
+                )
+            )
+            model_text = (resp.content or "").strip()
+        except Exception:
+            model_text = ""
+        markdown = model_text if usable_markdown(model_text) else compose_final_markdown(
+            objective=objective,
+            stages=stages,
+            model_text=model_text,
+        )
+        sources = extract_sources(markdown, *[str(stage.get("sources")) for stage in stages])
+        task.consolidated_result_json = {"final_answer": True, "markdown": markdown, "sources": sources}
+        self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+        self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
+        if task.parent_id:
+            consolidate_parent(self._session, task.parent_id)
+        return {"action": "final_answer", "task_id": str(task.id), "thought": markdown[:280]}
 
     async def _finalize_verification(
         self,

@@ -399,6 +399,133 @@ function resultLine(task) {
   return "";
 }
 
+function renderInline(text) {
+  return escapeHtml(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, href) => {
+      if (!/^(https?:|\/|\.\/|\.\.\/)/.test(href)) return label;
+      return `<a href="${href}" rel="noreferrer">${label}</a>`;
+    });
+}
+
+function renderDiagram(source) {
+  const nodes = new Map();
+  const edges = [];
+  String(source || "")
+    .split("\n")
+    .forEach((line) => {
+      const labeled = [...line.matchAll(/([A-Za-z0-9_]+)\[([^\]]+)\]/g)];
+      labeled.forEach((match) => nodes.set(match[1], match[2]));
+      const edge = line.match(/([A-Za-z0-9_]+)\s*-->(?:\|[^|]*\|)?\s*([A-Za-z0-9_]+)/);
+      if (edge) {
+        nodes.set(edge[1], nodes.get(edge[1]) || edge[1]);
+        nodes.set(edge[2], nodes.get(edge[2]) || edge[2]);
+        edges.push([edge[1], edge[2]]);
+      }
+    });
+  if (!nodes.size) return `<pre class="diagram">${escapeHtml(source)}</pre>`;
+  const ids = [...nodes.keys()];
+  const width = 280;
+  const height = ids.length * 56 + 16;
+  const boxes = ids
+    .map((id, index) => {
+      const y = 16 + index * 56;
+      return `<rect x="40" y="${y}" width="200" height="36" rx="8" class="box"/><text x="140" y="${y + 23}" text-anchor="middle">${escapeHtml(nodes.get(id))}</text>`;
+    })
+    .join("");
+  const arrows = edges
+    .map(([from, to]) => {
+      const a = ids.indexOf(from);
+      const b = ids.indexOf(to);
+      if (a < 0 || b < 0) return "";
+      const y1 = 16 + a * 56 + 36;
+      const y2 = 16 + b * 56;
+      return `<line x1="140" y1="${y1}" x2="140" y2="${y2}" class="arrow"/>`;
+    })
+    .join("");
+  return `<div class="diagram"><svg viewBox="0 0 ${width} ${height}" role="img">${arrows}${boxes}</svg></div>`;
+}
+
+function renderMarkdownBlocks(chunk) {
+  const lines = String(chunk || "").split("\n");
+  const html = [];
+  let list = null;
+  let table = [];
+  const flushList = () => {
+    if (!list) return;
+    html.push(`<${list.tag}>${list.items.map((item) => `<li>${renderInline(item)}</li>`).join("")}</${list.tag}>`);
+    list = null;
+  };
+  const flushTable = () => {
+    if (!table.length) return;
+    const parsed = table.filter((row) => row.includes("|") && !/^\s*\|?[\s:|-]+\|?\s*$/.test(row));
+    if (parsed.length) {
+      const head = parsed[0].split("|").slice(1, -1).map((c) => c.trim());
+      const body = parsed.slice(1);
+      html.push(
+        `<table class="md-table"><thead><tr>${head.map((c) => `<th>${renderInline(c)}</th>`).join("")}</tr></thead><tbody>${body
+          .map((row) => `<tr>${row.split("|").slice(1, -1).map((c) => `<td>${renderInline(c.trim())}</td>`).join("")}</tr>`)
+          .join("")}</tbody></table>`
+      );
+    }
+    table = [];
+  };
+  lines.forEach((line) => {
+    if (line.trim().startsWith("|")) {
+      flushList();
+      table.push(line);
+      return;
+    }
+    flushTable();
+    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    if (heading) {
+      flushList();
+      const level = heading[1].length;
+      html.push(`<h${level + 2}>${renderInline(heading[2])}</h${level + 2}>`);
+      return;
+    }
+    const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
+    const ordered = /^\s*\d+\.\s+(.*)$/.exec(line);
+    if (bullet || ordered) {
+      const tag = bullet ? "ul" : "ol";
+      if (!list || list.tag !== tag) {
+        flushList();
+        list = { tag, items: [] };
+      }
+      list.items.push((bullet || ordered)[1]);
+      return;
+    }
+    flushList();
+    if (line.trim()) html.push(`<p>${renderInline(line)}</p>`);
+  });
+  flushList();
+  flushTable();
+  return html.join("");
+}
+
+export function renderMarkdown(raw) {
+  const parts = String(raw || "").replace(/\r\n/g, "\n").split("```");
+  return parts
+    .map((part, index) => {
+      if (index % 2 === 0) return renderMarkdownBlocks(part);
+      const breakAt = part.indexOf("\n");
+      const lang = (breakAt === -1 ? part : part.slice(0, breakAt)).trim().toLowerCase();
+      const body = breakAt === -1 ? "" : part.slice(breakAt + 1);
+      if (lang === "mermaid") return renderDiagram(body);
+      return `<pre class="md-code"><code>${escapeHtml(body)}</code></pre>`;
+    })
+    .join("");
+}
+
+function answerHtml(root) {
+  const report = root.consolidated_result_json || {};
+  const child = state.tasks.find((task) => task.parent_id === root.id && (task.metadata_json || {}).final_answer);
+  const markdown = report.final_answer || child?.consolidated_result_json?.markdown;
+  if (!markdown) return "";
+  return `<div class="answer">${renderMarkdown(markdown)}</div>`;
+}
+
 function renderChat() {
   const log = document.getElementById("chat-log");
   if (!log) return;
@@ -426,7 +553,7 @@ function renderChat() {
         .map((a) => `<span class="chip">${escapeHtml(a.name || a.path || "anexo")}</span>`)
         .join("");
       return `<div class="bubble user"><div class="who">Você</div><div>${escapeHtml(spoken)}</div>${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
-        <div class="bubble agent"><div class="who">Agente${model}</div>${thoughts}${cards || (thoughts ? "" : `<p class="muted">Vou planejar e dividir isso em passos.</p>`)}</div>`;
+        <div class="bubble agent"><div class="who">Agente${model}</div>${thoughts}${cards || (thoughts ? "" : `<p class="muted">Vou planejar e dividir isso em passos.</p>`)}${answerHtml(root)}</div>`;
     })
     .join("");
   if (stick) log.scrollTop = log.scrollHeight;

@@ -15,6 +15,7 @@ from agent.knowledge.indexer import grep_symbols_in_objective
 from agent.persistence.models import ContextSnapshotModel, MemoryRecordModel, TaskModel
 from agent.providers.base import ModelProfile
 from agent.security.paths import PathSecurityError, resolve_under_root
+from agent.guides.discover import guide_digest
 from agent.tools.builtins import TOOL_CATALOG
 from sqlalchemy import select
 
@@ -41,6 +42,9 @@ class OperationContextBuilder:
     ) -> tuple[BudgetResult, ContextSnapshotModel]:
         project_rules = self._memory_block(project_id, MemoryKind.CANONICAL)
         technical = self._technical_snippet(root_path, project_id, task.objective)
+        guides = guide_digest(root_path, task.objective)
+        if guides:
+            technical = f"{technical}\n\n## Guias do repositório\n{guides}".strip()
         attached = self._attachment_snippet(root_path, task)
         if attached:
             technical = f"{technical}\n\n{attached}".strip()
