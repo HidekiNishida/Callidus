@@ -44,9 +44,11 @@ Demo sem Ollama: objetivo com `e2e` usa provider `mock` automaticamente na UI.
 
 ## Conversas, memória e idioma
 
-Cada projeto é a pasta do código. Dentro dele, cada conversa é um chat separado. A barra lateral lista essas conversas; o botão **+** abre um navegador de pastas (e, no macOS, o Finder).
+Cada projeto é a pasta do código. Dentro dele, cada conversa é um chat separado. Também dá para abrir uma conversa sem pasta, na lista Conversas. O menu de cada chat move ela para outro projeto ou para fora de todos, e também remove. A memória da conversa acompanha a mudança; a memória do projeto fica na pasta de origem. O botão **+** do topo abre um navegador de pastas (e, no macOS, o Finder).
 
-A memória fica em dois escopos: do projeto inteiro e da conversa atual. Ao gravar, o texto completo permanece e um resumo curto é guardado junto. Ao entrar no contexto de uma etapa, esse texto é quebrado e só os trechos ligados ao objetivo entram no prompt. O agente grava memória quando o pedido pede para lembrar, quando uma etapa usa a ferramenta `remember`, e ao concluir a conversa.
+A memória fica em dois escopos: do projeto inteiro e da conversa atual. Ao gravar, o texto completo permanece e um índice curto (resumo, fatos e tópicos) é guardado junto. Na hora de usar, o agente olha só esse índice, escolhe o que serve ao objetivo e só então quebra o texto das memórias escolhidas. O agente grava memória quando o pedido pede para lembrar, quando uma etapa usa a ferramenta `remember`, e ao concluir a conversa.
+
+Se uma etapa para no meio com bloqueio ou falha, o orquestrador replaneja o que falta. O que já foi concluído permanece, o trecho ainda não iniciado do plano antigo é cancelado e entram etapas novas para seguir.
 
 Pensamentos, títulos de etapa e a resposta final seguem o idioma do pedido (português, inglês ou espanhol). Enquanto uma etapa roda, a mensagem do agente e o cartão da etapa ganham o brilho de tarefa em andamento.
 

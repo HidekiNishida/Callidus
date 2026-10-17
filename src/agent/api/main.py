@@ -17,6 +17,7 @@ from agent.config import Settings
 from agent.domain.enums import MemoryKind, TaskStatus
 from agent.domain.schemas import (
     ConversationCreate,
+    ConversationMove,
     ConversationRead,
     EventRead,
     ExecutionRunCreate,
@@ -38,10 +39,12 @@ from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.services.attachments import attachment_note, materialize_attachments
 from agent.persistence.models import (
     ContextSnapshotModel,
+    ConversationModel,
     EventLogModel,
     EvidenceModel,
     ExecutionRunModel,
     OperationAttemptModel,
+    ProjectModel,
 )
 from agent.tools.registry import ToolContext, build_default_registry
 from agent.providers.base import ChatCompletionRequest, ChatMessage, ModelProfile
@@ -53,6 +56,7 @@ from agent.services.metrics_service import MetricsService
 from agent.i18n.locale import detect_language, translate
 from agent.memory.store import extract_memory_request
 from agent.services.conversation_service import ConversationService, locale_for_task
+from agent.services.inbox import is_inbox_path
 from agent.services.fs_browse import browse_directories, pick_folder_native
 from agent.services.project_service import ProjectService
 from agent.services.run_service import RunService
@@ -174,6 +178,48 @@ def get_project(project_id: uuid.UUID, session: Session = Depends(db_session)) -
     return ProjectRead.model_validate(project)
 
 
+def _present_conversation(session: Session, item: ConversationModel) -> ConversationRead:
+    data = ConversationRead.model_validate(item)
+    project = session.get(ProjectModel, item.project_id)
+    if project is not None and is_inbox_path(project.root_path):
+        return data.model_copy(update={"project_id": None})
+    return data
+
+
+@app.get("/conversations", response_model=list[ConversationRead])
+def list_loose_conversations(session: Session = Depends(db_session)) -> list[ConversationRead]:
+    items = ConversationService(session).list_loose()
+    return [_present_conversation(session, item) for item in items]
+
+
+@app.post("/conversations", response_model=ConversationRead)
+def create_loose_conversation(
+    body: ConversationCreate, session: Session = Depends(db_session)
+) -> ConversationRead:
+    item = ConversationService(session).create_loose(body)
+    return _present_conversation(session, item)
+
+
+@app.post("/conversations/{conversation_id}/move", response_model=ConversationRead)
+def move_conversation(
+    conversation_id: uuid.UUID, body: ConversationMove, session: Session = Depends(db_session)
+) -> ConversationRead:
+    try:
+        item = ConversationService(session).move_conversation(conversation_id, body.project_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _present_conversation(session, item)
+
+
+@app.delete("/conversations/{conversation_id}")
+def delete_conversation(conversation_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    try:
+        ConversationService(session).delete_conversation(conversation_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"deleted": True}
+
+
 @app.get("/projects/{project_id}/conversations", response_model=list[ConversationRead])
 def list_conversations(project_id: uuid.UUID, session: Session = Depends(db_session)) -> list[ConversationRead]:
     try:
@@ -181,7 +227,7 @@ def list_conversations(project_id: uuid.UUID, session: Session = Depends(db_sess
         items = ConversationService(session).list_conversations(project_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return [ConversationRead.model_validate(item) for item in items]
+    return [_present_conversation(session, item) for item in items]
 
 
 @app.post("/projects/{project_id}/conversations", response_model=ConversationRead)
@@ -193,7 +239,7 @@ def create_conversation(
         item = ConversationService(session).create_conversation(project_id, body)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return ConversationRead.model_validate(item)
+    return _present_conversation(session, item)
 
 
 @app.get("/fs/browse")
@@ -583,6 +629,7 @@ def _thought_trace(session: Session, project_id: uuid.UUID, tasks: list) -> list
 ACTION_COPY = {
     "started_planning": ("Planejando", "O orquestrador abriu o objetivo e registrou a memória canônica."),
     "decomposed": ("Dividindo o trabalho", "A tarefa foi quebrada em subtarefas menores e verificáveis."),
+    "replanned": ("Replanejou", "Uma etapa parou. O que já foi feito permanece e o restante do plano foi refeito."),
     "operation_ready": ("Pronta para executar", "Dependências ok. A operação pode rodar a ferramenta ou o modelo."),
     "planning_wait_children": ("Aguardando subtarefas", "O pai espera os filhos terminarem antes de consolidar."),
     "promoted_ready": ("Liberada", "Dependências satisfeitas; a tarefa passou para pronta."),

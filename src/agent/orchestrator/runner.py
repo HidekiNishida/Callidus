@@ -21,6 +21,7 @@ from agent.services.contract_service import ContractService
 from agent.orchestrator.atomizer import micro_decompose_operation, should_decompose_further
 from agent.orchestrator.decomposition import apply_decomposition, resolve_decomposition_plan
 from agent.orchestrator.planner import ensure_canonical_memory_for_objective
+from agent.orchestrator.replan import replan_under
 from agent.context.operation_builder import OperationContextBuilder
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.persistence.models import (
@@ -194,6 +195,10 @@ class RunOrchestrator:
         profile = _profile_from_config(config, self._settings)
 
         root = self._tasks.get_task(run.root_task_id)
+        revised = replan_under(self._session, root.id)
+        if revised:
+            self._note_thought(run, root, str(revised.get("thought") or "Replanejei o que ainda falta."))
+            return revised
         task = self._pick_next_task(run.root_task_id)
         if task is None:
             ensure_global_verification_task(self._session, project.id, root)

@@ -52,6 +52,58 @@ def decompose_for_use(text: str, objective: str, *, budget: int = 480) -> list[s
     return picked
 
 
+def structure_memory(text: str) -> dict:
+    """Índice curto: resumo, fatos e tópicos. O texto completo fica de fora."""
+    raw = (text or "").strip()
+    facts: list[str] = []
+    for chunk in _SPLIT.split(raw):
+        piece = chunk.strip()
+        if not piece:
+            continue
+        if len(piece) > 180:
+            piece = piece[:179].rstrip() + "…"
+        facts.append(piece)
+        if len(facts) >= 8:
+            break
+    topics: list[str] = []
+    seen: set[str] = set()
+    for token in re.findall(r"\w{5,}", raw.lower()):
+        if token in seen:
+            continue
+        seen.add(token)
+        topics.append(token)
+        if len(topics) >= 6:
+            break
+    return {"summary": summarize_text(raw), "facts": facts, "topics": topics}
+
+
+def _tokens(text: str) -> set[str]:
+    return {token.lower() for token in re.findall(r"\w{4,}", text or "")}
+
+
+def choose_memory_index(rows: list[dict], objective: str, *, limit: int = 4) -> list[dict]:
+    """Escolhe pelo índice. O texto completo nem entra nesta etapa."""
+    wanted = _tokens(objective)
+    scored: list[tuple[int, int, dict]] = []
+    for index, row in enumerate(rows):
+        blob = " ".join(
+            [
+                str(row.get("title") or ""),
+                str(row.get("summary") or ""),
+                " ".join(row.get("topics") or []),
+                " ".join((row.get("facts") or [])[:3]),
+            ]
+        )
+        scored.append((len(wanted & _tokens(blob)), -index, row))
+    scored.sort(reverse=True)
+    chosen = [row for score, _, row in scored if score > 0][:limit]
+    if not any(row.get("scope") == "project" for row in chosen):
+        project = next((row for row in rows if row.get("scope") == "project"), None)
+        if project is not None:
+            chosen = [project, *chosen][:limit]
+    return chosen
+
+
 def fragments_for_prompt(summary: str, content: str, objective: str, *, budget: int = 480) -> str:
     """Usa o resumo e, quando couber, os pedaços relevantes do texto completo."""
     pieces = decompose_for_use(content, objective, budget=budget)

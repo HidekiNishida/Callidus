@@ -128,7 +128,17 @@ label.icon-btn:has(input:checked) { color: var(--accent); }
 }
 .sidebar-head { display: flex; justify-content: space-between; align-items: center; }
 .sidebar-foot { margin-top: auto; font-size: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
-.project-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+.loose-head { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; padding: 0.1rem 0.35rem; }
+.project-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+#project-list { flex: 1; overflow-y: auto; }
+#loose-list { overflow: visible; }
+.chat-row { display: flex; align-items: center; }
+.chat-row > button:first-child { flex: 1; min-width: 0; }
+.chat-menu { position: relative; }
+.chat-menu summary { list-style: none; cursor: pointer; color: var(--muted); width: 22px; height: 22px; display: grid; place-items: center; }
+.chat-menu summary::-webkit-details-marker { display: none; }
+.chat-menu .more-panel { top: 1.3rem; bottom: auto; right: 0; left: auto; min-width: 168px; z-index: 8; }
+.chat-menu .more-panel button { width: 100%; }
 .project-list li { margin-bottom: 0.25rem; }
 .project-list button {
   width: 100%; text-align: left; padding: 0.28rem 0.35rem;

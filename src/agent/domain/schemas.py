@@ -20,9 +20,13 @@ class ConversationCreate(BaseModel):
     locale: str | None = None
 
 
+class ConversationMove(BaseModel):
+    project_id: UUID | None = None
+
+
 class ConversationRead(BaseModel):
     id: UUID
-    project_id: UUID
+    project_id: UUID | None = None
     title: str
     locale: str
     created_at: datetime
@@ -130,6 +134,7 @@ class MemoryRead(BaseModel):
     title: str
     content: str
     summary: str | None = None
+    outline_json: dict | None = None
     version: int
     source_refs_json: list[str] | None
     created_at: datetime

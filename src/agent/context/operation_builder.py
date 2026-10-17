@@ -15,7 +15,7 @@ from agent.persistence.models import ContextSnapshotModel, MemoryRecordModel, Ta
 from agent.providers.base import ModelProfile
 from agent.security.paths import PathSecurityError, resolve_under_root
 from agent.guides.discover import guide_digest
-from agent.memory.store import fragments_for_prompt
+from agent.memory.store import choose_memory_index, fragments_for_prompt, structure_memory
 from agent.tools.builtins import TOOL_CATALOG
 from sqlalchemy import select
 
@@ -40,7 +40,7 @@ class OperationContextBuilder:
         profile: ModelProfile,
         run_id: uuid.UUID | None = None,
     ) -> tuple[BudgetResult, ContextSnapshotModel]:
-        project_rules = self._memory_block(project_id, task)
+        project_rules, memory_note = self._memory_block(project_id, task)
         technical = self._technical_snippet(root_path, project_id, task.objective)
         guides = guide_digest(root_path, task.objective)
         if guides:
@@ -68,6 +68,8 @@ class OperationContextBuilder:
             tools_summary=tools_summary,
             output_format=output_format,
         )
+        if memory_note:
+            budget.strategy_notes.append(memory_note)
         components = [{"role": m.role, "chars": len(m.content)} for m in budget.messages]
 
         snap = ContextSnapshotModel(
@@ -86,32 +88,67 @@ class OperationContextBuilder:
             budget.messages[-1].images = images
         return budget, snap
 
-    def _memory_block(self, project_id: uuid.UUID, task: TaskModel) -> str:
-        stmt = (
-            select(MemoryRecordModel)
-            .where(MemoryRecordModel.project_id == project_id)
-            .order_by(MemoryRecordModel.created_at.desc())
-            .limit(12)
-        )
-        rows = list(self._session.scalars(stmt).all())
+    def _memory_block(self, project_id: uuid.UUID, task: TaskModel) -> tuple[str, str]:
+        index = self._memory_index(project_id, task.conversation_id)
+        chosen = choose_memory_index(index, task.objective)
+        note = f"memória: índice {len(index)}, escolhidas {len(chosen)}"
+        if not chosen:
+            return "(sem memória registrada)", note
+        bodies = self._memory_bodies([item["id"] for item in chosen])
         lines: list[str] = []
-        for record in rows:
-            if record.conversation_id not in (None, task.conversation_id):
-                continue
-            scope = "projeto" if record.conversation_id is None else "conversa"
+        for item in chosen:
             fragment = fragments_for_prompt(
-                record.summary or "",
-                record.content,
+                item.get("summary") or "",
+                bodies.get(item["id"], ""),
                 task.objective,
             )
             if not fragment:
                 continue
-            lines.append(f"- ({scope}/{record.kind}) {record.title}: {fragment}")
-            if len(lines) >= 6:
-                break
+            label = "projeto" if item["scope"] == "project" else "conversa"
+            lines.append(f"- ({label}/{item['kind']}) {item['title']}: {fragment}")
         if not lines:
-            return "(sem memória registrada)"
-        return "\n".join(lines)
+            return "(sem memória registrada)", note
+        return "\n".join(lines), note
+
+    def _memory_index(self, project_id: uuid.UUID, conversation_id: uuid.UUID | None) -> list[dict]:
+        stmt = (
+            select(
+                MemoryRecordModel.id,
+                MemoryRecordModel.title,
+                MemoryRecordModel.summary,
+                MemoryRecordModel.outline_json,
+                MemoryRecordModel.kind,
+                MemoryRecordModel.conversation_id,
+            )
+            .where(MemoryRecordModel.project_id == project_id)
+            .where(
+                (MemoryRecordModel.conversation_id.is_(None))
+                | (MemoryRecordModel.conversation_id == conversation_id)
+            )
+            .order_by(MemoryRecordModel.created_at.desc())
+            .limit(24)
+        )
+        rows: list[dict] = []
+        for record in self._session.execute(stmt):
+            outline = record.outline_json or structure_memory(record.summary or record.title or "")
+            rows.append(
+                {
+                    "id": record.id,
+                    "title": record.title,
+                    "summary": outline.get("summary") or record.summary or "",
+                    "facts": outline.get("facts") or [],
+                    "topics": outline.get("topics") or [],
+                    "kind": record.kind,
+                    "scope": "project" if record.conversation_id is None else "conversation",
+                }
+            )
+        return rows
+
+    def _memory_bodies(self, ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+        if not ids:
+            return {}
+        stmt = select(MemoryRecordModel.id, MemoryRecordModel.content).where(MemoryRecordModel.id.in_(ids))
+        return {row.id: row.content or "" for row in self._session.execute(stmt)}
 
     def _technical_snippet(self, root_path: str, project_id: uuid.UUID, objective: str) -> str:
         parts: list[str] = []

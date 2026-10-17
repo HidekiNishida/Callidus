@@ -53,6 +53,7 @@ def _migrate_sqlite(engine: Engine) -> None:
         _add_column(conn, "tasks", "conversation_id", "CHAR(32)")
         _add_column(conn, "memory_records", "conversation_id", "CHAR(32)")
         _add_column(conn, "memory_records", "summary", "TEXT")
+        _add_column(conn, "memory_records", "outline_json", "JSON")
         conn.commit()
 
 

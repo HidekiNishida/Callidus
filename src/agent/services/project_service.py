@@ -8,13 +8,14 @@ from sqlalchemy.orm import Session
 
 from agent.domain.enums import MemoryKind
 from agent.domain.schemas import MemoryCreate, ProjectCreate
-from agent.memory.store import summarize_text
+from agent.memory.store import structure_memory
 from agent.persistence.models import ConversationModel, EventLogModel, MemoryRecordModel, ProjectModel
+from agent.services.inbox import is_inbox_path
 
 
 def _is_leaked_test_project(root_path: str) -> bool:
     path = root_path.replace("\\", "/")
-    return "pytest-of-" in path or "/T/pytest-" in path
+    return "pytest-of-" in path or "/T/pytest-" in path or is_inbox_path(path)
 
 
 class ProjectService:
@@ -54,6 +55,7 @@ class ProjectService:
             conversation = self._session.get(ConversationModel, data.conversation_id)
             if conversation is None or conversation.project_id != project_id:
                 raise LookupError("Conversa inválida para este projeto")
+        outline = structure_memory(data.content)
         record = MemoryRecordModel(
             project_id=project_id,
             conversation_id=data.conversation_id,
@@ -61,7 +63,8 @@ class ProjectService:
             kind=data.kind.value,
             title=data.title,
             content=data.content,
-            summary=summarize_text(data.content),
+            summary=outline["summary"],
+            outline_json=outline,
             source_refs_json=data.source_refs,
         )
         self._session.add(record)

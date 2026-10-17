@@ -14,6 +14,8 @@
         <button type="button" id="btn-toggle-project-form" class="icon-btn" data-icon="plus" title="Novo projeto" aria-label="Novo projeto"></button>
       </div>
       <input type="search" id="project-search" placeholder="Buscar projeto…" autocomplete="off" />
+      <div class="loose-head"><span>Conversas</span><button type="button" id="btn-loose-chat" class="icon-btn" data-icon="plus" title="Nova conversa sem projeto" aria-label="Nova conversa sem projeto"></button></div>
+      <ul id="loose-list" class="project-list"></ul>
       <ul id="project-list" class="project-list"></ul>
       <div class="sidebar-foot muted" id="health-indicator">—</div>
     </aside>
@@ -24,7 +26,7 @@
           <h1 id="workspace-title">Novo chat</h1>
           <p class="muted" id="workspace-subtitle">Escolha uma pasta e descreva o que fazer.</p>
         </div>
-        <button type="button" id="btn-new-chat" class="icon-btn" data-icon="chat" title="Nova conversa" aria-label="Nova conversa" hidden></button>
+        <button type="button" id="btn-new-chat" class="icon-btn" data-icon="chat" title="Nova conversa" aria-label="Nova conversa"></button>
         <div class="topbar-run" id="run-toolbar" hidden>
           <button type="button" id="btn-step" class="icon-btn" data-icon="play" disabled title="Um passo" aria-label="Um passo"></button>
           <button type="button" id="btn-pause" class="icon-btn" data-icon="pause" disabled title="Pausar" aria-label="Pausar"></button>

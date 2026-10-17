@@ -39,7 +39,9 @@ async function api(path, opts = {}) {
 const state = {
   projects: [],
   conversations: [],
+  loose: [],
   conversation: null,
+  pendingSend: null,
   selectedProject: null,
   tasks: [],
   selectedTaskId: null,
@@ -108,6 +110,8 @@ const ICONS = {
   circle: '<circle cx="8" cy="8" r="3"/>',
   git: '<circle cx="4" cy="4" r="1.3"/><circle cx="4" cy="12" r="1.3"/><circle cx="12" cy="8" r="1.3"/><path d="M4 5.3v5.4M5.2 4h3.2a3.6 3.6 0 0 1 0 4H4"/>',
   chat: '<path d="M3 3.5h10v7H6.2L3 13z"/>',
+  more: '<circle cx="4" cy="8" r="0.9"/><circle cx="8" cy="8" r="0.9"/><circle cx="12" cy="8" r="0.9"/>',
+  trash: '<path d="M3.5 4.5h9M6 4.5V3.2h4v1.3M5 6.5l.4 7h5.2l.4-7"/>',
   up: '<path d="M8 12V4M4.5 7.5L8 4l3.5 3.5"/>',
   chevron: '<path d="M6 4l4 4-4 4"/>',
   globe: '<circle cx="8" cy="8" r="5.2"/><path d="M3 8h10M8 2.8c1.5 1.7 1.5 8.7 0 10.4M8 2.8c-1.5 1.7-1.5 8.7 0 10.4"/>',
@@ -186,7 +190,67 @@ function runConfigFromUI(objective) {
   };
 }
 
+function chatMenu(conversation) {
+  const menu = document.createElement("details");
+  menu.className = "chat-menu";
+  const targets = [`<button type="button" data-move="">Sem projeto</button>`]
+    .concat(
+      state.projects
+        .filter((project) => project.id !== conversation.project_id)
+        .map((project) => `<button type="button" data-move="${project.id}">${escapeHtml(project.name)}</button>`)
+    )
+    .concat([`<button type="button" data-remove="${conversation.id}">Remover</button>`]);
+  if (!conversation.project_id) targets.shift();
+  menu.innerHTML = `<summary title="Mover ou remover" aria-label="Mover ou remover">${icon("more")}</summary><div class="more-panel">${targets.join("")}</div>`;
+  menu.onclick = (event) => event.stopPropagation();
+  menu.addEventListener("toggle", () => {
+    if (!menu.open) return;
+    const panel = menu.querySelector(".more-panel");
+    const rect = menu.getBoundingClientRect();
+    panel.style.position = "fixed";
+    panel.style.top = `${Math.min(rect.bottom + 4, window.innerHeight - 180)}px`;
+    panel.style.left = `${Math.max(8, rect.right - 180)}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    panel.style.zIndex = "40";
+  });
+  menu.addEventListener("click", async (event) => {
+    const move = event.target.closest("[data-move]");
+    const remove = event.target.closest("[data-remove]");
+    if (!move && !remove) return;
+    event.preventDefault();
+    try {
+      if (remove) await removeConversation(conversation);
+      else await moveConversation(conversation, move.dataset.move || null);
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  });
+  return menu;
+}
+
+function appendChat(list, conversation, onOpen) {
+  const item = document.createElement("li");
+  item.className = "chat-row";
+  const chatBtn = document.createElement("button");
+  chatBtn.type = "button";
+  if (state.conversation?.id === conversation.id) chatBtn.classList.add("active");
+  chatBtn.innerHTML = `${icon("chat")}<span>${escapeHtml(conversation.title)}</span>`;
+  chatBtn.onclick = () => onOpen(conversation);
+  item.appendChild(chatBtn);
+  item.appendChild(chatMenu(conversation));
+  list.appendChild(item);
+}
+
+function renderLoose() {
+  const list = document.getElementById("loose-list");
+  if (!list) return;
+  list.innerHTML = "";
+  state.loose.forEach((conversation) => appendChat(list, conversation, selectLoose));
+}
+
 function renderProjects(filter = "") {
+  renderLoose();
   const ul = document.getElementById("project-list");
   ul.innerHTML = "";
   const q = filter.trim().toLowerCase();
@@ -222,16 +286,7 @@ function renderProjects(filter = "") {
       if (state.selectedProject?.id === p.id && state.conversations.length) {
         const chats = document.createElement("ul");
         chats.className = "chats";
-        state.conversations.forEach((conversation) => {
-          const item = document.createElement("li");
-          const chatBtn = document.createElement("button");
-          chatBtn.type = "button";
-          if (state.conversation?.id === conversation.id) chatBtn.classList.add("active");
-          chatBtn.innerHTML = `${icon("chat")}<span>${escapeHtml(conversation.title)}</span>`;
-          chatBtn.onclick = () => selectConversation(conversation);
-          item.appendChild(chatBtn);
-          chats.appendChild(item);
-        });
+        state.conversations.forEach((conversation) => appendChat(chats, conversation, selectConversation));
         li.appendChild(chats);
       }
       ul.appendChild(li);
@@ -274,8 +329,62 @@ function selectConversation(conversation) {
   state.resumeBrief = null;
   savePrefs({ lastConversationId: conversation.id });
   document.getElementById("workspace-title").textContent = conversation.title;
+  const subtitle = document.getElementById("workspace-subtitle");
+  if (state.selectedProject) {
+    subtitle.textContent = state.selectedProject.name;
+    subtitle.title = state.selectedProject.root_path;
+  }
   renderProjects(document.getElementById("project-search").value);
   renderChat();
+}
+
+function selectLoose(conversation) {
+  state.selectedProject = null;
+  state.tasks = [];
+  state.currentRun = null;
+  state.selectedTaskId = null;
+  document.getElementById("run-toolbar").hidden = true;
+  document.getElementById("stats-bar").hidden = true;
+  selectConversation(conversation);
+  document.getElementById("workspace-subtitle").textContent = "Sem projeto";
+  document.getElementById("workspace-subtitle").title = "";
+  savePrefs({ lastProjectId: null, lastConversationId: conversation.id });
+}
+
+async function moveConversation(conversation, projectId) {
+  const moved = await api(`/conversations/${conversation.id}/move`, {
+    method: "POST",
+    body: JSON.stringify({ project_id: projectId || null }),
+  });
+  state.loose = await api("/conversations");
+  if (moved.project_id) {
+    const project = state.projects.find((item) => item.id === moved.project_id);
+    if (project) await selectProject(project);
+    const current = state.conversations.find((item) => item.id === moved.id) || moved;
+    selectConversation(current);
+    toast("Conversa movida");
+    return;
+  }
+  selectLoose(state.loose.find((item) => item.id === moved.id) || moved);
+  toast("Conversa fora de projeto");
+}
+
+async function removeConversation(conversation) {
+  await api(`/conversations/${conversation.id}`, { method: "DELETE" });
+  if (state.conversation?.id === conversation.id) {
+    state.conversation = null;
+    state.tasks = [];
+    state.selectedTaskId = null;
+    document.getElementById("workspace-title").textContent = "Novo chat";
+  }
+  state.loose = await api("/conversations");
+  if (state.selectedProject) {
+    state.conversations = await api(`/projects/${state.selectedProject.id}/conversations`);
+    await refreshTasks();
+  }
+  renderProjects(document.getElementById("project-search").value);
+  renderChat();
+  toast("Conversa removida");
 }
 
 async function openFolderPicker() {
@@ -306,9 +415,12 @@ async function loadFolder(path) {
 async function useFolder(path) {
   if (!path) return;
   document.getElementById("folder-modal").hidden = true;
+  const pendingConversation = state.pendingSend ? state.conversation : null;
   const existing = state.projects.find((project) => project.root_path === path);
   if (existing) {
     await selectProject(existing);
+    if (pendingConversation) state.conversation = pendingConversation;
+    await finishPendingSend(existing);
     return;
   }
   const name = path.split("/").filter(Boolean).pop() || "projeto";
@@ -318,12 +430,51 @@ async function useFolder(path) {
   });
   state.projects = await api("/projects");
   await selectProject(created);
+  if (pendingConversation) state.conversation = pendingConversation;
+  await finishPendingSend(created);
   toast("Projeto aberto");
+}
+
+async function finishPendingSend(project) {
+  const pending = state.pendingSend;
+  const conversation = state.conversation;
+  if (!pending || !conversation || conversation.project_id) return;
+  state.pendingSend = null;
+  const moved = await api(`/conversations/${conversation.id}/move`, {
+    method: "POST",
+    body: JSON.stringify({ project_id: project.id }),
+  });
+  state.loose = await api("/conversations");
+  state.conversations = await api(`/projects/${project.id}/conversations`);
+  state.conversation = state.conversations.find((item) => item.id === moved.id) || moved;
+  const task = await api(`/projects/${project.id}/tasks`, {
+    method: "POST",
+    body: JSON.stringify({
+      title: pending.title,
+      objective: pending.objective,
+      kind: "objective",
+      conversation_id: state.conversation.id,
+      metadata: pending.metadata,
+    }),
+  });
+  state.selectedTaskId = task.id;
+  state.tasks = [...state.tasks, { ...task, parent_id: task.parent_id || null }];
+  document.getElementById("workspace-title").textContent = state.conversation.title;
+  renderProjects(document.getElementById("project-search").value);
+  renderChat();
+  document.getElementById("btn-run").click();
+}
+
+async function startLooseConversation() {
+  const conversation = await api("/conversations", { method: "POST", body: JSON.stringify({}) });
+  state.loose = [conversation, ...state.loose.filter((item) => item.id !== conversation.id)];
+  selectLoose(conversation);
+  document.querySelector("#form-task textarea")?.focus();
 }
 
 async function startConversation() {
   if (!state.selectedProject) {
-    openFolderPicker();
+    await startLooseConversation();
     return;
   }
   const conversation = await api(`/projects/${state.selectedProject.id}/conversations`, {
@@ -434,6 +585,7 @@ async function refreshTasks() {
 const ACTION_PT = {
   started_planning: "Começou a planejar",
   decomposed: "Dividiu em subtarefas",
+  replanned: "Replanejou o restante",
   operation_ready: "Operação pronta",
   verified_ok: "Verificação passou",
   verify_failed: "Verificação falhou",
@@ -728,8 +880,11 @@ function renderChat() {
   const roots = state.tasks.filter(
     (task) => !task.parent_id && (!state.conversation || task.conversation_id === state.conversation.id)
   );
-  if (!state.selectedProject || !roots.length) {
-    log.innerHTML = `<div class="chat-empty"><h2>${escapeHtml(copy.emptyTitle)}</h2><p>${escapeHtml(copy.emptyBody)}</p></div>`;
+  if (!roots.length) {
+    const body = state.conversation && !state.selectedProject
+      ? "Esta conversa está fora de um projeto. Ao enviar, escolha a pasta."
+      : copy.emptyBody;
+    log.innerHTML = `<div class="chat-empty"><h2>${escapeHtml(copy.emptyTitle)}</h2><p>${escapeHtml(body)}</p></div>`;
     return;
   }
   const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 120;
@@ -960,7 +1115,12 @@ async function init() {
 
   await loadModels();
   state.projects = await api("/projects");
+  state.loose = await api("/conversations");
   renderProjects();
+  if (!prefs.lastProjectId && prefs.lastConversationId) {
+    const loose = state.loose.find((item) => item.id === prefs.lastConversationId);
+    if (loose) selectLoose(loose);
+  }
 
   if (prefs.lastProjectId) {
     const p = state.projects.find((x) => x.id === prefs.lastProjectId);
@@ -970,7 +1130,9 @@ async function init() {
   document.getElementById("project-search").oninput = (e) => renderProjects(e.target.value);
   document.getElementById("btn-toggle-project-form").onclick = () => openFolderPicker();
   document.getElementById("btn-new-chat").onclick = () => startConversation().catch((err) => toast(err.message, "error"));
+  document.getElementById("btn-loose-chat").onclick = () => startLooseConversation().catch((err) => toast(err.message, "error"));
   document.getElementById("folder-close").onclick = () => {
+    state.pendingSend = null;
     document.getElementById("folder-modal").hidden = true;
   };
   document.getElementById("folder-up").onclick = () => {
@@ -1114,19 +1276,11 @@ async function init() {
 
   document.getElementById("form-task").onsubmit = async (e) => {
     e.preventDefault();
-    if (!state.selectedProject) return toast("Escolha um projeto na lateral", "error");
     const fd = new FormData(e.target);
     let objective = String(fd.get("objective") || "").trim();
     if (!objective && !attachments.length) return;
     if (!objective) objective = "Use os anexos.";
     const title = String(fd.get("title") || objective).slice(0, 80);
-    if (!state.conversation) {
-      state.conversation = await api(`/projects/${state.selectedProject.id}/conversations`, {
-        method: "POST",
-        body: JSON.stringify({ title }),
-      });
-      state.conversations = [state.conversation, ...state.conversations];
-    }
     const metadata = attachments.length
       ? {
           attachments: attachments.map(({ kind, name, mime, content, content_base64 }) => ({
@@ -1138,6 +1292,20 @@ async function init() {
           })),
         }
       : undefined;
+    if (!state.selectedProject) {
+      if (!state.conversation || state.conversation.project_id) await startLooseConversation();
+      state.pendingSend = { title, objective, metadata };
+      openFolderPicker();
+      toast("Escolha a pasta desta conversa");
+      return;
+    }
+    if (!state.conversation) {
+      state.conversation = await api(`/projects/${state.selectedProject.id}/conversations`, {
+        method: "POST",
+        body: JSON.stringify({ title }),
+      });
+      state.conversations = [state.conversation, ...state.conversations];
+    }
     let task;
     try {
       task = await api(`/projects/${state.selectedProject.id}/tasks`, {
