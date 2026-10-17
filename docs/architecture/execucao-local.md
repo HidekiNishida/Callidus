@@ -9,6 +9,14 @@ pip install -e ".[dev]"
 cp .env.example .env   # opcional
 ```
 
+Se `ModuleNotFoundError: No module named 'agent'` após instalar (comum no **Python 3.14** com editable antigo), reinstale:
+
+```bash
+pip install -e ".[dev]" --force-reinstall --no-cache-dir
+```
+
+Alternativa imediata: `PYTHONPATH=src agente-api`
+
 ## Padrões (documentação e runtime)
 
 | Variável | Padrão | Efeito |
