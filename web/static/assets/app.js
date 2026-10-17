@@ -439,12 +439,19 @@ async function init() {
       method: "POST",
       body: JSON.stringify({ root_task_id: root.id, config: cfg }),
     });
-    if (document.getElementById("chk-autonomous").checked) {
-      await api(`/runs/${state.currentRun.id}/autonomous/enable`, { method: "POST" });
-    }
+    await api(`/runs/${state.currentRun.id}/autonomous/enable`, { method: "POST" });
+    document.getElementById("chk-autonomous").checked = true;
     updateRunButtons();
     startPolling();
-    toast("Execução iniciada");
+    toast("Execução iniciada — primeiro passo");
+    renderLive({
+      action: "started_planning",
+      headline: `Começando: ${root.title}`,
+      how: "O orquestrador vai planejar e dividir o objetivo.",
+      run: { status: "active", autonomous: true },
+    });
+    const out = await api(`/runs/${state.currentRun.id}/step`, { method: "POST" });
+    toast(out.headline || out.action || "Passo dado");
     await refreshAll();
   };
 

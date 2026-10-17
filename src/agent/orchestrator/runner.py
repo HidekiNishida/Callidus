@@ -180,6 +180,7 @@ class RunOrchestrator:
                     plan = micro_decompose_operation(task.objective)
                     source = "atomizer-micro"
                 else:
+                    self._session.commit()
                     plan, source = await resolve_decomposition_plan(
                         settings=self._settings,
                         run_config=config,

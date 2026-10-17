@@ -191,6 +191,8 @@ def apply_decomposition(
 
 
 def builtin_plan_for_objective(objective: str) -> DecompositionResult | None:
-    if "e2e" in objective.lower() or "calc" in objective.lower():
+    text = objective.lower()
+    # "calculadora" contém "calc"; só o demo explícito usa o plano do fixture.
+    if "e2e" in text or "calc.py" in text:
         return BUILTIN_E2E_PLAN
     return None

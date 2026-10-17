@@ -11,6 +11,11 @@ from agent.domain.schemas import MemoryCreate, ProjectCreate
 from agent.persistence.models import EventLogModel, MemoryRecordModel, ProjectModel
 
 
+def _is_leaked_test_project(root_path: str) -> bool:
+    path = root_path.replace("\\", "/")
+    return "pytest-of-" in path or "/T/pytest-" in path
+
+
 class ProjectService:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -33,7 +38,8 @@ class ProjectService:
         return project
 
     def list_projects(self) -> list[ProjectModel]:
-        return list(self._session.scalars(select(ProjectModel).order_by(ProjectModel.created_at)).all())
+        rows = list(self._session.scalars(select(ProjectModel).order_by(ProjectModel.created_at)).all())
+        return [p for p in rows if not _is_leaked_test_project(p.root_path)]
 
     def get_project(self, project_id: uuid.UUID) -> ProjectModel:
         project = self._session.get(ProjectModel, project_id)

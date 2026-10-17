@@ -505,7 +505,12 @@ def project_live(project_id: uuid.UUID, session: Session = Depends(db_session)) 
     payload = (last.payload_json or {}) if last else {}
     action = payload.get("action") or "idle"
     title, how = ACTION_COPY.get(action, ("Em espera", "Nenhum passo recente."))
-    if focus and action in {"idle", "waiting"}:
+    pending = next((t for t in tasks if t.status == "PENDING"), None)
+    if active and pending and focus is None and action in {"idle", "waiting"}:
+        focus = pending
+        title = f"Começando: {pending.title}"
+        how = "A execução existe, mas o primeiro passo ainda não rodou. Ele será disparado agora."
+    elif focus and action in {"idle", "waiting"}:
         title = f"{focus.status}: {focus.title}"
         how = _how_for_task(focus)
     elif focus and action not in {"run_completed", "run_terminal"}:
