@@ -1,0 +1,38 @@
+:root {
+  color-scheme: light dark;
+  --bg: #0f1419;
+  --panel: #1a2332;
+  --text: #e7ecf3;
+  --muted: #9aa7b8;
+  --accent: #3b82f6;
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --bad: #ef4444;
+  font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f6fa;
+    --panel: #fff;
+    --text: #111827;
+    --muted: #6b7280;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+header { padding: 1rem 1.5rem; border-bottom: 1px solid #334155; }
+.muted { color: var(--muted); font-size: 0.9rem; }
+.layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 1rem; }
+.panel { background: var(--panel); border-radius: 8px; padding: 1rem; border: 1px solid #334155; }
+.panel.wide { grid-column: 1 / -1; }
+form { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+input, textarea, button { font: inherit; padding: 0.5rem; border-radius: 6px; border: 1px solid #475569; background: transparent; color: inherit; }
+button { background: var(--accent); color: #fff; border: none; cursor: pointer; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.tree { font-family: ui-monospace, monospace; font-size: 0.85rem; white-space: pre-wrap; }
+.actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+pre { max-height: 320px; overflow: auto; font-size: 0.8rem; background: #0b1020; padding: 0.75rem; border-radius: 6px; }
+.status-PENDING { color: var(--muted); }
+.status-RUNNING, .status-PLANNING { color: var(--warn); }
+.status-COMPLETED { color: var(--ok); }
+.status-FAILED, .status-BLOCKED { color: var(--bad); }

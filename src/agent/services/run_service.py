@@ -24,6 +24,7 @@ class RunService:
             project_id=project_id,
             root_task_id=data.root_task_id,
             status=RunStatus.ACTIVE.value,
+            config_json=data.config,
         )
         self._session.add(run)
         self._session.flush()

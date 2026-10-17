@@ -25,7 +25,10 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 data/
+!data/mcp.example.json
+backups/
 dist/
+web/node_modules/
 *.egg-info/
 
 # OS / tooling noise

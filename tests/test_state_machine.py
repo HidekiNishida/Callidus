@@ -14,6 +14,7 @@ from agent.domain.state_machine import InvalidTransitionError, can_transition, t
         (TaskStatus.VERIFYING, TaskStatus.COMPLETED, True),
         (TaskStatus.COMPLETED, TaskStatus.RUNNING, False),
         (TaskStatus.BLOCKED, TaskStatus.PLANNING, True),
+        (TaskStatus.PLANNING, TaskStatus.VERIFYING, True),
     ],
 )
 def test_transitions(current, target, ok):

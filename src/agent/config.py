@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     llamacpp_base_url: str | None = None
     api_host: str = "127.0.0.1"
     api_port: int = 8765
+    max_attempts_per_task: int = 8
+    max_orchestrator_steps: int = 100
+    static_web_dir: Path | None = None
 
     def resolved_database_url(self) -> str:
         if self.database_url:

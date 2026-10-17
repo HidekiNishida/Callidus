@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agente de IA Local</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Agente de IA Local</h1>
+    <p class="muted">Orquestração hierárquica · modelos locais · verificação explícita</p>
+  </header>
+  <main class="layout">
+    <section class="panel">
+      <h2>Projetos</h2>
+      <form id="form-project">
+        <input name="name" placeholder="Nome" required />
+        <input name="root_path" placeholder="Caminho raiz autorizado" required />
+        <button type="submit">Criar projeto</button>
+      </form>
+      <ul id="project-list"></ul>
+    </section>
+    <section class="panel">
+      <h2>Tarefas</h2>
+      <form id="form-task">
+        <input name="title" placeholder="Título" required />
+        <textarea name="objective" placeholder="Objetivo (use 'e2e' para demo calc.py)" required></textarea>
+        <button type="submit">Criar tarefa raiz</button>
+      </form>
+      <div id="task-tree" class="tree"></div>
+      <div class="actions">
+        <button id="btn-run" disabled>Iniciar execução</button>
+        <button id="btn-step" disabled>Um passo</button>
+        <button id="btn-execute" disabled>Executar até idle</button>
+      </div>
+      <p id="run-status" class="muted"></p>
+    </section>
+    <section class="panel wide">
+      <h2>Eventos</h2>
+      <pre id="events"></pre>
+    </section>
+  </main>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

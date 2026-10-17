@@ -33,9 +33,21 @@ def create_db_engine(settings: Settings | None = None) -> Engine:
     return engine
 
 
+def _migrate_sqlite(engine: Engine) -> None:
+    if engine.url.get_backend_name() != "sqlite":
+        return
+    with engine.connect() as conn:
+        rows = conn.exec_driver_sql("PRAGMA table_info(execution_runs)").fetchall()
+        cols = {r[1] for r in rows}
+        if rows and "config_json" not in cols:
+            conn.exec_driver_sql("ALTER TABLE execution_runs ADD COLUMN config_json JSON")
+            conn.commit()
+
+
 def init_db(engine: Engine | None = None, settings: Settings | None = None) -> Engine:
     engine = engine or create_db_engine(settings)
     Base.metadata.create_all(engine)
+    _migrate_sqlite(engine)
     return engine
 
 

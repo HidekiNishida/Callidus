@@ -1,0 +1,82 @@
+# src/agent/services/attempt_service.py — tentativas e detecção de loops
+from __future__ import annotations
+
+import hashlib
+import uuid
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from agent.domain.enums import AttemptKind
+from agent.persistence.models import EventLogModel, OperationAttemptModel
+
+
+class AttemptService:
+    def __init__(self, session: Session, max_attempts: int = 8) -> None:
+        self._session = session
+        self._max_attempts = max_attempts
+
+    def record(
+        self,
+        *,
+        run_id: uuid.UUID,
+        task_id: uuid.UUID,
+        kind: AttemptKind,
+        provider: str | None,
+        request: dict | None,
+        response: dict | None,
+        success: bool,
+        error: str | None = None,
+        project_id: uuid.UUID | None = None,
+    ) -> OperationAttemptModel:
+        row = OperationAttemptModel(
+            run_id=run_id,
+            task_id=task_id,
+            kind=kind.value,
+            provider=provider,
+            request_json=request,
+            response_json=response,
+            success=success,
+            error_message=error,
+        )
+        self._session.add(row)
+        self._session.flush()
+        if project_id:
+            self._session.add(
+                EventLogModel(
+                    project_id=project_id,
+                    run_id=run_id,
+                    task_id=task_id,
+                    event_type="attempt.recorded",
+                    payload_json={"kind": kind.value, "success": success},
+                )
+            )
+        return row
+
+    def count_attempts(self, task_id: uuid.UUID) -> int:
+        stmt = select(OperationAttemptModel).where(OperationAttemptModel.task_id == task_id)
+        return len(list(self._session.scalars(stmt).all()))
+
+    def attempts_exhausted(self, task_id: uuid.UUID) -> bool:
+        return self.count_attempts(task_id) >= self._max_attempts
+
+    def repeated_output_detected(self, task_id: uuid.UUID, output_fingerprint: str, window: int = 3) -> bool:
+        stmt = (
+            select(OperationAttemptModel)
+            .where(OperationAttemptModel.task_id == task_id)
+            .order_by(OperationAttemptModel.created_at.desc())
+            .limit(window)
+        )
+        rows = list(self._session.scalars(stmt).all())
+        if len(rows) < window:
+            return False
+        hashes = []
+        for r in rows:
+            raw = str(r.response_json or r.error_message or "")
+            hashes.append(hashlib.sha256(raw.encode()).hexdigest()[:16])
+        return len(set(hashes)) == 1 and hashes[0] == output_fingerprint
+
+    @staticmethod
+    def fingerprint(data: dict | str) -> str:
+        text = data if isinstance(data, str) else str(data)
+        return hashlib.sha256(text.encode()).hexdigest()[:16]

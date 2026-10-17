@@ -41,17 +41,17 @@ flowchart TB
 
 ## Fases de implementação
 
-| Fase | Escopo | Critério de conclusão |
-|------|--------|------------------------|
-| 0 | Diagnóstico + esta documentação | Plano e contratos definidos |
-| 1 | Projetos, árvore de tarefas, máquina de estados, eventos | Estado sobrevive a reinício; testes de transição |
-| 2 | Provedores locais + orçamento de contexto | Chamada real/simulada persistida |
-| 3 | Ferramentas (arquivo, shell, git, testes) | Operação real com evidência |
-| 4 | Decomposição hierárquica + contexto seletivo | Tarefa grande vira subtarefas verificáveis |
-| 5 | Verificação + loops + retomada | Sem sucesso fictício |
-| 6 | Interface web completa | Fluxo principal no navegador |
-| 7 | MCP + visão | Integrações configuráveis |
-| 8 | E2E e robustez | Cenários reproduzíveis documentados |
+| Fase | Escopo | Status |
+|------|--------|--------|
+| 0 | Diagnóstico + documentação | Concluída |
+| 1 | Persistência + estados + API base | Concluída |
+| 2 | Provedores + tentativas + mock | Concluída |
+| 3 | Ferramentas + segurança de paths | Concluída |
+| 4 | Decomposição + contexto + consolidação | Concluída (LLM parcial) |
+| 5 | Verificação + loops + retomada | Concluída |
+| 6 | UI web estática funcional | Concluída |
+| 7 | MCP + visão | Parcial — ver [mcp.md](/docs/architecture/mcp.md) |
+| 8 | E2E pytest | Concluída |
 
 ## Decisões (ADR resumido)
 

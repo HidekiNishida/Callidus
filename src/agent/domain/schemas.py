@@ -68,6 +68,7 @@ class TaskDependencyCreate(BaseModel):
 
 class ExecutionRunCreate(BaseModel):
     root_task_id: UUID
+    config: dict | None = None
 
 
 class ExecutionRunRead(BaseModel):

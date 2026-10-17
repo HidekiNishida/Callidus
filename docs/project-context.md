@@ -100,9 +100,9 @@ flowchart LR
 
 ## Estado atual e próximos passos
 
-**Estado:** hub de regras completo; **Fase 0–1** do runtime Python (SQLite, tarefas, máquina de estados, API FastAPI, provedores Ollama/llama.cpp, orçamento de contexto) com testes pytest (2026-10-17).
+**Estado:** runtime **v0.2** — orquestrador, ferramentas, verificação, UI web, E2E mock, 19 testes pytest (2026-10-17). Limitações em [limitacoes.md](/docs/architecture/limitacoes.md).
 
-**Próximo passo de implementação:** Fase 2–3 — orquestrador com tentativas persistidas, ferramentas (arquivo/shell/git/testes) e decomposição hierárquica; depois interface web (Fase 6).
+**Próximo passo sugerido:** transporte MCP stdio real; decomposição via Ollama para objetivos genéricos; UI de aprovações.
 
 ---
 

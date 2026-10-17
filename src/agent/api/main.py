@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -24,25 +28,37 @@ from agent.domain.schemas import (
     TaskStatusUpdate,
 )
 from agent.domain.state_machine import InvalidTransitionError
+from agent.mcp.manager import McpManager
+from agent.orchestrator.runner import RunOrchestrator
+from agent.persistence.models import EventLogModel, EvidenceModel, OperationAttemptModel
 from agent.providers.base import ChatCompletionRequest, ChatMessage, ModelProfile
 from agent.providers.llamacpp import LlamaCppProvider
 from agent.providers.ollama import OllamaProvider
 from agent.services.project_service import ProjectService
 from agent.services.run_service import RunService
 from agent.services.task_service import DependencyError, TaskNotFoundError, TaskService
-from agent.persistence.models import EventLogModel
-
-app = FastAPI(title="Agente de IA Local", version="0.1.0")
+from agent.tools.registry import build_default_registry
 
 
-@app.on_event("startup")
-def _startup() -> None:
+def _web_dir(settings: Settings) -> Path | None:
+    if settings.static_web_dir and settings.static_web_dir.is_dir():
+        return settings.static_web_dir
+    candidate = Path(__file__).resolve().parents[3] / "web" / "static"
+    return candidate if candidate.is_dir() else None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     get_engine()
+    yield
+
+
+app = FastAPI(title="Agente de IA Local", version="0.2.0", lifespan=lifespan)
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "version": "0.2.0"}
 
 
 @app.get("/providers/ollama/models")
@@ -65,6 +81,26 @@ async def llamacpp_models(settings: Settings = Depends(read_settings)) -> dict:
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"provider": "llamacpp", "models": models}
+
+
+@app.get("/tools")
+def list_tools() -> dict:
+    reg = build_default_registry()
+    return {
+        "tools": [s.model_dump() for s in reg.list_specs()],
+    }
+
+
+@app.get("/mcp/servers")
+def mcp_servers(settings: Settings = Depends(read_settings)) -> dict:
+    path = settings.data_dir / "mcp.json"
+    if not path.is_file():
+        path = settings.data_dir / "mcp.example.json"
+    mgr = McpManager(path)
+    return {
+        "servers": [s.__dict__ for s in mgr.list_servers()],
+        "tools": mgr.list_tools(),
+    }
 
 
 @app.post("/projects", response_model=ProjectRead)
@@ -148,6 +184,88 @@ def start_run(
     return ExecutionRunRead.model_validate(run)
 
 
+@app.get("/projects/{project_id}/runs", response_model=list[ExecutionRunRead])
+def list_runs(project_id: uuid.UUID, session: Session = Depends(db_session)) -> list[ExecutionRunRead]:
+    try:
+        runs = RunService(session).list_runs(project_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return [ExecutionRunRead.model_validate(r) for r in runs]
+
+
+@app.post("/runs/{run_id}/step")
+async def run_step(
+    run_id: uuid.UUID,
+    session: Session = Depends(db_session),
+    settings: Settings = Depends(read_settings),
+) -> dict:
+    orch = RunOrchestrator(session, settings)
+    try:
+        return await orch.step(run_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/runs/{run_id}/execute")
+async def run_execute(
+    run_id: uuid.UUID,
+    max_steps: int = 50,
+    session: Session = Depends(db_session),
+    settings: Settings = Depends(read_settings),
+) -> dict:
+    orch = RunOrchestrator(session, settings)
+    try:
+        log = await orch.run_until_idle(run_id, max_steps=min(max_steps, settings.max_orchestrator_steps))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"steps": len(log), "log": log}
+
+
+@app.post("/runs/{run_id}/pause")
+def pause_run(run_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    try:
+        run = RunService(session).pause_run(run_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"id": str(run.id), "status": run.status}
+
+
+@app.get("/tasks/{task_id}/attempts")
+def task_attempts(task_id: uuid.UUID, session: Session = Depends(db_session)) -> list[dict]:
+    stmt = (
+        select(OperationAttemptModel)
+        .where(OperationAttemptModel.task_id == task_id)
+        .order_by(OperationAttemptModel.created_at.desc())
+    )
+    rows = list(session.scalars(stmt).all())
+    return [
+        {
+            "id": str(r.id),
+            "kind": r.kind,
+            "provider": r.provider,
+            "success": r.success,
+            "error": r.error_message,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
+@app.get("/tasks/{task_id}/evidences")
+def task_evidences(task_id: uuid.UUID, session: Session = Depends(db_session)) -> list[dict]:
+    stmt = select(EvidenceModel).where(EvidenceModel.task_id == task_id)
+    rows = list(session.scalars(stmt).all())
+    return [
+        {
+            "id": str(r.id),
+            "verifier": r.verifier,
+            "passed": r.passed,
+            "summary": r.summary,
+        }
+        for r in rows
+    ]
+
+
 @app.get("/projects/{project_id}/events", response_model=list[EventRead])
 def list_events(project_id: uuid.UUID, session: Session = Depends(db_session)) -> list[EventRead]:
     try:
@@ -193,7 +311,6 @@ async def debug_chat_ollama(
     body: dict,
     settings: Settings = Depends(read_settings),
 ) -> dict:
-    """Endpoint de diagnóstico — não substitui o orquestrador."""
     model = body.get("model")
     prompt = body.get("prompt")
     if not model or not prompt:
@@ -211,13 +328,30 @@ async def debug_chat_ollama(
     return {"content": resp.content}
 
 
+def _mount_web(settings: Settings) -> None:
+    web = _web_dir(settings)
+    if web is None:
+        return
+    assets = web / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    def spa_index():
+        return FileResponse(web / "index.html")
+
+
 def run() -> None:
     import uvicorn
 
     settings = read_settings()
+    _mount_web(settings)
     uvicorn.run(
         "agent.api.main:app",
         host=settings.api_host,
         port=settings.api_port,
         reload=False,
     )
+
+
+_mount_web(read_settings())

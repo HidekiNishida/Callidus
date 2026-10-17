@@ -5,7 +5,9 @@ from agent.domain.enums import TaskStatus
 
 ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     TaskStatus.PENDING: frozenset({TaskStatus.PLANNING, TaskStatus.CANCELLED}),
-    TaskStatus.PLANNING: frozenset({TaskStatus.READY, TaskStatus.BLOCKED, TaskStatus.CANCELLED}),
+    TaskStatus.PLANNING: frozenset(
+        {TaskStatus.READY, TaskStatus.VERIFYING, TaskStatus.BLOCKED, TaskStatus.CANCELLED}
+    ),
     TaskStatus.READY: frozenset({TaskStatus.RUNNING, TaskStatus.CANCELLED}),
     TaskStatus.RUNNING: frozenset(
         {TaskStatus.VERIFYING, TaskStatus.RETRY_PENDING, TaskStatus.FAILED, TaskStatus.CANCELLED}
