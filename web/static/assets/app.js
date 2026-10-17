@@ -53,6 +53,7 @@ const state = {
   pollTimer: null,
   browsePath: "",
   openStageIds: new Set(),
+  openChangePaths: new Set(),
   followLatest: false,
   resumeBrief: null,
   browserMode: "off",
@@ -898,14 +899,34 @@ function resultLine(task) {
   return "";
 }
 
+function linkifyText(html) {
+  return html
+    .split(/(<[^>]+>)/)
+    .map((part) => {
+      if (part.startsWith("<")) return part;
+      return part.replace(/https?:\/\/[^\s<]+/g, (url) => {
+        const clean = url.replace(/[),.;]+$/, "");
+        const tail = url.slice(clean.length);
+        return `<a href="${clean}" target="_blank" rel="noreferrer">${clean}</a>${tail}`;
+      });
+    })
+    .join("");
+}
+
 function renderInline(text) {
-  return escapeHtml(text)
+  const html = escapeHtml(text)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, href) => {
-      if (!/^(https?:|\/|\.\/|\.\.\/)/.test(href)) return label;
-      return `<a href="${href}" rel="noreferrer">${label}</a>`;
+      if (/^https?:\/\//i.test(href)) {
+        return `<a href="${href}" target="_blank" rel="noreferrer">${label}</a>`;
+      }
+      if (/^(?:\/|\.\/|\.\.\/)/.test(href) || /[\w.-]+\.[A-Za-z0-9]{1,8}$/.test(href)) {
+        return `<button type="button" class="ref-link" data-change-path="${href}">${label}</button>`;
+      }
+      return label;
     });
+  return linkifyText(html);
 }
 
 function renderDiagram(source) {
@@ -1031,11 +1052,75 @@ function visibleReply(markdown) {
       if (/^[ab]\//.test(path) || files.includes(path)) continue;
       files.push(path);
     }
-    if (files.length) return `O resultado está em ${files.join(", ")}.`;
+    if (files.length) return `O resultado está em ${files.map((path) => `[${path}](${path})`).join(", ")}.`;
     const now = text.match(/^Agora:\s*(.+)$/im);
     if (now) return now[1].replace(/\.$/, "").trim();
   }
   return text;
+}
+
+function fileChangeFrom(result) {
+  if (!result || typeof result !== "object") return null;
+  const write = result.write && typeof result.write === "object" ? result.write : null;
+  const inner = result.result && typeof result.result === "object" ? result.result : null;
+  const bag = write && typeof write.diff === "string" ? write : inner && typeof inner.diff === "string" ? inner : result;
+  if (!bag || typeof bag.diff !== "string" || !bag.diff.trim()) return null;
+  const path = String(bag.path || result.path || "").trim();
+  if (!path || /^[ab]\//.test(path)) return null;
+  return {
+    path,
+    added: Number(bag.added) || 0,
+    removed: Number(bag.removed) || 0,
+    diff: bag.diff,
+  };
+}
+
+function collectChanges(root) {
+  const ids = descendantIds(root.id);
+  const found = [];
+  const seen = new Set();
+  for (const task of state.tasks) {
+    if (!ids.has(task.id)) continue;
+    const item = fileChangeFrom(task.consolidated_result_json);
+    if (!item || seen.has(item.path)) continue;
+    seen.add(item.path);
+    found.push(item);
+  }
+  return found;
+}
+
+function changesHtml(root) {
+  const items = collectChanges(root);
+  if (!items.length) return "";
+  return `<div class="changes">${items
+    .map((item) => {
+      const open = state.openChangePaths.has(item.path);
+      const detail = open ? `<div class="diff">${diffHtml(item.diff)}</div>` : "";
+      return `<div class="change${open ? " open" : ""}"><button type="button" class="row" data-change-path="${escapeHtml(item.path)}"><strong>${escapeHtml(item.path)}</strong><span class="counts"><span class="add">+${item.added}</span> <span class="del">−${item.removed}</span></span></button>${detail}</div>`;
+    })
+    .join("")}</div>`;
+}
+
+function referenceLinks(markdown, root) {
+  const urls = [];
+  const add = (value) => {
+    const url = String(value || "").trim().replace(/[),.;]+$/, "");
+    if (!/^https?:\/\//i.test(url) || urls.includes(url)) return;
+    urls.push(url);
+  };
+  for (const match of String(markdown || "").matchAll(/https?:\/\/[^\s)<]+/g)) add(match[0]);
+  const report = root.consolidated_result_json || {};
+  const child = state.tasks.find((task) => task.parent_id === root.id && (task.metadata_json || {}).final_answer);
+  for (const source of report.sources || child?.consolidated_result_json?.sources || []) add(source);
+  return urls;
+}
+
+function refsHtml(markdown, root) {
+  const urls = referenceLinks(markdown, root);
+  if (!urls.length) return "";
+  return `<div class="refs">${urls
+    .map((url) => `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a>`)
+    .join("")}</div>`;
 }
 
 function answerHtml(root) {
@@ -1043,8 +1128,10 @@ function answerHtml(root) {
   const child = state.tasks.find((task) => task.parent_id === root.id && (task.metadata_json || {}).final_answer);
   const markdown = report.final_answer || child?.consolidated_result_json?.markdown;
   const reply = visibleReply(markdown);
-  if (!reply) return "";
-  return `<div class="answer">${renderMarkdown(reply)}</div>`;
+  const changes = changesHtml(root);
+  const refs = refsHtml(markdown, root);
+  if (!reply && !changes && !refs) return "";
+  return `<div class="answer">${reply ? renderMarkdown(reply) : ""}${changes}${refs}</div>`;
 }
 
 function titleOf(task) {
@@ -1064,7 +1151,7 @@ function diffHtml(diff) {
 }
 
 function stageDetail(task) {
-  const result = task.consolidated_result_json?.result || task.consolidated_result_json || {};
+  const result = fileChangeFrom(task.consolidated_result_json) || task.consolidated_result_json?.result || task.consolidated_result_json || {};
   const diff = typeof result.diff === "string" ? result.diff : "";
   const line = resultLine(task);
   const counts = result.added != null ? ` +${result.added} −${result.removed || 0}` : "";
@@ -1286,6 +1373,15 @@ async function init() {
     if (edit) {
       event.preventDefault();
       state.editingTaskId = edit.dataset.edit;
+      renderChat();
+      return;
+    }
+    const change = event.target.closest("[data-change-path]");
+    if (change) {
+      event.preventDefault();
+      const path = change.dataset.changePath;
+      if (state.openChangePaths.has(path)) state.openChangePaths.delete(path);
+      else state.openChangePaths.add(path);
       renderChat();
       return;
     }

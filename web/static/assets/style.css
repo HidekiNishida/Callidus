@@ -65,6 +65,17 @@ body { margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; 
 .thought li.again span { color: var(--warn); }
 .tool-card .same { color: var(--warn); font-style: normal; font-size: 10px; font-weight: 500; margin-left: auto; }
 .answer { margin-top: 0.15rem; }
+.answer a { color: var(--accent-hover); }
+.changes { margin-top: 0.65rem; display: flex; flex-direction: column; gap: 0.28rem; }
+.change { border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 0.15rem 0.45rem 0.2rem; }
+.change .row { width: 100%; display: flex; gap: 0.45rem; align-items: center; background: none; border: 0; color: inherit; font: inherit; padding: 0.28rem 0.1rem; cursor: pointer; text-align: left; }
+.change .counts { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; }
+.change .counts .add { color: var(--ok); }
+.change .counts .del { color: var(--bad); }
+.change .diff { margin: 0.15rem 0 0.35rem; }
+.refs { display: flex; flex-wrap: wrap; gap: 0.35rem 0.7rem; margin-top: 0.45rem; }
+.refs a { font-size: 12px; }
+.ref-link { background: none; border: 0; color: var(--accent-hover); font: inherit; padding: 0; cursor: pointer; text-decoration: underline; }
 .answer h3, .answer h4, .answer h5 { margin: 0.8rem 0 0.35rem; font-size: 0.95rem; }
 .answer p { margin: 0.35rem 0; }
 .answer ul, .answer ol { margin: 0.3rem 0 0.3rem 1.1rem; padding: 0; }
