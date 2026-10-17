@@ -634,10 +634,9 @@ class RunOrchestrator:
         prompt = (
             f"{language_instruction(str(config.get('locale') or 'pt'))}\n"
             f"{capability_line(profile.model_id)}\n"
-            "Escreva a resposta final em Markdown para a pessoa que pediu a tarefa. "
-            "Use título, uma tabela das etapas, lista do que foi verificado e uma seção Fontes com caminhos de arquivo. "
-            "Se ajudar a explicar o fluxo, inclua um bloco ```mermaid com flowchart TD. "
-            "Não invente testes nem caminhos de arquivo que não aparecem abaixo.\n"
+            "Escreva somente a resposta para a pessoa, no idioma do pedido. "
+            "Não descreva etapas, verificações, fontes nem o fluxo. "
+            "Não monte um relatório. Se bastar uma frase, escreva a frase.\n"
             f"Data e hora locais agora: {local_now_line()}.\n\n"
             f"Pedido:\n{objective[:1500]}\n\nEtapas:\n{stages}"
         )

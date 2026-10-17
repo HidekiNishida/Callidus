@@ -178,13 +178,10 @@ function parseStamp(iso) {
 function formatWhen(iso) {
   const date = parseStamp(iso);
   if (!date) return "";
-  return date.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const time = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  if (date.toDateString() === new Date().toDateString()) return time;
+  const day = date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  return `${day} ${time}`;
 }
 
 function formatTime(iso) {
@@ -844,8 +841,7 @@ function thoughtBlock(root) {
   const items = lines
     .map((item) => {
       const glyph = item.phase === "thinking" || item.phase === "model" ? "spark" : item.phase === "tool" ? "terminal" : "check";
-      const when = formatWhen(item.at);
-      return `<li class="${escapeHtml(item.phase || "step")}">${icon(glyph)}<span>${escapeHtml(item.text || "")}</span>${when ? `<time>${escapeHtml(when)}</time>` : ""}</li>`;
+      return `<li class="${escapeHtml(item.phase || "step")}">${icon(glyph)}<span>${escapeHtml(item.text || "")}</span></li>`;
     })
     .join("");
   const pending = live.thinking ? `<li class="thinking">${icon("spark")}<span>${copy.pending}</span></li>` : "";
@@ -991,12 +987,27 @@ export function renderMarkdown(raw) {
     .join("");
 }
 
+function visibleReply(markdown) {
+  const text = String(markdown || "").replace(/\r\n/g, "\n").trim();
+  const section = text.match(/^#{1,3}[^\n]*resposta final[^\n]*\n+([\s\S]*?)(?=\n#{1,3}\s|$)/im);
+  if (section) {
+    const body = section[1].replace(/^---\s*$/gm, "").trim().replace(/^\*\*([\s\S]+)\*\*$/, "$1").trim();
+    if (body) return body;
+  }
+  if (/\n#{1,3}\s*(etapas|verifica|fontes|fluxo|objetivo)\b/i.test(text)) {
+    const now = text.match(/^Agora:\s*(.+)$/im);
+    if (now) return now[1].replace(/\.$/, "").trim();
+  }
+  return text;
+}
+
 function answerHtml(root) {
   const report = root.consolidated_result_json || {};
   const child = state.tasks.find((task) => task.parent_id === root.id && (task.metadata_json || {}).final_answer);
   const markdown = report.final_answer || child?.consolidated_result_json?.markdown;
-  if (!markdown) return "";
-  return `<div class="answer">${renderMarkdown(markdown)}</div>`;
+  const reply = visibleReply(markdown);
+  if (!reply) return "";
+  return `<div class="answer">${renderMarkdown(reply)}</div>`;
 }
 
 function titleOf(task) {
@@ -1077,8 +1088,7 @@ function renderChat() {
           const active = busy.includes(task.status) ? " busy" : "";
           const open = state.openStageIds.has(task.id);
           const detail = open ? stageDetail(task) : "";
-          const when = formatWhen(task.updated_at || task.created_at);
-          return `<div class="tool-card${active}${open ? " open" : ""}"><button type="button" class="row" data-stage="${task.id}" data-last="${index === kids.length - 1 ? "1" : "0"}">${statusBadge(task.status)}${icon(glyph)}<strong>${escapeHtml(titleOf(task))}</strong>${when ? `<time>${escapeHtml(when)}</time>` : ""}</button>${detail ? `<div class="stage-detail">${detail}</div>` : ""}</div>`;
+          return `<div class="tool-card${active}${open ? " open" : ""}"><button type="button" class="row" data-stage="${task.id}" data-last="${index === kids.length - 1 ? "1" : "0"}">${statusBadge(task.status)}${icon(glyph)}<strong>${escapeHtml(titleOf(task))}</strong></button>${detail ? `<div class="stage-detail">${detail}</div>` : ""}</div>`;
         })
         .join("");
       const thoughts = thoughtBlock(root);
@@ -1093,9 +1103,11 @@ function renderChat() {
       const editBtn = `<button type="button" class="icon-btn edit-msg" data-edit="${root.id}" title="Editar mensagem" aria-label="Editar mensagem">${icon("pencil")}</button>`;
       const asked = formatWhen(root.created_at);
       const answered = formatWhen((last || root).updated_at || root.updated_at);
-      const pendingLine = !cards && !thoughts && glowing ? `<p class="muted">${escapeHtml(copy.planning)}</p>` : "";
+      const reply = answerHtml(root);
+      const pendingLine = glowing && !reply ? `<p class="muted">${escapeHtml(copy.planning)}</p>` : "";
+      const process = reply ? "" : `${thoughts}${cards}`;
       return `<div class="bubble user"><div class="who"><span>${copy.you}</span>${asked ? `<time>${escapeHtml(asked)}</time>` : ""}${editBtn}</div>${message}${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
-        <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who"><span>${copy.agent}${model}</span>${answered ? `<time>${escapeHtml(answered)}</time>` : ""}</div>${thoughts}${cards}${pendingLine}${resumeHtml(root)}${answerHtml(root)}</div></div>`;
+        <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who"><span>${copy.agent}${model}</span>${answered ? `<time>${escapeHtml(answered)}</time>` : ""}</div>${process}${pendingLine}${resumeHtml(root)}${reply}</div></div>`;
     })
     .join("");
   if (stick) log.scrollTop = log.scrollHeight;

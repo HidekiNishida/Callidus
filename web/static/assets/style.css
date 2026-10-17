@@ -62,7 +62,7 @@ body { margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; 
 .thought ol { list-style: none; margin: 0.35rem 0 0; padding: 0 0 0 0.2rem; display: flex; flex-direction: column; gap: 0.28rem; }
 .thought li { display: flex; gap: 0.4rem; align-items: flex-start; }
 .thought li.model span { font-style: italic; }
-.answer { margin-top: 0.8rem; }
+.answer { margin-top: 0.15rem; }
 .answer h3, .answer h4, .answer h5 { margin: 0.8rem 0 0.35rem; font-size: 0.95rem; }
 .answer p { margin: 0.35rem 0; }
 .answer ul, .answer ol { margin: 0.3rem 0 0.3rem 1.1rem; padding: 0; }
@@ -134,8 +134,8 @@ label.icon-btn:has(input:checked) { color: var(--accent); }
 #loose-list { overflow: visible; }
 .chat-row { display: flex; align-items: center; }
 .chat-row > button:first-child { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.35rem; }
-.chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-row time, .bubble time, .tool-card time, .thought time { margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.chat-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-row time, .bubble .who time { color: var(--muted); font-size: 10px; font-weight: 400; opacity: 0.7; white-space: nowrap; }
 .chat-menu { position: relative; }
 .chat-menu summary { list-style: none; cursor: pointer; color: var(--muted); width: 22px; height: 22px; display: grid; place-items: center; }
 .chat-menu summary::-webkit-details-marker { display: none; }
@@ -217,6 +217,7 @@ label.icon-btn:has(input:checked) { color: var(--accent); }
 .branch-switch button { background: transparent; color: inherit; border: 1px solid var(--border); border-radius: 6px; min-width: 1.6rem; cursor: pointer; }
 .edit-box { display: flex; flex-direction: column; gap: 0.35rem; }
 .edit-box textarea { width: 100%; min-height: 4.5rem; }
+.bubble .who { display: flex; align-items: baseline; gap: 0.35rem; }
 .bubble.user .who { display: flex; align-items: center; gap: 0.35rem; }
 .edit-msg { margin-left: auto; }
 .topbar-run, .topbar-model { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
