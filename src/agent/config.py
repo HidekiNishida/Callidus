@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     database_url: str | None = None
     ollama_base_url: str = "http://127.0.0.1:11434"
-    llamacpp_base_url: str | None = None
+    llamacpp_base_url: str = "http://127.0.0.1:8080"
     default_provider: str = "ollama"
     default_model_id: str = "llama3.2"
     default_context_limit: int = 8192

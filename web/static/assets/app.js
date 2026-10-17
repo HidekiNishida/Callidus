@@ -611,8 +611,10 @@ async function loadModels() {
     sel.innerHTML = `<option value="mock-model">mock-model</option>`;
     return;
   }
+  const endpoint = provider === "llamacpp" ? "/providers/llamacpp/models" : "/providers/ollama/models";
+  const offlineLabel = provider === "llamacpp" ? "llama.cpp offline" : "Ollama offline";
   try {
-    const data = await api("/providers/ollama/models");
+    const data = await api(endpoint);
     (data.models || []).forEach((m) => {
       const opt = document.createElement("option");
       opt.value = m;
@@ -623,7 +625,7 @@ async function loadModels() {
       sel.innerHTML = `<option value="${state.uiDefaults?.model_id || "llama3.2"}">${state.uiDefaults?.model_id || "llama3.2"} (fallback)</option>`;
     }
   } catch {
-    sel.innerHTML = `<option value="${state.uiDefaults?.model_id || "llama3.2"}">Ollama offline — fallback</option>`;
+    sel.innerHTML = `<option value="${state.uiDefaults?.model_id || "llama3.2"}">${offlineLabel} — fallback</option>`;
   }
   if (prefs.model_id) sel.value = prefs.model_id;
 }

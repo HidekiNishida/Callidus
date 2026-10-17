@@ -31,6 +31,7 @@ from agent.persistence.models import (
 )
 from agent.providers.base import LLMProvider, ModelProfile
 from agent.providers.mock import MockProvider
+from agent.providers.llamacpp import LlamaCppProvider
 from agent.providers.ollama import OllamaProvider
 from agent.services.attempt_service import AttemptService
 from agent.services.task_service import TaskService
@@ -46,6 +47,8 @@ def _select_provider(settings: Settings, run_config: dict) -> LLMProvider:
     name = run_config.get("provider") or settings.default_provider
     if name == "ollama":
         return OllamaProvider(settings.ollama_base_url)
+    if name == "llamacpp":
+        return LlamaCppProvider(settings.llamacpp_base_url)
     if name == "mock":
         kw = run_config.get("mock_keyword_map") or {}
         return MockProvider(keyword_map=kw)
@@ -205,7 +208,7 @@ class RunOrchestrator:
                         objective=task.objective,
                         project_root=project.root_path,
                         provider=provider
-                        if (config.get("provider") or self._settings.default_provider) == "ollama"
+                        if (config.get("provider") or self._settings.default_provider) in {"ollama", "llamacpp"}
                         else None,
                     )
                 if plan is None or not plan.subtasks:

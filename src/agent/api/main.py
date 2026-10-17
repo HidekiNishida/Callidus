@@ -91,8 +91,6 @@ async def ollama_models(settings: Settings = Depends(read_settings)) -> dict:
 
 @app.get("/providers/llamacpp/models")
 async def llamacpp_models(settings: Settings = Depends(read_settings)) -> dict:
-    if not settings.llamacpp_base_url:
-        raise HTTPException(status_code=400, detail="LLAMACPP_BASE_URL não configurada")
     provider = LlamaCppProvider(settings.llamacpp_base_url)
     try:
         models = await provider.list_models()
@@ -446,6 +444,7 @@ def ui_defaults(settings: Settings = Depends(read_settings)) -> dict:
         "approve_risky_tools": True,
         "use_generic_template": settings.use_generic_decomposition_template,
         "ollama_base_url": settings.ollama_base_url,
+        "llamacpp_base_url": settings.llamacpp_base_url,
     }
 
 

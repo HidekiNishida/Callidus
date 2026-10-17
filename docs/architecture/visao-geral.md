@@ -27,7 +27,7 @@ flowchart TB
   DOM["domain/ — tarefas, estados, transições"]
   PERS["persistence/ — SQLite, repositórios"]
   CTX["context/ — montagem de prompt (Fase 4)"]
-  PROV["providers/ — Ollama, llama.cpp (Fase 2)"]
+  PROV["providers/ — Ollama e llama.cpp"]
   TOOLS["tools/ — registro e execução (Fase 3)"]
   VER["verification/ — checks determinísticos (Fase 5)"]
   API --> ORCH

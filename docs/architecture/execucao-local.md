@@ -26,10 +26,11 @@ Atalho sem o script: `PYTHONPATH=src agente-api`
 | `DEFAULT_PROVIDER` | `ollama` | Runs sem config usam Ollama |
 | `DEFAULT_MODEL_ID` | `llama3.2` | Modelo na decomposição |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | HTTP Ollama |
+| `LLAMACPP_BASE_URL` | `http://127.0.0.1:8080` | Servidor llama.cpp (`llama-server`, API OpenAI em `/v1`) |
 | `AGENT_DATA_DIR` | `./data` | SQLite + `mcp.json` |
 | `ALLOW_MOCK_FALLBACK` | `false` | Testes podem habilitar |
 
-Ordem de decomposição: **builtin e2e** (objetivo contém `e2e`) → **Ollama** → template genérico → mock (se permitido).
+Ordem de decomposição: **builtin e2e** (objetivo contém `e2e`) → **provedor escolhido** (Ollama ou llama.cpp) → template genérico → mock (se permitido).
 
 ## API e UI
 

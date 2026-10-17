@@ -13,6 +13,7 @@ from agent.domain.schemas import TaskCreate, TaskDependencyCreate, TaskStatusUpd
 from agent.providers.base import LLMProvider, ModelProfile
 from agent.context.budget import ContextComponent, assemble_messages
 from agent.providers.base import ChatCompletionRequest
+from agent.providers.llamacpp import LlamaCppProvider
 from agent.providers.ollama import OllamaProvider
 from agent.services.task_service import TaskService
 from agent.guides.discover import capability_line, guide_digest
@@ -140,13 +141,18 @@ async def resolve_decomposition_plan(
 
     profile = profile_from_run_config(run_config, settings)
     provider_name = run_config.get("provider") or settings.default_provider
-    if provider_name == "ollama":
-        ollama = provider or OllamaProvider(settings.ollama_base_url)
+    if provider_name in {"ollama", "llamacpp"}:
+        if provider is not None:
+            model = provider
+        elif provider_name == "llamacpp":
+            model = LlamaCppProvider(settings.llamacpp_base_url)
+        else:
+            model = OllamaProvider(settings.ollama_base_url)
         digest = guide_digest(project_root, objective)
         try:
-            plan = await plan_with_model(ollama, profile, objective, f"{project_root}\n\n{digest}")
+            plan = await plan_with_model(model, profile, objective, f"{project_root}\n\n{digest}")
             if plan:
-                return ensure_closing_stages(plan), "ollama"
+                return ensure_closing_stages(plan), provider_name
         except Exception:
             pass
 
