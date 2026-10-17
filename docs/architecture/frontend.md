@@ -1,12 +1,30 @@
 # Interface web
 
-Estáticos em [`web/static/`](/web/static/). Servidos pela API em `/` quando a pasta existe.
+Estáticos em [`web/static/`](/web/static/) · Análise UX: [ux-ui.md](/docs/architecture/ux-ui.md)
 
-| Área | Função |
+## Layout (v0.4)
+
+| Zona | Função |
 |------|--------|
-| Projetos | Criar e selecionar workspace |
-| Tarefas | Árvore textual de estados |
-| Execução | Iniciar run, passo único, executar até idle |
-| Eventos | JSON dos últimos eventos |
+| **Sidebar** | Projetos, busca, saúde da API |
+| **Topbar** | Modelo Ollama, controles de run, aprovação de ferramentas |
+| **Plano** | Composer de objetivo + árvore com badges |
+| **Inspetor** | Detalhe, tentativas, evidências, git diff, ferramentas |
+| **Atividade** | Feed legível + MCP discover |
 
-Requer API em `http://127.0.0.1:8765` (mesma origem). Para demo E2E no UI, use objetivo contendo `e2e` e `root_path` apontando para uma cópia de `tests/fixtures/sample_project/`.
+## Atalhos
+
+- `Ctrl+Enter` — executar auto
+- `Ctrl+.` — um passo
+
+## Preferências
+
+Persistidas em `localStorage` (`agente-local-ui-v1`): último projeto, provider, modelo.
+
+## Demo E2E
+
+1. Projeto com path absoluto para `tests/fixtures/sample_project`
+2. Template **Demo E2E** no composer
+3. **Iniciar** → **Auto** (usa mock automaticamente se objetivo contém `e2e`)
+
+Voltar: [architecture/README.md](/docs/architecture/README.md)

@@ -58,7 +58,7 @@ agente-api               # http://127.0.0.1:8765 — docs em /docs
 
 Arquitetura: [docs/architecture/visao-geral.md](/docs/architecture/visao-geral.md) · Limitações: [limitacoes.md](/docs/architecture/limitacoes.md).
 
-Interface: abra `http://127.0.0.1:8765/` após `agente-api`. Demo: projeto com path para `tests/fixtures/sample_project` e objetivo contendo `e2e`.
+Interface (layout IDE): `http://127.0.0.1:8765/` após `agente-api`. Guia UX: [ux-ui.md](/docs/architecture/ux-ui.md). Demo: template **Demo E2E** + path `tests/fixtures/sample_project`.
 
 Backup do SQLite: `./scripts/backup-data.sh`.
 

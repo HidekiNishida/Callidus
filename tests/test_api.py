@@ -32,6 +32,27 @@ def test_health(client: TestClient):
     assert client.get("/health").json()["status"] == "ok"
 
 
+def test_ui_defaults(client: TestClient):
+    r = client.get("/config/ui-defaults")
+    assert r.status_code == 200
+    assert r.json()["provider"] == "ollama"
+
+
+def test_project_overview(client: TestClient, tmp_path: Path):
+    r = client.post(
+        "/projects",
+        json={"name": "Ov", "root_path": str(tmp_path)},
+    )
+    pid = r.json()["id"]
+    client.post(
+        f"/projects/{pid}/tasks",
+        json={"title": "T", "objective": "o"},
+    )
+    ov = client.get(f"/projects/{pid}/overview")
+    assert ov.status_code == 200
+    assert ov.json()["task_total"] == 1
+
+
 def test_project_task_flow(client: TestClient, tmp_path: Path):
     r = client.post(
         "/projects",

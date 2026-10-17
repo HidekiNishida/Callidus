@@ -15,6 +15,7 @@ Hub técnico do **Agente de IA Local** (código em [/src/agent/](/src/agent/READ
 | [ferramentas.md](/docs/architecture/ferramentas.md) | Tools |
 | [mcp.md](/docs/architecture/mcp.md) | MCP stdio |
 | [frontend.md](/docs/architecture/frontend.md) | UI |
+| [ux-ui.md](/docs/architecture/ux-ui.md) | Análise UX + layout |
 | [limitacoes.md](/docs/architecture/limitacoes.md) | Gaps conhecidos |
 
 Voltar: [docs/README.md](/docs/README.md) · [README raiz](/README.md)

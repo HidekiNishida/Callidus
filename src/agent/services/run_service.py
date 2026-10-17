@@ -61,3 +61,18 @@ class RunService:
             )
         )
         return run
+
+    def cancel_run(self, run_id: uuid.UUID) -> ExecutionRunModel:
+        run = self._session.get(ExecutionRunModel, run_id)
+        if run is None:
+            raise LookupError(str(run_id))
+        run.status = RunStatus.CANCELLED.value
+        self._session.add(
+            EventLogModel(
+                project_id=run.project_id,
+                run_id=run.id,
+                event_type="run.cancelled",
+                payload_json={},
+            )
+        )
+        return run

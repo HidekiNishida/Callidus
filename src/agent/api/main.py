@@ -31,13 +31,13 @@ from agent.domain.state_machine import InvalidTransitionError
 from agent.mcp.manager import McpManager
 from agent.orchestrator.runner import RunOrchestrator
 from agent.persistence.models import EventLogModel, EvidenceModel, OperationAttemptModel
+from agent.tools.registry import ToolContext, build_default_registry
 from agent.providers.base import ChatCompletionRequest, ChatMessage, ModelProfile
 from agent.providers.llamacpp import LlamaCppProvider
 from agent.providers.ollama import OllamaProvider
 from agent.services.project_service import ProjectService
 from agent.services.run_service import RunService
 from agent.services.task_service import DependencyError, TaskNotFoundError, TaskService
-from agent.tools.registry import build_default_registry
 
 
 def _web_dir(settings: Settings) -> Path | None:
@@ -53,12 +53,12 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Agente de IA Local", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Agente de IA Local", version="0.4.0", lifespan=lifespan)
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "version": "0.2.0"}
+    return {"status": "ok", "version": "0.4.0"}
 
 
 @app.get("/providers/ollama/models")
@@ -249,6 +249,68 @@ def pause_run(run_id: uuid.UUID, session: Session = Depends(db_session)) -> dict
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"id": str(run.id), "status": run.status}
+
+
+@app.post("/runs/{run_id}/cancel")
+def cancel_run(run_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    try:
+        run = RunService(session).cancel_run(run_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"id": str(run.id), "status": run.status}
+
+
+@app.get("/config/ui-defaults")
+def ui_defaults(settings: Settings = Depends(read_settings)) -> dict:
+    return {
+        "provider": settings.default_provider,
+        "model_id": settings.default_model_id,
+        "approve_risky_tools": True,
+        "use_generic_template": settings.use_generic_decomposition_template,
+        "ollama_base_url": settings.ollama_base_url,
+    }
+
+
+@app.get("/projects/{project_id}/overview")
+def project_overview(project_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    try:
+        project = ProjectService(session).get_project(project_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    tasks = TaskService(session).list_tasks(project_id)
+    by_status: dict[str, int] = {}
+    for t in tasks:
+        by_status[t.status] = by_status.get(t.status, 0) + 1
+    runs = RunService(session).list_runs(project_id)
+    active = next((r for r in runs if r.status == "active"), None)
+    return {
+        "project_id": str(project_id),
+        "task_total": len(tasks),
+        "tasks_by_status": by_status,
+        "active_run_id": str(active.id) if active else None,
+        "runs_total": len(runs),
+        "root_path": project.root_path,
+    }
+
+
+@app.get("/tasks/{task_id}")
+def get_task(task_id: uuid.UUID, session: Session = Depends(db_session)) -> TaskRead:
+    try:
+        task = TaskService(session).get_task(task_id)
+    except TaskNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return TaskRead.model_validate(task)
+
+
+@app.get("/projects/{project_id}/git-diff")
+async def project_git_diff(project_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    try:
+        project = ProjectService(session).get_project(project_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    reg = build_default_registry()
+    ctx = ToolContext(project_root=project.root_path)
+    return await reg.execute("git_diff", ctx, {})
 
 
 @app.get("/tasks/{task_id}/attempts")
