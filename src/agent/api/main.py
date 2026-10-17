@@ -91,16 +91,37 @@ def list_tools() -> dict:
     }
 
 
+def _mcp_path(settings: Settings) -> Path:
+    path = settings.mcp_config_path or settings.data_dir / "mcp.json"
+    if not path.is_file():
+        alt = Path(__file__).resolve().parents[3] / "data" / "mcp.example.json"
+        return alt if alt.is_file() else path
+    return path
+
+
 @app.get("/mcp/servers")
 def mcp_servers(settings: Settings = Depends(read_settings)) -> dict:
-    path = settings.data_dir / "mcp.json"
-    if not path.is_file():
-        path = settings.data_dir / "mcp.example.json"
-    mgr = McpManager(path)
+    mgr = McpManager(_mcp_path(settings))
     return {
         "servers": [s.__dict__ for s in mgr.list_servers()],
         "tools": mgr.list_tools(),
+        "config_path": str(_mcp_path(settings)),
     }
+
+
+@app.post("/mcp/discover")
+async def mcp_discover(settings: Settings = Depends(read_settings)) -> dict:
+    mgr = McpManager(_mcp_path(settings))
+    return await mgr.discover()
+
+
+@app.post("/mcp/call")
+async def mcp_call(body: dict, settings: Settings = Depends(read_settings)) -> dict:
+    tool_id = body.get("tool_id")
+    if not tool_id:
+        raise HTTPException(status_code=400, detail="tool_id obrigatório")
+    mgr = McpManager(_mcp_path(settings))
+    return await mgr.call_tool(tool_id, body.get("arguments") or {})
 
 
 @app.post("/projects", response_model=ProjectRead)

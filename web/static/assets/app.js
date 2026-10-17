@@ -89,11 +89,20 @@ document.getElementById("form-task").onsubmit = async (e) => {
 
 document.getElementById("btn-run").onclick = async () => {
   if (!selectedProject || !selectedTask) return;
+  const objective = (selectedTask.objective || "").toLowerCase();
+  const demoE2e = objective.includes("e2e");
   currentRun = await api(`/projects/${selectedProject.id}/runs`, {
     method: "POST",
     body: JSON.stringify({
       root_task_id: selectedTask.id,
-      config: { provider: "mock", approve_risky_tools: true },
+      config: demoE2e
+        ? { provider: "mock", approve_risky_tools: true }
+        : {
+            provider: "ollama",
+            model_id: "llama3.2",
+            approve_risky_tools: true,
+            use_generic_template: true,
+          },
     }),
   });
   document.getElementById("run-status").textContent = `Run ${currentRun.id} (${currentRun.status})`;

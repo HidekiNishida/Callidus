@@ -7,12 +7,13 @@ from typing import Any
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from agent.config import Settings
 from agent.domain.enums import TaskKind, TaskStatus
-from agent.domain.schemas import TaskCreate, TaskStatusUpdate
-from agent.providers.base import LLMProvider
+from agent.domain.schemas import TaskCreate, TaskDependencyCreate, TaskStatusUpdate
+from agent.providers.base import LLMProvider, ModelProfile
 from agent.context.budget import ContextComponent, assemble_messages
-from agent.providers.base import ChatCompletionRequest, ModelProfile
-from agent.providers.mock import decomposition_json
+from agent.providers.base import ChatCompletionRequest
+from agent.providers.ollama import OllamaProvider
 from agent.services.task_service import TaskService
 from agent.util.json_parse import parse_json_object
 
@@ -53,9 +54,29 @@ BUILTIN_E2E_PLAN = DecompositionResult(
         SubTaskSpec(
             title="Verificar testes",
             objective="Executar pytest no fixture",
-            metadata={
-                "verification": {"type": "pytest", "path": "tests"},
-            },
+            metadata={"verification": {"type": "pytest", "path": "tests"}},
+            depends_on_indices=[1],
+        ),
+    ]
+)
+
+GENERIC_TEMPLATE = DecompositionResult(
+    subtasks=[
+        SubTaskSpec(
+            title="Inspecionar código",
+            objective="Buscar símbolos e arquivos relacionados ao objetivo",
+            metadata={"tool": "search_grep", "tool_args": {"pattern": "def "}},
+        ),
+        SubTaskSpec(
+            title="Aplicar alterações",
+            objective="Implementar a mudança pedida no objetivo pai",
+            metadata={"model_operation": True, "prompt_key": "implement"},
+            depends_on_indices=[0],
+        ),
+        SubTaskSpec(
+            title="Verificar",
+            objective="Executar testes do projeto",
+            metadata={"verification": {"type": "pytest", "path": "."}},
             depends_on_indices=[1],
         ),
     ]
@@ -69,15 +90,15 @@ async def plan_with_model(
     context_snippet: str,
 ) -> DecompositionResult | None:
     prompt = (
-        f"Objetivo: {objective}\n\nContexto:\n{context_snippet}\n\n"
-        'Responda SOMENTE JSON: {"subtasks":[{"title":"...","objective":"...",'
-        '"kind":"operation|subsystem","metadata":{},"depends_on_indices":[]}]}'
+        f"Objetivo: {objective}\n\nContexto do projeto:\n{context_snippet}\n\n"
+        "Decomponha em subtarefas pequenas e verificáveis para um modelo local.\n"
+        'Responda SOMENTE JSON válido: {"subtasks":[{"title":"...","objective":"...",'
+        '"kind":"operation","metadata":{"tool":"read_file","tool_args":{"path":"..."}},'
+        '"depends_on_indices":[]}]}'
     )
     budget = assemble_messages(
         profile,
-        [
-            ContextComponent(name="objetivo", text=prompt, required=True, priority=100),
-        ],
+        [ContextComponent(name="decomposição", text=prompt, required=True, priority=100)],
     )
     resp = await provider.chat(
         ChatCompletionRequest(messages=budget.messages, profile=profile)
@@ -86,9 +107,49 @@ async def plan_with_model(
     if err or not data:
         return None
     try:
-        return DecompositionResult.model_validate(data)
+        plan = DecompositionResult.model_validate(data)
+        return plan if plan.subtasks else None
     except Exception:
         return None
+
+
+async def resolve_decomposition_plan(
+    *,
+    settings: Settings,
+    run_config: dict[str, Any],
+    objective: str,
+    project_root: str,
+    provider: LLMProvider | None = None,
+) -> tuple[DecompositionResult | None, str]:
+    """Ordem: builtin e2e → Ollama (padrão) → template genérico → mock (se permitido)."""
+    if builtin := builtin_plan_for_objective(objective):
+        return builtin, "builtin-e2e"
+
+    profile = profile_from_run_config(run_config, settings)
+    ollama = provider or OllamaProvider(settings.ollama_base_url)
+    try:
+        plan = await plan_with_model(ollama, profile, objective, project_root)
+        if plan:
+            return plan, "ollama"
+    except Exception:
+        pass
+
+    if run_config.get("use_generic_template", settings.use_generic_decomposition_template):
+        return GENERIC_TEMPLATE.model_copy(deep=True), "generic-template"
+
+    if run_config.get("provider") == "mock" or settings.allow_mock_fallback:
+        return BUILTIN_E2E_PLAN if "e2e" in objective.lower() else GENERIC_TEMPLATE, "mock-fallback"
+
+    return None, "none"
+
+
+def profile_from_run_config(run_config: dict[str, Any], settings: Settings) -> ModelProfile:
+    return ModelProfile(
+        model_id=run_config.get("model_id") or settings.default_model_id,
+        context_limit=int(run_config.get("context_limit", settings.default_context_limit)),
+        input_budget=int(run_config.get("input_budget", settings.default_input_budget)),
+        output_reserve=int(run_config.get("output_reserve", settings.default_output_reserve)),
+    )
 
 
 def apply_decomposition(
@@ -121,8 +182,6 @@ def apply_decomposition(
     for idx, spec in enumerate(plan.subtasks):
         for dep_idx in spec.depends_on_indices:
             if 0 <= dep_idx < len(created_ids):
-                from agent.domain.schemas import TaskDependencyCreate
-
                 ts.add_dependency(
                     created_ids[idx],
                     TaskDependencyCreate(depends_on_task_id=created_ids[dep_idx]),

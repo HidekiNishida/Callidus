@@ -11,11 +11,7 @@ from agent.config import Settings
 from agent.domain.enums import AttemptKind, RunStatus, TaskKind, TaskStatus
 from agent.domain.schemas import TaskStatusUpdate
 from agent.orchestrator.consolidation import children_of, consolidate_parent
-from agent.orchestrator.decomposition import (
-    apply_decomposition,
-    builtin_plan_for_objective,
-    plan_with_model,
-)
+from agent.orchestrator.decomposition import apply_decomposition, resolve_decomposition_plan
 from agent.persistence.models import (
     EventLogModel,
     EvidenceModel,
@@ -37,7 +33,7 @@ class RunBlockedError(RuntimeError):
 
 
 def _select_provider(settings: Settings, run_config: dict) -> LLMProvider:
-    name = run_config.get("provider", "mock")
+    name = run_config.get("provider") or settings.default_provider
     if name == "ollama":
         return OllamaProvider(settings.ollama_base_url)
     if name == "mock":
@@ -46,14 +42,10 @@ def _select_provider(settings: Settings, run_config: dict) -> LLMProvider:
     return MockProvider()
 
 
-def _profile_from_config(run_config: dict) -> ModelProfile:
-    mid = run_config.get("model_id", "mock-model")
-    return ModelProfile(
-        model_id=mid,
-        context_limit=int(run_config.get("context_limit", 8192)),
-        input_budget=int(run_config.get("input_budget", 6000)),
-        output_reserve=int(run_config.get("output_reserve", 1024)),
-    )
+def _profile_from_config(run_config: dict, settings: Settings) -> ModelProfile:
+    from agent.orchestrator.decomposition import profile_from_run_config
+
+    return profile_from_run_config(run_config, settings)
 
 
 class RunOrchestrator:
@@ -80,7 +72,7 @@ class RunOrchestrator:
 
         config = self._run_config(run)
         provider = _select_provider(self._settings, config)
-        profile = _profile_from_config(config)
+        profile = _profile_from_config(config, self._settings)
 
         root = self._tasks.get_task(run.root_task_id)
         task = self._pick_next_task(run.root_task_id)
@@ -115,9 +107,13 @@ class RunOrchestrator:
                     return {"action": "operation_ready", "task_id": str(task.id)}
                 return {"action": "operation_wait_deps", "task_id": str(task.id)}
             if not kids:
-                plan = builtin_plan_for_objective(task.objective)
-                if plan is None:
-                    plan = await plan_with_model(provider, profile, task.objective, project.root_path)
+                plan, source = await resolve_decomposition_plan(
+                    settings=self._settings,
+                    run_config=config,
+                    objective=task.objective,
+                    project_root=project.root_path,
+                    provider=provider if (config.get("provider") or self._settings.default_provider) == "ollama" else None,
+                )
                 if plan is None or not plan.subtasks:
                     self._tasks.update_status(
                         task.id,
@@ -125,7 +121,12 @@ class RunOrchestrator:
                     )
                     return {"action": "blocked_decompose", "task_id": str(task.id)}
                 apply_decomposition(self._session, project.id, task.id, plan)
-                return {"action": "decomposed", "task_id": str(task.id), "count": len(plan.subtasks)}
+                return {
+                    "action": "decomposed",
+                    "task_id": str(task.id),
+                    "count": len(plan.subtasks),
+                    "source": source,
+                }
 
             if self._tasks.dependencies_satisfied(task.id):
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.READY))
@@ -236,6 +237,64 @@ class RunOrchestrator:
         meta = task.metadata_json or {}
         ctx = ToolContext(project_root=project.root_path, run_id=str(run.id), task_id=str(task.id))
         approved = bool(config.get("approve_risky_tools") or meta.get("approved"))
+
+        if meta.get("mcp_tool"):
+            from agent.mcp.manager import McpManager
+
+            mgr = McpManager(self._settings.mcp_config_path or self._settings.data_dir / "mcp.json")
+            out = await mgr.call_tool(meta["mcp_tool"], meta.get("mcp_args") or {})
+            self._attempts.record(
+                run_id=run.id,
+                task_id=task.id,
+                kind=AttemptKind.TOOL,
+                provider="mcp",
+                request=meta,
+                response=out,
+                success=bool(out.get("success")),
+                project_id=project.id,
+            )
+            task.consolidated_result_json = {"mcp": meta["mcp_tool"], "result": out}
+            if out.get("success"):
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                return await self._finalize_verification(run, project, task)
+            self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
+            return {"action": "mcp_tool", "task_id": str(task.id), "success": False}
+
+        if meta.get("model_operation"):
+            provider = _select_provider(self._settings, config)
+            profile = _profile_from_config(config, self._settings)
+            from agent.context.budget import ContextComponent, assemble_messages
+            from agent.providers.base import ChatCompletionRequest
+            from agent.util.json_parse import parse_json_object
+
+            prompt = (
+                f"Objetivo da operação: {task.objective}\n"
+                f"Projeto em: {project.root_path}\n"
+                'Responda SOMENTE JSON: {"path":"relativo","content":"..."}'
+            )
+            budget = assemble_messages(
+                profile,
+                [ContextComponent(name="op", text=prompt, required=True, priority=100)],
+            )
+            resp = await provider.chat(
+                ChatCompletionRequest(messages=budget.messages, profile=profile)
+            )
+            data, err = parse_json_object(resp.content)
+            if err or not data or "path" not in data:
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
+                return {"action": "model_operation_invalid", "task_id": str(task.id), "error": err}
+            out = await self._tools.execute(
+                "write_file",
+                ctx,
+                {"path": data["path"], "content": data.get("content", "")},
+                approved=approved,
+            )
+            task.consolidated_result_json = {"model_operation": True, "write": out}
+            if out.get("success"):
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                return await self._finalize_verification(run, project, task)
+            self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
+            return {"action": "model_operation_failed", "task_id": str(task.id)}
 
         if meta.get("tool"):
             tool_id = meta["tool"]

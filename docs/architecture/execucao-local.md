@@ -4,29 +4,39 @@
 
 ```bash
 cd "~/Documents/Projetos/Agente de IA Local"
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+cp .env.example .env   # opcional
 ```
 
-## Variáveis
+## Padrões (documentação e runtime)
 
-| Variável | Padrão | Uso |
-|----------|--------|-----|
-| `AGENT_DATA_DIR` | `./data` | SQLite e artefatos |
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Provedor Ollama |
-| `LLAMACPP_BASE_URL` | — | Servidor OpenAI-compatible llama.cpp |
+| Variável | Padrão | Efeito |
+|----------|--------|--------|
+| `DEFAULT_PROVIDER` | `ollama` | Runs sem config usam Ollama |
+| `DEFAULT_MODEL_ID` | `llama3.2` | Modelo na decomposição |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | HTTP Ollama |
+| `AGENT_DATA_DIR` | `./data` | SQLite + `mcp.json` |
+| `ALLOW_MOCK_FALLBACK` | `false` | Testes podem habilitar |
 
-Copie `.env.example` para `.env` se necessário (nunca commitar secrets).
+Ordem de decomposição: **builtin e2e** (objetivo contém `e2e`) → **Ollama** → template genérico → mock (se permitido).
 
-## API (Fase 1+)
+## API e UI
 
 ```bash
 agente-api
-# ou: uvicorn agent.api.main:app --reload --port 8765
+# http://127.0.0.1:8765/  — UI
+# http://127.0.0.1:8765/docs
 ```
 
-Endpoints iniciais: health, projetos, tarefas, transições de estado, eventos.
+Demo sem Ollama: objetivo com `e2e` usa provider `mock` automaticamente na UI.
+
+## MCP
+
+```bash
+cp data/mcp.example.json data/mcp.json
+curl -X POST http://127.0.0.1:8765/mcp/discover
+```
 
 ## Testes
 
@@ -34,4 +44,6 @@ Endpoints iniciais: health, projetos, tarefas, transições de estado, eventos.
 pytest
 ```
 
-Integrações com Ollama real ficam em testes marcados `@pytest.mark.integration` (opcionais).
+Índice de pastas: [readmes-pastas.md](/docs/regras/readmes-pastas.md).
+
+Voltar: [architecture/README.md](/docs/architecture/README.md)

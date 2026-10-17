@@ -50,7 +50,7 @@ flowchart TB
 | 4 | Decomposição + contexto + consolidação | Concluída (LLM parcial) |
 | 5 | Verificação + loops + retomada | Concluída |
 | 6 | UI web estática funcional | Concluída |
-| 7 | MCP + visão | Parcial — ver [mcp.md](/docs/architecture/mcp.md) |
+| 7 | MCP stdio + visão (refs) | Concluída — ver [mcp.md](/docs/architecture/mcp.md) |
 | 8 | E2E pytest | Concluída |
 
 ## Decisões (ADR resumido)

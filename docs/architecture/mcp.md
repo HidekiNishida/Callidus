@@ -1,13 +1,31 @@
 # Integração MCP
 
-Gerenciador: `src/agent/mcp/manager.py`
+Gerenciador: [src/agent/mcp/](/src/agent/mcp/README.md)
 
-Configuração exemplo: [`data/mcp.example.json`](/data/mcp.example.json) (copiar para `data/mcp.json`).
+## Configuração (padrão)
 
-| Capacidade | Estado |
-|------------|--------|
-| Carregar servidores/tools declarativos | Implementado |
-| Listar via API `GET /mcp/servers` | Implementado |
-| Transporte stdio + execução real | **Pendente** — retorna erro explícito, não simula sucesso |
+1. Copie [data/mcp.example.json](/data/mcp.example.json) para `data/mcp.json`.
+2. Ajuste `servers[].command` (argv completo: executável + args).
+3. `enabled: true` apenas para servidores confiáveis.
 
-Próximo passo: subprocess MCP com handshake JSON-RPC e cache de tools descobertas.
+## API
+
+| Método | Rota | Função |
+|--------|------|--------|
+| GET | `/mcp/servers` | Config + tools em cache |
+| POST | `/mcp/discover` | Conecta via stdio e registra tools (`mcp:{server}:{name}`) |
+| POST | `/mcp/call` | Body `{ "tool_id", "arguments" }` |
+
+## Orquestrador
+
+Metadata de tarefa:
+
+```json
+{ "mcp_tool": "mcp:filesystem:read_file", "mcp_args": { "path": "..." } }
+```
+
+## Transporte
+
+Implementado com SDK **`mcp`** (`stdio_client` + `ClientSession`). Falhas de spawn/conexão retornam erro explícito — não simulam sucesso.
+
+Voltar: [architecture/README.md](/docs/architecture/README.md)

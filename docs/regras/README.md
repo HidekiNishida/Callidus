@@ -52,6 +52,7 @@ Contexto estável do projeto: [project-context.md](/docs/project-context.md).
 | ![MCP](/media/icons/mcp.svg){width=28} | [mcps.md](/docs/regras/mcps.md) | Quando a tarefa depende de MCP ou ferramentas externas |
 | ![Ativos](/media/icons/ativos-visuais.svg){width=28} | [ativos-visuais.md](/docs/regras/ativos-visuais.md) | Ao adicionar ícones, imagens, diagramas ou tabelas visuais |
 | ![Organização](/media/icons/organizacao.svg){width=28} | [organizacao-arquivos.md](/docs/regras/organizacao-arquivos.md) | Ao criar pastas, nomear arquivos ou separar temas |
+| ![Organização](/media/icons/organizacao.svg){width=28} | [readmes-pastas.md](/docs/regras/readmes-pastas.md) | Ao criar pasta de código/docs — **README.md** índice |
 | ![Validações](/media/icons/validacoes.svg){width=28} | [validacoes-testes.md](/docs/regras/validacoes-testes.md) | Ao criar/alterar qualquer artefato que precise verificação |
 | ![Autoaperfeiçoamento](/media/icons/autoaperfeicoamento.svg){width=28} | [autoaperfeicoamento.md](/docs/regras/autoaperfeicoamento.md) | Quando a mudança influencia trabalho futuro / regras |
 | ![Commits](/media/icons/commits.svg){width=28} | [commits.md](/docs/regras/commits.md) | Ao fechar mudança em repo git (ou para saber o que fazer sem repo) |

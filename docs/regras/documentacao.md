@@ -48,6 +48,8 @@ flowchart TB
 
 Crie subpastas descritivas em kebab-case **somente** quando houver vários docs relacionados (não uma pasta para um único arquivo).
 
+**Runtime e código:** toda pasta de módulos/scripts/testes deve ter `README.md` conforme [readmes-pastas.md](/docs/regras/readmes-pastas.md).
+
 ---
 
 ## Nomenclatura

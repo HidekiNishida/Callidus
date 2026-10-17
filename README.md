@@ -30,16 +30,20 @@ Não há script de sync automático nesta fase; espelhamento manual ou tarefa fu
 
 ## Estrutura
 
+Cada pasta principal tem **`README.md`** com links (regra: [readmes-pastas.md](/docs/regras/readmes-pastas.md)).
+
 ```text
-docs/              regras, contexto e arquitetura (`docs/architecture/`)
-src/agent/         núcleo: persistência, API, provedores, orquestrador
-tests/             pytest
-media/icons/       SVGs referenciados pelos docs
-internal/          checklists e evidências (não normativas)
-data/              SQLite e artefatos (gitignored; ver `.env.example`)
-preferences.md     preferências do Project (coordenador)
-notes.md           espelho de status; pode divergir do UI
+docs/              índice em docs/README.md
+src/               índice em src/README.md → src/agent/README.md
+tests/             tests/README.md
+web/               web/README.md
+scripts/           scripts/README.md
+internal/          internal/README.md
+data/              data/README.md (runtime gitignored)
+media/icons/       SVGs dos docs
 ```
+
+**Padrão de inferência:** Ollama (`DEFAULT_PROVIDER=ollama`, `DEFAULT_MODEL_ID=llama3.2`). Ver [execucao-local.md](/docs/architecture/execucao-local.md).
 
 ## Executar o agente (API)
 
