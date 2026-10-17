@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     max_orchestrator_steps: int = 100
     static_web_dir: Path | None = None
     mcp_config_path: Path | None = None
+    enable_background_worker: bool = True
 
     def resolved_database_url(self) -> str:
         if self.database_url:

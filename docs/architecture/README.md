@@ -17,5 +17,9 @@ Hub técnico do **Agente de IA Local** (código em [/src/agent/](/src/agent/READ
 | [frontend.md](/docs/architecture/frontend.md) | UI |
 | [ux-ui.md](/docs/architecture/ux-ui.md) | Análise UX + layout |
 | [limitacoes.md](/docs/architecture/limitacoes.md) | Gaps conhecidos |
+| [diagnostico-evolucao.md](/docs/architecture/diagnostico-evolucao.md) | Evolução v0.5 |
+| [knowledge-graph.md](/docs/architecture/knowledge-graph.md) | Grafo do projeto |
+| [context-builder.md](/docs/architecture/context-builder.md) | Contexto por operação |
+| [execucao-autonoma.md](/docs/architecture/execucao-autonoma.md) | Worker autônomo |
 
 Voltar: [docs/README.md](/docs/README.md) · [README raiz](/README.md)

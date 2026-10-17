@@ -124,6 +124,56 @@ class MemoryRecordModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class KgNodeModel(Base):
+    __tablename__ = "kg_nodes"
+    __table_args__ = (UniqueConstraint("project_id", "kind", "ref", name="uq_kg_node_ref"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    ref: Mapped[str] = mapped_column(String(2048), nullable=False)
+    label: Mapped[str] = mapped_column(String(500), nullable=False)
+    meta_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class KgEdgeModel(Base):
+    __tablename__ = "kg_edges"
+    __table_args__ = (UniqueConstraint("project_id", "src_id", "dst_id", "rel", name="uq_kg_edge"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    src_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("kg_nodes.id"), nullable=False)
+    dst_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("kg_nodes.id"), nullable=False)
+    rel: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class TaskContractModel(Base):
+    __tablename__ = "task_contracts"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id"), nullable=False, unique=True)
+    inputs_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    outputs_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    invariants_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    acceptance_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ContextSnapshotModel(Base):
+    __tablename__ = "context_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("execution_runs.id"), nullable=True)
+    estimated_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    components_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    strategy_notes_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    refs_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class EvidenceModel(Base):
     __tablename__ = "evidences"
 

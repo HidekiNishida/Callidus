@@ -14,6 +14,9 @@ Persistência principal: SQLite em `data/agent.db` (configurável via `AGENT_DAT
 | `EventLog` | Trilha append-only para auditoria e retomada |
 | `MemoryRecord` | Memória tipada (canônica, execução, contexto, evidência, procedimento) |
 | `Evidence` | Resultado de verificação ou ferramenta, ligado à tarefa |
+| `KgNode` / `KgEdge` | Grafo de conhecimento (arquivo, símbolo, documento, requisito) |
+| `TaskContract` | Entradas/saídas/invariantes de integração por tarefa |
+| `ContextSnapshot` | Métricas e componentes do contexto enviado ao modelo |
 
 ## Task — campos essenciais
 

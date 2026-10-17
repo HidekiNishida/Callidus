@@ -36,6 +36,7 @@
           <button type="button" id="btn-pause" class="btn-secondary" disabled>Pausar</button>
           <button type="button" id="btn-cancel-run" class="btn-danger" disabled>Cancelar</button>
           <label class="chk"><input type="checkbox" id="poll-active" /> Atualizar ao vivo</label>
+          <label class="chk" title="Worker em segundo plano avança runs ativos"><input type="checkbox" id="chk-autonomous" /> Autônomo</label>
         </div>
         <div class="topbar-model">
           <select id="sel-provider" aria-label="Provedor">
@@ -84,6 +85,9 @@
             <button type="button" class="tab" data-tab="evidence">Evidências</button>
             <button type="button" class="tab" data-tab="diff">Git diff</button>
             <button type="button" class="tab" data-tab="tools">Ferramentas</button>
+            <button type="button" class="tab" data-tab="context">Contexto</button>
+            <button type="button" class="tab" data-tab="metrics">Métricas</button>
+            <button type="button" class="tab" data-tab="graph">Grafo</button>
           </div>
           <div id="tab-detail" class="tab-panel active"></div>
           <div id="tab-attempts" class="tab-panel"><pre id="attempts-view"></pre></div>
@@ -93,6 +97,16 @@
             <pre id="diff-view"></pre>
           </div>
           <div id="tab-tools" class="tab-panel"><pre id="tools-view"></pre></div>
+          <div id="tab-context" class="tab-panel"><pre id="context-view"></pre></div>
+          <div id="tab-metrics" class="tab-panel">
+            <button type="button" id="btn-refresh-metrics" class="btn-secondary">Atualizar métricas</button>
+            <pre id="metrics-view"></pre>
+          </div>
+          <div id="tab-graph" class="tab-panel">
+            <button type="button" id="btn-kg-reindex" class="btn-secondary">Reindexar grafo</button>
+            <input type="search" id="kg-search" placeholder="Buscar no grafo…" />
+            <pre id="graph-view"></pre>
+          </div>
         </section>
       </div>
 

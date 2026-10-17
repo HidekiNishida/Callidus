@@ -10,7 +10,7 @@ from agent.config import Settings
 
 @pytest.fixture
 def client(tmp_path: Path):
-    settings = Settings(data_dir=tmp_path / "data")
+    settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
 
     def override_settings():
         return settings

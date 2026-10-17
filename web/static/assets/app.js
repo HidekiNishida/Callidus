@@ -180,6 +180,12 @@ async function loadInspector(taskId) {
   ]);
   document.getElementById("attempts-view").textContent = JSON.stringify(attempts, null, 2);
   document.getElementById("evidence-view").textContent = JSON.stringify(evidences, null, 2);
+  try {
+    const snaps = await api(`/tasks/${taskId}/context-snapshots`);
+    document.getElementById("context-view").textContent = JSON.stringify(snaps, null, 2);
+  } catch {
+    document.getElementById("context-view").textContent = "—";
+  }
 }
 
 async function refreshOverview() {
@@ -376,6 +382,9 @@ async function init() {
       method: "POST",
       body: JSON.stringify({ root_task_id: root.id, config: cfg }),
     });
+    if (document.getElementById("chk-autonomous").checked) {
+      await api(`/runs/${state.currentRun.id}/autonomous/enable`, { method: "POST" });
+    }
     updateRunButtons();
     startPolling();
     toast("Execução iniciada");
@@ -425,6 +434,29 @@ async function init() {
     if (!state.selectedProject) return;
     const diff = await api(`/projects/${state.selectedProject.id}/git-diff`);
     document.getElementById("diff-view").textContent = diff.stdout || diff.stderr || JSON.stringify(diff, null, 2);
+  };
+
+  document.getElementById("btn-refresh-metrics").onclick = async () => {
+    if (!state.selectedProject) return;
+    const m = await api(`/projects/${state.selectedProject.id}/metrics`);
+    document.getElementById("metrics-view").textContent = JSON.stringify(m, null, 2);
+  };
+
+  document.getElementById("btn-kg-reindex").onclick = async () => {
+    if (!state.selectedProject) return;
+    const r = await api(`/projects/${state.selectedProject.id}/knowledge/reindex`, { method: "POST" });
+    toast(`Grafo: ${r.nodes} nós, ${r.edges} arestas`);
+    document.getElementById("graph-view").textContent = JSON.stringify(r, null, 2);
+  };
+
+  document.getElementById("kg-search").onkeydown = async (e) => {
+    if (e.key !== "Enter" || !state.selectedProject) return;
+    const q = e.target.value.trim();
+    if (!q) return;
+    const r = await api(
+      `/projects/${state.selectedProject.id}/knowledge/search?q=${encodeURIComponent(q)}`
+    );
+    document.getElementById("graph-view").textContent = JSON.stringify(r, null, 2);
   };
 
   document.getElementById("btn-mcp-discover").onclick = async () => {

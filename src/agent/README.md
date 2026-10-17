@@ -14,6 +14,7 @@ Núcleo do **Agente de IA Local**: orquestração explícita, persistência SQLi
 | `tools/` | [README.md](/src/agent/tools/README.md) | Ferramentas determinísticas |
 | `providers/` | [README.md](/src/agent/providers/README.md) | Ollama, llama.cpp, mock |
 | `context/` | [README.md](/src/agent/context/README.md) | Orçamento de contexto |
+| `knowledge/` | [README.md](/src/agent/knowledge/README.md) | Grafo de conhecimento |
 | `verification/` | [README.md](/src/agent/verification/README.md) | pytest, checks |
 | `security/` | [README.md](/src/agent/security/README.md) | Paths autorizados |
 | `mcp/` | [README.md](/src/agent/mcp/README.md) | MCP stdio |

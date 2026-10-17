@@ -30,11 +30,21 @@ from agent.domain.schemas import (
 from agent.domain.state_machine import InvalidTransitionError
 from agent.mcp.manager import McpManager
 from agent.orchestrator.runner import RunOrchestrator
-from agent.persistence.models import EventLogModel, EvidenceModel, OperationAttemptModel
+from agent.knowledge.graph_service import KnowledgeGraphService
+from agent.persistence.models import (
+    ContextSnapshotModel,
+    EventLogModel,
+    EvidenceModel,
+    ExecutionRunModel,
+    OperationAttemptModel,
+)
 from agent.tools.registry import ToolContext, build_default_registry
 from agent.providers.base import ChatCompletionRequest, ChatMessage, ModelProfile
 from agent.providers.llamacpp import LlamaCppProvider
 from agent.providers.ollama import OllamaProvider
+from agent.services.contract_service import ContractService
+from agent.services.autonomous_worker import enable_autonomous_on_run, start_background_worker, stop_background_worker
+from agent.services.metrics_service import MetricsService
 from agent.services.project_service import ProjectService
 from agent.services.run_service import RunService
 from agent.services.task_service import DependencyError, TaskNotFoundError, TaskService
@@ -50,15 +60,22 @@ def _web_dir(settings: Settings) -> Path | None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     get_engine()
-    yield
+    settings = read_settings()
+    if settings.enable_background_worker:
+        start_background_worker()
+    try:
+        yield
+    finally:
+        if settings.enable_background_worker:
+            await stop_background_worker()
 
 
-app = FastAPI(title="Agente de IA Local", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="Agente de IA Local", version="0.5.0", lifespan=lifespan)
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "version": "0.4.0"}
+    return {"status": "ok", "version": "0.5.0"}
 
 
 @app.get("/providers/ollama/models")
@@ -249,6 +266,119 @@ def pause_run(run_id: uuid.UUID, session: Session = Depends(db_session)) -> dict
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"id": str(run.id), "status": run.status}
+
+
+@app.post("/runs/{run_id}/autonomous/enable")
+def enable_autonomous(run_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    try:
+        run = enable_autonomous_on_run(session, run_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    session.commit()
+    cfg = run.config_json or {}
+    return {"id": str(run.id), "autonomous": bool(cfg.get("autonomous"))}
+
+
+@app.post("/runs/{run_id}/autonomous/disable")
+def disable_autonomous(run_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    run = session.get(ExecutionRunModel, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=str(run_id))
+    cfg = dict(run.config_json or {})
+    cfg["autonomous"] = False
+    run.config_json = cfg
+    session.commit()
+    return {"id": str(run.id), "autonomous": False}
+
+
+@app.post("/projects/{project_id}/knowledge/reindex")
+def kg_reindex(project_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    try:
+        project = ProjectService(session).get_project(project_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    stats = KnowledgeGraphService(session).reindex(project_id, project.root_path)
+    session.commit()
+    return stats
+
+
+@app.get("/projects/{project_id}/knowledge/search")
+def kg_search(
+    project_id: uuid.UUID,
+    q: str,
+    limit: int = 20,
+    session: Session = Depends(db_session),
+) -> dict:
+    try:
+        ProjectService(session).get_project(project_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    hits = KnowledgeGraphService(session).search(project_id, q, limit=min(limit, 100))
+    return {"query": q, "hits": hits}
+
+
+@app.get("/projects/{project_id}/knowledge/neighbors")
+def kg_neighbors(
+    project_id: uuid.UUID,
+    ref: str,
+    depth: int = 1,
+    session: Session = Depends(db_session),
+) -> dict:
+    try:
+        ProjectService(session).get_project(project_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    nodes = KnowledgeGraphService(session).neighbors(project_id, ref, depth=min(depth, 3))
+    return {"ref": ref, "nodes": nodes}
+
+
+@app.get("/projects/{project_id}/metrics")
+def project_metrics(project_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    try:
+        ProjectService(session).get_project(project_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return MetricsService(session).project_metrics(project_id)
+
+
+@app.get("/tasks/{task_id}/context-snapshots")
+def task_context_snapshots(task_id: uuid.UUID, session: Session = Depends(db_session)) -> list[dict]:
+    stmt = (
+        select(ContextSnapshotModel)
+        .where(ContextSnapshotModel.task_id == task_id)
+        .order_by(ContextSnapshotModel.created_at.desc())
+        .limit(20)
+    )
+    rows = list(session.scalars(stmt).all())
+    return [
+        {
+            "id": str(r.id),
+            "estimated_tokens": r.estimated_tokens,
+            "components": r.components_json,
+            "strategy_notes": r.strategy_notes_json,
+            "refs": r.refs_json,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
+@app.get("/context-snapshots/{snapshot_id}")
+def get_context_snapshot(snapshot_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    row = session.get(ContextSnapshotModel, snapshot_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=str(snapshot_id))
+    return {
+        "id": str(row.id),
+        "project_id": str(row.project_id),
+        "task_id": str(row.task_id) if row.task_id else None,
+        "run_id": str(row.run_id) if row.run_id else None,
+        "estimated_tokens": row.estimated_tokens,
+        "components": row.components_json,
+        "strategy_notes": row.strategy_notes_json,
+        "refs": row.refs_json,
+        "created_at": row.created_at.isoformat(),
+    }
 
 
 @app.post("/runs/{run_id}/cancel")

@@ -11,7 +11,11 @@ from agent.config import Settings
 from agent.domain.enums import AttemptKind, RunStatus, TaskKind, TaskStatus
 from agent.domain.schemas import TaskStatusUpdate
 from agent.orchestrator.consolidation import children_of, consolidate_parent
+from agent.orchestrator.atomizer import micro_decompose_operation, should_decompose_further
 from agent.orchestrator.decomposition import apply_decomposition, resolve_decomposition_plan
+from agent.orchestrator.planner import ensure_canonical_memory_for_objective
+from agent.context.operation_builder import OperationContextBuilder
+from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.persistence.models import (
     EventLogModel,
     EvidenceModel,
@@ -96,6 +100,8 @@ class RunOrchestrator:
 
         if status == TaskStatus.PENDING:
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.PLANNING))
+            if task.id == run.root_task_id:
+                ensure_canonical_memory_for_objective(self._session, project.id, task)
             return {"action": "started_planning", "task_id": str(task.id)}
 
         if status == TaskStatus.PLANNING:
@@ -107,13 +113,29 @@ class RunOrchestrator:
                     return {"action": "operation_ready", "task_id": str(task.id)}
                 return {"action": "operation_wait_deps", "task_id": str(task.id)}
             if not kids:
-                plan, source = await resolve_decomposition_plan(
-                    settings=self._settings,
-                    run_config=config,
-                    objective=task.objective,
-                    project_root=project.root_path,
-                    provider=provider if (config.get("provider") or self._settings.default_provider) == "ollama" else None,
-                )
+                attempts = self._attempts.count_attempts(task.id)
+                if meta.get("atomize") or (
+                    attempts >= 2
+                    and should_decompose_further(
+                        objective=task.objective,
+                        metadata=meta,
+                        kind=task.kind,
+                        attempt_count=attempts,
+                        has_children=False,
+                    )
+                ):
+                    plan = micro_decompose_operation(task.objective)
+                    source = "atomizer-micro"
+                else:
+                    plan, source = await resolve_decomposition_plan(
+                        settings=self._settings,
+                        run_config=config,
+                        objective=task.objective,
+                        project_root=project.root_path,
+                        provider=provider
+                        if (config.get("provider") or self._settings.default_provider) == "ollama"
+                        else None,
+                    )
                 if plan is None or not plan.subtasks:
                     self._tasks.update_status(
                         task.id,
@@ -263,21 +285,29 @@ class RunOrchestrator:
         if meta.get("model_operation"):
             provider = _select_provider(self._settings, config)
             profile = _profile_from_config(config, self._settings)
-            from agent.context.budget import ContextComponent, assemble_messages
             from agent.providers.base import ChatCompletionRequest
             from agent.util.json_parse import parse_json_object
 
-            prompt = (
-                f"Objetivo da operação: {task.objective}\n"
-                f"Projeto em: {project.root_path}\n"
-                'Responda SOMENTE JSON: {"path":"relativo","content":"..."}'
-            )
-            budget = assemble_messages(
-                profile,
-                [ContextComponent(name="op", text=prompt, required=True, priority=100)],
+            builder = OperationContextBuilder(self._session)
+            budget, snap = builder.build_for_task(
+                project_id=project.id,
+                root_path=project.root_path,
+                task=task,
+                profile=profile,
+                run_id=run.id,
             )
             resp = await provider.chat(
                 ChatCompletionRequest(messages=budget.messages, profile=profile)
+            )
+            self._attempts.record(
+                run_id=run.id,
+                task_id=task.id,
+                kind=AttemptKind.MODEL,
+                provider=provider.name,
+                request={"context_snapshot_id": str(snap.id), "tokens_est": budget.estimated_tokens},
+                response={"content_preview": resp.content[:500]},
+                success=True,
+                project_id=project.id,
             )
             data, err = parse_json_object(resp.content)
             if err or not data or "path" not in data:
@@ -289,7 +319,9 @@ class RunOrchestrator:
                 {"path": data["path"], "content": data.get("content", "")},
                 approved=approved,
             )
-            task.consolidated_result_json = {"model_operation": True, "write": out}
+            task.consolidated_result_json = {"model_operation": True, "write": out, "context_snapshot_id": str(snap.id)}
+            if out.get("success") and data.get("path"):
+                KnowledgeGraphService(self._session).touch_file(project.id, project.root_path, data["path"])
             if out.get("success"):
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
                 return await self._finalize_verification(run, project, task)
@@ -318,6 +350,10 @@ class RunOrchestrator:
                 project_id=project.id,
             )
             task.consolidated_result_json = {"tool": tool_id, "result": out}
+            if out.get("success") and tool_id == "write_file":
+                p = args.get("path")
+                if isinstance(p, str):
+                    KnowledgeGraphService(self._session).touch_file(project.id, project.root_path, p)
             if out.get("success"):
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
                 return await self._finalize_verification(run, project, task)
