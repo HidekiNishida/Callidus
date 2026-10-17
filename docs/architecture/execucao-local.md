@@ -50,7 +50,7 @@ O menu de cada chat renomeia, troca a pasta, move para outro projeto ou remove. 
 
 A memória fica em dois escopos: do projeto inteiro e da conversa atual. Ao gravar, o texto completo permanece e um índice curto (resumo, fatos e tópicos) é guardado junto. Na hora de usar, o agente olha só esse índice, escolhe o que serve ao objetivo e só então quebra o texto das memórias escolhidas. O agente grava memória quando o pedido pede para lembrar, quando uma etapa usa a ferramenta `remember`, e ao concluir a conversa.
 
-Se uma etapa para no meio com bloqueio ou falha, o orquestrador replaneja o que falta. O que já foi concluído permanece, o trecho ainda não iniciado do plano antigo é cancelado e entram etapas novas para seguir.
+Se uma etapa para no meio com bloqueio ou falha, o orquestrador replaneja o que falta. O que já foi concluído permanece, o trecho ainda não iniciado do plano antigo é cancelado e entram etapas novas para seguir. Uma etapa que já é alteração, ferramenta ou verificação não é dividida de novo. Se o plano novo repete os títulos da etapa de cima, ela é executada e o chat marca o pensamento como igual, sem diferença.
 
 No chat aparece a resposta final, sem o relatório das etapas. A data e a hora ficam como um horário curto ao lado do nome. Uma pergunta curta, sem pedido de alteração, recebe a resposta final direto. Se o modelo não escrever essa resposta, o fechamento ainda deixa um texto com a data local. Pensamentos, títulos de etapa e a resposta final seguem o idioma do pedido (português, inglês ou espanhol). Enquanto uma etapa roda, a mensagem do agente e o cartão da etapa ganham o brilho de tarefa em andamento.
 

@@ -19,7 +19,13 @@ from agent.orchestrator.global_verify import (
 )
 from agent.services.contract_service import ContractService
 from agent.orchestrator.atomizer import micro_decompose_operation, should_decompose_further
-from agent.orchestrator.decomposition import apply_decomposition, resolve_decomposition_plan
+from agent.orchestrator.decomposition import (
+    apply_decomposition,
+    executable_leaf,
+    plan_copies_siblings,
+    resolve_decomposition_plan,
+    seal_repeated_steps,
+)
 from agent.orchestrator.planner import ensure_canonical_memory_for_objective
 from agent.orchestrator.replan import replan_under
 from agent.context.operation_builder import OperationContextBuilder
@@ -87,6 +93,47 @@ class RunOrchestrator:
             return {"action": "blocked_contract", "task_id": str(task_id), "errors": errs}
         self._tasks.update_status(task_id, TaskStatusUpdate(status=TaskStatus.READY))
         return None
+
+    def _same_title_above(self, task: TaskModel) -> bool:
+        title = task.title.strip().casefold()
+        parent_id = task.parent_id
+        seen: set[uuid.UUID] = set()
+        while parent_id and parent_id not in seen:
+            seen.add(parent_id)
+            parent = self._session.get(TaskModel, parent_id)
+            if parent is None:
+                return False
+            if parent.title.strip().casefold() == title:
+                return True
+            parent_id = parent.parent_id
+        return False
+
+    def _depth(self, task: TaskModel) -> int:
+        depth = 0
+        parent_id = task.parent_id
+        seen: set[uuid.UUID] = set()
+        while parent_id and parent_id not in seen:
+            seen.add(parent_id)
+            parent = self._session.get(TaskModel, parent_id)
+            if parent is None:
+                return depth
+            depth += 1
+            parent_id = parent.parent_id
+        return depth
+
+    def _run_as_leaf(self, run: ExecutionRunModel, task: TaskModel, *, note: str) -> dict[str, Any]:
+        meta = dict(task.metadata_json or {})
+        if not meta.get("tool") and not meta.get("verification") and not meta.get("final_answer"):
+            meta["model_operation"] = True
+            meta["atomic"] = True
+            task.metadata_json = meta
+        self._note_thought(run, task, note)
+        if self._tasks.dependencies_satisfied(task.id):
+            blocked = self._promote_ready_or_block(task.id)
+            if blocked:
+                return blocked
+            return {"action": "operation_ready", "task_id": str(task.id), "thought": note}
+        return {"action": "operation_wait_deps", "task_id": str(task.id)}
 
     async def step(self, run_id: uuid.UUID) -> dict[str, Any]:
         out = await self._step_body(run_id)
@@ -244,13 +291,19 @@ class RunOrchestrator:
                     self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.READY))
                     return {"action": "operation_ready", "task_id": str(task.id)}
                 return {"action": "operation_wait_deps", "task_id": str(task.id)}
-            if not kids and (meta.get("tool") or meta.get("verification")):
+            if not kids and executable_leaf(meta):
                 if self._tasks.dependencies_satisfied(task.id):
                     blocked = self._promote_ready_or_block(task.id)
                     if blocked:
                         return blocked
                     return {"action": "operation_ready", "task_id": str(task.id)}
                 return {"action": "operation_wait_deps", "task_id": str(task.id)}
+            if not kids and (self._same_title_above(task) or self._depth(task) >= 6):
+                return self._run_as_leaf(
+                    run,
+                    task,
+                    note=f"«{task.title}» repetiu o mesmo plano. Vou executar esta etapa, sem dividir de novo.",
+                )
             if not kids:
                 attempts = self._attempts.count_attempts(task.id)
                 if meta.get("atomize") or (
@@ -282,6 +335,14 @@ class RunOrchestrator:
                         TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="decomposição falhou"),
                     )
                     return {"action": "blocked_decompose", "task_id": str(task.id)}
+                plan = seal_repeated_steps(task.title, plan)
+                sibling_titles = [item.title for item in children_of(self._session, task.parent_id)] if task.parent_id else []
+                if plan_copies_siblings(sibling_titles, [item.title for item in plan.subtasks], task.title):
+                    return self._run_as_leaf(
+                        run,
+                        task,
+                        note=f"«{task.title}» repetiu o mesmo plano. Vou executar esta etapa, sem dividir de novo.",
+                    )
                 apply_decomposition(self._session, project.id, task.id, plan)
                 titles = ", ".join(spec.title for spec in plan.subtasks[:6])
                 return {

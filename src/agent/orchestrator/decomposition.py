@@ -229,6 +229,52 @@ def profile_from_run_config(run_config: dict[str, Any], settings: Settings) -> M
     )
 
 
+def executable_leaf(metadata: dict | None) -> bool:
+    """Ferramenta, verificação ou alteração do modelo já é o passo. Não divide de novo."""
+    meta = metadata or {}
+    return bool(
+        meta.get("tool")
+        or meta.get("verification")
+        or meta.get("model_operation")
+        or meta.get("atomic")
+        or meta.get("final_answer")
+    )
+
+
+def seal_repeated_steps(parent_title: str, plan: DecompositionResult) -> DecompositionResult:
+    """Um filho com o mesmo título do pai vira alteração, em vez de outro plano igual."""
+    parent = (parent_title or "").strip().casefold()
+    if not parent:
+        return plan
+    subtasks: list[SubTaskSpec] = []
+    changed = False
+    for spec in plan.subtasks:
+        meta = dict(spec.metadata or {})
+        same = spec.title.strip().casefold() == parent
+        open_step = not meta.get("tool") and not meta.get("verification") and not meta.get("final_answer")
+        if same and open_step:
+            meta["model_operation"] = True
+            meta["atomic"] = True
+            spec = spec.model_copy(update={"metadata": meta})
+            changed = True
+        subtasks.append(spec)
+    if not changed:
+        return plan
+    return DecompositionResult(subtasks=subtasks)
+
+
+def plan_copies_siblings(sibling_titles: list[str], plan_titles: list[str], current_title: str) -> bool:
+    """O plano novo é a mesma lista de títulos que já existe em volta desta etapa."""
+
+    def norm(items: list[str]) -> list[str]:
+        return sorted(item.strip().casefold() for item in items if item and item.strip())
+
+    siblings = norm(sibling_titles)
+    planned = norm(plan_titles)
+    current = (current_title or "").strip().casefold()
+    return len(planned) >= 2 and current in planned and planned == siblings
+
+
 def apply_decomposition(
     session: Session,
     project_id: uuid.UUID,
@@ -237,6 +283,7 @@ def apply_decomposition(
 ) -> list[uuid.UUID]:
     ts = TaskService(session)
     parent = ts.get_task(parent_id)
+    plan = seal_repeated_steps(parent.title, plan)
     if parent.status == TaskStatus.PENDING.value:
         ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.PLANNING))
 

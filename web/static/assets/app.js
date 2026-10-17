@@ -823,11 +823,39 @@ async function refreshLive() {
   }
 }
 
+function descendantIds(rootId) {
+  const ids = new Set([rootId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const task of state.tasks) {
+      if (task.parent_id && ids.has(task.parent_id) && !ids.has(task.id)) {
+        ids.add(task.id);
+        grew = true;
+      }
+    }
+  }
+  return ids;
+}
+
+function sameTitleCount(task) {
+  const title = String(task.title || "");
+  let count = 0;
+  const walk = (parentId) => {
+    for (const child of state.tasks) {
+      if (child.parent_id !== parentId) continue;
+      if (String(child.title || "") === title) count += 1;
+      walk(child.id);
+    }
+  };
+  walk(task.id);
+  return count;
+}
+
 function thoughtBlock(root) {
   const live = state.live;
   if (!live) return "";
-  const kids = state.tasks.filter((task) => task.parent_id === root.id);
-  const ids = new Set([root.id, ...kids.map((task) => task.id)]);
+  const ids = descendantIds(root.id);
   const focusHere = !live.focus || ids.has(live.focus.id);
   if (!focusHere) return "";
   const noisy = /^(Planejando|Pronta para executar|Concluída sem teste|Liberada|Aguardando|Começando|Planning|Ready to run|Finished without|Released|Waiting|Starting)/;
@@ -841,7 +869,9 @@ function thoughtBlock(root) {
   const items = lines
     .map((item) => {
       const glyph = item.phase === "thinking" || item.phase === "model" ? "spark" : item.phase === "tool" ? "terminal" : "check";
-      return `<li class="${escapeHtml(item.phase || "step")}">${icon(glyph)}<span>${escapeHtml(item.text || "")}</span></li>`;
+      const again = Number(item.repeat) > 1 ? " · igual, sem diferença" : "";
+      const klass = `${item.phase || "step"}${again ? " again" : ""}`;
+      return `<li class="${escapeHtml(klass)}">${icon(glyph)}<span>${escapeHtml(item.text || "")}${escapeHtml(again)}</span></li>`;
     })
     .join("");
   const pending = live.thinking ? `<li class="thinking">${icon("spark")}<span>${copy.pending}</span></li>` : "";
@@ -1073,7 +1103,7 @@ function renderChat() {
   log.innerHTML = roots
     .map((root) => {
       const kids = state.tasks.filter((task) => task.parent_id === root.id);
-      const ids = new Set([root.id, ...kids.map((task) => task.id)]);
+      const ids = descendantIds(root.id);
       const focusHere = state.live?.focus && ids.has(state.live.focus.id);
       const glowing =
         busy.includes(root.status) ||
@@ -1088,7 +1118,9 @@ function renderChat() {
           const active = busy.includes(task.status) ? " busy" : "";
           const open = state.openStageIds.has(task.id);
           const detail = open ? stageDetail(task) : "";
-          return `<div class="tool-card${active}${open ? " open" : ""}"><button type="button" class="row" data-stage="${task.id}" data-last="${index === kids.length - 1 ? "1" : "0"}">${statusBadge(task.status)}${icon(glyph)}<strong>${escapeHtml(titleOf(task))}</strong></button>${detail ? `<div class="stage-detail">${detail}</div>` : ""}</div>`;
+          const copies = sameTitleCount(task);
+          const same = copies ? `<em class="same">igual ×${copies}</em>` : "";
+          return `<div class="tool-card${active}${open ? " open" : ""}"><button type="button" class="row" data-stage="${task.id}" data-last="${index === kids.length - 1 ? "1" : "0"}">${statusBadge(task.status)}${icon(glyph)}<strong>${escapeHtml(titleOf(task))}</strong>${same}</button>${detail ? `<div class="stage-detail">${detail}</div>` : ""}</div>`;
         })
         .join("");
       const thoughts = thoughtBlock(root);

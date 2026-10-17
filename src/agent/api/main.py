@@ -706,18 +706,27 @@ def _thought_trace(session: Session, project_id: uuid.UUID, tasks: list) -> list
             text = f"{translate(head, locale)} — {translate(tail, locale)}"
         else:
             text = translate(text, locale)
-        if not text or (thoughts and thoughts[-1]["text"] == text):
+        if not text:
             continue
-        thoughts.append(
-            {
-                "phase": phase,
-                "text": text,
-                "task": translate(task_title, locale) if task_title else None,
-                "task_id": str(event.task_id) if event.task_id else None,
-                "at": event.created_at.isoformat() if event.created_at else None,
-            }
-        )
+        item = {
+            "phase": phase,
+            "text": text,
+            "task": translate(task_title, locale) if task_title else None,
+            "task_id": str(event.task_id) if event.task_id else None,
+            "at": event.created_at.isoformat() if event.created_at else None,
+        }
+        _mark_repeated_thought(thoughts, item)
     return thoughts[-16:]
+
+
+def _mark_repeated_thought(thoughts: list[dict], item: dict) -> None:
+    """A mesma frase de novo fica marcada, para a interface mostrar que não houve diferença."""
+    text = item["text"]
+    if thoughts and thoughts[-1]["text"] == text:
+        thoughts[-1]["repeat"] = int(thoughts[-1].get("repeat") or 1) + 1
+        return
+    item["repeat"] = 2 if any(prev["text"] == text for prev in thoughts) else 1
+    thoughts.append(item)
 
 
 ACTION_COPY = {
