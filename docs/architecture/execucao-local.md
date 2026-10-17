@@ -9,13 +9,15 @@ pip install -e ".[dev]"
 cp .env.example .env   # opcional
 ```
 
-Se `ModuleNotFoundError: No module named 'agent'` após instalar (comum no **Python 3.14** com editable antigo), reinstale:
+No **Python 3.14** o interpretador ignora `.pth` cujo nome começa com `_` (editable do setuptools/hatch). Depois do install:
 
 ```bash
-pip install -e ".[dev]" --force-reinstall --no-cache-dir
+python scripts/fix-python314-editable.py
+python -c "import agent; print('OK')"
+agente-api
 ```
 
-Alternativa imediata: `PYTHONPATH=src agente-api`
+Atalho sem o script: `PYTHONPATH=src agente-api`
 
 ## Padrões (documentação e runtime)
 

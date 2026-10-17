@@ -35,7 +35,7 @@
           <button type="button" id="btn-execute" class="btn-secondary" disabled>Auto</button>
           <button type="button" id="btn-pause" class="btn-secondary" disabled>Pausar</button>
           <button type="button" id="btn-cancel-run" class="btn-danger" disabled>Cancelar</button>
-          <label class="chk"><input type="checkbox" id="poll-active" /> Atualizar ao vivo</label>
+          <label class="chk"><input type="checkbox" id="poll-active" checked /> Ao vivo</label>
           <label class="chk" title="Worker em segundo plano avança runs ativos"><input type="checkbox" id="chk-autonomous" /> Autônomo</label>
         </div>
         <div class="topbar-model">
@@ -49,6 +49,15 @@
       </header>
 
       <div class="stats-bar" id="stats-bar" hidden></div>
+
+      <section id="live-board" class="live-board" hidden>
+        <div class="live-dot" id="live-dot" aria-hidden="true"></div>
+        <div class="live-copy">
+          <p class="live-kicker" id="live-kicker">Agora</p>
+          <h2 id="live-title">Aguardando uma execução</h2>
+          <p id="live-how" class="muted"></p>
+        </div>
+      </section>
 
       <div class="workspace">
         <section class="panel col-tree">

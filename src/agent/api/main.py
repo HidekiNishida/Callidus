@@ -431,6 +431,109 @@ def ui_defaults(settings: Settings = Depends(read_settings)) -> dict:
     }
 
 
+ACTION_COPY = {
+    "started_planning": ("Planejando", "O orquestrador abriu o objetivo e registrou a memória canônica."),
+    "decomposed": ("Dividindo o trabalho", "A tarefa foi quebrada em subtarefas menores e verificáveis."),
+    "operation_ready": ("Pronta para executar", "Dependências ok. A operação pode rodar a ferramenta ou o modelo."),
+    "planning_wait_children": ("Aguardando subtarefas", "O pai espera os filhos terminarem antes de consolidar."),
+    "promoted_ready": ("Liberada", "Dependências satisfeitas; a tarefa passou para pronta."),
+    "retry_ready": ("Nova tentativa", "A falha anterior foi recuperável. Vai tentar de novo."),
+    "model_operation_invalid": ("Resposta inválida", "O modelo não devolveu o JSON esperado. Vai repetir."),
+    "model_operation_failed": ("Escrita falhou", "A alteração proposta não foi gravada."),
+    "tool_executed": ("Ferramenta", "A ferramenta rodou e o resultado foi registrado."),
+    "verified_ok": ("Verificado", "O teste ou a checagem passou e gerou evidência."),
+    "verify_failed": ("Verificação falhou", "O critério não passou. A tarefa volta para nova tentativa."),
+    "verify_inconclusive": ("Verificação inconclusiva", "Não deu para decidir. A tarefa foi bloqueada."),
+    "completed_without_verification": ("Concluída sem teste", "Não havia critério determinístico nesta operação."),
+    "consolidated_parent": ("Consolidando", "Os resultados dos filhos sobem para a tarefa pai."),
+    "blocked_contract": ("Bloqueada", "Falta um contrato obrigatório antes de continuar."),
+    "blocked_loop": ("Loop detectado", "A mesma saída se repetiu. A execução parou para não girar à toa."),
+    "blocked_attempts": ("Limite de tentativas", "Esgotou o orçamento de tentativas desta tarefa."),
+    "blocked_decompose": ("Sem plano", "Não foi possível decompor o objetivo."),
+    "blocked_no_metadata": ("Sem instrução", "A operação não diz qual ferramenta ou verificação usar."),
+    "global_verify_reopen": ("Reabrindo", "A checagem global achou evidência faltando e reabriu tarefas."),
+    "global_verify_failed": ("Objetivo incompleto", "Os critérios globais não foram atendidos."),
+    "run_completed": ("Concluído", "O objetivo e as evidências foram aceitos."),
+    "run_terminal": ("Encerrado", "Este run já estava finalizado."),
+    "waiting": ("Aguardando", "Não há tarefa pronta neste instante."),
+    "mcp_tool": ("MCP", "Uma ferramenta MCP local foi chamada."),
+    "skipped_to_verify": ("Indo verificar", "A operação foi encaminhada para verificação."),
+}
+
+
+def _how_for_task(task) -> str:
+    meta = task.metadata_json or {}
+    if meta.get("tool"):
+        return f"Ferramenta `{meta['tool']}` com argumentos locais."
+    if meta.get("verification"):
+        spec = meta["verification"]
+        return f"Verificação determinística ({spec.get('type', 'check')})."
+    if meta.get("model_operation"):
+        return "O modelo local propõe a alteração; o runtime grava o arquivo e verifica."
+    if meta.get("mcp_tool"):
+        return f"Chamada MCP `{meta['mcp_tool']}`."
+    return "O orquestrador escolhe o próximo passo pela máquina de estados, sem depender só do modelo."
+
+
+@app.get("/projects/{project_id}/live")
+def project_live(project_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    try:
+        project = ProjectService(session).get_project(project_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    tasks = TaskService(session).list_tasks(project_id)
+    runs = RunService(session).list_runs(project_id)
+    active = next((r for r in runs if r.status == "active"), None)
+    focus = next(
+        (
+            t
+            for t in tasks
+            if t.status in {"RUNNING", "VERIFYING", "PLANNING", "RETRY_PENDING", "BLOCKED"}
+        ),
+        None,
+    )
+    stmt = (
+        select(EventLogModel)
+        .where(
+            EventLogModel.project_id == project_id,
+            EventLogModel.event_type == "orchestrator.action",
+        )
+        .order_by(EventLogModel.created_at.desc())
+        .limit(1)
+    )
+    last = session.scalar(stmt)
+    payload = (last.payload_json or {}) if last else {}
+    action = payload.get("action") or "idle"
+    title, how = ACTION_COPY.get(action, ("Em espera", "Nenhum passo recente."))
+    if focus and action in {"idle", "waiting"}:
+        title = f"{focus.status}: {focus.title}"
+        how = _how_for_task(focus)
+    elif focus and action not in {"run_completed", "run_terminal"}:
+        how = f"{how} Tarefa atual: {focus.title}. {_how_for_task(focus)}"
+    return {
+        "project_id": str(project.id),
+        "run": {
+            "id": str(active.id),
+            "status": active.status,
+            "autonomous": bool((active.config_json or {}).get("autonomous")),
+        }
+        if active
+        else None,
+        "focus": {
+            "id": str(focus.id),
+            "title": focus.title,
+            "status": focus.status,
+            "objective": focus.objective,
+        }
+        if focus
+        else None,
+        "action": action,
+        "headline": title,
+        "how": how,
+        "last_event_at": last.created_at.isoformat() if last else None,
+    }
+
+
 @app.get("/projects/{project_id}/overview")
 def project_overview(project_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
     try:

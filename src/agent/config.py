@@ -1,4 +1,5 @@
 # src/agent/config.py — configuração via ambiente
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,6 +28,10 @@ class Settings(BaseSettings):
     enable_background_worker: bool = True
 
     def resolved_database_url(self) -> str:
+        # Pytest carrega o .env do projeto; sem isso os testes gravam no agent.db real.
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            return f"sqlite:///{(self.data_dir / 'agent.db').resolve()}"
         if self.database_url:
             return self.database_url
         self.data_dir.mkdir(parents=True, exist_ok=True)

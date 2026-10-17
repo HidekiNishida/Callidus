@@ -145,7 +145,8 @@ function renderTaskTree() {
   }
   nodes.forEach(({ task, depth }) => {
     const div = document.createElement("div");
-    div.className = "tree-node" + (state.selectedTaskId === task.id ? " selected" : "");
+    const busy = ["RUNNING", "VERIFYING", "PLANNING"].includes(task.status) ? " busy" : "";
+    div.className = `tree-node${task.id === state.selectedTaskId ? " selected" : ""}${busy}`;
     div.setAttribute("role", "treeitem");
     div.innerHTML = `<span class="indent" style="width:${depth * 12}px"></span>${statusBadge(task.status)} <span>${escapeHtml(task.title)}</span>`;
     div.onclick = () => selectTask(task.id);
@@ -215,11 +216,50 @@ async function refreshTasks() {
   renderTaskTree();
 }
 
+const ACTION_PT = {
+  started_planning: "Começou a planejar",
+  decomposed: "Dividiu em subtarefas",
+  operation_ready: "Operação pronta",
+  verified_ok: "Verificação passou",
+  verify_failed: "Verificação falhou",
+  run_completed: "Objetivo concluído",
+  blocked_contract: "Bloqueou: falta contrato",
+  blocked_loop: "Bloqueou: loop",
+  tool_executed: "Executou ferramenta",
+  consolidated_parent: "Consolidou o pai",
+  model_operation_invalid: "Resposta do modelo inválida",
+};
+
 function eventLabel(ev) {
   const p = ev.payload_json || {};
+  if (ev.event_type === "orchestrator.action") {
+    const label = ACTION_PT[p.action] || p.action || "passo";
+    const extra = p.source ? ` (${p.source})` : p.count ? ` · ${p.count} itens` : "";
+    return `${label}${extra}`;
+  }
   if (ev.event_type === "task.status_changed") return `${p.from} → ${p.to}${p.reason ? ` (${p.reason})` : ""}`;
-  if (ev.event_type === "orchestrator.step") return `Passo: ${p.task} [${p.status}]`;
+  if (ev.event_type === "orchestrator.step") return `Olhando “${p.task || "tarefa"}” · ${p.status || ""}`;
+  if (ev.event_type === "attempt.recorded") return p.success ? "Tentativa registrada" : "Tentativa com falha";
   return ev.event_type;
+}
+
+function renderLive(live) {
+  const board = document.getElementById("live-board");
+  if (!state.selectedProject) {
+    board.hidden = true;
+    return;
+  }
+  board.hidden = false;
+  const action = live?.action || "idle";
+  board.classList.remove("busy", "ok", "bad");
+  if (["run_completed"].includes(action)) board.classList.add("ok");
+  else if (String(action).startsWith("blocked") || action === "verify_failed" || action === "global_verify_failed") board.classList.add("bad");
+  else if (live?.run || ["RUNNING", "VERIFYING", "PLANNING"].includes(live?.focus?.status)) board.classList.add("busy");
+  document.getElementById("live-kicker").textContent = live?.run
+    ? `Execução ${live.run.autonomous ? "autônoma" : "manual"} · ${live.run.status}`
+    : "Agora";
+  document.getElementById("live-title").textContent = live?.headline || "Aguardando uma execução";
+  document.getElementById("live-how").textContent = live?.how || "";
 }
 
 async function refreshActivity() {
@@ -234,8 +274,19 @@ async function refreshActivity() {
   });
 }
 
+async function refreshLive() {
+  if (!state.selectedProject) return;
+  const live = await api(`/projects/${state.selectedProject.id}/live`);
+  state.live = live;
+  renderLive(live);
+  if (live.run && !state.currentRun) {
+    state.currentRun = { id: live.run.id, status: live.run.status };
+    updateRunButtons();
+  }
+}
+
 async function refreshAll() {
-  await Promise.all([refreshTasks(), refreshOverview(), refreshActivity()]);
+  await Promise.all([refreshTasks(), refreshOverview(), refreshActivity(), refreshLive()]);
 }
 
 function updateRunButtons() {

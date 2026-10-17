@@ -81,6 +81,33 @@ class RunOrchestrator:
         return None
 
     async def step(self, run_id: uuid.UUID) -> dict[str, Any]:
+        out = await self._step_body(run_id)
+        self._record_action(run_id, out)
+        return out
+
+    def _record_action(self, run_id: uuid.UUID, out: dict[str, Any]) -> None:
+        run = self._session.get(ExecutionRunModel, run_id)
+        if run is None:
+            return
+        task_id = None
+        raw = out.get("task_id")
+        if isinstance(raw, str):
+            try:
+                task_id = uuid.UUID(raw)
+            except ValueError:
+                task_id = None
+        payload = {k: v for k, v in out.items() if k not in {"log"}}
+        self._session.add(
+            EventLogModel(
+                project_id=run.project_id,
+                run_id=run_id,
+                task_id=task_id,
+                event_type="orchestrator.action",
+                payload_json=payload,
+            )
+        )
+
+    async def _step_body(self, run_id: uuid.UUID) -> dict[str, Any]:
         run = self._session.get(ExecutionRunModel, run_id)
         if run is None:
             raise LookupError(str(run_id))
