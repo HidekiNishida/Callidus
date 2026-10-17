@@ -31,6 +31,7 @@ from agent.domain.state_machine import InvalidTransitionError
 from agent.mcp.manager import McpManager
 from agent.orchestrator.runner import RunOrchestrator
 from agent.knowledge.graph_service import KnowledgeGraphService
+from agent.services.attachments import attachment_note, materialize_attachments
 from agent.persistence.models import (
     ContextSnapshotModel,
     EventLogModel,
@@ -166,11 +167,28 @@ def get_project(project_id: uuid.UUID, session: Session = Depends(db_session)) -
 def create_task(
     project_id: uuid.UUID, body: TaskCreate, session: Session = Depends(db_session)
 ) -> TaskRead:
+    raw_meta = dict(body.metadata or {})
+    raw_attachments = raw_meta.get("attachments") or []
+    payload = body
+    if raw_attachments:
+        cleaned = dict(raw_meta)
+        cleaned.pop("attachments", None)
+        payload = body.model_copy(update={"metadata": cleaned or None})
     try:
-        task = TaskService(session).create_task(project_id, body)
+        project = ProjectService(session).get_project(project_id)
+        task = TaskService(session).create_task(project_id, payload)
+        if raw_attachments:
+            refs = materialize_attachments(project.root_path, str(task.id), raw_attachments)
+            meta = dict(task.metadata_json or {})
+            meta["attachments"] = refs
+            task.metadata_json = meta
+            task.objective = f"{task.objective.rstrip()}\n\n{attachment_note(refs)}"
+            session.flush()
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except TaskNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return TaskRead.model_validate(task)
 

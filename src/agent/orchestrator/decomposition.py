@@ -15,6 +15,7 @@ from agent.context.budget import ContextComponent, assemble_messages
 from agent.providers.base import ChatCompletionRequest
 from agent.providers.ollama import OllamaProvider
 from agent.services.task_service import TaskService
+from agent.tools.builtins import TOOL_CATALOG
 from agent.util.json_parse import parse_json_object
 
 
@@ -65,7 +66,7 @@ GENERIC_TEMPLATE = DecompositionResult(
         SubTaskSpec(
             title="Inspecionar código",
             objective="Buscar símbolos e arquivos relacionados ao objetivo",
-            metadata={"tool": "search_grep", "tool_args": {"pattern": "def "}},
+            metadata={"tool": "list_dir", "tool_args": {"path": "."}},
         ),
         SubTaskSpec(
             title="Aplicar alterações",
@@ -92,6 +93,11 @@ async def plan_with_model(
     prompt = (
         f"Objetivo: {objective}\n\nContexto do projeto:\n{context_snippet}\n\n"
         "Decomponha em subtarefas pequenas e verificáveis para um modelo local.\n"
+        f"{TOOL_CATALOG}\n"
+        "Cada subtarefa de ferramenta usa metadata.tool com um id real e metadata.tool_args. "
+        "Para editar código use edit_file, não reescreva o arquivo inteiro. "
+        "Para explorar use list_dir ou glob_files. Para teste Python use run_pytest ou run_script. "
+        "Verificação pode ser metadata.verification com type pytest, script ou command.\n"
         'Responda SOMENTE JSON válido: {"subtasks":[{"title":"...","objective":"...",'
         '"kind":"operation","metadata":{"tool":"read_file","tool_args":{"path":"..."}},'
         '"depends_on_indices":[]}]}'
@@ -144,11 +150,15 @@ async def resolve_decomposition_plan(
 
 
 def profile_from_run_config(run_config: dict[str, Any], settings: Settings) -> ModelProfile:
+    model_id = str(run_config.get("model_id") or settings.default_model_id)
+    low = model_id.lower()
+    vision = any(token in low for token in ("-vl", "vl:", "vision", "llava", "moondream"))
     return ModelProfile(
-        model_id=run_config.get("model_id") or settings.default_model_id,
+        model_id=model_id,
         context_limit=int(run_config.get("context_limit", settings.default_context_limit)),
         input_budget=int(run_config.get("input_budget", settings.default_input_budget)),
         output_reserve=int(run_config.get("output_reserve", settings.default_output_reserve)),
+        supports_vision=vision,
     )
 
 

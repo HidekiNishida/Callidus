@@ -24,6 +24,41 @@ class ToolContext:
 
 ToolHandler = Callable[[ToolContext, dict[str, Any]], Awaitable[dict[str, Any]]]
 
+# Nomes que o modelo costuma inventar → ferramenta real.
+TOOL_ALIASES: dict[str, str] = {
+    "ls": "list_dir",
+    "list_files": "list_dir",
+    "list_directory": "list_dir",
+    "dir": "list_dir",
+    "glob": "glob_files",
+    "find_files": "glob_files",
+    "find": "glob_files",
+    "grep": "search_grep",
+    "search": "search_grep",
+    "str_replace": "edit_file",
+    "search_replace": "edit_file",
+    "apply_patch": "edit_file",
+    "replace_in_file": "edit_file",
+    "edit": "edit_file",
+    "delete": "delete_file",
+    "remove_file": "delete_file",
+    "rm": "delete_file",
+    "shell": "run_command",
+    "bash": "run_command",
+    "exec": "run_command",
+    "python": "run_script",
+    "pytest": "run_pytest",
+    "mkdir": "make_dir",
+    "create_directory": "make_dir",
+    "mv": "move_file",
+    "rename": "move_file",
+    "git": "git_status",
+}
+
+
+def canonical_tool_id(tool_id: str) -> str:
+    return TOOL_ALIASES.get(tool_id, tool_id)
+
 
 class ToolRegistry:
     def __init__(self) -> None:
@@ -50,8 +85,10 @@ class ToolRegistry:
         *,
         approved: bool = False,
     ) -> dict[str, Any]:
+        tool_id = canonical_tool_id(tool_id)
         if tool_id not in self._specs:
-            return {"success": False, "error": f"ferramenta desconhecida: {tool_id}"}
+            known = ", ".join(sorted(self._specs))
+            return {"success": False, "error": f"ferramenta desconhecida: {tool_id}", "known": known}
         spec = self.get_spec(tool_id)
         if spec.requires_approval and not approved:
             return {

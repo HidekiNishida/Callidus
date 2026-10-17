@@ -1,6 +1,7 @@
 # src/agent/context/operation_builder.py — Context Builder por operação
 from __future__ import annotations
 
+import base64
 import uuid
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from agent.knowledge.indexer import grep_symbols_in_objective
 from agent.persistence.models import ContextSnapshotModel, MemoryRecordModel, TaskModel
 from agent.providers.base import ModelProfile
 from agent.security.paths import PathSecurityError, resolve_under_root
+from agent.tools.builtins import TOOL_CATALOG
 from sqlalchemy import select
 
 
@@ -39,9 +41,18 @@ class OperationContextBuilder:
     ) -> tuple[BudgetResult, ContextSnapshotModel]:
         project_rules = self._memory_block(project_id, MemoryKind.CANONICAL)
         technical = self._technical_snippet(root_path, project_id, task.objective)
+        attached = self._attachment_snippet(root_path, task)
+        if attached:
+            technical = f"{technical}\n\n{attached}".strip()
         acceptance = task.acceptance_criteria or "Atender o objetivo sem violar requisitos canônicos."
-        tools_summary = "Ferramentas locais: read_file, write_file, search_grep, run_pytest, git_diff."
-        output_format = '{"path":"...","content":"..."}' if (task.metadata_json or {}).get("model_operation") else "JSON estruturado quando solicitado."
+        tools_summary = TOOL_CATALOG
+        output_format = (
+            'Criar arquivo: {"path":"...","content":"..."}. '
+            'Editar: {"path":"...","old_string":"...","new_string":"..."}. '
+            "Responda só JSON."
+            if (task.metadata_json or {}).get("model_operation")
+            else "JSON estruturado quando solicitado."
+        )
 
         budget = build_operation_context(
             profile,
@@ -66,6 +77,9 @@ class OperationContextBuilder:
         )
         self._session.add(snap)
         self._session.flush()
+        images = self._image_payloads(root_path, task, profile)
+        if images and budget.messages:
+            budget.messages[-1].images = images
         return budget, snap
 
     def _memory_block(self, project_id: uuid.UUID, kind: MemoryKind) -> str:
@@ -96,4 +110,55 @@ class OperationContextBuilder:
                         parts.append(f"--- {hint} (trecho) ---\n" + text[:1200])
                 except PathSecurityError:
                     pass
-        return "\n".join(parts) if parts else "(nenhum trecho automático; use grep na operação anterior)"
+        return "\n".join(parts) if parts else "(nenhum trecho automático; use list_dir ou search_grep)"
+
+    def _ancestor_attachments(self, task: TaskModel) -> list[dict]:
+        current: TaskModel | None = task
+        seen: set[uuid.UUID] = set()
+        found: list[dict] = []
+        while current is not None and current.id not in seen:
+            seen.add(current.id)
+            found.extend((current.metadata_json or {}).get("attachments") or [])
+            if current.parent_id is None:
+                break
+            current = self._session.get(TaskModel, current.parent_id)
+        return found
+
+    def _attachment_snippet(self, root_path: str, task: TaskModel) -> str:
+        refs = self._ancestor_attachments(task)
+        if not refs:
+            return ""
+        lines = ["Anexos do pedido (leia o arquivo se o trecho abaixo não bastar):"]
+        for ref in refs[:8]:
+            path = str(ref.get("path") or "")
+            lines.append(f"- {ref.get('kind')} {ref.get('name')} ({path})")
+            if ref.get("kind") != "text" or not path:
+                continue
+            try:
+                full = resolve_under_root(root_path, path)
+                text = full.read_text(encoding="utf-8", errors="replace")
+            except (OSError, PathSecurityError):
+                continue
+            preview = text[:2000]
+            if len(text) > 2000:
+                preview += "\n…"
+            lines.append(f"--- {ref.get('name')} ---\n{preview}")
+        return "\n".join(lines)
+
+    def _image_payloads(self, root_path: str, task: TaskModel, profile: ModelProfile) -> list[str]:
+        if not profile.supports_vision:
+            return []
+        payloads: list[str] = []
+        for ref in self._ancestor_attachments(task):
+            if ref.get("kind") != "image" or not ref.get("path"):
+                continue
+            try:
+                raw = resolve_under_root(root_path, str(ref["path"])).read_bytes()
+            except (OSError, PathSecurityError):
+                continue
+            if len(raw) > 4_000_000:
+                continue
+            payloads.append(base64.b64encode(raw).decode("ascii"))
+            if len(payloads) >= 2:
+                break
+        return payloads

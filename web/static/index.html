@@ -62,8 +62,11 @@
 
       <form id="form-task" class="composer-dock">
         <input name="title" class="visually-hidden" />
-        <textarea name="objective" rows="2" placeholder="Pedir ao agente…  (Enter envia, Shift+Enter quebra linha)" required></textarea>
+        <div id="attach-row" class="attach-row" hidden></div>
+        <textarea name="objective" rows="2" placeholder="Pedir ao agente…  (Enter envia, Shift+Enter quebra linha)"></textarea>
         <div class="composer-bar">
+          <button type="button" class="btn-ghost" id="btn-attach" title="Anexar imagem ou documento">Anexo</button>
+          <input id="file-attach" type="file" multiple hidden accept="image/*,.pdf,.txt,.md,.py,.json,.csv,.js,.ts,.tsx,.html,.css,.xml,.yaml,.yml,.toml,.zip,.doc,.docx,.svg" />
           <select id="sel-provider" aria-label="Provedor">
             <option value="ollama">Ollama</option>
             <option value="mock">Mock</option>

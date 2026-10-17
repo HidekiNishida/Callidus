@@ -342,7 +342,11 @@ function renderChat() {
         state.live?.headline && state.live.action !== "run_completed"
           ? `<div class="tool-card"><div class="row"><strong>${escapeHtml(state.live.headline)}</strong></div><p>${escapeHtml(state.live.how || "")}</p></div>`
           : "";
-      return `<div class="bubble user"><div class="who">Você</div><div>${escapeHtml(root.objective)}</div></div>
+      const spoken = String(root.objective || "").split("\n\nAnexos do usuário:")[0];
+      const chips = ((root.metadata_json || {}).attachments || [])
+        .map((a) => `<span class="chip">${escapeHtml(a.name || a.path || "anexo")}</span>`)
+        .join("");
+      return `<div class="bubble user"><div class="who">Você</div><div>${escapeHtml(spoken)}</div>${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
         <div class="bubble agent"><div class="who">Agente${model}</div>${cards || `<p class="muted">Vou planejar e dividir isso em passos.</p>`}${live}</div>`;
     })
     .join("");
@@ -484,11 +488,107 @@ async function init() {
     }
   };
 
+  const attachments = [];
+  const PASTE_CHARS = 1500;
+  const PASTE_LINES = 40;
+  const TEXT_NAME = /\.(txt|md|py|json|csv|js|ts|tsx|html|css|xml|yaml|yml|toml|rs|go|java|c|h|cpp|sql|sh)$/i;
+
+  function renderAttachmentChips() {
+    const row = document.getElementById("attach-row");
+    row.hidden = attachments.length === 0;
+    row.innerHTML = attachments
+      .map((item, index) => {
+        const thumb = item.preview ? `<img alt="" src="${item.preview}" />` : "";
+        return `<span class="chip">${thumb}<span>${escapeHtml(item.name)}</span><button type="button" data-remove="${index}" aria-label="Remover ${escapeHtml(item.name)}">×</button></span>`;
+      })
+      .join("");
+  }
+
+  function addAttachment(item) {
+    attachments.push(item);
+    renderAttachmentChips();
+  }
+
+  function fileToAttachment(file) {
+    const isImage = (file.type || "").startsWith("image/");
+    const isText = (file.type || "").startsWith("text/") || TEXT_NAME.test(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (isText) {
+        addAttachment({ kind: "text", name: file.name, mime: file.type || "text/plain", content: String(reader.result) });
+        return;
+      }
+      addAttachment({
+        kind: isImage ? "image" : "file",
+        name: file.name,
+        mime: file.type || "application/octet-stream",
+        content_base64: String(reader.result),
+        preview: isImage ? String(reader.result) : "",
+      });
+    };
+    if (isText) reader.readAsText(file);
+    else reader.readAsDataURL(file);
+  }
+
+  document.getElementById("attach-row").onclick = (e) => {
+    const button = e.target.closest("[data-remove]");
+    if (!button) return;
+    attachments.splice(Number(button.dataset.remove), 1);
+    renderAttachmentChips();
+  };
+  document.getElementById("btn-attach").onclick = () => document.getElementById("file-attach").click();
+  document.getElementById("file-attach").onchange = (e) => {
+    [...e.target.files].forEach(fileToAttachment);
+    e.target.value = "";
+  };
+
+  const composer = document.getElementById("form-task");
+  composer.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    composer.classList.add("dragover");
+  });
+  composer.addEventListener("dragleave", () => composer.classList.remove("dragover"));
+  composer.addEventListener("drop", (e) => {
+    e.preventDefault();
+    composer.classList.remove("dragover");
+    [...(e.dataTransfer?.files || [])].forEach(fileToAttachment);
+  });
+
   const objectiveBox = document.querySelector("#form-task textarea[name=objective]");
   objectiveBox.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       document.getElementById("form-task").requestSubmit();
+    }
+  });
+  objectiveBox.addEventListener("paste", (e) => {
+    const data = e.clipboardData;
+    if (!data) return;
+    const files = [...(data.files || [])];
+    if (files.length) {
+      e.preventDefault();
+      files.forEach(fileToAttachment);
+      return;
+    }
+    const image = [...(data.items || [])].find((item) => item.kind === "file" && item.type.startsWith("image/"));
+    if (image) {
+      const file = image.getAsFile();
+      if (file) {
+        e.preventDefault();
+        fileToAttachment(file);
+        return;
+      }
+    }
+    const text = data.getData("text/plain");
+    if (text && (text.length > PASTE_CHARS || text.split("\n").length > PASTE_LINES)) {
+      e.preventDefault();
+      const n = attachments.filter((item) => item.name.startsWith("texto-colado")).length + 1;
+      addAttachment({
+        kind: "text",
+        name: n === 1 ? "texto-colado.txt" : `texto-colado-${n}.txt`,
+        mime: "text/plain",
+        content: text,
+      });
     }
   });
 
@@ -501,15 +601,35 @@ async function init() {
     e.preventDefault();
     if (!state.selectedProject) return toast("Escolha um projeto na lateral", "error");
     const fd = new FormData(e.target);
-    const objective = String(fd.get("objective") || "").trim();
-    if (!objective) return;
+    let objective = String(fd.get("objective") || "").trim();
+    if (!objective && !attachments.length) return;
+    if (!objective) objective = "Use os anexos.";
     const title = String(fd.get("title") || objective).slice(0, 80);
-    const task = await api(`/projects/${state.selectedProject.id}/tasks`, {
-      method: "POST",
-      body: JSON.stringify({ title, objective, kind: "objective" }),
-    });
+    const metadata = attachments.length
+      ? {
+          attachments: attachments.map(({ kind, name, mime, content, content_base64 }) => ({
+            kind,
+            name,
+            mime,
+            content,
+            content_base64,
+          })),
+        }
+      : undefined;
+    let task;
+    try {
+      task = await api(`/projects/${state.selectedProject.id}/tasks`, {
+        method: "POST",
+        body: JSON.stringify({ title, objective, kind: "objective", metadata }),
+      });
+    } catch (err) {
+      toast(err.message || "Falha ao enviar", "error");
+      return;
+    }
     state.selectedTaskId = task.id;
     state.tasks = [...state.tasks, { ...task, parent_id: null }];
+    attachments.splice(0, attachments.length);
+    renderAttachmentChips();
     e.target.reset();
     renderChat();
     document.getElementById("btn-run").click();

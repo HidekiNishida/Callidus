@@ -11,6 +11,20 @@ from agent.providers.base import (
 )
 
 
+def _data_url(encoded: str) -> str:
+    mime = "image/jpeg" if encoded.startswith("/9j/") else "image/png"
+    return f"data:{mime};base64,{encoded}"
+
+
+def _openai_message(message) -> dict:
+    if not message.images:
+        return {"role": message.role, "content": message.content}
+    parts: list[dict] = [{"type": "text", "text": message.content}]
+    for image in message.images:
+        parts.append({"type": "image_url", "image_url": {"url": _data_url(image)}})
+    return {"role": message.role, "content": parts}
+
+
 class LlamaCppProvider(LLMProvider):
     name = "llamacpp"
 
@@ -34,7 +48,7 @@ class LlamaCppProvider(LLMProvider):
         url = f"{self._base_url}/v1/chat/completions"
         body = {
             "model": request.profile.model_id,
-            "messages": [m.model_dump() for m in request.messages],
+            "messages": [_openai_message(m) for m in request.messages],
             "max_tokens": request.profile.output_reserve,
             **request.profile.generation,
         }

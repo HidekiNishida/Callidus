@@ -36,6 +36,31 @@ async def run_verification(
             detail=out,
         )
 
+    if vtype in {"script", "run_script"}:
+        out = await tools.execute("run_script", ctx, {"path": spec.get("path", "")}, approved=approved)
+        passed = bool(out.get("success"))
+        return VerificationResult(
+            "script",
+            passed,
+            "script ok" if passed else "script falhou",
+            out,
+        )
+
+    if vtype in {"command", "run_command"}:
+        out = await tools.execute(
+            "run_command",
+            ctx,
+            {"command": spec.get("command"), "cwd": spec.get("cwd"), "timeout": spec.get("timeout", 120)},
+            approved=approved,
+        )
+        passed = bool(out.get("success"))
+        return VerificationResult(
+            "command",
+            passed,
+            "comando ok" if passed else "comando falhou",
+            out,
+        )
+
     if vtype == "file_contains":
         path = spec.get("path", "")
         needle = spec.get("contains", "")

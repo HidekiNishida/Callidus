@@ -33,8 +33,14 @@ body { margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; 
 .tool-card .row { display: flex; gap: 0.4rem; align-items: center; }
 .tool-card p { margin: 0.3rem 0 0; color: var(--muted); font-size: 12px; }
 .composer-dock { border-top: 1px solid var(--border); padding: 0.65rem 8vw 0.85rem; background: var(--bg); }
+.composer-dock.dragover { outline: 1px dashed var(--accent); outline-offset: -6px; }
 .composer-dock textarea { width: 100%; min-height: 52px; resize: vertical; border-radius: 10px; background: #2a2d2e; }
 .composer-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.45rem; }
+.attach-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.45rem; }
+.chip { display: inline-flex; align-items: center; gap: 0.35rem; max-width: 240px; border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 0.2rem 0.35rem 0.2rem 0.45rem; font-size: 12px; }
+.chip img { width: 28px; height: 28px; object-fit: cover; border-radius: 4px; }
+.chip button { border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 0.35rem 0.6rem; cursor: pointer; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .details { width: 380px; flex-shrink: 0; border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; min-height: 0; overflow: auto; padding: 0.6rem; }
 .details[hidden] { display: none !important; }

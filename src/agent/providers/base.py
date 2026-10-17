@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 class ChatMessage(BaseModel):
     role: str
     content: str
+    images: list[str] | None = None
 
 
 class ModelProfile(BaseModel):

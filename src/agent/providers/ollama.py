@@ -11,6 +11,13 @@ from agent.providers.base import (
 )
 
 
+def _ollama_message(message) -> dict:
+    payload = {"role": message.role, "content": message.content}
+    if message.images:
+        payload["images"] = message.images
+    return payload
+
+
 class OllamaProvider(LLMProvider):
     name = "ollama"
 
@@ -34,7 +41,7 @@ class OllamaProvider(LLMProvider):
         url = f"{self._base_url}/api/chat"
         body = {
             "model": request.profile.model_id,
-            "messages": [m.model_dump() for m in request.messages],
+            "messages": [_ollama_message(m) for m in request.messages],
             "stream": False,
             "options": request.profile.generation or None,
         }

@@ -378,14 +378,22 @@ class RunOrchestrator:
             if err or not data or "path" not in data:
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
                 return {"action": "model_operation_invalid", "task_id": str(task.id), "error": err}
-            out = await self._tools.execute(
-                "write_file",
-                ctx,
-                {"path": data["path"], "content": data.get("content", "")},
-                approved=approved,
-            )
-            task.consolidated_result_json = {"model_operation": True, "write": out, "context_snapshot_id": str(snap.id)}
-            if out.get("success") and data.get("path"):
+            old = data.get("old_string", data.get("old"))
+            new = data["new_string"] if "new_string" in data else data.get("new")
+            if isinstance(old, str) and isinstance(new, str):
+                tool_name = "edit_file"
+                payload = {"path": data["path"], "old_string": old, "new_string": new}
+            else:
+                tool_name = "write_file"
+                payload = {"path": data["path"], "content": data.get("content", "")}
+            out = await self._tools.execute(tool_name, ctx, payload, approved=approved)
+            task.consolidated_result_json = {
+                "model_operation": True,
+                "tool": tool_name,
+                "write": out,
+                "context_snapshot_id": str(snap.id),
+            }
+            if out.get("success") and isinstance(data.get("path"), str):
                 KnowledgeGraphService(self._session).touch_file(project.id, project.root_path, data["path"])
             if out.get("success"):
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
@@ -394,7 +402,9 @@ class RunOrchestrator:
             return {"action": "model_operation_failed", "task_id": str(task.id)}
 
         if meta.get("tool"):
-            tool_id = meta["tool"]
+            from agent.tools.registry import canonical_tool_id
+
+            tool_id = canonical_tool_id(meta["tool"])
             args = meta.get("tool_args") or {}
             out = await self._tools.execute(tool_id, ctx, args, approved=approved)
             fp = AttemptService.fingerprint(out)
@@ -415,8 +425,8 @@ class RunOrchestrator:
                 project_id=project.id,
             )
             task.consolidated_result_json = {"tool": tool_id, "result": out}
-            if out.get("success") and tool_id == "write_file":
-                p = args.get("path")
+            if out.get("success") and tool_id in {"write_file", "edit_file", "move_file"}:
+                p = args.get("path") or args.get("to") or args.get("dest")
                 if isinstance(p, str):
                     KnowledgeGraphService(self._session).touch_file(project.id, project.root_path, p)
             if out.get("success"):
