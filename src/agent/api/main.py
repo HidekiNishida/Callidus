@@ -381,6 +381,36 @@ def get_context_snapshot(snapshot_id: uuid.UUID, session: Session = Depends(db_s
     }
 
 
+@app.get("/tasks/{task_id}/contract")
+def get_task_contract(task_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    row = ContractService(session).get(task_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="contrato não definido")
+    return {
+        "task_id": str(task_id),
+        "inputs": row.inputs_json,
+        "outputs": row.outputs_json,
+        "invariants": row.invariants_json,
+        "acceptance": row.acceptance_json,
+    }
+
+
+@app.put("/tasks/{task_id}/contract")
+def upsert_task_contract(task_id: uuid.UUID, body: dict, session: Session = Depends(db_session)) -> dict:
+    try:
+        out = ContractService(session).upsert_with_impact(
+            task_id,
+            inputs=body.get("inputs"),
+            outputs=body.get("outputs"),
+            invariants=body.get("invariants"),
+            acceptance=body.get("acceptance"),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    session.commit()
+    return out
+
+
 @app.post("/runs/{run_id}/cancel")
 def cancel_run(run_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
     try:

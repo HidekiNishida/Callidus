@@ -39,6 +39,21 @@ def test_knowledge_reindex_and_metrics(client: TestClient, tmp_path: Path):
     assert "tasks" in m.json()
 
 
+def test_task_contract_upsert(client: TestClient, tmp_path: Path):
+    r = client.post("/projects", json={"name": "P", "root_path": str(tmp_path)})
+    pid = r.json()["id"]
+    t = client.post(f"/projects/{pid}/tasks", json={"title": "T", "objective": "auth.py module"})
+    tid = t.json()["id"]
+    put = client.put(
+        f"/tasks/{tid}/contract",
+        json={"outputs": {"type": "Auth", "files": ["auth.py"]}},
+    )
+    assert put.status_code == 200
+    got = client.get(f"/tasks/{tid}/contract")
+    assert got.status_code == 200
+    assert got.json()["outputs"]["files"] == ["auth.py"]
+
+
 def test_autonomous_toggle(client: TestClient, tmp_path: Path):
     r = client.post("/projects", json={"name": "P", "root_path": str(tmp_path)})
     pid = r.json()["id"]

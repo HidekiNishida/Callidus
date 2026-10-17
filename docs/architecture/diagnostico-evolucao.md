@@ -19,11 +19,18 @@
 | Contratos | `services/contract_service.py` | Validação quando `requires_contract` |
 | Métricas | `services/metrics_service.py` | Agregados por projeto |
 
+## Incrementos v0.5.1
+
+- Consolidação exige evidência passante em subtarefas de verificação; reabertura hierárquica.
+- Verificação global antes de `run_completed`; gaps reabrem tarefas de verificação.
+- Contratos com detecção de impacto (`PUT /tasks/{id}/contract`) e bloqueio em `PLANNING → READY`.
+- Grafo: arestas `imports` via AST.
+- Máquina de estados: `COMPLETED → VERIFYING` para correções auditáveis.
+
 ## Próximos incrementos
 
-- Impacto de contratos via grafo ao alterar interfaces.
-- Verificação global automática reabrindo subtarefas.
-- Indexação multi-linguagem e relações `imports`/`calls` mais precisas.
-- UI: visualização gráfica do grafo e diff de contexto por snapshot.
+- Indexação multi-linguagem e relações `calls` mais precisas.
+- UI gráfica do grafo e diff de contexto por snapshot.
+- Comparativo reproduzível decomposição vs contexto monolítico (métricas A/B).
 
 Ver também: [knowledge-graph.md](./knowledge-graph.md), [context-builder.md](./context-builder.md), [execucao-autonoma.md](./execucao-autonoma.md).

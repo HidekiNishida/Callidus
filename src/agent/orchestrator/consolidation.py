@@ -13,6 +13,14 @@ from agent.persistence.models import EvidenceModel, TaskModel
 from agent.services.task_service import TaskService
 
 
+def verification_evidence_ok(session: Session, task: TaskModel) -> bool:
+    meta = task.metadata_json or {}
+    if not meta.get("verification"):
+        return True
+    evs = collect_evidences(session, task.id)
+    return any(e.get("passed") is True for e in evs)
+
+
 def children_of(session: Session, parent_id: uuid.UUID) -> list[TaskModel]:
     stmt = select(TaskModel).where(TaskModel.parent_id == parent_id)
     return list(session.scalars(stmt).all())
@@ -28,17 +36,24 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
         return None
 
     summaries = []
+    child_ok = True
     for c in kids:
+        ev_ok = verification_evidence_ok(session, c)
+        ok = c.status == TaskStatus.COMPLETED.value and ev_ok
+        if not ok:
+            child_ok = False
         summaries.append(
             {
                 "task_id": str(c.id),
                 "title": c.title,
+                "evidence_ok": ev_ok,
                 "result": c.consolidated_result_json or {"status": c.status},
             }
         )
     report: dict[str, Any] = {
-        "achieved": all(c.status == TaskStatus.COMPLETED.value for c in kids),
+        "achieved": child_ok,
         "children": summaries,
+        "evidences": collect_evidences(session, parent_id),
     }
     parent.consolidated_result_json = report
     current = TaskStatus(parent.status)
@@ -49,9 +64,21 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
         if report["achieved"]:
             ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
         else:
+            for c in kids:
+                if c.status == TaskStatus.COMPLETED.value and not verification_evidence_ok(session, c):
+                    ts.update_status(c.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                    ts.update_status(
+                        c.id,
+                        TaskStatusUpdate(status=TaskStatus.RETRY_PENDING, reason="evidência insuficiente"),
+                    )
+                elif c.status not in {TaskStatus.COMPLETED.value, TaskStatus.CANCELLED.value}:
+                    ts.update_status(
+                        c.id,
+                        TaskStatusUpdate(status=TaskStatus.RETRY_PENDING, reason="reabertura hierárquica"),
+                    )
             ts.update_status(
                 parent_id,
-                TaskStatusUpdate(status=TaskStatus.FAILED, reason="filhos incompletos"),
+                TaskStatusUpdate(status=TaskStatus.PLANNING, reason="filhos incompletos ou sem evidência"),
             )
     return report
 

@@ -186,6 +186,12 @@ async function loadInspector(taskId) {
   } catch {
     document.getElementById("context-view").textContent = "—";
   }
+  try {
+    const contract = await api(`/tasks/${taskId}/contract`);
+    detail.innerHTML += `<div class="detail-block"><h3>Contrato</h3><pre>${escapeHtml(JSON.stringify(contract, null, 2))}</pre></div>`;
+  } catch {
+    /* sem contrato */
+  }
 }
 
 async function refreshOverview() {

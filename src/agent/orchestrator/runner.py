@@ -11,6 +11,12 @@ from agent.config import Settings
 from agent.domain.enums import AttemptKind, RunStatus, TaskKind, TaskStatus
 from agent.domain.schemas import TaskStatusUpdate
 from agent.orchestrator.consolidation import children_of, consolidate_parent
+from agent.orchestrator.global_verify import (
+    ensure_global_verification_task,
+    evaluate_global_acceptance,
+    reopen_verification_gaps,
+)
+from agent.services.contract_service import ContractService
 from agent.orchestrator.atomizer import micro_decompose_operation, should_decompose_further
 from agent.orchestrator.decomposition import apply_decomposition, resolve_decomposition_plan
 from agent.orchestrator.planner import ensure_canonical_memory_for_objective
@@ -63,6 +69,17 @@ class RunOrchestrator:
     def _run_config(self, run: ExecutionRunModel) -> dict:
         return run.config_json or {}
 
+    def _promote_ready_or_block(self, task_id: uuid.UUID) -> dict[str, Any] | None:
+        ok, errs = ContractService(self._session).validate_for_run(task_id)
+        if not ok:
+            self._tasks.update_status(
+                task_id,
+                TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="; ".join(errs)),
+            )
+            return {"action": "blocked_contract", "task_id": str(task_id), "errors": errs}
+        self._tasks.update_status(task_id, TaskStatusUpdate(status=TaskStatus.READY))
+        return None
+
     async def step(self, run_id: uuid.UUID) -> dict[str, Any]:
         run = self._session.get(ExecutionRunModel, run_id)
         if run is None:
@@ -81,7 +98,14 @@ class RunOrchestrator:
         root = self._tasks.get_task(run.root_task_id)
         task = self._pick_next_task(run.root_task_id)
         if task is None:
+            ensure_global_verification_task(self._session, project.id, root)
             if self._all_terminal_under(root.id):
+                ok, reason = evaluate_global_acceptance(self._session, root.id)
+                if not ok:
+                    reopened = reopen_verification_gaps(self._session, root.id)
+                    if reopened:
+                        return {"action": "global_verify_reopen", "reopened": [str(x) for x in reopened]}
+                    return {"action": "global_verify_failed", "reason": reason}
                 run.status = RunStatus.COMPLETED.value
                 return {"action": "run_completed", "run_id": str(run_id)}
             return {"action": "waiting", "run_id": str(run_id)}
@@ -109,7 +133,9 @@ class RunOrchestrator:
             meta = task.metadata_json or {}
             if not kids and (meta.get("tool") or meta.get("verification")):
                 if self._tasks.dependencies_satisfied(task.id):
-                    self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.READY))
+                    blocked = self._promote_ready_or_block(task.id)
+                    if blocked:
+                        return blocked
                     return {"action": "operation_ready", "task_id": str(task.id)}
                 return {"action": "operation_wait_deps", "task_id": str(task.id)}
             if not kids:
@@ -151,11 +177,20 @@ class RunOrchestrator:
                 }
 
             if self._tasks.dependencies_satisfied(task.id):
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.READY))
+                blocked = self._promote_ready_or_block(task.id)
+                if blocked:
+                    return blocked
             return {"action": "planning_wait_children", "task_id": str(task.id)}
 
         promoted = self._tasks.promote_ready_if_dependencies_met(task.id)
         if promoted:
+            ok, errs = ContractService(self._session).validate_for_run(task.id)
+            if not ok:
+                self._tasks.update_status(
+                    task.id,
+                    TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="; ".join(errs)),
+                )
+                return {"action": "blocked_contract", "task_id": str(task.id), "errors": errs}
             return {"action": "promoted_ready", "task_id": str(task.id)}
 
         if status == TaskStatus.READY:
@@ -186,6 +221,8 @@ class RunOrchestrator:
                 "blocked_decompose",
                 "blocked_loop",
                 "blocked_attempts",
+                "blocked_contract",
+                "global_verify_failed",
             }:
                 break
             if out.get("action") == "waiting":

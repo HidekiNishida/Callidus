@@ -10,7 +10,7 @@
 8. **Atomização** — micro-plano determinístico; decomposição LLM profunda ainda limitada.
 9. **Contratos** — validação manual via `requires_contract`; propagação de impacto incompleta.
 
-Testes: `pytest` (30+ casos) · E2E mock: `tests/test_e2e_orchestrator.py`.
+Testes: `pytest` (41+ casos) · E2E mock: `tests/test_e2e_orchestrator.py` · recuperação: `tests/test_orchestrator_recovery.py`.
 
 Backup: [scripts/backup-data.sh](/scripts/backup-data.sh).
 

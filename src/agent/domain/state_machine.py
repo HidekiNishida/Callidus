@@ -8,16 +8,16 @@ ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     TaskStatus.PLANNING: frozenset(
         {TaskStatus.READY, TaskStatus.VERIFYING, TaskStatus.BLOCKED, TaskStatus.CANCELLED}
     ),
-    TaskStatus.READY: frozenset({TaskStatus.RUNNING, TaskStatus.CANCELLED}),
+    TaskStatus.READY: frozenset({TaskStatus.RUNNING, TaskStatus.CANCELLED, TaskStatus.BLOCKED}),
     TaskStatus.RUNNING: frozenset(
         {TaskStatus.VERIFYING, TaskStatus.RETRY_PENDING, TaskStatus.FAILED, TaskStatus.CANCELLED}
     ),
     TaskStatus.VERIFYING: frozenset(
-        {TaskStatus.COMPLETED, TaskStatus.RETRY_PENDING, TaskStatus.RUNNING}
+        {TaskStatus.COMPLETED, TaskStatus.RETRY_PENDING, TaskStatus.RUNNING, TaskStatus.PLANNING}
     ),
     TaskStatus.RETRY_PENDING: frozenset({TaskStatus.READY, TaskStatus.BLOCKED, TaskStatus.CANCELLED}),
     TaskStatus.BLOCKED: frozenset({TaskStatus.PLANNING, TaskStatus.CANCELLED}),
-    TaskStatus.COMPLETED: frozenset(),
+    TaskStatus.COMPLETED: frozenset({TaskStatus.VERIFYING}),
     TaskStatus.FAILED: frozenset(),
     TaskStatus.CANCELLED: frozenset(),
 }
