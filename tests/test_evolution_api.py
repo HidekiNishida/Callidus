@@ -54,6 +54,27 @@ def test_task_contract_upsert(client: TestClient, tmp_path: Path):
     assert got.json()["outputs"]["files"] == ["auth.py"]
 
 
+def test_live_board_after_step(client: TestClient, tmp_path: Path):
+    r = client.post("/projects", json={"name": "P", "root_path": str(tmp_path)})
+    pid = r.json()["id"]
+    t = client.post(
+        f"/projects/{pid}/tasks",
+        json={"title": "Demo", "objective": "e2e corrigir calc.py"},
+    )
+    run = client.post(
+        f"/projects/{pid}/runs",
+        json={"root_task_id": t.json()["id"], "config": {"provider": "mock", "approve_risky_tools": True}},
+    )
+    step = client.post(f"/runs/{run.json()['id']}/step")
+    assert step.status_code == 200
+    live = client.get(f"/projects/{pid}/live")
+    assert live.status_code == 200
+    body = live.json()
+    assert body["headline"]
+    assert body["how"]
+    assert body["action"] != "idle"
+
+
 def test_autonomous_toggle(client: TestClient, tmp_path: Path):
     r = client.post("/projects", json={"name": "P", "root_path": str(tmp_path)})
     pid = r.json()["id"]
