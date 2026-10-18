@@ -18,7 +18,7 @@ from agent.services.task_service import TaskService
 from agent.verification.fingerprint import fingerprint, is_current, snapshot
 
 
-def test_fingerprint_follows_content_and_ignores_the_database(tmp_path):
+def test_fingerprint_follows_files_and_ignores_the_database(tmp_path):
     (tmp_path / "app.py").write_text("x = 1\n")
     (tmp_path / "agent.db").write_text("a")
     first = fingerprint(str(tmp_path), ["."])
@@ -26,7 +26,7 @@ def test_fingerprint_follows_content_and_ignores_the_database(tmp_path):
     (tmp_path / "agent.db").write_text("b")
     assert fingerprint(str(tmp_path), ["."]) == first
 
-    (tmp_path / "app.py").write_text("x = 2\n")
+    (tmp_path / "app.py").write_text("x = 22\n")
     assert fingerprint(str(tmp_path), ["."]) != first
 
     art = snapshot(str(tmp_path), {"type": "file_contains", "path": "app.py", "contains": "x"})
@@ -113,7 +113,7 @@ def test_external_change_makes_evidence_stale_and_is_never_deleted(session, tmp_
     assert verification_evidence_ok(session, leaf)
     assert evaluate_global_acceptance(session, root.id)[0]
 
-    (tmp_path / "frete.py").write_text("def frete():\n    return 12\n")
+    (tmp_path / "frete.py").write_text("def frete():\n    return 120\n")
 
     assert not verification_evidence_ok(session, leaf)
     ok, reason = evaluate_global_acceptance(session, root.id)

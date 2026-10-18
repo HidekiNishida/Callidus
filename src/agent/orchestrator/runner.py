@@ -43,6 +43,7 @@ from agent.orchestrator.decomposition import (
     seal_repeated_steps,
 )
 from agent.orchestrator.planner import ensure_canonical_memory_for_objective
+from agent.orchestrator.progress import progress_state
 from agent.orchestrator.replan import replan_under
 from agent.orchestrator.usage import accumulate_usage
 from agent.context.budget import ContextBudgetError
@@ -196,6 +197,8 @@ class RunOrchestrator:
             except ValueError:
                 task_id = None
         payload = {k: v for k, v in out.items() if k not in {"log"}}
+        self._session.flush()
+        payload["progress"] = progress_state(self._session, run.root_task_id)
         self._session.add(
             EventLogModel(
                 project_id=run.project_id,

@@ -17,7 +17,7 @@
 | Verifier | `verification/runner.py` | Existente; consolidação hierárquica incremental |
 | Execução autônoma | `services/autonomous_worker.py` | Loop em background + API enable/disable |
 | Contratos | `services/contract_service.py` | Validação quando `requires_contract` |
-| Métricas | `services/metrics_service.py` | Agregados por projeto |
+| Métricas | `services/metrics_service.py`, `orchestrator/progress.py` | Agregados por projeto e por run; progresso verificável |
 
 ## Incrementos v0.5.1
 

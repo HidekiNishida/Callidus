@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |-------|-------|
-| Estado | em andamento |
+| Estado | concluída |
 | Criado em | 2026-10-18 |
 | Atualizado em | 2026-10-18 |
 | Agente / tarefa | Evolução arquitetural (fases A–G) |
@@ -14,7 +14,7 @@ O orquestrador decompõe só o necessário, monta contexto suficiente por opera�
 
 ## Próxima ação
 
-Unidade 11: métricas de progresso verificável e cenários ponta a ponta (1, 4, 5, 20).
+Nenhuma: evolução concluída. Sequência: [validação do plano, verificação independente e progresso real](/internal/tarefas/2026-10-18-validacao-verificacao-progresso.md).
 
 ## Diagnóstico (fase A — evidências)
 
@@ -65,10 +65,10 @@ Unidade 11: métricas de progresso verificável e cenários ponta a ponta (1, 4,
 - [x] Unidade 9: verificação implícita para escrita, etapa sem ação executa, inconclusivo nunca aprova, evidência com `attempt_id`
 - [x] Unidade 7: `_recursion_guard` (objetivo/título repetido acima, `max_tree_depth`, `max_tasks_per_run`) separado da decisão de dividir; corte fixo removido
 - [x] Unidade 10: impressão digital na evidência (`verification/fingerprint.py`), só a evidência mais recente e atual vale, `stale_evidence` reabre em VERIFYING (reverifica antes de refazer), retomada após reabrir o banco
-- [ ] Unidade 11
-- [ ] Escolher dimensões de teste aplicáveis ([validacoes-testes.md](/docs/regras/validacoes-testes.md))
-- [ ] Verificação final: código ↔ docs ↔ checklists ↔ regras ([verificacao-final.md](/docs/regras/verificacao-final.md))
-- [ ] Marcar estado como `concluída` e listar artefatos
+- [x] Unidade 11: `orchestrator/progress.py` (progresso = trabalho verificado), `payload.progress` em cada ação, `GET /runs/{id}/metrics`, cenários 1, 4, 5, 20
+- [x] Escolher dimensões de teste aplicáveis ([validacoes-testes.md](/docs/regras/validacoes-testes.md))
+- [x] Verificação final: código ↔ docs ↔ checklists ↔ regras ([verificacao-final.md](/docs/regras/verificacao-final.md))
+- [x] Marcar estado como `concluída` e listar artefatos
 
 ## Bloqueios
 
@@ -89,10 +89,13 @@ Unidade 11: métricas de progresso verificável e cenários ponta a ponta (1, 4,
 | `/tests/test_sufficient_context.py` | testes da unidade 5 (cenário 9) |
 | `/tests/test_functional_depth.py` | testes da unidade 7 (cenários 2, 3, 14) |
 | `/tests/test_resume_integrity.py` | testes da unidade 10 (cenários 15, 16) |
+| `/tests/test_progress_metrics.py` | testes da unidade 11 (cenários 1, 4, 5, 20) |
+| `/src/agent/orchestrator/progress.py` | progresso verificável |
+| `/src/agent/verification/fingerprint.py` | impressão digital da evidência |
 | `/tests/test_run_termination.py` | testes da unidade 8 (cenários 6, 17, 18) |
 | `/docs/architecture/context-builder.md` | estouro e compactação |
 | `/docs/architecture/execucao-autonoma.md` | seção Falhas categorizadas |
 
 ## Notas de retomada
 
-Baseline após unidade 10: 142 passam, 0 falham. Cenários numerados = seção 12 do pedido.
+Final: 147 passam, 0 falham. Os 20 cenários do pedido têm teste: 1/4/5/20 `test_progress_metrics`, 2/3/14 `test_functional_depth` (3 também por replanejamento que redecompõe em `test_run_termination`), 6/17/18 `test_run_termination`, 7/8 `test_context_recovery`, 9 `test_sufficient_context`, 10/13 `test_retry_strategy` e `test_decompose_loop`, 11/12 `test_proportional_verification` e `test_retry_strategy`, 15/16 `test_resume_integrity`, 19 `test_run_termination` (configuração) e `test_failures`. Cenários numerados = seção 12 do pedido.

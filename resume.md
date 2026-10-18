@@ -171,6 +171,7 @@ Projetos (workspaces):
 - `project_overview(project_id) → dict` — Rota `GET /projects/{project_id}/overview`: total de tarefas, contagem por status, run ativo, total de runs e pasta raiz.
 - `project_live(project_id) → dict` — Rota `GET /projects/{project_id}/live`: painel "ao vivo" consultado pela UI: run ativo (com flag autônoma), tarefa em foco, última ação, manchete e explicação legíveis, trilha de pensamentos, se está "pensando", provedor/modelo e ferramenta em uso.
 - `project_metrics(project_id) → dict` — Rota `GET /projects/{project_id}/metrics`: métricas do projeto calculadas pelo `MetricsService`.
+- `run_metrics(run_id) → dict` — Rota `GET /runs/{run_id}/metrics`: métricas do run (árvore, decomposições, replanejamentos, tentativas, repetição, tokens, contexto omitido, erros por categoria, tempo, evidências, progresso); 404 se o run não existe.
 - `project_git_diff(project_id) → dict` — Rota `GET /projects/{project_id}/git-diff`: roda a ferramenta `git_diff` na raiz do projeto e devolve o resultado.
 - `list_events(project_id) → list[EventRead]` — Rota `GET /projects/{project_id}/events`: os 200 eventos mais recentes do projeto.
 - `add_memory(project_id, body) → MemoryRead` — Rota `POST /projects/{project_id}/memory`: grava um registro de memória (`MemoryCreate`).
@@ -466,6 +467,14 @@ Grafo de conhecimento:
 
 - `ensure_canonical_memory_for_objective(session, project_id, root_task) → None` — Cria, se ainda não existir, a memória "Objetivo global" do projeto e uma memória canônica ligada à conversa e à tarefa-raiz.
 
+### `src/agent/orchestrator/progress.py`
+
+**Propósito:** progresso verificável a partir do estado persistido. **Por quê:** mais chamadas ao modelo não significam progresso; só etapas concluídas com evidência válida (ou menos pendências) contam. **Quando/onde:** `RunOrchestrator._record_action` grava `progress_state` em cada evento `orchestrator.action`; `MetricsService.run_metrics` usa `made_progress` para medir passos e chamadas desde o último progresso.
+
+- `subtree(session, root_id) → list[TaskModel]` — A raiz e todos os descendentes (mesmo projeto).
+- `progress_state(session, root_id) → dict` — Contagem `verified` (concluídas com evidência válida e atual ou sem verificação), `pending` (não assentadas), `failed` e `blocked` (não substituídas).
+- `made_progress(before, after) → bool` — Verdadeiro quando `verified` sobe, ou `pending` cai sem `verified` cair; decompor ou repetir chamadas não conta.
+
 ### `src/agent/orchestrator/replan.py`
 
 **Propósito:** Revisa o plano quando uma etapa bloqueia ou falha no meio, sem refazer o que já passou. **Quando/onde:** `RunOrchestrator._step_body` chama `replan_under` no início de cada passo.
@@ -506,7 +515,7 @@ Grafo de conhecimento:
   - `RunOrchestrator._remember_failure(task, failure) → dict` — Guarda a falha categorizada em `metadata_json.last_failure` e nas últimas 5 de `failures`, para a próxima tentativa e o replanejamento lerem.
   - `RunOrchestrator._pick_next_task(root_id) → TaskModel | None` — Escolhe a próxima tarefa da subárvore por prioridade de status (RUNNING, VERIFYING, READY, RETRY_PENDING, PLANNING, PENDING), respeitando dependências; um pai em PLANNING só é escolhido quando todos os filhos estão resolvidos (`settled`).
   - `RunOrchestrator._promote_ready_or_block(task_id) → dict | None` — Valida o contrato da tarefa; se inválido, bloqueia e retorna os erros, senão marca READY.
-  - `RunOrchestrator._record_action(run_id, out) → None` — Registra o resultado do passo como evento `orchestrator.action`.
+  - `RunOrchestrator._record_action(run_id, out) → None` — Registra o resultado do passo como evento `orchestrator.action`, com o estado de progresso verificável (`payload.progress`).
   - `RunOrchestrator._run_as_leaf(run, task, *, note) → dict` — Força a tarefa a ser executada como operação do modelo (sem nova divisão) e a promove se as dependências permitirem.
   - `RunOrchestrator._run_config(run) → dict` — Configuração do run (provedor, modelo, opções) ou dicionário vazio.
   - `RunOrchestrator._same_title_above(task) → bool` — Verdadeiro se algum ancestral tem o mesmo título ou o mesmo objetivo normalizado (sinal de decomposição repetida).
@@ -679,12 +688,16 @@ Grafo de conhecimento:
 
 ### `src/agent/services/metrics_service.py`
 
-**Propósito:** métricas agregadas de um projeto. **Quando/onde:** rota de métricas da API, para painéis da interface.
+**Propósito:** métricas agregadas de um projeto e de um run. **Quando/onde:** rotas de métricas da API, para painéis da interface e diagnóstico de estagnação.
 
 - **`MetricsService`** — Calcula números de uso do projeto.
   - `MetricsService.__init__(session) → None` — Guarda a sessão.
   - `MetricsService._max_depth(tasks) → int` — Profundidade máxima da árvore de tarefas (níveis de subtarefas).
   - `MetricsService.project_metrics(project_id) → dict` — Devolve total de tarefas, tentativas, chamadas de modelo, tokens estimados de contexto e profundidade máxima.
+  - `MetricsService.run_metrics(run_id) → dict | None` — Métricas do run a partir de tarefas, tentativas, eventos, snapshots e evidências: `tree`, `decompositions`, `replans`, `attempts` (por tipo, máximo por tarefa, estratégias, repetições), `tokens`, `omitted_context`, `errors_by_category`, `time`, `evidence` (aprovadas, reprovadas, inconclusivas, desatualizadas) e `progress` (estado, passos e chamadas de modelo desde o último progresso). `None` se o run não existe.
+  - `MetricsService._model_calls_since_progress(attempts, events) → int` — Chamadas de modelo depois do último evento em que `made_progress` foi verdadeiro.
+- `_naive(moment)` — Remove o fuso para comparar datas lidas do SQLite (sem fuso) com as ainda em memória (UTC).
+- `_current(evidence) → bool` — Se a evidência ainda vale para os arquivos atuais (`fingerprint.is_current`).
 
 ### `src/agent/services/project_service.py`
 
@@ -1024,7 +1037,7 @@ Grafo de conhecimento:
 
 - `artifact_paths(spec, tool_args=None) → list[str]` — Caminhos de que a verificação depende: arquivo do `file_contains`/`script`, pasta do `pytest`/`command`; vazio para `stages` e manual.
 - `_files(base, rel) → list[Path]` — Arquivos sob um caminho (até 2000), sem `.git`, venvs, caches, `node_modules`, bancos SQLite e `.pyc`.
-- `fingerprint(root, paths) → str` — SHA-256 de nomes e conteúdo (tamanho e data acima de 2 MB); arquivo ausente entra como ausente.
+- `fingerprint(root, paths) → str` — SHA-256 de nome, tamanho e data de modificação de cada arquivo (barato para rodar a cada passo); arquivo ausente entra como ausente.
 - `snapshot(root, spec, tool_args=None) → dict | None` — `{root, paths, fingerprint}` para guardar em `detail_json.artifacts`; `None` se a verificação não depende de arquivo.
 - `is_current(artifacts) → bool` — Recalcula e compara; evidência sem impressão continua válida.
 
@@ -1222,9 +1235,10 @@ Grafo de conhecimento:
 - `tests/test_dev_tools.py` — Ferramentas de desenvolvimento: list/glob/edit e aliases, grep que ignora `.venv`, comando em string, executável ausente como erro de configuração, interpretador do venv do projeto, verificação que aceita entrega HTML sem testes e verificação por script.
 - `tests/test_failures.py` — Taxonomia de falhas: categorias de saída de ferramenta, provedor, resposta do modelo (cortada × malformada), contexto e verificação; JSON inválido do modelo vira tentativa falha com `last_failure` na tarefa.
 - `tests/test_proportional_verification.py` — Escrita sem verificação declarada ganha `file_contains` implícito com evidência ligada à tentativa; etapa sem ação executa em vez de concluir em silêncio.
+- `tests/test_progress_metrics.py` — Progresso é trabalho verificado e não atividade; pergunta simples sem decomposição excessiva; objetivo de várias etapas ponta a ponta com métricas (e rota `/runs/{id}/metrics`); irmã independente segue enquanto a dependente espera; chamadas de modelo sem trabalho verificado não contam como progresso.
 - `tests/test_functional_depth.py` — Profundidade funcional: etapa na profundidade 7 ainda é decomposta; objetivo igual ao de um ancestral e orçamento de tarefas do run acionam a proteção contra recursão (`recursion_guard`) e a etapa é executada sem nova divisão.
 - `tests/test_sufficient_context.py` — Contexto suficiente: arquivo citado entra com o conteúdo exato (fora da raiz e inexistente não), contrato, objetivo da raiz e resultado da dependência chegam à operação, compactação não altera `arquivos-alvo`.
-- `tests/test_resume_integrity.py` — Retomada: impressão digital segue o conteúdo e ignora o banco; run continua depois de reabrir o banco e conclui; mudança externa torna a evidência desatualizada (aceitação recusa, tarefa reabre com `stale_evidence`, nada apagado); evidência reprovada mais recente vence uma aprovada antiga; evidência desatualizada é reverificada sem chamar o modelo.
+- `tests/test_resume_integrity.py` — Retomada: impressão digital segue os arquivos e ignora o banco; run continua depois de reabrir o banco e conclui; mudança externa torna a evidência desatualizada (aceitação recusa, tarefa reabre com `stale_evidence`, nada apagado); evidência reprovada mais recente vence uma aprovada antiga; evidência desatualizada é reverificada sem chamar o modelo.
 - `tests/test_retry_strategy.py` — Nova tentativa: motivo e instrução no prompt, nenhum prompt repetido (bloqueia com `repeated_prompt`), resposta cortada dobra o limite de saída, saída da verificação no detalhe da falha.
 - `tests/test_diff_resume_browser.py` — Diff unificado (`tools/diffing.py`), `edit_file` devolvendo diff, resumo de retomada (`build_resume_brief`) e ferramenta de navegador (proteção de URL, parse de resultados, desligada até ser habilitada).
 - `tests/test_e2e_orchestrator.py` — Fluxo ponta a ponta com mock: o `RunOrchestrator` corrige `calc.py` da fixture `sample_project` e passa na verificação.

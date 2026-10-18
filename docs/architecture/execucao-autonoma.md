@@ -68,6 +68,27 @@ Não há profundidade máxima de decomposição. Uma etapa é dividida enquanto 
 
 Ao acionar, a etapa é executada como operação de modelo, sem nova divisão, e o motivo fica em `metadata_json.recursion_guard`.
 
+## Progresso e métricas
+
+Progresso é estado verificável, não atividade (`orchestrator/progress.py`):
+
+- `progress_state` conta, sob a raiz, as etapas `verified` (concluídas com evidência válida e atual, ou sem verificação exigida), `pending` (não assentadas), `failed` e `blocked` (ainda não substituídas).
+- `made_progress(antes, depois)`: há progresso quando `verified` sobe, ou quando `pending` cai sem `verified` cair. Decompor, chamar o modelo de novo ou repetir uma ferramenta não conta.
+
+Cada evento `orchestrator.action` grava `payload.progress`. `GET /runs/{id}/metrics` (`MetricsService.run_metrics`) deriva daí e das tabelas existentes, sem tabela nova:
+
+| Bloco | Conteúdo |
+|-------|----------|
+| `tree` | tarefas, profundidade máxima, contagem por status, reabertas |
+| `decompositions`, `replans` | ações `decomposed` e `replanned` |
+| `attempts` | total, por tipo, máximo por tarefa, estratégias (prompts distintos), prompts repetidos, saídas repetidas |
+| `tokens` | estimados nos snapshots e informados pelo provedor (`usage`) |
+| `omitted_context` | componentes de contexto omitidos, por nome |
+| `errors_by_category` | falhas das tentativas por categoria |
+| `time` | início, último evento e duração |
+| `evidence` | aprovadas, reprovadas, inconclusivas, desatualizadas |
+| `progress` | estado atual, passos e chamadas de modelo desde o último progresso |
+
 ## Falhas categorizadas
 
 Toda tentativa que falha é classificada por `src/agent/domain/failures.py` em **categoria** (o que fazer) e **causa** (o que houve):

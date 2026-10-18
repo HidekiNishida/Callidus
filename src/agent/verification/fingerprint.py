@@ -8,7 +8,6 @@ from typing import Any
 _SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", "node_modules"}
 _SKIP_SUFFIXES = (".db", ".db-journal", ".db-wal", ".db-shm", ".sqlite", ".pyc")
 _MAX_FILES = 2000
-_HASH_LIMIT = 2_000_000
 
 
 def artifact_paths(spec: dict[str, Any], tool_args: dict[str, Any] | None = None) -> list[str]:
@@ -45,8 +44,9 @@ def _files(base: Path, rel: str) -> list[Path]:
 
 
 def fingerprint(root: str, paths: list[str]) -> str:
-    """Hash do conteúdo (ou tamanho e data, acima de 2 MB) dos arquivos sob `paths`; arquivo ausente entra
-    como ausente, então criar, apagar ou mudar qualquer um muda a impressão."""
+    """Hash de nome, tamanho e data de modificação dos arquivos sob `paths` (barato o bastante para rodar a
+    cada passo); arquivo ausente entra como ausente, então criar, apagar ou mudar qualquer um muda a
+    impressão. Regravar o mesmo conteúdo também muda: custa só uma reverificação."""
     base = Path(root).resolve()
     digest = hashlib.sha256()
     for rel in sorted(set(paths)):
@@ -58,11 +58,7 @@ def fingerprint(root: str, paths: list[str]) -> str:
             try:
                 stat = path.stat()
                 name = str(path.relative_to(base)) if path.is_relative_to(base) else str(path)
-                digest.update(name.encode())
-                if stat.st_size <= _HASH_LIMIT:
-                    digest.update(hashlib.sha256(path.read_bytes()).digest())
-                else:
-                    digest.update(f"{stat.st_size}:{stat.st_mtime_ns}".encode())
+                digest.update(f"{name}:{stat.st_size}:{stat.st_mtime_ns}".encode())
             except OSError:
                 digest.update(b"<ilegivel>")
     return digest.hexdigest()

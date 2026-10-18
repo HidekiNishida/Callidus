@@ -600,6 +600,14 @@ def project_metrics(project_id: uuid.UUID, session: Session = Depends(db_session
     return MetricsService(session).project_metrics(project_id)
 
 
+@app.get("/runs/{run_id}/metrics")
+def run_metrics(run_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    metrics = MetricsService(session).run_metrics(run_id)
+    if metrics is None:
+        raise HTTPException(status_code=404, detail="run não encontrado")
+    return metrics
+
+
 @app.get("/tasks/{task_id}/context-snapshots")
 def task_context_snapshots(task_id: uuid.UUID, session: Session = Depends(db_session)) -> list[dict]:
     stmt = (
