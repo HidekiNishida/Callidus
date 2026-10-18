@@ -105,7 +105,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** configuração central lida de variáveis de ambiente e do arquivo `.env` (pydantic-settings). **Quando/onde:** usada pela API (`deps.read_settings`), pela persistência (URL do banco) e pelo orquestrador/provedores (URLs, modelo padrão, limites).
 
-- **`Settings(BaseSettings)`** — Todas as opções do runtime: diretório de dados, URL do banco, URLs/timeout do Ollama e do llama.cpp, provedor e modelo padrão, orçamento de contexto (limite, entrada, reserva de saída), uso do template genérico de decomposição, fallback para mock, host/porta da API (padrão `127.0.0.1:8765`), limites de tentativas e de passos do orquestrador, proteções contra recursão (`max_tree_depth`, `max_tasks_per_run`), limites operacionais do run (tentativas por estratégia, passos sem progresso, tempo, chamadas ao modelo, ferramentas, tokens, replanejamentos; 0 desliga), pasta da web estática, caminho do `mcp.json` e se o worker em segundo plano liga.
+- **`Settings(BaseSettings)`** — Todas as opções do runtime: diretório de dados, URL do banco, URLs/timeout do Ollama e do llama.cpp, provedor e modelo padrão, orçamento de contexto (limite, entrada, reserva de saída), uso do template genérico de decomposição, fallback para mock, host/porta da API (padrão `127.0.0.1:8765`), limites de tentativas e de passos do orquestrador, proteções contra recursão (`max_tree_depth`, `max_tasks_per_run`), limites operacionais do run (tentativas por estratégia, passos sem progresso, tempo, chamadas ao modelo, ferramentas, tokens, replanejamentos; 0 desliga), limites da observabilidade (texto por campo de evento, resposta final, agrupamento de fragmentos, fila por assinante SSE, anel em memória), pasta da web estática, caminho do `mcp.json` e se o worker em segundo plano liga.
   - `Settings.resolved_database_url() → str` — Devolve a URL SQLite final: em testes do pytest força `data_dir/agent.db` (para não gravar no banco real), senão usa `database_url` se houver, senão `data/agent.db`; cria o diretório de dados quando necessário.
 - `get_settings() → Settings` — Cria uma instância de `Settings` e, se `mcp_config_path` não foi definido, preenche com `data_dir/mcp.json`. Chamada sempre que alguém precisa da configuração atual.
 
@@ -320,9 +320,9 @@ Grafo de conhecimento:
 - `_configure_sqlite(engine) → None` — Em SQLite, liga `PRAGMA foreign_keys=ON` em cada nova conexão.
 - `create_db_engine(settings) → Engine` — Cria a engine a partir de `resolved_database_url()` (permitindo uso entre threads) e aplica a configuração do SQLite.
 - `_add_column(conn, table, column, ddl) → None` — Adiciona uma coluna à tabela se ela existir e ainda não tiver a coluna.
-- `_migrate_sqlite(engine) → None` — Migração leve para bancos antigos: acrescenta colunas novas (config do run, conversa/branch em tarefas e memórias, resumo/outline da memória, origem do caminho, raiz e branch ativa da conversa).
+- `_migrate_sqlite(engine) → None` — Migração leve para bancos antigos: acrescenta colunas novas (config do run, conversa/branch em tarefas e memórias, resumo/outline da memória, origem do caminho, raiz e branch ativa da conversa, `seq`/tarefa pai/agente/versão em `event_logs` com índice `(run_id, seq)`).
 - `init_db(engine, settings) → Engine` — Cria as tabelas que faltam, aplica as migrações e devolve a engine.
-- `build_session_factory(engine) → sessionmaker[Session]` — Fábrica de sessões sem autoflush e sem expirar objetos após o commit.
+- `build_session_factory(engine) → sessionmaker[Session]` — Fábrica de sessões sem autoflush e sem expirar objetos após o commit; garante os listeners da observabilidade (`observability.emitter.install`).
 - `session_scope(session_factory) → Generator[Session]` — Context manager que abre uma sessão, faz commit ao final, rollback em erro e fecha.
 
 ### `src/agent/persistence/models.py`
@@ -339,13 +339,88 @@ Grafo de conhecimento:
 - **`ExecutionRunModel(Base)`** — Tabela `execution_runs`: execução de uma tarefa-raiz com status e configuração (provedor, modelo, modo autônomo).
 - **`ScheduledRunModel(Base)`** — Tabela `scheduled_runs`: agendamento de runs por expressão cron, com configuração, flag de ativo e datas da última/próxima execução.
 - **`OperationAttemptModel(Base)`** — Tabela `operation_attempts`: cada tentativa (modelo, ferramenta ou verificação) de uma tarefa num run, com provedor, requisição, resposta, sucesso e erro.
-- **`EventLogModel(Base)`** — Tabela `event_logs`: log de eventos (tipo e payload) por projeto, run e tarefa; base da trilha de pensamentos e do painel ao vivo.
+- **`EventLogModel(Base)`** — Tabela `event_logs`: log de eventos (tipo e payload) por projeto, run e tarefa, com sequência monotônica por run (`seq`), tarefa pai, agente e versão do formato; fonte única da trilha de pensamentos, do painel ao vivo e do acompanhamento em tempo real.
 - **`MemoryRecordModel(Base)`** — Tabela `memory_records`: memória do projeto/conversa/branch/tarefa com tipo, título, conteúdo, resumo, outline, versão e referências de origem.
 - **`KgNodeModel(Base)`** — Tabela `kg_nodes`: nó do grafo de conhecimento (tipo, referência única por projeto, rótulo, metadados).
 - **`KgEdgeModel(Base)`** — Tabela `kg_edges`: aresta entre dois nós do grafo com o tipo de relação.
 - **`TaskContractModel(Base)`** — Tabela `task_contracts`: contrato único por tarefa com entradas, saídas, invariantes e critérios de aceite.
 - **`ContextSnapshotModel(Base)`** — Tabela `context_snapshots`: registro do contexto montado para o modelo (tokens estimados, componentes, notas de estratégia, referências) por tarefa/run.
 - **`EvidenceModel(Base)`** — Tabela `evidences`: evidência de verificação de uma tarefa (verificador, passou ou não, resumo, detalhes), opcionalmente ligada a uma tentativa.
+
+## `src/agent/observability/`
+
+**Propósito:** eventos de execução observáveis em tempo real: contrato tipado, sanitização, sequência por run, publicação após commit e barramento em memória para assinantes SSE. **Por quê:** a interface acompanha a execução real (tarefas, modelo, ferramentas, comandos, arquivos, verificação) sem segunda fonte de verdade: os fatos ficam em `event_logs`, e só fragmentos de alto volume (texto do modelo, saída de comando) vivem apenas em memória. **Quando:** o orquestrador abre um contexto de observação por passo; ferramentas, verificação e provedores emitem dentro dele; a API lê o histórico e assina o barramento.
+
+### `src/agent/observability/__init__.py`
+
+**Propósito:** reexporta a API pública do pacote (`emit`, `observe`, `scoped`, `current`, `get_bus`, `EventEnvelope`, `EVENT_SPECS`, `RESYNC`). **Quando/onde:** import pelos produtores e pela API.
+
+### `src/agent/observability/contracts.py`
+
+**Propósito:** catálogo dos tipos de evento e formato único de entrega. **Quando/onde:** validação em `emit` e serialização de linhas para API/SSE.
+
+- **`UnknownEventType(ValueError)`** — Tipo fora do catálogo.
+- **`InvalidEventPayload(ValueError)`** — Faltam campos obrigatórios ou o payload não é serializável.
+- **`EventSpec`** — Tipo, categoria, se é persistido e campos obrigatórios.
+- `_spec(type_, required=(), *, persist=True, description='') → EventSpec` — Monta a especificação com a categoria tirada do prefixo do tipo.
+- `spec_for(event_type) → EventSpec` — Especificação do tipo ou `UnknownEventType`.
+- `validate_payload(event_type, data) → dict` — Confere campos obrigatórios e serialização; devolve cópia.
+- **`EventEnvelope(BaseModel)`** — Envelope entregue à interface: id, run, projeto, tarefa, tarefa pai, agente, tipo, `seq`, data, dados, se foi persistido e versão.
+- `_s(value) → str | None` — Converte UUID/valor em texto preservando `None`.
+- `envelope_from_row(row) → dict` — Envelope JSON de uma linha de `event_logs`.
+
+### `src/agent/observability/sanitize.py`
+
+**Propósito:** impede que segredos e textos enormes saiam em eventos. **Quando/onde:** todo payload emitido e todo payload antigo gravado com run.
+
+- `is_sensitive_path(path) → bool` — `.env*`, chaves, certificados e nomes com `secret`/`credential`: o caminho pode aparecer, o conteúdo não.
+- `redact_text(text) → str` — Troca por `[redigido]` chaves de API conhecidas, tokens Bearer/Basic, chaves privadas, senhas em URL e atribuições `*_KEY=`/`password:` (preserva números e referências de código).
+- `truncate(text, limit) → str` — Mantém começo e fim e informa quantos caracteres foram omitidos.
+- `sanitize(value, *, limit=20000) → Any` — Copia a estrutura redigindo textos, valores de chaves secretas e omitindo ambiente/cabeçalhos.
+
+### `src/agent/observability/bus.py`
+
+**Propósito:** estado volátil do processo para entrega rápida: contador de sequência por run, anel com os últimos eventos (inclusive fragmentos), saídas do modelo e operações em andamento, assinantes com fila limitada. **Quando/onde:** listeners do emissor publicam; o SSE assina; a foto da run lê as operações ativas.
+
+- `_append(current, text, keep, *, tail) → str` — Concatena limitando o tamanho (início ou fim).
+- **`Subscription`** — Assinante de uma run: loop asyncio, fila limitada, descartes.
+- **`_RunState`** — Por run: último `seq`, anel, saídas e operações ativas, contadores de publicação.
+- **`EventBus`** — Barramento thread-safe.
+  - `EventBus.__init__(*, ring_size=3000, queue_size=1000, max_runs=64) → None` — Limites do anel, da fila e de runs mantidas (as mais antigas sem assinante saem).
+  - `EventBus._state(run_id) → _RunState | None` — Estado da run, marcando uso recente.
+  - `EventBus._ensure(run_id, initial) → _RunState` — Cria o estado iniciando o contador com o maior `seq` gravado.
+  - `EventBus.allocate_seq(run_id, initial) → int` — Próximo número monotônico da run.
+  - `EventBus.last_seq(run_id) → int | None` — Último número alocado no processo.
+  - `EventBus.publish(env) → None` — Guarda no anel, atualiza operações ativas e entrega a cada assinante no loop dele.
+  - `EventBus._deliver(sub, env) → None` — Enfileira; fila cheia descarta o acumulado e enfileira `stream.resync`.
+  - `EventBus.subscribe(run_id, loop=None) → Subscription` — Registra assinante da run.
+  - `EventBus.unsubscribe(sub) → None` — Remove com segurança (idempotente).
+  - `EventBus.subscriber_count(run_id=None) → int` — Assinantes da run ou do processo.
+  - `EventBus.recent(run_id, after_seq=0) → list[dict]` — Eventos do anel depois de um `seq`.
+  - `EventBus.live(run_id) → dict` — Saídas do modelo e operações abertas com texto parcial, último `seq` e contadores.
+  - `EventBus.reset() → None` — Limpa tudo (testes e simulação de reinício).
+  - `EventBus._track(st, env) → None` — Abre/fecha saídas e operações conforme os eventos e acumula fragmentos.
+- `get_bus() → EventBus` — Instância única do processo, com limites de `Settings`.
+
+### `src/agent/observability/emitter.py`
+
+**Propósito:** contexto de observação (`ContextVar`), emissão tipada e listeners do SQLAlchemy que numeram, completam e publicam eventos depois do commit. **Quando/onde:** orquestrador (`observe`), produtores (`emit`), todas as sessões (listeners).
+
+- **`Observation`** — Sessão, run, projeto, tarefa e agente do trecho em execução.
+- `current() → Observation | None` — Contexto ativo.
+- `observe(session, *, run_id, project_id=None, task_id=None, agent='orchestrator') → Iterator[Observation]` — Liga os eventos do bloco à run/tarefa.
+- `scoped(*, task_id=_UNSET, agent=None) → Iterator[Observation | None]` — Troca tarefa/agente por um trecho; sem contexto não faz nada.
+- `_limits() → tuple[int, int]` — Limites de texto e de resposta final (cache).
+- `_limit_for(event_type) → int` — Limite aplicado ao tipo (resposta final e tipos antigos usam o maior).
+- `_max_seq(session, run_id) → int` — Maior `seq` gravado da run.
+- `_parent_of(session, task_id) → UUID | None` — Pai da tarefa.
+- `emit(event_type, data=None, *, task_id=_UNSET, agent=None, commit=False) → EventLogModel | dict | None` — Valida e sanitiza; persistido vira linha (publicada no commit), fragmento é publicado já; fora de run devolve `None`.
+- `_on_init(target, _args, _kwargs) → None` — Marca a ordem de criação das linhas de evento.
+- `_before_flush(session, _ctx, _instances) → None` — Em ordem de criação: herda run/projeto do contexto quando faltam, preenche agente, tarefa pai, data, versão, sanitiza tipos antigos e aloca `seq`.
+- `_after_flush(session, _ctx) → None` — Converte as linhas numeradas em envelopes pendentes.
+- `_after_commit(session) → None` — Publica os envelopes no barramento.
+- `_after_soft_rollback(session, previous_transaction) → None` — Descarta pendências no rollback externo (nada desfeito é publicado).
+- `install() → None` — Registra os listeners uma vez.
 
 ## `src/agent/security/`
 
@@ -1344,6 +1419,7 @@ Grafo de conhecimento:
 - `tests/test_loose_memory_replan.py` — Índice de memória escolhido sem o texto completo, Context Builder lendo só a memória escolhida, conversa solta movendo/removendo memória e `replan_parent` preservando trabalho feito e trocando o restante.
 - `tests/test_mcp_manager.py` — `McpManager`: parse de ids `mcp:{server}:{tool}` e chamada a servidor desabilitado.
 - `tests/test_model_choice.py` — Provedor Ollama: o modelo escolhido é o chamado, sem flag de raciocínio oculto em modelos simples, mensagem para timeout sem texto, run lembrando o modelo e JSON após bloco de "thinking" preservado (`parse_json_object`).
+- `tests/test_observability_events.py` — Eventos observáveis: fora de run nada é gravado; tipo desconhecido e campo faltando recusados; `seq` monotônico por run cobrindo produtores antigos, tarefa pai e agente, continuação após reinício; runs com sequências independentes; publicação só após commit (rollback não publica); fragmentos não persistidos com texto parcial na foto; segredos redigidos e texto truncado; assinante lento recebe ressincronização.
 - `tests/test_operation_context.py` — `OperationContextBuilder`: o snapshot de contexto da operação é persistido.
 - `tests/test_orchestrator_recovery.py` — Retomada de run após passos parciais e bloqueio quando falta contrato.
 - `tests/test_persistence.py` — Persistência SQLite: árvore de tarefas sobrevive à reabertura, transição inválida rejeitada, ciclo de dependência bloqueado e caminho feliz até `COMPLETED`.

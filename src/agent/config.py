@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     max_tool_calls_per_run: int = 600
     max_tokens_per_run: int = 5_000_000
     max_replans_per_run: int = 80
+    # Observabilidade: o texto de cada campo de evento é truncado neste limite (a resposta final do modelo
+    # usa o limite maior); fragmentos são agrupados por intervalo/tamanho; a fila de cada assinante SSE
+    # que estoura vira um pedido de ressincronização.
+    event_text_limit: int = 20_000
+    event_output_limit: int = 200_000
+    stream_delta_interval_ms: int = 120
+    stream_delta_max_chars: int = 2_000
+    stream_subscriber_queue: int = 1_000
+    stream_ring_size: int = 3_000
     static_web_dir: Path | None = None
     mcp_config_path: Path | None = None
     enable_background_worker: bool = True

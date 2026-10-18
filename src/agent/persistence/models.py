@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -146,6 +146,7 @@ class OperationAttemptModel(Base):
 
 class EventLogModel(Base):
     __tablename__ = "event_logs"
+    __table_args__ = (Index("ix_event_logs_run_seq", "run_id", "seq"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
@@ -154,6 +155,10 @@ class EventLogModel(Base):
     event_type: Mapped[str] = mapped_column(String(128), nullable=False)
     payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    parent_task_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    agent: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    schema_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class MemoryRecordModel(Base):

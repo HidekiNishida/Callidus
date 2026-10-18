@@ -59,6 +59,13 @@ def _migrate_sqlite(engine: Engine) -> None:
         _add_column(conn, "conversations", "active_branch_id", "CHAR(32)")
         _add_column(conn, "tasks", "branch_id", "CHAR(32)")
         _add_column(conn, "memory_records", "branch_id", "CHAR(32)")
+        _add_column(conn, "event_logs", "seq", "INTEGER")
+        _add_column(conn, "event_logs", "parent_task_id", "CHAR(32)")
+        _add_column(conn, "event_logs", "agent", "VARCHAR(64)")
+        _add_column(conn, "event_logs", "schema_version", "INTEGER")
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_event_logs_run_seq ON event_logs (run_id, seq)"
+        )
         conn.commit()
 
 
@@ -70,6 +77,9 @@ def init_db(engine: Engine | None = None, settings: Settings | None = None) -> E
 
 
 def build_session_factory(engine: Engine) -> sessionmaker[Session]:
+    from agent.observability.emitter import install
+
+    install()
     return sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
