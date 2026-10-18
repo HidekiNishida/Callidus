@@ -88,7 +88,7 @@ def test_verification_failure_keeps_the_end_of_the_output():
 
 
 @pytest.mark.asyncio
-async def test_retries_carry_the_reason_and_stop_before_an_identical_prompt(session, tmp_path, monkeypatch):
+async def test_retries_carry_the_reason_and_stop_when_the_same_error_repeats(session, tmp_path, monkeypatch):
     provider = _Scripted(["Claro, vou escrever o arquivo."])
     run, change = _change(session, tmp_path, provider, monkeypatch)
 
@@ -99,9 +99,12 @@ async def test_retries_carry_the_reason_and_stop_before_an_identical_prompt(sess
     assert "tentativas-anteriores" not in provider.prompts[0]
     assert "invalid_output" in provider.prompts[1]
     assert "Responda apenas o objeto JSON" in provider.prompts[1]
-    assert log[-1]["action"] == "blocked_loop"
-    assert log[-1]["failure"]["cause"] == "repeated_prompt"
-    assert TaskService(session).get_task(change.id).status == TaskStatus.BLOCKED.value
+    stop = next(x for x in log if x["action"] == "stagnation_replan")
+    assert stop["task_id"] == str(change.id) and stop["stagnation"]["count"] == 3
+    assert stop["failure"]["cause"] == "stagnation" and stop["after"] == "model_operation_invalid"
+    task = TaskService(session).get_task(change.id)
+    assert task.metadata_json["stagnation"]["previous_status"] == TaskStatus.RETRY_PENDING.value
+    assert log[log.index(stop) + 1]["action"] == "replanned"
 
 
 @pytest.mark.asyncio

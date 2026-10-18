@@ -527,6 +527,17 @@ def pause_run(run_id: uuid.UUID, session: Session = Depends(db_session)) -> dict
     return {"id": str(run.id), "status": run.status}
 
 
+@app.post("/runs/{run_id}/resume")
+def resume_run(run_id: uuid.UUID, retry_blocked: bool = False, session: Session = Depends(db_session)) -> dict:
+    try:
+        run = RunService(session).resume_run(run_id, retry_blocked=retry_blocked)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"id": str(run.id), "status": run.status}
+
+
 @app.post("/runs/{run_id}/autonomous/enable")
 def enable_autonomous(run_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
     try:

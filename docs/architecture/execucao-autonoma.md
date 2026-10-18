@@ -13,7 +13,8 @@ Runs com `config_json.autonomous = true` são avançados pelo worker asyncio (`a
 - `POST /runs/{id}/autonomous/enable`
 - `POST /runs/{id}/autonomous/disable`
 - Checkbox **Autônomo** na UI ao iniciar run.
-- Pausar/cancelar run interrompe avanço útil mesmo com flag ligada.
+- Pausar/cancelar run interrompe avanço útil mesmo com flag ligada; passo em run pausado não faz nada.
+- `POST /runs/{id}/resume` retoma um run pausado (por pedido ou por [limite operacional](/docs/architecture/requisitos-verificacao-progresso.md#progresso-real-estagnação-limites-pausa-e-retomada)); `?retry_blocked=true` devolve etapas bloqueadas ao planejamento.
 
 ## Recuperação
 

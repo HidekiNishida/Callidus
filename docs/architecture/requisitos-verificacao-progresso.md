@@ -125,3 +125,51 @@ Raiz sem filhas é a própria folha e cobre todos os requisitos.
 **Correção localizada** (`correct_requirement_gaps`). No aceite global, se faltar comprovar um requisito, primeiro reabrem-se as tarefas com evidência reprovada ou desatualizada (`reopen_verification_gaps`, só a tarefa afetada e seus ancestrais). Se não houver, cria-se sob a raiz uma etapa por requisito (`Atender Rn` para sem etapa, `Comprovar Rn` para sem evidência), com `covers: [Rn]` e `requirement_fix`, uma vez por requisito. A resposta final é reaberta e passa a depender dela; etapas irmãs comprovadas não são refeitas.
 
 **Relatório parcial.** Se ainda assim faltar, o run para (`run_stalled`) com `consolidated_result_json.requirements` e uma tabela "Requisitos" na mensagem (comprovado, não executado, sem evidência...), além das pendências. Na conclusão, o mesmo relatório fica em `requirements`, com os ids das evidências.
+
+## Progresso real: estagnação, limites, pausa e retomada
+
+Atividade não é progresso: chamada ao modelo, tentativa nova, plano novo ou tarefa "concluída" sem evidência não contam. Progresso é o estado verificável melhorar (`orchestrator/progress.made_progress`: mais tarefas verificadas, ou menos pendências sem perder verificadas), gravado em cada `orchestrator.action`.
+
+**Mesmo erro, comparado normalizado** (`orchestrator/stagnation.py`). Cada falha gravada (`_remember_failure`) leva `signature` (categoria, causa e texto sem números, ids, hashes, aspas e espaços) e `strategy` (ferramenta e argumentos, verificação, modo de operação, `strategy`, objetivo). Falhas seguidas com a mesma assinatura e a mesma estratégia contam como repetição. Mudar a estratégia de forma identificável (outra ferramenta, outros argumentos, `metadata.strategy` com a hipótese) zera a contagem. Reenviar o mesmo pedido com outro texto de erro não zera. O replanejamento compara o motivo também normalizado: sem etapa nova concluída e com o mesmo motivo, ele é recusado.
+
+**Resposta à estagnação** (`RunOrchestrator._check_stagnation`, depois de cada passo). Ao atingir `attempts_per_strategy` repetições:
+
+| Passo | Como |
+|-------|------|
+| 1. Interromper a repetição | a etapa sai de `RETRY_PENDING` para `BLOCKED` |
+| 2. Registrar estado anterior e motivo | `metadata.stagnation` (`previous_status`, assinatura, estratégia, contagem, momento) e evento `run.stagnation` |
+| 3–4. Causa provável e tipo | `diagnose`: contexto, planejamento, implementação, ferramenta, configuração, dependência ou verificação, pela causa da falha |
+| 5–6. Ação proporcional, reduzir escopo | por tipo: dividir a etapa (contexto), trocar a abordagem (implementação), recuperar a evidência (verificação), corrigir a configuração (configuração) |
+| 7–8. Recuperar evidência, atualizar plano e contratos | o replanejamento existente (`replan_under`) recebe a falha `stagnation` com o diagnóstico e carrega a cobertura de requisitos |
+| 9. Próxima ação | `metadata.stagnation.next_action` |
+| 10. Continuar ou pausar | segue (`stagnation_replan`) só se o tipo admite correção automática e a política de replanejamento aceita; senão o run pausa com o diagnóstico |
+
+**Limites operacionais** (`Settings`, sobrescritos por `config.limits` do run; 0 desliga). São separados das decisões de decomposição e da proteção contra recursão (`max_tree_depth`, `max_tasks_per_run`).
+
+| Chave em `config.limits` | `Settings` | Padrão |
+|--------------------------|-----------|--------|
+| `attempts_per_strategy` | `max_attempts_per_strategy` | 3 |
+| `steps_without_progress` | `max_steps_without_progress` | 60 |
+| `seconds` | `max_run_seconds` | 14400 |
+| `model_calls` | `max_model_calls_per_run` | 400 |
+| `tool_calls` | `max_tool_calls_per_run` | 600 |
+| `tokens` (contexto estimado) | `max_tokens_per_run` | 5 000 000 |
+| `replans` (replanejamentos e decomposições) | `max_replans_per_run` | 80 |
+
+`max_attempts_per_task` continua valendo por tarefa.
+
+**Pausa.** Antes de cada passo, `limit_reached` mede o trecho atual do run (desde o início ou a última retomada). Se um limite foi atingido, `_pause_run`:
+
+- põe o run em `paused`, sem mudar o estado de nenhuma tarefa;
+- grava em `metadata.pause` da raiz o limite, o valor, o máximo, o motivo, a próxima ação, o progresso, as pendências e os requisitos (e o diagnóstico, se veio de estagnação);
+- escreve a mensagem "Não concluído" com "Próxima ação" e registra o evento `run.paused`.
+
+Passo em run pausado não faz nada (`run_paused`).
+
+**Retomada.** `POST /runs/{id}/resume` (`RunService.resume_run`; 409 se o run não está pausado):
+
+- volta o run a `active` e move a pausa para `metadata.pauses`;
+- registra `run.resumed`, e a partir dele os limites recomeçam a contar;
+- com `retry_blocked=true`, etapas bloqueadas voltam a `PLANNING` (depois de corrigida a causa de fora).
+
+O trabalho comprovado não é refeito. As evidências desatualizadas são reabertas no aceite global.

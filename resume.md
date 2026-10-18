@@ -105,7 +105,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** configuração central lida de variáveis de ambiente e do arquivo `.env` (pydantic-settings). **Quando/onde:** usada pela API (`deps.read_settings`), pela persistência (URL do banco) e pelo orquestrador/provedores (URLs, modelo padrão, limites).
 
-- **`Settings(BaseSettings)`** — Todas as opções do runtime: diretório de dados, URL do banco, URLs/timeout do Ollama e do llama.cpp, provedor e modelo padrão, orçamento de contexto (limite, entrada, reserva de saída), uso do template genérico de decomposição, fallback para mock, host/porta da API (padrão `127.0.0.1:8765`), limites de tentativas e de passos do orquestrador, proteções contra recursão (`max_tree_depth`, `max_tasks_per_run`), pasta da web estática, caminho do `mcp.json` e se o worker em segundo plano liga.
+- **`Settings(BaseSettings)`** — Todas as opções do runtime: diretório de dados, URL do banco, URLs/timeout do Ollama e do llama.cpp, provedor e modelo padrão, orçamento de contexto (limite, entrada, reserva de saída), uso do template genérico de decomposição, fallback para mock, host/porta da API (padrão `127.0.0.1:8765`), limites de tentativas e de passos do orquestrador, proteções contra recursão (`max_tree_depth`, `max_tasks_per_run`), limites operacionais do run (tentativas por estratégia, passos sem progresso, tempo, chamadas ao modelo, ferramentas, tokens, replanejamentos; 0 desliga), pasta da web estática, caminho do `mcp.json` e se o worker em segundo plano liga.
   - `Settings.resolved_database_url() → str` — Devolve a URL SQLite final: em testes do pytest força `data_dir/agent.db` (para não gravar no banco real), senão usa `database_url` se houver, senão `data/agent.db`; cria o diretório de dados quando necessário.
 - `get_settings() → Settings` — Cria uma instância de `Settings` e, se `mcp_config_path` não foi definido, preenche com `data_dir/mcp.json`. Chamada sempre que alguém precisa da configuração atual.
 
@@ -217,6 +217,7 @@ Execuções (runs):
 - `run_step(run_id, settings) → dict` — Rota `POST /runs/{run_id}/step`: executa um único passo do `RunOrchestrator` e devolve o que ocorreu.
 - `run_execute(run_id, max_steps, settings) → dict` — Rota `POST /runs/{run_id}/execute`: roda passos até ficar ocioso (limitado por `max_steps` e `max_orchestrator_steps`); devolve número de passos e log.
 - `pause_run(run_id) → dict` — Rota `POST /runs/{run_id}/pause`: pausa o run.
+- `resume_run(run_id, retry_blocked=False, session) → dict` — Rota `POST /runs/{run_id}/resume`: retoma um run pausado (409 se não está pausado; 404 se não existe).
 - `cancel_run(run_id) → dict` — Rota `POST /runs/{run_id}/cancel`: cancela o run.
 - `enable_autonomous(run_id) → dict` — Rota `POST /runs/{run_id}/autonomous/enable`: liga o modo autônomo (o worker em segundo plano avança o run sozinho).
 - `disable_autonomous(run_id) → dict` — Rota `POST /runs/{run_id}/autonomous/disable`: desliga o modo autônomo no `config_json` do run.
@@ -254,7 +255,7 @@ Grafo de conhecimento:
 **Propósito:** taxonomia de falhas do orquestrador. Cada falha tem uma **categoria** (o que fazer a seguir) e uma **causa** (o que aconteceu). **Por quê:** separar erro de configuração, limite operacional, saída cortada e falha de verificação, em vez de tratar tudo como "tentar de novo". **Quando/onde:** o `RunOrchestrator` classifica cada tentativa falha, grava a categoria no evento `attempt.recorded` e em `metadata_json.last_failure` da tarefa.
 
 - **`FailureCategory(StrEnum)`** — `recoverable`, `change_strategy`, `blocked_dependency`, `external_unavailable`, `configuration`, `operational_limit`.
-- **`FailureCause(StrEnum)`** — Causa concreta: orçamento de contexto, saída inválida ou cortada, timeout, provedor fora do ar, erro/entrada de ferramenta, ferramenta desconhecida, executável ausente, aprovação pendente, verificação falha ou inconclusiva, evidência desatualizada, saída repetida, dependência falha, tentativas esgotadas, etc.
+- **`FailureCause(StrEnum)`** — Causa concreta: orçamento de contexto, saída inválida ou cortada, timeout, provedor fora do ar, erro/entrada de ferramenta, ferramenta desconhecida, executável ausente, aprovação pendente, verificação falha ou inconclusiva, evidência desatualizada, saída repetida, dependência falha, tentativas esgotadas, estagnação (mesmo erro com a mesma estratégia), limite atingido, etc.
 - **`Failure`** — Dataclass imutável (categoria, causa, detalhe).
   - `Failure.retry_same_strategy → bool` — Só `recoverable` admite repetir a mesma abordagem.
   - `Failure.as_dict() → dict` / `Failure.from_dict(data) → Failure | None` — Serialização para JSON (eventos e metadados); dado inválido volta `None`.
@@ -527,13 +528,31 @@ Grafo de conhecimento:
 - `progress_state(session, root_id) → dict` — Contagem `verified` (concluídas com evidência válida e atual ou sem verificação), `pending` (não assentadas), `failed` e `blocked` (não substituídas).
 - `made_progress(before, after) → bool` — Verdadeiro quando `verified` sobe, ou `pending` cai sem `verified` cair; decompor ou repetir chamadas não conta.
 
+### `src/agent/orchestrator/stagnation.py`
+
+**Propósito:** distinguir repetição de tentativa nova e limitar o consumo do run. **Por quê:** o mesmo erro com outro texto (números, tempos, ids) não pode passar por tentativa nova, e um run não pode consumir recursos sem fim nem ser abandonado em silêncio. **Quando/onde:** `RunOrchestrator._remember_failure` grava assinaturas em cada falha; `_check_stagnation` age depois de cada passo; `_step_body` confere os limites antes de cada passo; `replan_decision` compara motivos normalizados.
+
+- `normalize_error(text) → str` — Texto de erro sem ids, hashes, números, aspas e espaços extras (minúsculo, até 300 caracteres).
+- `_digest(data) → str` — Hash curto e estável de um valor JSON.
+- `error_signature(failure) → str` — Assinatura do erro: categoria, causa e texto normalizado.
+- `strategy_signature(task) → str` — Assinatura da abordagem: ferramenta e argumentos, verificação, modo de operação, `atomize`, `strategy` e objetivo.
+- `repeated_failures(failures) → int` — Quantas falhas seguidas, a partir da última, têm a mesma assinatura e a mesma estratégia.
+- `diagnose(failure, count) → dict` — Tipo do problema (contexto, planejamento, implementação, ferramenta, configuração, dependência, verificação), causa provável, ação corretiva e se o agente pode seguir sozinho (`automatic`).
+- `LIMIT_KEYS`, `LIMIT_LABELS` — Nome de cada limite em `config.limits`, o campo de `Settings` e o rótulo legível.
+- `limits_for(settings, config) → dict[str, int]` — Limites do run: padrão em `Settings`, sobrescrito por `config.limits` (valor inválido cai no padrão; 0 desliga).
+- `_naive(value) → datetime | None` — Data em UTC sem fuso, para comparar com o que o SQLite devolve.
+- `segment_start(session, run) → datetime` — Início do trecho atual: último `run.resumed` ou a criação do run.
+- `usage_since(session, run) → dict[str, int]` — Consumo do trecho atual: passos seguidos sem progresso, segundos, chamadas ao modelo, execuções de ferramentas, tokens estimados de contexto, replanejamentos e decomposições.
+- `limit_reached(session, run, limits) → dict | None` — Primeiro limite atingido (nome, rótulo, valor, máximo, consumo) ou `None`.
+- `next_action_for_limit(run_id, hit) → str` — Próxima ação recomendada para a pausa (retomar com novo orçamento, ajustar o limite ou corrigir a causa).
+
 ### `src/agent/orchestrator/replan.py`
 
 **Propósito:** Revisa o plano quando uma etapa bloqueia ou falha no meio, sem refazer o que já passou. **Quando/onde:** `RunOrchestrator._step_body` chama `replan_under` no início de cada passo.
 
 - `REPLAN_BUDGET = 3` — Replanejamentos por linhagem (o nó replanejado herda a contagem).
 - **`ReplanDecision`** — Decisão da política: `replan` (bool) e `reason` (por que não).
-- `replan_decision(parent_meta, stopped, completed) → ReplanDecision` — Política por categoria: falha de configuração ou externa não é replanejada (precisa de ação de fora); respeita o orçamento; recusa quando o último replanejamento não trouxe etapa nova concluída e o motivo é o mesmo.
+- `replan_decision(parent_meta, stopped, completed) → ReplanDecision` — Política por categoria: falha de configuração ou externa não é replanejada (precisa de ação de fora); respeita o orçamento; recusa quando o último replanejamento não trouxe etapa nova concluída e o motivo é o mesmo (comparado normalizado).
 - `replan_parent(session, parent) → dict | None` — Se um filho não substituído está BLOCKED/FAILED e a política permite: cancela os irmãos pendentes, marca o filho parado como `superseded_by_replan` (BLOCKED vira CANCELLED), cria "Ver o que ainda falta" (list_dir, apoio) e "Seguir com o plano corrigido" (nó `subsystem` que será decomposto de novo, com o que foi feito, o motivo, o pedido de outra abordagem e os requisitos que a etapa parada e as irmãs não feitas cobriam) e registra `replan_history`. Se a política recusa, grava `replan_refused` no pai. Saída: descrição da ação ou `None`.
 - `_carried_covers(session, kids, stopped) → list[dict] | None` — Une a cobertura da etapa parada e das irmãs ainda não feitas (cobertura inteira vence parcial); `None` se o plano não declara cobertura.
 - `replan_under(session, root_id) → dict | None` — Percorre a raiz e seus descendentes e aplica o primeiro replanejamento que a política permitir.
@@ -566,7 +585,7 @@ Grafo de conhecimento:
   - `RunOrchestrator._finalize_verification(run, project, task, work_root=None, implicit_spec=None) → dict` — Roda a verificação declarada da tarefa ou, para escrita do modelo sem verificação declarada, a implícita (`file_contains` com o que foi gravado e sintaxe), grava a tentativa (com falha categorizada) e a evidência ligada a ela (`attempt_id`) com estado, critério, comando, código de saída, motivo e impressão digital dos arquivos avaliados; a implícita fica em `metadata.implicit_verification`; aprovada conclui e consolida o pai, reprovada vai para nova tentativa (ou bloqueia se repetir), bloqueada por ambiente (executável ausente, aprovação) e inconclusiva vão a BLOCKED sem refazer a implementação. Sem verificação nenhuma (leitura), apenas conclui.
   - `RunOrchestrator._note_thought(run, task, text, *, phase='thinking') → None` — Grava um evento `agent.thought` e faz commit para a interface mostrar o andamento durante a inferência.
   - `RunOrchestrator._context_overflow(run, project, task, provider_name, profile, exc) → dict` — Contexto obrigatório não coube nem compactado: registra tentativa falha `context_budget` com o snapshot, explica qual parte pesa mais e bloqueia a tarefa (`blocked_context`), sem chamar o modelo.
-  - `RunOrchestrator._remember_failure(task, failure) → dict` — Guarda a falha categorizada em `metadata_json.last_failure` e nas últimas 5 de `failures`, para a próxima tentativa e o replanejamento lerem.
+  - `RunOrchestrator._remember_failure(task, failure) → dict` — Guarda a falha categorizada, com assinatura do erro e da estratégia, em `metadata_json.last_failure` e nas últimas 5 de `failures`, para a próxima tentativa, a detecção de estagnação e o replanejamento lerem.
   - `RunOrchestrator._pick_next_task(root_id) → TaskModel | None` — Escolhe a próxima tarefa da subárvore por prioridade de status (RUNNING, VERIFYING, READY, RETRY_PENDING, PLANNING, PENDING), respeitando dependências; um pai em PLANNING só é escolhido quando todos os filhos estão resolvidos (`settled`).
   - `RunOrchestrator._promote_ready_or_block(task_id) → dict | None` — Valida o contrato da tarefa; se inválido, bloqueia e retorna os erros, senão marca READY.
   - `RunOrchestrator._record_action(run_id, out) → None` — Registra o resultado do passo como evento `orchestrator.action`, com o estado de progresso verificável (`payload.progress`).
@@ -584,8 +603,10 @@ Grafo de conhecimento:
   - `RunOrchestrator._subtree_ids(root_id, tasks) → set[uuid]` — Ids da raiz e de todos os descendentes.
   - `RunOrchestrator._work_root(project, task) → str` — Pasta de trabalho efetiva, considerando a conversa da tarefa.
   - `RunOrchestrator._write_final_answer(run, project, task, config) → dict` — Pede ao modelo a resposta final ao usuário com base no pedido e nas etapas irmãs; se inaproveitável, compõe Markdown padrão; grava texto e fontes, conclui a tarefa e consolida o pai.
-  - `RunOrchestrator.run_until_idle(run_id, max_steps=50) → list[dict]` — Executa passos em sequência até concluir, bloquear, parar com pendências (`run_stalled`) ou ficar parado esperando. Saída: log das ações.
-  - `RunOrchestrator.step(run_id) → dict` — Executa um passo e registra a ação no log de eventos. Saída: ação do passo.
+  - `RunOrchestrator.run_until_idle(run_id, max_steps=50) → list[dict]` — Executa passos em sequência até concluir, bloquear, parar com pendências (`run_stalled`), pausar (`run_paused`) ou ficar parado esperando. Saída: log das ações.
+  - `RunOrchestrator.step(run_id) → dict` — Executa um passo, confere estagnação e registra a ação no log de eventos. Saída: ação do passo.
+  - `RunOrchestrator._check_stagnation(run_id, out) → dict | None` — Depois do passo: se a etapa foi para nova tentativa com o mesmo erro e a mesma estratégia `attempts_per_strategy` vezes, interrompe (BLOCKED), grava `metadata.stagnation` (estado anterior, assinaturas, diagnóstico, próxima ação) e o evento `run.stagnation`; segue com replanejamento (`stagnation_replan`) se a correção é automática e a política aceita, senão pausa o run.
+  - `RunOrchestrator._pause_run(run, root, hit, next_action, *, diagnosis=None) → dict` — Pausa o run (retomável) sem mudar tarefas: `metadata.pause` da raiz com limite, motivo, próxima ação, progresso, pendências e requisitos; mensagem "Não concluído" com a próxima ação; evento `run.paused`; ação `run_paused`.
 - `_profile_from_config(run_config, settings) → ModelProfile` — Atalho para `profile_from_run_config`.
 - `_select_provider(settings, run_config) → LLMProvider` — Instancia o provedor do run: Ollama, llama.cpp ou mock (padrão).
 
@@ -781,6 +802,8 @@ Grafo de conhecimento:
   - `RunService.cancel_run(run_id) → ExecutionRunModel` — Muda o status para `CANCELLED` e registra `run.cancelled`.
   - `RunService.list_runs(project_id) → list[ExecutionRunModel]` — Lista execuções do projeto, mais recentes primeiro.
   - `RunService.pause_run(run_id) → ExecutionRunModel` — Muda o status para `PAUSED` e registra `run.paused`.
+  - `RunService.resume_run(run_id, *, retry_blocked=False) → ExecutionRunModel` — Retoma run pausado (senão `ValueError`): volta a ACTIVE, move `metadata.pause` da raiz para `pauses`, limpa a mensagem de pausa, registra `run.resumed` (limites recomeçam daqui); com `retry_blocked`, etapas bloqueadas da árvore voltam a PLANNING.
+  - `RunService._under(task, root_id) → bool` — Se a tarefa está na árvore da raiz.
   - `RunService.start_run(project_id, data) → ExecutionRunModel` — Valida a tarefa-raiz, copia o modelo/provedor escolhido para os metadados dela, cria a execução `ACTIVE` e registra `run.started`.
 
 ### `src/agent/services/scheduler.py`
@@ -1304,7 +1327,8 @@ Grafo de conhecimento:
 - `tests/test_functional_depth.py` — Profundidade funcional: etapa na profundidade 7 ainda é decomposta; objetivo igual ao de um ancestral e orçamento de tarefas do run acionam a proteção contra recursão (`recursion_guard`) e a etapa é executada sem nova divisão.
 - `tests/test_sufficient_context.py` — Contexto suficiente: arquivo citado entra com o conteúdo exato (fora da raiz e inexistente não), contrato, objetivo da raiz e resultado da dependência chegam à operação, compactação não altera `arquivos-alvo`.
 - `tests/test_resume_integrity.py` — Retomada: impressão digital segue os arquivos e ignora o banco; run continua depois de reabrir o banco e conclui; mudança externa torna a evidência desatualizada (aceitação recusa, tarefa reabre com `stale_evidence`, nada apagado); evidência reprovada mais recente vence uma aprovada antiga; evidência desatualizada é reverificada sem chamar o modelo.
-- `tests/test_retry_strategy.py` — Nova tentativa: motivo e instrução no prompt, nenhum prompt repetido (bloqueia com `repeated_prompt`), resposta cortada dobra o limite de saída, saída da verificação no detalhe da falha.
+- `tests/test_stagnation_limits.py` — Progresso real: mesmo erro com números diferentes tem a mesma assinatura; estratégia diferente zera a contagem; erro repetido sem mudar estratégia para com diagnóstico e evento; tentativa com estratégia nova não é estagnação; replanejamento sem menos pendências é recusado mesmo com texto diferente; limites vêm de `Settings` e `config.limits`; limite atingido pausa com estado recuperável e a retomada continua com novo orçamento; rota de retomada só aceita run pausado.
+- `tests/test_retry_strategy.py` — Nova tentativa: motivo e instrução no prompt, nenhum prompt repetido (o mesmo erro três vezes dispara a estagnação e o replanejamento), resposta cortada dobra o limite de saída, saída da verificação no detalhe da falha.
 - `tests/test_diff_resume_browser.py` — Diff unificado (`tools/diffing.py`), `edit_file` devolvendo diff, resumo de retomada (`build_resume_brief`) e ferramenta de navegador (proteção de URL, parse de resultados, desligada até ser habilitada).
 - `tests/test_e2e_orchestrator.py` — Fluxo ponta a ponta com mock: o `RunOrchestrator` corrige `calc.py` da fixture `sample_project` e passa na verificação.
 - `tests/test_evolution_api.py` — Endpoints de evolução: reindexação do grafo e métricas, upsert de contrato de tarefa, painel "live" após um passo e liga/desliga do modo autônomo.

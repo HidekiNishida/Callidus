@@ -6,8 +6,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from agent.domain.enums import RunStatus
-from agent.domain.schemas import ExecutionRunCreate
+from agent.domain.enums import RunStatus, TaskStatus
+from agent.domain.schemas import ExecutionRunCreate, TaskStatusUpdate
 from agent.persistence.models import EventLogModel, ExecutionRunModel, TaskModel
 
 
@@ -68,6 +68,60 @@ class RunService:
             )
         )
         return run
+
+    def resume_run(self, run_id: uuid.UUID, *, retry_blocked: bool = False) -> ExecutionRunModel:
+        """Retoma um run pausado sem refazer o que foi comprovado: volta a ACTIVE, o motivo da pausa vai para
+        o histórico `pauses` da raiz e os limites recomeçam a contar do evento `run.resumed`. Com
+        `retry_blocked`, etapas bloqueadas voltam a PLANNING (depois de corrigida a causa de fora)."""
+        from agent.services.task_service import TaskService
+
+        run = self._session.get(ExecutionRunModel, run_id)
+        if run is None:
+            raise LookupError(str(run_id))
+        if run.status != RunStatus.PAUSED.value:
+            raise ValueError(f"run não está pausado ({run.status})")
+        root = self._session.get(TaskModel, run.root_task_id)
+        retried: list[str] = []
+        pause = None
+        if root is not None:
+            meta = dict(root.metadata_json or {})
+            pause = meta.pop("pause", None)
+            if pause:
+                meta["pauses"] = [*(meta.get("pauses") or []), pause][-10:]
+            root.metadata_json = meta
+            report = dict(root.consolidated_result_json or {})
+            if report.pop("paused", None) is not None:
+                report.pop("final_answer", None)
+                report.pop("achieved", None)
+                root.consolidated_result_json = report or None
+            if retry_blocked:
+                tasks = TaskService(self._session)
+                for task in self._session.scalars(select(TaskModel).where(TaskModel.project_id == run.project_id)).all():
+                    if task.status == TaskStatus.BLOCKED.value and self._under(task, root.id):
+                        tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.PLANNING, reason="retomada"))
+                        retried.append(str(task.id))
+        run.status = RunStatus.ACTIVE.value
+        self._session.add(
+            EventLogModel(
+                project_id=run.project_id,
+                run_id=run.id,
+                task_id=run.root_task_id,
+                event_type="run.resumed",
+                payload_json={"pause": pause, "retried": retried},
+            )
+        )
+        self._session.flush()
+        return run
+
+    def _under(self, task: TaskModel, root_id: uuid.UUID) -> bool:
+        seen: set[uuid.UUID] = set()
+        current: TaskModel | None = task
+        while current is not None and current.id not in seen:
+            if current.id == root_id:
+                return True
+            seen.add(current.id)
+            current = self._session.get(TaskModel, current.parent_id) if current.parent_id else None
+        return False
 
     def cancel_run(self, run_id: uuid.UUID) -> ExecutionRunModel:
         run = self._session.get(ExecutionRunModel, run_id)

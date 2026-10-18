@@ -41,6 +41,8 @@ class FailureCause(StrEnum):
     REPEATED_PROMPT = "repeated_prompt"
     DEPENDENCY_FAILED = "dependency_failed"
     ATTEMPTS_EXHAUSTED = "attempts_exhausted"
+    STAGNATION = "stagnation"
+    LIMIT_REACHED = "limit_reached"
 
 
 @dataclass(frozen=True)

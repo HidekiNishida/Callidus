@@ -27,6 +27,15 @@ class Settings(BaseSettings):
     # Proteção contra recursão, não critério de decomposição: só para árvores que crescem sem fim.
     max_tree_depth: int = 16
     max_tasks_per_run: int = 400
+    # Limites operacionais do run (0 desliga; `config.limits` sobrescreve por run). Atingido um deles, o run
+    # pausa com diagnóstico e pode ser retomado; os contadores recomeçam na retomada.
+    max_attempts_per_strategy: int = 3
+    max_steps_without_progress: int = 60
+    max_run_seconds: int = 14400
+    max_model_calls_per_run: int = 400
+    max_tool_calls_per_run: int = 600
+    max_tokens_per_run: int = 5_000_000
+    max_replans_per_run: int = 80
     static_web_dir: Path | None = None
     mcp_config_path: Path | None = None
     enable_background_worker: bool = True

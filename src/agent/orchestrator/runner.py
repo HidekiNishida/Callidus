@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -54,7 +55,16 @@ from agent.orchestrator.plan_validation import (
     validate_and_repair,
 )
 from agent.orchestrator.progress import progress_state
-from agent.orchestrator.replan import replan_under
+from agent.orchestrator.replan import replan_decision, replan_under
+from agent.orchestrator.stagnation import (
+    diagnose,
+    error_signature,
+    limit_reached,
+    limits_for,
+    next_action_for_limit,
+    repeated_failures,
+    strategy_signature,
+)
 from agent.orchestrator.requirements import effective_covers, ensure_requirements, root_of
 from agent.orchestrator.usage import accumulate_usage
 from agent.context.budget import ContextBudgetError
@@ -283,8 +293,125 @@ class RunOrchestrator:
 
     async def step(self, run_id: uuid.UUID) -> dict[str, Any]:
         out = await self._step_body(run_id)
+        out = self._check_stagnation(run_id, out) or out
         self._record_action(run_id, out)
         return out
+
+    def _check_stagnation(self, run_id: uuid.UUID, out: dict[str, Any]) -> dict[str, Any] | None:
+        """Resposta à ausência de progresso de uma etapa: o mesmo erro (assinatura normalizada) com a mesma
+        estratégia `attempts_per_strategy` vezes interrompe a repetição; grava o estado anterior, o
+        diagnóstico (tipo, causa provável, ação) e a próxima ação; segue só se houver estratégia
+        justificável (replanejar o pai com o diagnóstico), senão pausa o run com diagnóstico recuperável."""
+        raw = out.get("task_id")
+        if not out.get("failure") or not isinstance(raw, str):
+            return None
+        task = self._session.get(TaskModel, uuid.UUID(raw))
+        if task is None or TaskStatus(task.status) != TaskStatus.RETRY_PENDING:
+            return None
+        run = self._session.get(ExecutionRunModel, run_id)
+        cap = limits_for(self._settings, self._run_config(run))["attempts_per_strategy"]
+        failures = list((task.metadata_json or {}).get("failures") or [])
+        count = repeated_failures(failures)
+        if not cap or count < cap:
+            return None
+        last = failures[-1]
+        diag = diagnose(last, count)
+        record = {
+            "previous_status": task.status,
+            "signature": last.get("signature"),
+            "strategy": last.get("strategy"),
+            "count": count,
+            **diag,
+            "at": datetime.now(timezone.utc).isoformat(),
+        }
+        category = FailureCategory.CHANGE_STRATEGY if diag["automatic"] else FailureCategory.CONFIGURATION
+        reason = f"estagnação ({diag['kind']}): {diag['probable_cause']}"
+        noted = self._remember_failure(task, Failure(category, FailureCause.STAGNATION, reason))
+        self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=reason[:300]))
+        parent = self._session.get(TaskModel, task.parent_id) if task.parent_id else None
+        decision = None
+        if diag["automatic"] and parent is not None:
+            kids = children_of(self._session, parent.id)
+            done = sum(1 for k in kids if k.status == TaskStatus.COMPLETED.value)
+            decision = replan_decision(parent.metadata_json or {}, task, done)
+        if decision is not None and decision.replan:
+            record["next_action"] = f"replanejar «{parent.title}» para {diag['action']}"
+        else:
+            record["next_action"] = f"{diag['action']}; depois retomar (POST /runs/{run_id}/resume)"
+            if decision is not None:
+                record["replan_refused"] = decision.reason
+        task.metadata_json = {**(task.metadata_json or {}), "stagnation": record}
+        self._session.add(
+            EventLogModel(
+                project_id=run.project_id,
+                run_id=run.id,
+                task_id=task.id,
+                event_type="run.stagnation",
+                payload_json={"task": task.title, **record},
+            )
+        )
+        result = {"task_id": raw, "after": out.get("action"), "failure": noted, "stagnation": record}
+        if decision is not None and decision.replan:
+            self._note_thought(run, task, f"«{task.title}» repete o mesmo erro. Vou {diag['action']}.")
+            return {"action": "stagnation_replan", **result}
+        root = self._tasks.get_task(run.root_task_id)
+        hit = {
+            "limit": "attempts_per_strategy",
+            "label": "tentativas com a mesma estratégia",
+            "value": count,
+            "max": cap,
+            "task": task.title,
+        }
+        return {**self._pause_run(run, root, hit, record["next_action"], diagnosis=record), **result}
+
+    def _pause_run(
+        self,
+        run: ExecutionRunModel,
+        root: TaskModel,
+        hit: dict[str, Any],
+        next_action: str,
+        *,
+        diagnosis: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Limite atingido: o run pausa (retomável) com estado, pendências, requisitos, motivo e próxima
+        ação gravados na raiz e no evento `run.paused`. Nenhuma tarefa muda de estado; nada é dado como concluído."""
+        from agent.orchestrator.closing import compose_incomplete_markdown
+
+        reason = f"limite atingido: {hit['label']} ({hit['value']} de {hit['max']})"
+        pending = self._pending_under(root.id)
+        requirements = requirements_report(self._session, root)
+        pause = {
+            **hit,
+            "reason": reason,
+            "next_action": next_action,
+            "at": datetime.now(timezone.utc).isoformat(),
+            "progress": progress_state(self._session, root.id),
+            "pending": pending,
+            "requirements": requirements,
+            **({"diagnosis": diagnosis} if diagnosis else {}),
+        }
+        message = compose_incomplete_markdown(
+            objective=root.objective or root.title, pending=pending, reason=reason, requirements=requirements
+        )
+        message += f"\n\n**Próxima ação:** {next_action}"
+        root.metadata_json = {**(root.metadata_json or {}), "pause": pause}
+        root.consolidated_result_json = {
+            **(root.consolidated_result_json or {}),
+            "achieved": False,
+            "paused": pause,
+            "final_answer": message,
+        }
+        run.status = RunStatus.PAUSED.value
+        self._session.add(
+            EventLogModel(
+                project_id=run.project_id,
+                run_id=run.id,
+                task_id=root.id,
+                event_type="run.paused",
+                payload_json={"reason": reason, "limit": hit, "next_action": next_action, "pending": pending},
+            )
+        )
+        return {"action": "run_paused", "run_id": str(run.id), "reason": reason, "next_action": next_action}
 
     def _record_action(self, run_id: uuid.UUID, out: dict[str, Any]) -> None:
         run = self._session.get(ExecutionRunModel, run_id)
@@ -327,11 +454,12 @@ class RunOrchestrator:
         """Guarda a falha na tarefa: a próxima tentativa e a política de replanejamento leem daqui."""
         meta = dict(task.metadata_json or {})
         history = list(meta.get("failures") or [])[-4:]
-        history.append(failure.as_dict())
+        noted = {**failure.as_dict(), "signature": error_signature(failure.as_dict()), "strategy": strategy_signature(task)}
+        history.append(noted)
         meta["failures"] = history
-        meta["last_failure"] = failure.as_dict()
+        meta["last_failure"] = noted
         task.metadata_json = meta
-        return failure.as_dict()
+        return noted
 
     _TO_BLOCKED: dict[TaskStatus, tuple[TaskStatus, ...]] = {
         TaskStatus.PENDING: (TaskStatus.PLANNING, TaskStatus.BLOCKED),
@@ -475,6 +603,8 @@ class RunOrchestrator:
             raise LookupError(str(run_id))
         if run.status in {RunStatus.COMPLETED.value, RunStatus.CANCELLED.value, RunStatus.FAILED.value}:
             return {"action": "run_terminal", "status": run.status}
+        if run.status == RunStatus.PAUSED.value:
+            return {"action": "run_paused", "run_id": str(run.id), "status": run.status}
 
         project = self._session.get(ProjectModel, run.project_id)
         if project is None:
@@ -490,6 +620,9 @@ class RunOrchestrator:
         profile = _profile_from_config(config, self._settings)
 
         root = self._tasks.get_task(run.root_task_id)
+        hit = limit_reached(self._session, run, limits_for(self._settings, config))
+        if hit:
+            return self._pause_run(run, root, hit, next_action_for_limit(run.id, hit))
         work_root = self._work_root(project, root)
         revised = replan_under(self._session, root.id)
         if revised:
@@ -671,6 +804,7 @@ class RunOrchestrator:
                 "blocked_contract",
                 "blocked_context",
                 "run_stalled",
+                "run_paused",
                 "global_verify_failed",
             }:
                 break

@@ -44,4 +44,4 @@ Compactação futura: nova versão com `source_refs` apontando para registros an
 
 Cada transição relevante grava `EventLog`: `run_id`, `task_id`, `type`, `payload_json`, `created_at`.
 
-Tipos iniciais: `task.created`, `task.status_changed`, `run.started`, `run.paused`, `attempt.recorded`.
+Tipos iniciais: `task.created`, `task.status_changed`, `run.started`, `run.paused`, `attempt.recorded`. Controle de progresso: `run.stagnation` (diagnóstico da etapa que repete o erro), `run.paused` (com limite, pendências e próxima ação) e `run.resumed` (o orçamento dos limites recomeça daqui).

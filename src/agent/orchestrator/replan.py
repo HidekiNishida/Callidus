@@ -13,6 +13,7 @@ from agent.orchestrator.consolidation import children_of, pending_reason, supers
 from agent.orchestrator.decomposition import DecompositionResult, SubTaskSpec, apply_decomposition
 from agent.persistence.models import TaskModel
 from agent.orchestrator.requirements import effective_covers, normalize_covers
+from agent.orchestrator.stagnation import normalize_error
 from agent.services.task_service import TaskService
 
 REPLAN_BUDGET = 3
@@ -37,7 +38,8 @@ def replan_decision(parent_meta: dict, stopped: TaskModel, completed: int) -> Re
 
     - Configuração e falta externa (aprovação, servidor, verificação manual) pedem ação de fora: não replaneja.
     - O orçamento `REPLAN_BUDGET` é da linhagem inteira (o nó replanejado herda a contagem).
-    - Sem etapa nova concluída desde o último replanejamento e com o mesmo motivo, o plano novo não ajudou.
+    - Sem etapa nova concluída desde o último replanejamento e com o mesmo motivo (comparado normalizado:
+      números, ids e aspas não contam), o plano novo não ajudou.
     """
     failure = Failure.from_dict((stopped.metadata_json or {}).get("last_failure"))
     if failure is not None and failure.category in _NEEDS_OUTSIDE_ACTION:
@@ -47,7 +49,8 @@ def replan_decision(parent_meta: dict, stopped: TaskModel, completed: int) -> Re
     history = parent_meta.get("replan_history") or []
     if history:
         last = history[-1]
-        if completed <= int(last.get("completed") or 0) and last.get("reason") == pending_reason(stopped):
+        same = normalize_error(str(last.get("reason") or "")) == normalize_error(pending_reason(stopped))
+        if completed <= int(last.get("completed") or 0) and same:
             return ReplanDecision(False, "o replanejamento anterior não trouxe progresso")
     return ReplanDecision(True)
 
