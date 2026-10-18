@@ -21,6 +21,19 @@ def verification_evidence_ok(session: Session, task: TaskModel) -> bool:
     return any(e.get("passed") is True for e in evs)
 
 
+def superseded(task: TaskModel) -> bool:
+    """Etapa parada que um replanejamento já substituiu: não conta mais como pendência."""
+    return bool((task.metadata_json or {}).get("superseded_by_replan"))
+
+
+def settled(task: TaskModel) -> bool:
+    """Filho que não impede o pai de seguir: concluído, cancelado ou falho já substituído."""
+    status = TaskStatus(task.status)
+    return status in {TaskStatus.COMPLETED, TaskStatus.CANCELLED} or (
+        status == TaskStatus.FAILED and superseded(task)
+    )
+
+
 def children_of(session: Session, parent_id: uuid.UUID) -> list[TaskModel]:
     stmt = select(TaskModel).where(TaskModel.parent_id == parent_id)
     return list(session.scalars(stmt).all())
@@ -41,7 +54,7 @@ def _walk(ts: TaskService, task_id: uuid.UUID, path: list[TaskStatus], reason: s
 
 def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any] | None:
     """Junta o resultado dos filhos no pai. O pai só conclui se todo filho não cancelado concluiu com
-    evidência. Filho concluído sem evidência é reaberto e o pai volta a PLANNING. Filho que falhou deixa o
+    evidência (filho substituído por replanejamento não conta). Filho concluído sem evidência é reaberto e o pai volta a PLANNING. Filho que falhou deixa o
     pai como está, com `achieved=False` e a lista `pending`: replanejar ou parar é decisão do runner."""
     ts = TaskService(session)
     parent = ts.get_task(parent_id)
@@ -58,7 +71,7 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
         ev_ok = verification_evidence_ok(session, c)
         if c.status == TaskStatus.COMPLETED.value and not ev_ok:
             gaps.append(c)
-        elif c.status == TaskStatus.FAILED.value:
+        elif c.status == TaskStatus.FAILED.value and not superseded(c):
             failed.append(c)
         summaries.append(
             {

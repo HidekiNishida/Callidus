@@ -28,6 +28,19 @@ Quando nenhuma tarefa pode avançar (e o replanejamento não tem mais o que faze
 
 `consolidate_parent` nunca conclui um pai com filho falho: devolve `achieved=false` e `pending`. Pai em execução com filho falho vai a `BLOCKED` (`blocked_dependency/dependency_failed`), o que aciona o replanejamento do nível de cima.
 
+## Replanejamento
+
+`replan_under` roda no início de cada passo e aplica `replan_decision` ao primeiro filho parado (BLOCKED/FAILED) ainda não substituído:
+
+| Situação | Decisão |
+|----------|---------|
+| Falha `configuration` ou `external_unavailable` | Não replaneja: um plano novo não instala programa nem aprova ação. Grava `replan_refused` e o run para explicando. |
+| Orçamento da linhagem esgotado (`REPLAN_BUDGET = 3`) | Não replaneja. |
+| Último replanejamento sem etapa nova concluída e com o mesmo motivo | Não replaneja (sem progresso). |
+| Demais (`recoverable`, `change_strategy`, `operational_limit`, `blocked_dependency`, sem categoria) | Replaneja. |
+
+Ao replanejar: irmãos pendentes são cancelados, o que concluiu fica; o filho parado é marcado `superseded_by_replan` (BLOCKED vira CANCELLED) e deixa de contar como pendência; entram "Ver o que ainda falta" e "Seguir com o plano corrigido", um nó `subsystem` que é decomposto de novo com o que já foi feito, o motivo da parada e o pedido de outra abordagem. Esse nó herda `replan_count`, então replanejamentos aninhados dividem o mesmo orçamento.
+
 ## Falhas categorizadas
 
 Toda tentativa que falha é classificada por `src/agent/domain/failures.py` em **categoria** (o que fazer) e **causa** (o que houve):

@@ -2,17 +2,19 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from agent.domain.enums import TaskStatus
+from agent.domain.enums import TaskKind, TaskStatus
+from agent.domain.failures import Failure, FailureCategory
 from agent.domain.schemas import TaskStatusUpdate
-from agent.orchestrator.consolidation import children_of
+from agent.orchestrator.consolidation import children_of, pending_reason, superseded
 from agent.orchestrator.decomposition import DecompositionResult, SubTaskSpec, apply_decomposition
 from agent.persistence.models import TaskModel
 from agent.services.task_service import TaskService
 
-MAX_REPLANS = 2
+REPLAN_BUDGET = 3
 _STOP = {TaskStatus.BLOCKED.value, TaskStatus.FAILED.value}
 _CANCEL = {
     TaskStatus.PENDING.value,
@@ -20,10 +22,37 @@ _CANCEL = {
     TaskStatus.PLANNING.value,
     TaskStatus.RETRY_PENDING.value,
 }
+_NEEDS_OUTSIDE_ACTION = {FailureCategory.CONFIGURATION, FailureCategory.EXTERNAL_UNAVAILABLE}
+
+
+@dataclass(frozen=True)
+class ReplanDecision:
+    replan: bool
+    reason: str = ""
+
+
+def replan_decision(parent_meta: dict, stopped: TaskModel, completed: int) -> ReplanDecision:
+    """Política: replanejar só quando um plano novo pode resolver e há orçamento e progresso.
+
+    - Configuração e falta externa (aprovação, servidor, verificação manual) pedem ação de fora: não replaneja.
+    - O orçamento `REPLAN_BUDGET` é da linhagem inteira (o nó replanejado herda a contagem).
+    - Sem etapa nova concluída desde o último replanejamento e com o mesmo motivo, o plano novo não ajudou.
+    """
+    failure = Failure.from_dict((stopped.metadata_json or {}).get("last_failure"))
+    if failure is not None and failure.category in _NEEDS_OUTSIDE_ACTION:
+        return ReplanDecision(False, f"precisa de ação externa ({failure.category.value}): {failure.detail[:200]}")
+    if int(parent_meta.get("replan_count") or 0) >= REPLAN_BUDGET:
+        return ReplanDecision(False, f"limite de {REPLAN_BUDGET} replanejamentos atingido")
+    history = parent_meta.get("replan_history") or []
+    if history:
+        last = history[-1]
+        if completed <= int(last.get("completed") or 0) and last.get("reason") == pending_reason(stopped):
+            return ReplanDecision(False, "o replanejamento anterior não trouxe progresso")
+    return ReplanDecision(True)
 
 
 def replan_under(session: Session, root_id: uuid.UUID) -> dict | None:
-    """Se algum filho parou, revisa o pai uma vez e deixa o plano novo seguir."""
+    """Se algum filho parou, revisa o pai (conforme a política) e deixa o plano novo seguir."""
     kids = children_of(session, root_id)
     parents = [session.get(TaskModel, root_id)]
     seen = {root_id}
@@ -46,15 +75,22 @@ def replan_under(session: Session, root_id: uuid.UUID) -> dict | None:
 
 def replan_parent(session: Session, parent: TaskModel) -> dict | None:
     meta = dict(parent.metadata_json or {})
-    if int(meta.get("replan_count") or 0) >= MAX_REPLANS:
-        return None
     kids = children_of(session, parent.id)
-    stopped = next((kid for kid in kids if kid.status in _STOP), None)
+    stopped = next((kid for kid in kids if kid.status in _STOP and not superseded(kid)), None)
     if stopped is None:
         return None
     if any((kid.metadata_json or {}).get("replan") and kid.status not in {*_STOP, TaskStatus.CANCELLED.value, TaskStatus.COMPLETED.value} for kid in kids):
         return None
     done = [kid.title for kid in kids if kid.status == TaskStatus.COMPLETED.value]
+    reason = pending_reason(stopped)
+    decision = replan_decision(meta, stopped, len(done))
+    if not decision.replan:
+        if meta.get("replan_refused") != decision.reason:
+            meta["replan_refused"] = decision.reason
+            parent.metadata_json = meta
+            session.flush()
+        return None
+
     tasks = TaskService(session)
     cancelled: list[str] = []
     for kid in kids:
@@ -66,15 +102,15 @@ def replan_parent(session: Session, parent: TaskModel) -> dict | None:
                 TaskStatusUpdate(status=TaskStatus.CANCELLED, reason="plano revisado"),
             )
             cancelled.append(kid.title)
-    result = stopped.consolidated_result_json or {}
-    reason = ""
-    if isinstance(result, dict):
-        inner = result.get("result") if isinstance(result.get("result"), dict) else result
-        reason = str((inner or {}).get("error") or (stopped.metadata_json or {}).get("blocked_reason") or stopped.status)
+    stopped.metadata_json = {**(stopped.metadata_json or {}), "superseded_by_replan": True}
+    if stopped.status == TaskStatus.BLOCKED.value:
+        tasks.update_status(stopped.id, TaskStatusUpdate(status=TaskStatus.CANCELLED, reason="substituída pelo replanejamento"))
+
+    count = int(meta.get("replan_count") or 0) + 1
     objective = (
         f"Replanejar o que falta de «{parent.title}». "
         f"Já concluído: {', '.join(done) or 'nada'}. Não refazer isso. "
-        f"Parou em «{stopped.title}»: {reason[:240]}. "
+        f"Parou em «{stopped.title}»: {reason[:240]}. Use outra abordagem para essa parte. "
         f"Objetivo original: {parent.objective[:500]}"
     )
     plan = DecompositionResult(
@@ -87,14 +123,17 @@ def replan_parent(session: Session, parent: TaskModel) -> dict | None:
             SubTaskSpec(
                 title="Seguir com o plano corrigido",
                 objective=objective,
-                metadata={"atomic": True, "replan": True},
+                kind=TaskKind.SUBSYSTEM,
+                metadata={"replan": True, "replan_count": count},
                 depends_on_indices=[0],
             ),
         ]
     )
     apply_decomposition(session, parent.project_id, parent.id, plan)
-    meta["replan_count"] = int(meta.get("replan_count") or 0) + 1
+    meta["replan_count"] = count
     meta["last_replan_reason"] = reason[:240]
+    meta["replan_history"] = [*(meta.get("replan_history") or []), {"completed": len(done), "reason": reason}][-REPLAN_BUDGET:]
+    meta.pop("replan_refused", None)
     parent.metadata_json = meta
     session.flush()
     return {

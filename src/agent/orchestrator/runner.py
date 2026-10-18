@@ -25,6 +25,7 @@ from agent.orchestrator.consolidation import (
     children_of,
     consolidate_parent,
     pending_reason,
+    settled,
     verification_evidence_ok,
 )
 from agent.orchestrator.global_verify import (
@@ -225,7 +226,7 @@ class RunOrchestrator:
         pending: list[dict[str, Any]] = []
         for t in sorted((t for t in tasks if t.id in subtree and t.id != root_id), key=lambda t: t.sort_order):
             done = TaskStatus(t.status) == TaskStatus.COMPLETED and verification_evidence_ok(self._session, t)
-            if done or TaskStatus(t.status) == TaskStatus.CANCELLED or children_of(self._session, t.id):
+            if done or settled(t) or children_of(self._session, t.id):
                 continue
             pending.append({"task_id": str(t.id), "title": t.title, "status": t.status, "reason": pending_reason(t)})
         return pending
@@ -236,6 +237,13 @@ class RunOrchestrator:
         from agent.orchestrator.closing import compose_incomplete_markdown
 
         pending = self._pending_under(root.id)
+        tasks = list(self._session.scalars(select(TaskModel)).all())
+        subtree = self._subtree_ids(root.id, tasks)
+        refusals = sorted(
+            {str((t.metadata_json or {}).get("replan_refused")) for t in tasks if t.id in subtree and (t.metadata_json or {}).get("replan_refused")}
+        )
+        if refusals:
+            reason = f"{reason}; sem replanejamento: {'; '.join(refusals)}"
         for status in self._TO_BLOCKED.get(TaskStatus(root.status), ()):
             self._tasks.update_status(root.id, TaskStatusUpdate(status=status, reason=reason))
         report = dict(root.consolidated_result_json or {})
@@ -546,7 +554,7 @@ class RunOrchestrator:
                             continue
                     if st in {TaskStatus.PLANNING, TaskStatus.PENDING}:
                         kids = [c for c in all_tasks if c.parent_id == t.id]
-                        if kids and not all(TaskStatus(c.status) == TaskStatus.COMPLETED for c in kids):
+                        if kids and not all(settled(c) for c in kids):
                             continue
                     return t
         return None
@@ -1028,7 +1036,7 @@ class RunOrchestrator:
             if task.parent_id:
                 parent = self._tasks.get_task(task.parent_id)
                 kids = children_of(self._session, parent.id)
-                if kids and all(k.status == TaskStatus.COMPLETED.value for k in kids):
+                if kids and all(settled(k) for k in kids):
                     consolidate_parent(self._session, parent.id)
             return {"action": "verified_ok", "task_id": str(task.id)}
 

@@ -415,6 +415,8 @@ Grafo de conhecimento:
 - `children_of(session, parent_id) → list[TaskModel]` — Lista as subtarefas diretas de uma tarefa.
 - `collect_evidences(session, task_id) → list[dict]` — Lê as evidências de verificação da tarefa (verificador, passou, resumo, detalhe).
 - `consolidate_parent(session, parent_id) → dict | None` — Se todos os filhos estão em estado terminal, grava no pai um relatório (`achieved`, resumo por filho, evidências, `pending` e, se houver, `final_answer` e fontes). O pai só vai a COMPLETED (por transições válidas) se todo filho não cancelado concluiu com evidência; filho concluído sem evidência é reaberto e o pai volta a PLANNING; filho falho deixa o pai como está, para o runner replanejar ou parar. Saída: o relatório, ou `None` se ainda há filhos ativos.
+- `superseded(task) → bool` — Etapa parada que um replanejamento já substituiu (`superseded_by_replan`).
+- `settled(task) → bool` — Filho que não impede o pai: concluído, cancelado ou falho substituído.
 - `pending_reason(task) → str` — Motivo de uma pendência: detalhe da última falha, `blocked_reason` ou o status.
 - `_walk(ts, task_id, path, reason=None) → None` — Aplica uma sequência de transições de status.
 - `verification_evidence_ok(session, task) → bool` — Verdadeiro se a tarefa não exige verificação ou tem ao menos uma evidência aprovada.
@@ -466,8 +468,11 @@ Grafo de conhecimento:
 
 **Propósito:** Revisa o plano quando uma etapa bloqueia ou falha no meio, sem refazer o que já passou. **Quando/onde:** `RunOrchestrator._step_body` chama `replan_under` no início de cada passo.
 
-- `replan_parent(session, parent) → dict | None` — Se um filho do pai está BLOCKED/FAILED (e o limite de 2 replanos não foi atingido), cancela os irmãos pendentes, cria duas subtarefas de replanejamento ("Ver o que ainda falta" e "Seguir com o plano corrigido") com o contexto do que foi feito e do motivo da parada, e conta o replano. Saída: descrição da ação ou `None`.
-- `replan_under(session, root_id) → dict | None` — Percorre a raiz e seus descendentes e aplica o primeiro replanejamento possível.
+- `REPLAN_BUDGET = 3` — Replanejamentos por linhagem (o nó replanejado herda a contagem).
+- **`ReplanDecision`** — Decisão da política: `replan` (bool) e `reason` (por que não).
+- `replan_decision(parent_meta, stopped, completed) → ReplanDecision` — Política por categoria: falha de configuração ou externa não é replanejada (precisa de ação de fora); respeita o orçamento; recusa quando o último replanejamento não trouxe etapa nova concluída e o motivo é o mesmo.
+- `replan_parent(session, parent) → dict | None` — Se um filho não substituído está BLOCKED/FAILED e a política permite: cancela os irmãos pendentes, marca o filho parado como `superseded_by_replan` (BLOCKED vira CANCELLED), cria "Ver o que ainda falta" (list_dir) e "Seguir com o plano corrigido" (nó `subsystem` que será decomposto de novo, com o que foi feito, o motivo e o pedido de outra abordagem) e registra `replan_history`. Se a política recusa, grava `replan_refused` no pai. Saída: descrição da ação ou `None`.
+- `replan_under(session, root_id) → dict | None` — Percorre a raiz e seus descendentes e aplica o primeiro replanejamento que a política permitir.
 
 ### `src/agent/orchestrator/resume.py`
 
@@ -490,14 +495,14 @@ Grafo de conhecimento:
   - `RunOrchestrator._capture_outcome_memory(project, root) → None` — Grava uma vez a memória contextual "Resultado da conversa" com objetivo e resposta final.
   - `RunOrchestrator._depth(task) → int` — Profundidade da tarefa na árvore (usada para cortar decomposição a partir de 6 níveis).
   - `RunOrchestrator._pending_under(root_id) → list[dict]` — Folhas da árvore que não concluíram com evidência (nem foram canceladas), com título, status e motivo.
-  - `RunOrchestrator._stall_run(run, root, reason) → dict` — Nada pode avançar e o objetivo não foi cumprido: run vai a `failed`, raiz a BLOCKED (recuperável), relatório com `achieved=False`, `pending` e mensagem "Não concluído"; evento `run.stalled`; ação `run_stalled`.
+  - `RunOrchestrator._stall_run(run, root, reason) → dict` — Nada pode avançar e o objetivo não foi cumprido (o motivo inclui as recusas de replanejamento): run vai a `failed`, raiz a BLOCKED (recuperável), relatório com `achieved=False`, `pending` e mensagem "Não concluído"; evento `run.stalled`; ação `run_stalled`.
   - `RunOrchestrator._ensure_final_message(root) → None` — Garante `final_answer` no relatório da raiz: copia a do filho de resposta final ou compõe um Markdown com as etapas.
   - `RunOrchestrator._execute_task(run, project, task, config, work_root=None) → dict` — Executa a tarefa RUNNING conforme o metadado: ferramenta MCP, resposta final, operação de modelo (gera JSON e aplica `edit_file`/`write_file`, com streaming opcional), ferramenta comum (com detecção de laço), verificação ou consolidação de pai (pai com filho falho vai a BLOCKED com `dependency_failed`); respeita limite de tentativas e registra tentativas. Saída: ação do passo.
   - `RunOrchestrator._finalize_verification(run, project, task, work_root=None) → dict` — Roda a verificação da tarefa, grava a tentativa (com falha categorizada) e a evidência ligada a ela (`attempt_id`); aprovada conclui e consolida o pai, reprovada vai para nova tentativa (ou bloqueia se repetir), inconclusiva bloqueia. Sem verificação, apenas conclui.
   - `RunOrchestrator._note_thought(run, task, text, *, phase='thinking') → None` — Grava um evento `agent.thought` e faz commit para a interface mostrar o andamento durante a inferência.
   - `RunOrchestrator._context_overflow(run, project, task, provider_name, profile, exc) → dict` — Contexto obrigatório não coube nem compactado: registra tentativa falha `context_budget` com o snapshot, explica qual parte pesa mais e bloqueia a tarefa (`blocked_context`), sem chamar o modelo.
   - `RunOrchestrator._remember_failure(task, failure) → dict` — Guarda a falha categorizada em `metadata_json.last_failure` e nas últimas 5 de `failures`, para a próxima tentativa e o replanejamento lerem.
-  - `RunOrchestrator._pick_next_task(root_id) → TaskModel | None` — Escolhe a próxima tarefa da subárvore por prioridade de status (RUNNING, VERIFYING, READY, RETRY_PENDING, PLANNING, PENDING), respeitando dependências e filhos não concluídos.
+  - `RunOrchestrator._pick_next_task(root_id) → TaskModel | None` — Escolhe a próxima tarefa da subárvore por prioridade de status (RUNNING, VERIFYING, READY, RETRY_PENDING, PLANNING, PENDING), respeitando dependências; um pai em PLANNING só é escolhido quando todos os filhos estão resolvidos (`settled`).
   - `RunOrchestrator._promote_ready_or_block(task_id) → dict | None` — Valida o contrato da tarefa; se inválido, bloqueia e retorna os erros, senão marca READY.
   - `RunOrchestrator._record_action(run_id, out) → None` — Registra o resultado do passo como evento `orchestrator.action`.
   - `RunOrchestrator._run_as_leaf(run, task, *, note) → dict` — Força a tarefa a ser executada como operação do modelo (sem nova divisão) e a promove se as dependências permitirem.
@@ -1188,7 +1193,7 @@ Grafo de conhecimento:
 - `tests/test_attachments.py` — Anexos do chat pela API: texto longo colado e imagem viram arquivos no projeto; anexo acima do limite é rejeitado.
 - `tests/test_attempt_loop.py` — `AttemptService`: detecção de saída repetida entre tentativas (loop do modelo).
 - `tests/test_consolidation.py` — `consolidate_parent`: tarefa-pai só conclui quando há evidência de verificação nos filhos.
-- `tests/test_run_termination.py` — Pai nunca conclui com filho falho; pai em RUNNING conclui por transições válidas; replanejamento preserva o irmão concluído; run sem saída termina `failed`, explicado, com raiz BLOCKED e sem laço.
+- `tests/test_run_termination.py` — Pai nunca conclui com filho falho; pai em RUNNING conclui por transições válidas; falha de configuração não é replanejada e a parada diz por quê; falha substituída por replanejamento não bloqueia o pai; política de orçamento e progresso; run sem saída termina `failed`, explicado, com raiz BLOCKED e sem laço.
 - `tests/test_context_budget.py` — `context/budget.py`: estimativa de tokens, preservação de componentes obrigatórios e erro quando o obrigatório estoura o orçamento do `ModelProfile`.
 - `tests/test_context_recovery.py` — Estouro de contexto: `ContextBudgetError` com custo por componente, `compact_text` sem perda, `RUNNING → BLOCKED`, bloqueio explicado sem chamar o modelo e recuperação por compactação.
 - `tests/test_contract_impact.py` — `ContractService`: mudança de contrato encontra as tarefas dependentes afetadas.

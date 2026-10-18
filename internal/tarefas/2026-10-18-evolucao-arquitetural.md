@@ -14,7 +14,7 @@ O orquestrador decompõe só o necessário, monta contexto suficiente por opera�
 
 ## Próxima ação
 
-Unidade 6: política de replanejamento por categoria; passo de replanejamento que replaneja de verdade (hoje `Seguir com o plano corrigido` só tem `atomic` e conclui sem fazer nada via `skipped_to_verify`).
+Unidade 5: contexto suficiente — arquivos citados no objetivo, resultados das dependências, contrato e objetivo da raiz no contexto da operação.
 
 ## Diagnóstico (fase A — evidências)
 
@@ -60,7 +60,8 @@ Unidade 6: política de replanejamento por categoria; passo de replanejamento qu
 - [x] Unidade 3: `ContextBudgetError`, snapshot do estouro, compactação sem perda, `blocked_context` explicado, `RUNNING → BLOCKED`
 - [x] Unidade 4: `tentativas-anteriores` no contexto, `retry_hint`, impressão do prompt (`repeated_prompt`), `num_predict` dobrado em resposta cortada, saída da verificação no detalhe
 - [x] Unidade 8 (antecipada): consolidação segue a especificação, término explicado (`run_stalled`), sem espera infinita; 2 falhas do WIP resolvidas
-- [ ] Unidades 5, 6, 7, 9, 10, 11
+- [x] Unidade 6: `replan_decision` por categoria, orçamento por linhagem, condição de progresso, filho substituído (`superseded`/`settled`), passo de replanejamento que decompõe de novo
+- [ ] Unidades 5, 7, 9, 10, 11
 - [ ] Escolher dimensões de teste aplicáveis ([validacoes-testes.md](/docs/regras/validacoes-testes.md))
 - [ ] Verificação final: código ↔ docs ↔ checklists ↔ regras ([verificacao-final.md](/docs/regras/verificacao-final.md))
 - [ ] Marcar estado como `concluída` e listar artefatos
@@ -86,4 +87,4 @@ Unidade 6: política de replanejamento por categoria; passo de replanejamento qu
 
 ## Notas de retomada
 
-Baseline após unidade 8: 127 passam, 0 falham. Cenários numerados = seção 12 do pedido.
+Baseline após unidade 6: 129 passam, 0 falham. Cenários numerados = seção 12 do pedido.
