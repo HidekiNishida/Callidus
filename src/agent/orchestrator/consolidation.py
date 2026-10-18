@@ -11,14 +11,24 @@ from agent.domain.enums import TaskStatus
 from agent.domain.schemas import TaskStatusUpdate
 from agent.persistence.models import EvidenceModel, TaskModel
 from agent.services.task_service import TaskService
+from agent.verification.fingerprint import is_current
+
+
+def verification_spec(task: TaskModel) -> dict | None:
+    """Verificação declarada ou, para escrita sem declaração, a implícita que já rodou."""
+    meta = task.metadata_json or {}
+    return meta.get("verification") or meta.get("implicit_verification")
 
 
 def verification_evidence_ok(session: Session, task: TaskModel) -> bool:
-    meta = task.metadata_json or {}
-    if not meta.get("verification"):
+    """Vale só a evidência mais recente: precisa ter passado e os arquivos que ela avaliou não podem ter
+    mudado desde então (evidência desatualizada não conta, mas fica gravada)."""
+    if not verification_spec(task):
         return True
     evs = collect_evidences(session, task.id)
-    return any(e.get("passed") is True for e in evs)
+    if not evs or evs[-1].get("passed") is not True:
+        return False
+    return is_current((evs[-1].get("detail") or {}).get("artifacts"))
 
 
 def superseded(task: TaskModel) -> bool:
@@ -119,7 +129,11 @@ def pending_reason(task: TaskModel) -> str:
 
 
 def collect_evidences(session: Session, task_id: uuid.UUID) -> list[dict[str, Any]]:
-    stmt = select(EvidenceModel).where(EvidenceModel.task_id == task_id)
+    stmt = (
+        select(EvidenceModel)
+        .where(EvidenceModel.task_id == task_id)
+        .order_by(EvidenceModel.created_at, EvidenceModel.id)
+    )
     rows = list(session.scalars(stmt).all())
     return [
         {

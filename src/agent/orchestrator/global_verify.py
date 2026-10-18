@@ -7,10 +7,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from agent.domain.enums import TaskStatus
+from agent.domain.failures import Failure, FailureCategory, FailureCause
 from agent.domain.schemas import TaskCreate, TaskStatusUpdate
-from agent.orchestrator.consolidation import children_of, verification_evidence_ok
+from agent.orchestrator.consolidation import (
+    children_of,
+    collect_evidences,
+    verification_evidence_ok,
+    verification_spec,
+)
 from agent.persistence.models import TaskModel
 from agent.services.task_service import TaskService
+from agent.verification.fingerprint import is_current
 
 
 def _subtree_tasks(session: Session, root_id: uuid.UUID) -> list[TaskModel]:
@@ -34,10 +41,9 @@ def evaluate_global_acceptance(session: Session, root_id: uuid.UUID) -> tuple[bo
         return False, "root ainda não concluído"
 
     for t in _subtree_tasks(session, root_id):
-        meta = t.metadata_json or {}
-        if meta.get("verification") and TaskStatus(t.status) == TaskStatus.COMPLETED:
+        if verification_spec(t) and TaskStatus(t.status) == TaskStatus.COMPLETED:
             if not verification_evidence_ok(session, t):
-                return False, f"evidência ausente: {t.title}"
+                return False, f"evidência ausente ou desatualizada: {t.title}"
 
     report = root.consolidated_result_json or {}
     if report and report.get("achieved") is False:
@@ -46,23 +52,43 @@ def evaluate_global_acceptance(session: Session, root_id: uuid.UUID) -> tuple[bo
     return True, "ok"
 
 
+def _gap_failure(session: Session, task: TaskModel) -> Failure:
+    evs = collect_evidences(session, task.id)
+    last = evs[-1] if evs else None
+    if last and last.get("passed") is True and not is_current((last.get("detail") or {}).get("artifacts")):
+        paths = ", ".join((last["detail"]["artifacts"].get("paths") or []))
+        return Failure(
+            FailureCategory.RECOVERABLE,
+            FailureCause.STALE_EVIDENCE,
+            f"os arquivos verificados ({paths}) mudaram depois da verificação; refazer com o estado atual",
+        )
+    return Failure(FailureCategory.RECOVERABLE, FailureCause.VERIFICATION_FAILED, "concluída sem evidência válida")
+
+
 def reopen_verification_gaps(session: Session, root_id: uuid.UUID) -> list[uuid.UUID]:
-    """Reabre tarefas de verificação concluídas sem evidência passante."""
+    """Reabre tarefas verificadas cuja evidência mais recente não passou ou ficou desatualizada; o motivo
+    entra em `last_failure`/`failures`. Desatualizada volta a VERIFYING: verifica-se o estado atual antes
+    de repetir a operação. Sem evidência válida volta a RETRY_PENDING."""
     ts = TaskService(session)
     reopened: list[uuid.UUID] = []
     for t in _subtree_tasks(session, root_id):
-        meta = t.metadata_json or {}
-        if not meta.get("verification"):
+        if not verification_spec(t):
             continue
         if TaskStatus(t.status) != TaskStatus.COMPLETED:
             continue
         if verification_evidence_ok(session, t):
             continue
-        ts.update_status(t.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-        ts.update_status(
-            t.id,
-            TaskStatusUpdate(status=TaskStatus.RETRY_PENDING, reason="evidência global insuficiente"),
-        )
+        failure = _gap_failure(session, t)
+        meta = dict(t.metadata_json or {})
+        meta["last_failure"] = failure.as_dict()
+        meta["failures"] = [*(meta.get("failures") or []), failure.as_dict()][-5:]
+        t.metadata_json = meta
+        ts.update_status(t.id, TaskStatusUpdate(status=TaskStatus.VERIFYING, reason=failure.detail))
+        if failure.cause != FailureCause.STALE_EVIDENCE:
+            ts.update_status(
+                t.id,
+                TaskStatusUpdate(status=TaskStatus.RETRY_PENDING, reason=failure.detail),
+            )
         reopened.append(t.id)
         if t.parent_id:
             parent = ts.get_task(t.parent_id)

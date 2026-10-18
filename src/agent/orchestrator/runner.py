@@ -65,6 +65,7 @@ from agent.services.attempt_service import AttemptService
 from agent.services.project_service import ProjectService
 from agent.services.task_service import TaskService
 from agent.tools.registry import ToolContext, build_default_registry
+from agent.verification.fingerprint import snapshot as artifact_snapshot
 from agent.verification.runner import run_verification
 
 
@@ -1019,7 +1020,7 @@ class RunOrchestrator:
         (`file_contains` com o que foi gravado); leitura sem verificação conclui sem evidência."""
         root_path = work_root or self._work_root(project, task)
         meta = task.metadata_json or {}
-        spec = meta.get("verification") or implicit_spec
+        spec = meta.get("verification") or implicit_spec or meta.get("implicit_verification")
         if not spec:
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
             consolidate_parent(self._session, task.parent_id) if task.parent_id else None
@@ -1034,7 +1035,12 @@ class RunOrchestrator:
             tool_args=tool_args,
             approved=approved,
         )
-        detail = vresult.detail if isinstance(vresult.detail, dict) else {}
+        detail = dict(vresult.detail) if isinstance(vresult.detail, dict) else {}
+        artifacts = artifact_snapshot(root_path, spec, tool_args)
+        if artifacts:
+            detail["artifacts"] = artifacts
+        if not meta.get("verification"):
+            task.metadata_json = {**meta, "implicit_verification": spec}
         output = f"{detail.get('stdout') or ''}\n{detail.get('stderr') or detail.get('error') or ''}"
         failure = classify_verification(vresult.passed, vresult.summary, output)
         if failure is not None and detail.get("category") == FailureCategory.CONFIGURATION.value:
@@ -1057,9 +1063,10 @@ class RunOrchestrator:
                 verifier=vresult.verifier,
                 passed=vresult.passed,
                 summary=vresult.summary,
-                detail_json=vresult.detail,
+                detail_json=detail,
             )
         )
+        self._session.flush()
 
         if vresult.passed is True:
             task.consolidated_result_json = {

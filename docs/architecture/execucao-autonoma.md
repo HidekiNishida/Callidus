@@ -17,7 +17,11 @@ Runs com `config_json.autonomous = true` são avançados pelo worker asyncio (`a
 
 ## Recuperação
 
-Estado em SQLite; após reinício da API o worker retoma runs ativos autônomos.
+Estado em SQLite; após reinício da API o worker retoma runs ativos autônomos. Nada vive só em memória: reabrir o banco e chamar `step` continua do ponto salvo.
+
+A evidência de verificação guarda em `detail_json.artifacts` a impressão digital (`verification/fingerprint.py`) dos arquivos que avaliou (o arquivo do `file_contains`/`script`, a pasta do `pytest`/`command`; bancos SQLite e caches ficam fora). Vale apenas a evidência **mais recente** da tarefa, e só se passou e os arquivos não mudaram. Escrita sem verificação declarada grava a implícita em `metadata_json.implicit_verification`, que passa pela mesma regra.
+
+Na retomada, se um arquivo mudou depois da verificação, a aceitação global recusa ("evidência ausente ou desatualizada") e `reopen_verification_gaps` devolve a tarefa a `VERIFYING` com `last_failure.cause = stale_evidence`: o estado atual é verificado de novo antes de repetir qualquer operação, e só se reprovar a operação é refeita, com o motivo no contexto. Evidência antiga nunca é apagada. Ao refazer, o contexto lê os arquivos-alvo do disco naquele momento.
 
 ## Término do run
 

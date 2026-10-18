@@ -253,7 +253,7 @@ Grafo de conhecimento:
 **Propósito:** taxonomia de falhas do orquestrador. Cada falha tem uma **categoria** (o que fazer a seguir) e uma **causa** (o que aconteceu). **Por quê:** separar erro de configuração, limite operacional, saída cortada e falha de verificação, em vez de tratar tudo como "tentar de novo". **Quando/onde:** o `RunOrchestrator` classifica cada tentativa falha, grava a categoria no evento `attempt.recorded` e em `metadata_json.last_failure` da tarefa.
 
 - **`FailureCategory(StrEnum)`** — `recoverable`, `change_strategy`, `blocked_dependency`, `external_unavailable`, `configuration`, `operational_limit`.
-- **`FailureCause(StrEnum)`** — Causa concreta: orçamento de contexto, saída inválida ou cortada, timeout, provedor fora do ar, erro/entrada de ferramenta, ferramenta desconhecida, executável ausente, aprovação pendente, verificação falha ou inconclusiva, saída repetida, dependência falha, tentativas esgotadas, etc.
+- **`FailureCause(StrEnum)`** — Causa concreta: orçamento de contexto, saída inválida ou cortada, timeout, provedor fora do ar, erro/entrada de ferramenta, ferramenta desconhecida, executável ausente, aprovação pendente, verificação falha ou inconclusiva, evidência desatualizada, saída repetida, dependência falha, tentativas esgotadas, etc.
 - **`Failure`** — Dataclass imutável (categoria, causa, detalhe).
   - `Failure.retry_same_strategy → bool` — Só `recoverable` admite repetir a mesma abordagem.
   - `Failure.as_dict() → dict` / `Failure.from_dict(data) → Failure | None` — Serialização para JSON (eventos e metadados); dado inválido volta `None`.
@@ -413,13 +413,14 @@ Grafo de conhecimento:
 **Propósito:** Consolidação de baixo para cima: quando todos os filhos de uma tarefa terminam, junta resultados e evidências no pai e o conclui. **Quando/onde:** chamado pelo runner após verificações, resposta final e execução de pais; `children_of` e `verification_evidence_ok` são reaproveitados por replanejamento, retomada e verificação global.
 
 - `children_of(session, parent_id) → list[TaskModel]` — Lista as subtarefas diretas de uma tarefa.
-- `collect_evidences(session, task_id) → list[dict]` — Lê as evidências de verificação da tarefa (verificador, passou, resumo, detalhe).
+- `collect_evidences(session, task_id) → list[dict]` — Lê as evidências de verificação da tarefa em ordem de criação (verificador, passou, resumo, detalhe).
 - `consolidate_parent(session, parent_id) → dict | None` — Se todos os filhos estão em estado terminal, grava no pai um relatório (`achieved`, resumo por filho, evidências, `pending` e, se houver, `final_answer` e fontes). O pai só vai a COMPLETED (por transições válidas) se todo filho não cancelado concluiu com evidência; filho concluído sem evidência é reaberto e o pai volta a PLANNING; filho falho deixa o pai como está, para o runner replanejar ou parar. Saída: o relatório, ou `None` se ainda há filhos ativos.
 - `superseded(task) → bool` — Etapa parada que um replanejamento já substituiu (`superseded_by_replan`).
 - `settled(task) → bool` — Filho que não impede o pai: concluído, cancelado ou falho substituído.
 - `pending_reason(task) → str` — Motivo de uma pendência: detalhe da última falha, `blocked_reason` ou o status.
 - `_walk(ts, task_id, path, reason=None) → None` — Aplica uma sequência de transições de status.
-- `verification_evidence_ok(session, task) → bool` — Verdadeiro se a tarefa não exige verificação ou tem ao menos uma evidência aprovada.
+- `verification_spec(task) → dict | None` — Verificação declarada da tarefa ou a implícita que já rodou (`implicit_verification`).
+- `verification_evidence_ok(session, task) → bool` — Verdadeiro se a tarefa não tem verificação ou se a evidência mais recente passou e os arquivos que ela avaliou não mudaram (`is_current`).
 
 ### `src/agent/orchestrator/decomposition.py`
 
@@ -455,8 +456,9 @@ Grafo de conhecimento:
 
 - `_subtree_tasks(session, root_id) → list[TaskModel]` — Todas as tarefas descendentes da raiz (incluindo ela).
 - `ensure_global_verification_task(session, project_id, root) → TaskModel | None` — Se a raiz pede `global_verification` nos metadados, cria uma única subtarefa "Verificação global" (pytest por padrão) e reabre a raiz para planejamento.
-- `evaluate_global_acceptance(session, root_id) → tuple[bool, str]` — Aprova o objetivo se a raiz terminou, toda verificação concluída tem evidência aprovada e a consolidação não marcou falha. Saída: ok e motivo.
-- `reopen_verification_gaps(session, root_id) → list[uuid]` — Reabre para nova tentativa as verificações concluídas sem evidência aprovada (e o pai delas, de volta a PLANNING). Saída: ids reabertos.
+- `evaluate_global_acceptance(session, root_id) → tuple[bool, str]` — Aprova o objetivo se a raiz terminou, toda verificação concluída (declarada ou implícita) tem evidência válida e atual e a consolidação não marcou falha. Saída: ok e motivo.
+- `_gap_failure(session, task) → Failure` — Motivo da reabertura: `stale_evidence` (arquivos mudaram depois da verificação) ou `verification_failed` (sem evidência válida).
+- `reopen_verification_gaps(session, root_id) → list[uuid]` — Reabre as verificações concluídas sem evidência válida, gravando o motivo em `last_failure`/`failures`: desatualizada volta a VERIFYING (verifica o estado atual antes de refazer), sem evidência vai a RETRY_PENDING; o pai concluído volta a PLANNING. Evidência antiga não é apagada. Saída: ids reabertos.
 
 ### `src/agent/orchestrator/planner.py`
 
@@ -498,7 +500,7 @@ Grafo de conhecimento:
   - `RunOrchestrator._stall_run(run, root, reason) → dict` — Nada pode avançar e o objetivo não foi cumprido (o motivo inclui as recusas de replanejamento): run vai a `failed`, raiz a BLOCKED (recuperável), relatório com `achieved=False`, `pending` e mensagem "Não concluído"; evento `run.stalled`; ação `run_stalled`.
   - `RunOrchestrator._ensure_final_message(root) → None` — Garante `final_answer` no relatório da raiz: copia a do filho de resposta final ou compõe um Markdown com as etapas.
   - `RunOrchestrator._execute_task(run, project, task, config, work_root=None) → dict` — Executa a tarefa RUNNING conforme o metadado: ferramenta MCP, resposta final, operação de modelo (gera JSON e aplica `edit_file`/`write_file`, com streaming opcional), ferramenta comum (com detecção de laço), verificação ou consolidação de pai (folha com metadados mas sem ação vira operação de modelo, em vez de concluir sem fazer nada; pai com filho falho vai a BLOCKED com `dependency_failed`); respeita limite de tentativas e registra tentativas. Saída: ação do passo.
-  - `RunOrchestrator._finalize_verification(run, project, task, work_root=None, implicit_spec=None) → dict` — Roda a verificação declarada da tarefa ou, para escrita do modelo sem verificação declarada, a implícita (`file_contains` com o que foi gravado), grava a tentativa (com falha categorizada) e a evidência ligada a ela (`attempt_id`); aprovada conclui e consolida o pai, reprovada vai para nova tentativa (ou bloqueia se repetir), inconclusiva bloqueia. Sem verificação nenhuma (leitura), apenas conclui.
+  - `RunOrchestrator._finalize_verification(run, project, task, work_root=None, implicit_spec=None) → dict` — Roda a verificação declarada da tarefa ou, para escrita do modelo sem verificação declarada, a implícita (`file_contains` com o que foi gravado), grava a tentativa (com falha categorizada) e a evidência ligada a ela (`attempt_id`) com a impressão digital dos arquivos avaliados (`detail.artifacts`); a implícita fica em `metadata.implicit_verification`; aprovada conclui e consolida o pai, reprovada vai para nova tentativa (ou bloqueia se repetir), inconclusiva bloqueia. Sem verificação nenhuma (leitura), apenas conclui.
   - `RunOrchestrator._note_thought(run, task, text, *, phase='thinking') → None` — Grava um evento `agent.thought` e faz commit para a interface mostrar o andamento durante a inferência.
   - `RunOrchestrator._context_overflow(run, project, task, provider_name, profile, exc) → dict` — Contexto obrigatório não coube nem compactado: registra tentativa falha `context_budget` com o snapshot, explica qual parte pesa mais e bloqueia a tarefa (`blocked_context`), sem chamar o modelo.
   - `RunOrchestrator._remember_failure(task, failure) → dict` — Guarda a falha categorizada em `metadata_json.last_failure` e nas últimas 5 de `failures`, para a próxima tentativa e o replanejamento lerem.
@@ -1014,7 +1016,17 @@ Grafo de conhecimento:
 
 ### `src/agent/verification/README.md`
 
-**Propósito:** índice do pacote, destacando que sucesso exige evidência (pytest, file_contains). **Quando/onde:** documentação.
+**Propósito:** índice do pacote, destacando que sucesso exige evidência (verificadores do `runner.py` e impressão digital do `fingerprint.py`). **Quando/onde:** documentação.
+
+### `src/agent/verification/fingerprint.py`
+
+**Propósito:** impressão digital dos arquivos que uma verificação avaliou. **Por quê:** evidência só vale para o estado em que foi produzida; se o arquivo muda (edição externa, retomada), ela fica desatualizada. **Quando/onde:** `orchestrator/runner._finalize_verification` grava a impressão na evidência; `consolidation.verification_evidence_ok` e `global_verify` conferem.
+
+- `artifact_paths(spec, tool_args=None) → list[str]` — Caminhos de que a verificação depende: arquivo do `file_contains`/`script`, pasta do `pytest`/`command`; vazio para `stages` e manual.
+- `_files(base, rel) → list[Path]` — Arquivos sob um caminho (até 2000), sem `.git`, venvs, caches, `node_modules`, bancos SQLite e `.pyc`.
+- `fingerprint(root, paths) → str` — SHA-256 de nomes e conteúdo (tamanho e data acima de 2 MB); arquivo ausente entra como ausente.
+- `snapshot(root, spec, tool_args=None) → dict | None` — `{root, paths, fingerprint}` para guardar em `detail_json.artifacts`; `None` se a verificação não depende de arquivo.
+- `is_current(artifacts) → bool` — Recalcula e compara; evidência sem impressão continua válida.
 
 ### `src/agent/verification/runner.py`
 
@@ -1212,6 +1224,7 @@ Grafo de conhecimento:
 - `tests/test_proportional_verification.py` — Escrita sem verificação declarada ganha `file_contains` implícito com evidência ligada à tentativa; etapa sem ação executa em vez de concluir em silêncio.
 - `tests/test_functional_depth.py` — Profundidade funcional: etapa na profundidade 7 ainda é decomposta; objetivo igual ao de um ancestral e orçamento de tarefas do run acionam a proteção contra recursão (`recursion_guard`) e a etapa é executada sem nova divisão.
 - `tests/test_sufficient_context.py` — Contexto suficiente: arquivo citado entra com o conteúdo exato (fora da raiz e inexistente não), contrato, objetivo da raiz e resultado da dependência chegam à operação, compactação não altera `arquivos-alvo`.
+- `tests/test_resume_integrity.py` — Retomada: impressão digital segue o conteúdo e ignora o banco; run continua depois de reabrir o banco e conclui; mudança externa torna a evidência desatualizada (aceitação recusa, tarefa reabre com `stale_evidence`, nada apagado); evidência reprovada mais recente vence uma aprovada antiga; evidência desatualizada é reverificada sem chamar o modelo.
 - `tests/test_retry_strategy.py` — Nova tentativa: motivo e instrução no prompt, nenhum prompt repetido (bloqueia com `repeated_prompt`), resposta cortada dobra o limite de saída, saída da verificação no detalhe da falha.
 - `tests/test_diff_resume_browser.py` — Diff unificado (`tools/diffing.py`), `edit_file` devolvendo diff, resumo de retomada (`build_resume_brief`) e ferramenta de navegador (proteção de URL, parse de resultados, desligada até ser habilitada).
 - `tests/test_e2e_orchestrator.py` — Fluxo ponta a ponta com mock: o `RunOrchestrator` corrige `calc.py` da fixture `sample_project` e passa na verificação.

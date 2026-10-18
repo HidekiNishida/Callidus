@@ -14,7 +14,7 @@ O orquestrador decompõe só o necessário, monta contexto suficiente por opera�
 
 ## Próxima ação
 
-Unidade 10: retomada revalida arquivos (impressão digital) antes de confiar em evidência ou repetir operação.
+Unidade 11: métricas de progresso verificável e cenários ponta a ponta (1, 4, 5, 20).
 
 ## Diagnóstico (fase A — evidências)
 
@@ -64,7 +64,8 @@ Unidade 10: retomada revalida arquivos (impressão digital) antes de confiar em 
 - [x] Unidade 5: arquivos-alvo com conteúdo exato, contrato, objetivo global e resultados das dependências no contexto
 - [x] Unidade 9: verificação implícita para escrita, etapa sem ação executa, inconclusivo nunca aprova, evidência com `attempt_id`
 - [x] Unidade 7: `_recursion_guard` (objetivo/título repetido acima, `max_tree_depth`, `max_tasks_per_run`) separado da decisão de dividir; corte fixo removido
-- [ ] Unidades 10, 11
+- [x] Unidade 10: impressão digital na evidência (`verification/fingerprint.py`), só a evidência mais recente e atual vale, `stale_evidence` reabre em VERIFYING (reverifica antes de refazer), retomada após reabrir o banco
+- [ ] Unidade 11
 - [ ] Escolher dimensões de teste aplicáveis ([validacoes-testes.md](/docs/regras/validacoes-testes.md))
 - [ ] Verificação final: código ↔ docs ↔ checklists ↔ regras ([verificacao-final.md](/docs/regras/verificacao-final.md))
 - [ ] Marcar estado como `concluída` e listar artefatos
@@ -87,10 +88,11 @@ Unidade 10: retomada revalida arquivos (impressão digital) antes de confiar em 
 | `/tests/test_proportional_verification.py` | testes da unidade 9 (cenários 11, 12) |
 | `/tests/test_sufficient_context.py` | testes da unidade 5 (cenário 9) |
 | `/tests/test_functional_depth.py` | testes da unidade 7 (cenários 2, 3, 14) |
+| `/tests/test_resume_integrity.py` | testes da unidade 10 (cenários 15, 16) |
 | `/tests/test_run_termination.py` | testes da unidade 8 (cenários 6, 17, 18) |
 | `/docs/architecture/context-builder.md` | estouro e compactação |
 | `/docs/architecture/execucao-autonoma.md` | seção Falhas categorizadas |
 
 ## Notas de retomada
 
-Baseline após unidade 7: 137 passam, 0 falham. Cenários numerados = seção 12 do pedido.
+Baseline após unidade 10: 142 passam, 0 falham. Cenários numerados = seção 12 do pedido.
