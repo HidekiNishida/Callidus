@@ -23,6 +23,7 @@ async def run_verification(
     *,
     project_root: str,
     spec: dict[str, Any],
+    tool_args: dict[str, Any] | None = None,
     approved: bool = False,
 ) -> VerificationResult:
     vtype = spec.get("type") or spec.get("verification")
@@ -52,7 +53,8 @@ async def run_verification(
         return VerificationResult("pytest", False, "pytest falhou", out)
 
     if vtype in {"script", "run_script"}:
-        out = await tools.execute("run_script", ctx, {"path": spec.get("path", "")}, approved=approved)
+        path = spec.get("path") or (tool_args.get("path") if tool_args else "")
+        out = await tools.execute("run_script", ctx, {"path": path}, approved=approved)
         passed = bool(out.get("success"))
         return VerificationResult(
             "script",

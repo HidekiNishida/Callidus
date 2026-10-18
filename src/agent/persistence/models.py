@@ -113,6 +113,22 @@ class ExecutionRunModel(Base):
     )
 
 
+class ScheduledRunModel(Base):
+    __tablename__ = "scheduled_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    cron_expression: Mapped[str] = mapped_column(String(100), nullable=False)  # ex: "0 10 * * 1" para toda segunda às 10h
+    config_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    enabled: Mapped[bool] = mapped_column(default=False)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class OperationAttemptModel(Base):
     __tablename__ = "operation_attempts"
 

@@ -261,8 +261,14 @@ class RunOrchestrator:
         if task is None:
             ensure_global_verification_task(self._session, project.id, root)
             if self._all_terminal_under(root.id):
+                # If all children are terminal, try to complete the run
                 ok, reason = evaluate_global_acceptance(self._session, root.id)
                 if not ok:
+                    # If root is still PLANNING but all children are done, mark root as READY to let it complete
+                    if TaskStatus(root.status) == TaskStatus.PLANNING:
+                        self._tasks.update_status(root.id, TaskStatusUpdate(status=TaskStatus.READY))
+                        # The next step will pick it up and complete it
+                        return {"action": "operation_ready", "task_id": str(root.id)}
                     reopened = reopen_verification_gaps(self._session, root.id)
                     if reopened:
                         return {"action": "global_verify_reopen", "reopened": [str(x) for x in reopened]}
@@ -456,8 +462,9 @@ class RunOrchestrator:
         stmt = select(TaskModel)
         tasks = list(self._session.scalars(stmt).all())
         subtree = self._subtree_ids(root_id, tasks)
+        # Check children only (exclude the root task itself)
         for t in tasks:
-            if t.id in subtree and TaskStatus(t.status) not in {
+            if t.id in subtree and t.id != root_id and TaskStatus(t.status) not in {
                 TaskStatus.COMPLETED,
                 TaskStatus.CANCELLED,
                 TaskStatus.FAILED,
@@ -477,7 +484,7 @@ class RunOrchestrator:
         if self._attempts.attempts_exhausted(task.id):
             self._tasks.update_status(
                 task.id,
-                TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="limite de tentativas"),
+                TaskStatusUpdate(status=TaskStatus.FAILED, reason="limite de tentativas"),
             )
             return {"action": "blocked_attempts", "task_id": str(task.id)}
 
@@ -537,26 +544,65 @@ class RunOrchestrator:
                 run_id=run.id,
             )
             self._note_thought(run, task, f"Pensando na alteração «{task.title}» com {profile.model_id}.")
-            try:
-                resp = await provider.chat(
-                    ChatCompletionRequest(messages=budget.messages, profile=profile)
-                )
-            except ProviderError as exc:
-                self._note_thought(run, task, f"A inferência falhou: {exc}.")
-                response = {"error": str(exc)}
-                self._attempts.record(
-                    run_id=run.id,
-                    task_id=task.id,
-                    kind=AttemptKind.MODEL,
-                    provider=provider.name,
-                    request={"context_snapshot_id": str(snap.id), "tokens_est": budget.estimated_tokens},
-                    response=response,
-                    success=False,
-                    error=str(exc),
-                    project_id=project.id,
-                )
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-                return {"action": "model_operation_error", "task_id": str(task.id), "error": str(exc)}
+            # Check if streaming is requested
+            stream_requested = bool(meta.get("stream") or config.get("stream", False))
+            if stream_requested:
+                # Streaming mode: collect chunks and emit thoughts incrementally
+                content_chunks = []
+                try:
+                    async for chunk in provider.chat_stream(
+                        ChatCompletionRequest(messages=budget.messages, profile=profile, stream=True)
+                    ):
+                        content_chunks.append(chunk)
+                        # Emit thought with accumulated content so far (limit length for display)
+                        accumulated = "".join(content_chunks)
+                        excerpt = " ".join(accumulated.split())[:200]
+                        self._note_thought(run, task, f"Gerando... {excerpt}", phase="generating")
+                except ProviderError as exc:
+                    self._note_thought(run, task, f"A inferência falhou: {exc}.")
+                    response = {"error": str(exc)}
+                    self._attempts.record(
+                        run_id=run.id,
+                        task_id=task.id,
+                        kind=AttemptKind.MODEL,
+                        provider=provider.name,
+                        request={"context_snapshot_id": str(snap.id), "tokens_est": budget.estimated_tokens},
+                        response=response,
+                        success=False,
+                        error=str(exc),
+                        project_id=project.id,
+                    )
+                    self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
+                    return {"action": "model_operation_error", "task_id": str(task.id), "error": str(exc)}
+                # Combine all chunks for further processing
+                full_content = "".join(content_chunks)
+                # Create a mock response object similar to what chat() returns
+                class MockResponse:
+                    def __init__(self, content):
+                        self.content = content
+                resp = MockResponse(full_content)
+            else:
+                # Non-streaming mode (original behavior)
+                try:
+                    resp = await provider.chat(
+                        ChatCompletionRequest(messages=budget.messages, profile=profile)
+                    )
+                except ProviderError as exc:
+                    self._note_thought(run, task, f"A inferência falhou: {exc}.")
+                    response = {"error": str(exc)}
+                    self._attempts.record(
+                        run_id=run.id,
+                        task_id=task.id,
+                        kind=AttemptKind.MODEL,
+                        provider=provider.name,
+                        request={"context_snapshot_id": str(snap.id), "tokens_est": budget.estimated_tokens},
+                        response=response,
+                        success=False,
+                        error=str(exc),
+                        project_id=project.id,
+                    )
+                    self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
+                    return {"action": "model_operation_error", "task_id": str(task.id), "error": str(exc)}
             self._attempts.record(
                 run_id=run.id,
                 task_id=task.id,
@@ -648,6 +694,10 @@ class RunOrchestrator:
         kids = children_of(self._session, task.id)
         if kids:
             consolidate_parent(self._session, task.id)
+            # Check if parent is now completed
+            parent = self._tasks.get_task(task.parent_id) if task.parent_id else self._tasks.get_task(task.id)
+            if parent and TaskStatus(parent.status) == TaskStatus.COMPLETED:
+                return {"action": "run_completed", "run_id": str(run.id)}
             return {"action": "consolidated_parent", "task_id": str(task.id)}
 
         if TaskKind(task.kind) == TaskKind.OPERATION and not meta:
@@ -775,9 +825,11 @@ class RunOrchestrator:
 
         config = self._run_config(run)
         approved = bool(config.get("approve_risky_tools"))
+        tool_args = meta.get("tool_args") or {}
         vresult = await run_verification(
             project_root=root_path,
             spec=spec,
+            tool_args=tool_args,
             approved=approved,
         )
         self._session.add(

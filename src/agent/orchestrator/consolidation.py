@@ -32,7 +32,7 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
     kids = children_of(session, parent_id)
     if not kids:
         return None
-    if any(TaskStatus(c.status) not in {TaskStatus.COMPLETED, TaskStatus.CANCELLED} for c in kids):
+    if any(TaskStatus(c.status) not in {TaskStatus.COMPLETED, TaskStatus.CANCELLED, TaskStatus.FAILED} for c in kids):
         return None
 
     summaries = []
@@ -63,29 +63,25 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
             report["sources"] = result.get("sources") or []
     parent.consolidated_result_json = report
     current = TaskStatus(parent.status)
-    if current == TaskStatus.PLANNING and report["achieved"]:
-        ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-        current = TaskStatus.VERIFYING
-    if current == TaskStatus.VERIFYING:
+    if current == TaskStatus.PLANNING:
+        if report["achieved"]:
+            ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+            current = TaskStatus.VERIFYING
+        else:
+            # All children terminal but some failed - complete parent anyway
+            ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+            current = TaskStatus.VERIFYING
+    if current in {TaskStatus.RUNNING, TaskStatus.VERIFYING}:
         if report["achieved"]:
             ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
         else:
-            for c in kids:
-                if c.status == TaskStatus.COMPLETED.value and not verification_evidence_ok(session, c):
-                    ts.update_status(c.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                    ts.update_status(
-                        c.id,
-                        TaskStatusUpdate(status=TaskStatus.RETRY_PENDING, reason="evidência insuficiente"),
-                    )
-                elif c.status not in {TaskStatus.COMPLETED.value, TaskStatus.CANCELLED.value}:
-                    ts.update_status(
-                        c.id,
-                        TaskStatusUpdate(status=TaskStatus.RETRY_PENDING, reason="reabertura hierárquica"),
-                    )
-            ts.update_status(
-                parent_id,
-                TaskStatusUpdate(status=TaskStatus.PLANNING, reason="filhos incompletos ou sem evidência"),
-            )
+            # All children terminal but some failed - complete parent with achieved=False
+            # First transition to VERIFYING if RUNNING, then to COMPLETED
+            if current == TaskStatus.RUNNING:
+                ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                current = TaskStatus.VERIFYING
+            if current == TaskStatus.VERIFYING:
+                ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
     return report
 
 

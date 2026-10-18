@@ -27,6 +27,7 @@ class ChatCompletionRequest(BaseModel):
     messages: list[ChatMessage]
     profile: ModelProfile
     response_format: dict[str, Any] | None = None
+    stream: bool = False
 
 
 class ChatCompletionResponse(BaseModel):
@@ -50,3 +51,9 @@ class LLMProvider(ABC):
     @abstractmethod
     async def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         raise NotImplementedError
+
+    async def chat_stream(self, request: ChatCompletionRequest):
+        """Stream chat completion chunks. Default implementation falls back to chat."""
+        # Non-streaming provider: yield the whole response as one chunk.
+        response = await self.chat(request)
+        yield response.content or ""

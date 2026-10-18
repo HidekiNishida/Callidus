@@ -91,3 +91,24 @@ class OllamaProvider(LLMProvider):
 
         remember_usage(self, response.prompt_tokens_estimate, response.completion_tokens_estimate)
         return response
+
+    async def chat_stream(self, request: ChatCompletionRequest):
+        url = f"{self._base_url}/api/chat"
+        body = chat_body(request)
+        body["stream"] = True
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                async with client.stream("POST", url, json=body) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if line:
+                            import json
+                            data = json.loads(line)
+                            if data.get("done"):
+                                break
+                            chunk = data.get("message", {})
+                            content = chunk.get("content", "")
+                            if content:
+                                yield content
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"Falha na inferência Ollama (stream): {inference_failure_text(exc)}") from exc

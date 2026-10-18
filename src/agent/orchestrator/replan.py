@@ -87,7 +87,7 @@ def replan_parent(session: Session, parent: TaskModel) -> dict | None:
             SubTaskSpec(
                 title="Seguir com o plano corrigido",
                 objective=objective,
-                metadata={"model_operation": True, "atomic": True, "replan": True},
+                metadata={"atomic": True, "replan": True},
                 depends_on_indices=[0],
             ),
         ]

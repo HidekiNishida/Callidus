@@ -56,6 +56,7 @@ from agent.providers.llamacpp import LlamaCppProvider
 from agent.providers.ollama import OllamaProvider
 from agent.services.contract_service import ContractService
 from agent.services.autonomous_worker import enable_autonomous_on_run, start_background_worker, stop_background_worker
+from agent.services.scheduler import start_scheduler, stop_scheduler
 from agent.services.metrics_service import MetricsService
 from agent.i18n.locale import detect_language, translate
 from agent.memory.store import extract_memory_request
