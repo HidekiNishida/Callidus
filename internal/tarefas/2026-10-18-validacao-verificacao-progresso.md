@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |-------|-------|
-| Estado | em andamento |
+| Estado | concluída |
 | Criado em | 2026-10-18 |
 | Atualizado em | 2026-10-18 |
 | Agente / tarefa | Mecanismos A (plano), B (verificação), C (progresso) — fases A–G |
@@ -15,7 +15,7 @@ Validar o plano antes de executá-lo (cobertura de requisitos e integridade estr
 
 ## Próxima ação
 
-Unidade 6: métricas de requisitos, estagnação e pausas; cenários 26, 27 e o ponta a ponta 30 (várias etapas, uma correção, aceite global verificado); verificação final.
+Nenhuma: evolução concluída. Melhorias possíveis estão em "Limitações e casos inconclusivos" do [documento](/docs/architecture/requisitos-verificacao-progresso.md#limitações-e-casos-inconclusivos).
 
 ## Diagnóstico (fase A — evidências)
 
@@ -68,9 +68,38 @@ Unidade 6: métricas de requisitos, estagnação e pausas; cenários 26, 27 e o 
 - [x] Unidade 3: evidência com estado, critério, comando, código de saída e motivo; sintaxe Python/JSON; verificação bloqueada (`VERIFYING → BLOCKED`) separada de reprovada; desatualizada marcada sem apagar; `file_contains` lê o arquivo inteiro (corrige falso reprovado com quebra final)
 - [x] Unidade 4: aceite global exige requisito obrigatório comprovado; etapa de verificação global cobre todos os requisitos; `correct_requirement_gaps` (Atender/Comprovar Rn, uma vez por requisito); relatório de requisitos na conclusão e na parada; corrigida a reabertura inválida COMPLETED → PLANNING em `ensure_global_verification_task`
 - [x] Unidade 5: `orchestrator/stagnation.py` (assinatura normalizada de erro e de estratégia, diagnóstico, limites do trecho atual), `_check_stagnation` (resposta em 10 passos: bloqueia, registra, diagnostica, replaneja ou pausa), `_pause_run`, limites em `Settings`/`config.limits`, `RunService.resume_run` e `POST /runs/{id}/resume`, replanejamento compara motivo normalizado; passo em run pausado não executa
-- [ ] Unidade 6
-- [ ] Verificação final: código ↔ docs ↔ checklists ↔ regras
-- [ ] Marcar estado como `concluída`
+- [x] Unidade 6: métricas `requirements`, `stagnation`, `pauses`, `resumes`, `artifacts_validated`; ponta a ponta com uma correção e aceite global; corrigido falso reprovado por bytecode antigo (`pytest` sem gravar `.pyc`; escrita de `.py` apaga o cache dele)
+- [x] Verificação final: código ↔ docs ↔ checklists ↔ regras (mapa de cenários e critérios abaixo; `resume.py check` limpo; 188 testes passam)
+- [x] Marcar estado como `concluída`
+
+## Cenários da seção 7 → testes
+
+| Cenários | Arquivo |
+|----------|---------|
+| 1–9 (validação do plano) | `tests/test_plan_validation.py` |
+| 10–14, 17, 29 (evidência, sintaxe, bloqueada, inconclusiva, desatualizada, ferramenta ≠ implementação) | `tests/test_independent_verification.py` |
+| 15, 24 (sucesso alegado sem evidência), 16, 28 (correção e reabertura localizadas), 18 (requisito pendente), 19 (integração reprovada), 23 (evidência válida) | `tests/test_global_acceptance.py`, `tests/test_independent_verification.py` (código inválido apesar de "pronto") |
+| 20 (mesmo erro), 21 (replanejamento sem menos pendências), 22 (estratégia diferente), 25 (limite com estado recuperável) | `tests/test_stagnation_limits.py`, `tests/test_retry_strategy.py` |
+| 26 (retomada após interrupção), 27 (alteração externa entre execução e retomada) | `tests/test_resume_integrity.py`, `tests/test_stagnation_limits.py` (pausa e retomada) |
+| 30 (ponta a ponta com correção e aceite global) | `tests/test_end_to_end_requirements.py` |
+
+## Critérios finais (seção 10) → evidência
+
+| Critério | Evidência |
+|----------|-----------|
+| Plano incompleto ou inconsistente identificado antes da execução | `validate_and_repair` ao decompor e `_revalidate_plan`; cenários 1–9 |
+| Requisitos rastreáveis após decomposições | ids estáveis no contrato, `covers` herdado e carregado no replanejamento; `test_requirements.py`, cenário 7 |
+| Cobertura obrigatória ausente impede falso sucesso global | `evaluate_global_acceptance` por requisito; cenários 18, 19 |
+| Evidência proporcional | verificação declarada ou implícita (conteúdo e sintaxe), pytest, comando; cenários 10–12 |
+| Afirmação do modelo não substitui verificação | cenários 11, 15, 24 |
+| Correção localizada | `reopen_verification_gaps`, `correct_requirement_gaps`; cenários 16, 28 |
+| Evidência invalidada não é reutilizada | `desatualizado` e `is_current`; cenários 17, 27 |
+| Repetição improdutiva detectada e estratégia alterada com justificativa | `_check_stagnation` com diagnóstico e replanejamento; cenários 20–22 |
+| Limites impedem loops sem destruir progresso | `limit_reached`, `_pause_run`, `resume_run`; cenário 25 |
+| Interrupção e retomada preservam integridade | cenários 26, 27 |
+| Testes de sucesso, falha, regressão e recuperação | 30 cenários mapeados acima |
+| Documentação corresponde ao comportamento | `docs/architecture/requisitos-verificacao-progresso.md`, `execucao-autonoma.md`, `maquina-estados.md`, `modelo-dados.md`; `resume.md` carimbado |
+| Ponta a ponta verificável com várias etapas | cenário 30 |
 
 ## Bloqueios
 
@@ -88,8 +117,9 @@ Unidade 6: métricas de requisitos, estagnação e pausas; cenários 26, 27 e o 
 | `/tests/test_global_acceptance.py` | testes da unidade 4 (cenários 15, 16, 18, 19, 23, 24, 28) |
 | `/src/agent/orchestrator/stagnation.py` | repetição, diagnóstico e limites |
 | `/tests/test_stagnation_limits.py` | testes da unidade 5 (cenários 20, 21, 22, 25) |
+| `/tests/test_end_to_end_requirements.py` | ponta a ponta (cenário 30) |
 | `/docs/architecture/requisitos-verificacao-progresso.md` | documento dos três mecanismos |
 
 ## Notas de retomada
 
-Após unidade 5: 186 passam, 0 falham. Cenários numerados = seção 7 do pedido.
+Após unidade 6: 188 passam, 0 falham. Cenários numerados = seção 7 do pedido.

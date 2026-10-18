@@ -89,6 +89,10 @@ Cada evento `orchestrator.action` grava `payload.progress`. `GET /runs/{id}/metr
 | `time` | início, último evento e duração |
 | `evidence` | aprovadas, reprovadas, inconclusivas, desatualizadas |
 | `progress` | estado atual, passos e chamadas de modelo desde o último progresso |
+| `requirements` | total, comprovados, ids sem comprovação, contagem por estado (o aceite por requisito; nenhuma pontuação o substitui) |
+| `stagnation` | estagnações detectadas, erros repetidos (mesma assinatura e estratégia), máximo de tentativas por estratégia, replanejamentos recusados |
+| `pauses`, `resumes` | motivo, limite e próxima ação de cada pausa; quantas retomadas |
+| `artifacts_validated` | arquivos cobertos por evidência aprovada e atual |
 
 ## Falhas categorizadas
 

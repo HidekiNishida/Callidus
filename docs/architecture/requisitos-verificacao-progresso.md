@@ -104,6 +104,8 @@ Quem executa não aprova o próprio resultado. A resposta do modelo ("pronto, co
 | `desatualizado` | mantém | deixa de valer; a tarefa reabre e verifica de novo |
 | não executado | — | requisito sem evidência (`pending`/`unverified` em `requirement_status`) |
 
+`pytest` roda sem gravar bytecode do projeto, e `write_file`/`edit_file` apagam o `.pyc` do arquivo `.py` reescrito: o cache é validado por data em segundos e tamanho, então uma versão antiga em cache poderia ser testada no lugar da nova.
+
 Nenhum resultado é inventado: sem execução não há linha de evidência. Evidência nunca é apagada. Só a mais recente vale, e só se passou, não foi marcada como desatualizada e os arquivos não mudaram.
 
 ## Aceite global por requisito
@@ -173,3 +175,35 @@ Passo em run pausado não faz nada (`run_paused`).
 - com `retry_blocked=true`, etapas bloqueadas voltam a `PLANNING` (depois de corrigida a causa de fora).
 
 O trabalho comprovado não é refeito. As evidências desatualizadas são reabertas no aceite global.
+
+## Ciclo integrado
+
+Não há um laço monolítico novo. Cada etapa do ciclo conceitual fica no componente que já tinha essa responsabilidade:
+
+| Etapas | Onde |
+|--------|------|
+| 1–2. Estado persistido, objetivo e critérios | `RunOrchestrator._step_body` lê do banco; `ensure_requirements` grava os requisitos na primeira passagem da raiz |
+| 3–4. Cobertura e integridade do plano; corrigir ou bloquear | `validate_and_repair` ao decompor; `_revalidate_plan` quando o plano muda |
+| 5–6. Tarefa elegível; atomicidade, contexto e contrato | `_pick_next_task`, `_recursion_guard`, orçamento de contexto, `ContractService.validate_for_run` |
+| 7–8. Executar; persistir resultado e tentativa | `_execute_task`, `AttemptService.record` |
+| 9–10. Verificar artefatos; evidências e requisitos | `_finalize_verification`, `requirement_status` |
+| 11–12. Progresso real; corrigir, replanejar ou pausar | `progress_state` em cada ação, `_check_stagnation`, `replan_under`, `limit_reached`/`_pause_run` |
+| 13–14. Dependências; consolidar | `dependencies_satisfied`, `consolidate_parent` |
+| 15–16. Aceite global; relatório fiel | `evaluate_global_acceptance`, `reopen_verification_gaps`, `correct_requirement_gaps`, relatório `requirements` na conclusão, na parada e na pausa |
+
+## Retomada e integridade
+
+- **Fonte de verdade.** O banco é a fonte de verdade: requisitos no contrato, cobertura e validação do plano nos metadados, versões do plano em `plan.validated`, evidências ligadas à tentativa (`attempt_id`), progresso em cada `orchestrator.action`. Nada depende da memória do modelo.
+- **Interrupção.** Cada passo grava tudo na mesma sessão. Interromper entre passos deixa o último estado consistente, e o passo seguinte recomeça da tarefa selecionada.
+- **Arquivos alterados.** Na retomada, a impressão digital dos arquivos (`verification/fingerprint.py`) mostra se uma evidência ainda vale. Se a evidência ficou desatualizada, ela é marcada, nunca apagada, e a tarefa volta a verificar antes de refazer qualquer coisa.
+- **Pausa e retomada.** A pausa por limite não muda tarefas. A retomada só reativa o run e reinicia o orçamento, e o que foi comprovado não é refeito. `apply_resume` (pedido de continuar pelo chat) reaproveita o run pausado.
+- **Repetir sem duplicar.** A correção por requisito é criada uma vez por requisito. A etapa de verificação global também é criada uma vez. Repetir uma escrita grava o mesmo conteúdo.
+
+## Limitações e casos inconclusivos
+
+- A derivação de requisitos é determinística e textual: itens enumerados do objetivo e dos critérios de aceite. Um pedido em prosa corrida vira um único requisito. O contrato pode declarar requisitos explícitos.
+- A evidência de mudança é proporcional, mas depende do que existe: sem testes no projeto, a escrita é aceita por conteúdo e sintaxe do arquivo, e nada garante o comportamento.
+- `acceptance_manual` e verificações sem resultado conclusivo nunca aprovam: a etapa fica bloqueada até alguém decidir.
+- A validação semântica do plano (o plano resolve o objetivo?) não é automática. Sem cobertura declarada, o veredito é `válido com ressalvas` ou `inconclusivo`, nunca `válido`.
+- Os tipos do diagnóstico de estagnação vêm da causa categorizada da falha. Uma causa desconhecida é tratada como implementação.
+- Os tokens do limite são os estimados do contexto enviado. A contagem informada pelo provedor aparece só nas métricas.

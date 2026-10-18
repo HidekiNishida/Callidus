@@ -57,7 +57,9 @@ class MetricsService:
     def run_metrics(self, run_id: uuid.UUID) -> dict | None:
         """Métricas de um run a partir do que já é persistido (tarefas, tentativas, eventos, snapshots,
         evidências). `progress` separa atividade de progresso: passos e chamadas de modelo desde a última
-        vez que o estado verificável melhorou (`orchestrator/progress.made_progress`)."""
+        vez que o estado verificável melhorou (`orchestrator/progress.made_progress`). `requirements` vem do
+        aceite por requisito; nenhuma pontuação agregada substitui esse aceite."""
+        from agent.orchestrator.global_verify import requirements_report
         from agent.orchestrator.progress import made_progress, subtree
 
         run = self._session.get(ExecutionRunModel, run_id)
@@ -118,6 +120,17 @@ class MetricsService:
         stale = sum(
             1 for e in evidences if e.passed is True and not _current(e)
         )
+        root = self._session.get(TaskModel, run.root_task_id)
+        reqs = requirements_report(self._session, root) if root is not None else []
+        failures = [f for t in tasks for f in ((t.metadata_json or {}).get("failures") or [])]
+        signatures = Counter((f.get("signature"), f.get("strategy")) for f in failures if f.get("signature"))
+        pauses = [e.payload_json or {} for e in events if e.event_type == "run.paused"]
+        artifacts = {
+            path
+            for e in evidences
+            if e.passed is True and _current(e)
+            for path in (((e.detail_json or {}).get("artifacts") or {}).get("paths") or [])
+        }
         started = _naive(run.created_at)
         finished = _naive(events[-1].created_at if events else run.updated_at)
         return {
@@ -156,6 +169,24 @@ class MetricsService:
                 "inconclusive": sum(1 for e in evidences if e.passed is None),
                 "stale": stale,
             },
+            "requirements": {
+                "total": len(reqs),
+                "satisfied": sum(1 for r in reqs if r["status"] == "satisfied"),
+                "unmet": [r["id"] for r in reqs if r["status"] not in {"satisfied", "não_aplicável", "informativo"}],
+                "by_status": dict(Counter(r["status"] for r in reqs)),
+            },
+            "stagnation": {
+                "detected": sum(1 for e in events if e.event_type == "run.stagnation"),
+                "repeated_errors": sum(n - 1 for n in signatures.values() if n > 1),
+                "max_attempts_per_strategy": max(signatures.values(), default=0),
+                "replans_refused": sum(1 for t in tasks if (t.metadata_json or {}).get("replan_refused")),
+            },
+            "pauses": [
+                {"reason": p.get("reason"), "limit": (p.get("limit") or {}).get("limit"), "next_action": p.get("next_action")}
+                for p in pauses
+            ],
+            "resumes": sum(1 for e in events if e.event_type == "run.resumed"),
+            "artifacts_validated": sorted(artifacts),
             "progress": {
                 "state": last_state,
                 "steps_since_progress": steps_since,

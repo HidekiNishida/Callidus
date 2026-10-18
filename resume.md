@@ -774,7 +774,7 @@ Grafo de conhecimento:
   - `MetricsService.__init__(session) → None` — Guarda a sessão.
   - `MetricsService._max_depth(tasks) → int` — Profundidade máxima da árvore de tarefas (níveis de subtarefas).
   - `MetricsService.project_metrics(project_id) → dict` — Devolve total de tarefas, tentativas, chamadas de modelo, tokens estimados de contexto e profundidade máxima.
-  - `MetricsService.run_metrics(run_id) → dict | None` — Métricas do run a partir de tarefas, tentativas, eventos, snapshots e evidências: `tree`, `decompositions`, `replans`, `attempts` (por tipo, máximo por tarefa, estratégias, repetições), `tokens`, `omitted_context`, `errors_by_category`, `time`, `evidence` (aprovadas, reprovadas, inconclusivas, desatualizadas) e `progress` (estado, passos e chamadas de modelo desde o último progresso). `None` se o run não existe.
+  - `MetricsService.run_metrics(run_id) → dict | None` — Métricas do run a partir de tarefas, tentativas, eventos, snapshots e evidências: `tree`, `decompositions`, `replans`, `attempts` (por tipo, máximo por tarefa, estratégias, repetições), `tokens`, `omitted_context`, `errors_by_category`, `time`, `evidence` (aprovadas, reprovadas, inconclusivas, desatualizadas), `requirements` (total, comprovados, sem comprovação, por estado), `stagnation` (detecções, erros repetidos, máximo por estratégia, replanejamentos recusados), `pauses`, `resumes`, `artifacts_validated` e `progress` (estado, passos e chamadas de modelo desde o último progresso). `None` se o run não existe.
   - `MetricsService._model_calls_since_progress(attempts, events) → int` — Chamadas de modelo depois do último evento em que `made_progress` foi verdadeiro.
 - `_naive(moment)` — Remove o fuso para comparar datas lidas do SQLite (sem fuso) com as ainda em memória (UTC).
 - `_current(evidence) → bool` — Se a evidência ainda vale para os arquivos atuais (`fingerprint.is_current`).
@@ -1063,7 +1063,8 @@ Grafo de conhecimento:
 - `_argv(command) → list[str] | None` — Normaliza o comando (string ou lista) em argv.
 - `_browser(ctx, args) → dict` — Ferramenta `browser`: pesquisa (`search`) ou ações de navegação conforme o modo do compositor (`off`, invisível ou visível).
 - `_delete_file(ctx, args) → dict` — Ferramenta `delete_file` (exige aprovação): apaga um arquivo do projeto.
-- `_edit_file(ctx, args) → dict` — Ferramenta `edit_file`: substitui um trecho único (ou todos, com `replace_all`) e devolve o diff; aceita nomes alternativos de argumentos.
+- `_edit_file(ctx, args) → dict` — Ferramenta `edit_file`: substitui um trecho único (ou todos, com `replace_all`) e devolve o diff; aceita nomes alternativos de argumentos; apaga o bytecode antigo do `.py` editado.
+- `_drop_stale_bytecode(path) → None` — Ao reescrever um `.py`, apaga os `.pyc` dele em `__pycache__` (o cache é validado por data em segundos e tamanho e poderia ser testado no lugar da versão nova).
 - `_git_diff(ctx, args) → dict` — Ferramenta `git_diff`: `git diff` do projeto (opções `stat`, `staged`, `path`), saída limitada.
 - `_git_status(ctx, args) → dict` — Ferramenta `git_status`: `git status --short`.
 - `_glob_files(ctx, args) → dict` — Ferramenta `glob_files`: encontra arquivos por padrão glob dentro do projeto.
@@ -1076,12 +1077,12 @@ Grafo de conhecimento:
 - `_root(ctx) → Path` — Raiz absoluta do projeto.
 - `_run_command(ctx, args) → dict` — Ferramenta `run_command` (exige aprovação): executa um processo com timeout e devolve código de saída, stdout e stderr. `python` ausente do PATH vira o interpretador de `python_for`; executável inexistente volta como erro com `category: "configuration"`, sem derrubar o passo.
 - `python_for(project_root) → str` — Escolhe o interpretador Python: o `.venv`/`venv` do projeto, se existir, senão o que roda o agente.
-- `_run_pytest(ctx, args) → dict` — Ferramenta `run_pytest`: roda `pytest -q` com o interpretador de `python_for` num caminho do projeto.
+- `_run_pytest(ctx, args) → dict` — Ferramenta `run_pytest`: roda `pytest -q` com o interpretador de `python_for` num caminho do projeto, sem gravar bytecode nem cache do pytest.
 - `_run_script(ctx, args) → dict` — Ferramenta `run_script` (exige aprovação): executa um `.py` do projeto, ajustando `PYTHONPATH` para testes em `tests/`.
 - `_search_grep(ctx, args) → dict` — Ferramenta `search_grep`: busca por regex em arquivos de texto, até 100 ocorrências.
 - `_skipped(rel) → bool` — Indica se o caminho está numa pasta ignorada (`.git`, `node_modules`, `.venv`…).
 - `_system_info(ctx, args) → dict` — Ferramenta `system_info`: sistema operacional, data/hora, usuário, pasta pessoal e workspace.
-- `_write_file(ctx, args) → dict` — Ferramenta `write_file`: grava um arquivo (cria pastas) e devolve o diff.
+- `_write_file(ctx, args) → dict` — Ferramenta `write_file`: grava um arquivo (cria pastas), apaga o bytecode antigo se for `.py` e devolve o diff.
 - `register_all(registry) → None` — Registra no `ToolRegistry` as 17 ferramentas com seus `ToolSpec` (descrição, schema e necessidade de aprovação).
 
 ### `src/agent/tools/diffing.py`
@@ -1323,6 +1324,7 @@ Grafo de conhecimento:
 - `tests/test_independent_verification.py` — Evidência independente: testes aprovados gravam estado, código de saída, comando, critério e artefatos; testes reprovados pedem correção; sintaxe determinística; código inválido pego pelo verificador apesar de o modelo dizer "pronto"; executável ausente e comando sem aprovação bloqueiam sem culpar o código; inconclusivo nunca aprova; mudança posterior marca a evidência como desatualizada sem apagar.
 - `tests/test_plan_validation.py` — Validação do plano: cobertura integral válida; requisito sem responsável corrigido com `Atender Rn`; etapa sem critério verificável; dependências circulares, inexistentes e para si mesma removidas e registradas; dependência em tarefa cancelada; dependência externa identificada sem impedir a execução; decomposição que tenta perder requisito herdado; cobertura não comprovada é inconclusiva; replanejamento carrega requisitos; plano alterado é revalidado; plano sem correção bloqueia sem executar nada.
 - `tests/test_requirements.py` — Requisitos: itens do objetivo e critérios viram requisitos, ids gravados uma vez e estáveis, cobertura herdada e parcial, estado por cobertura e evidência, resposta final não atende requisito de mudança mas atende pergunta, aplicabilidade não obrigatória preservada.
+- `tests/test_end_to_end_requirements.py` — Ponta a ponta: objetivo com dois requisitos, três etapas e verificação global; a primeira versão de `calc.py` reprova no pytest, a nova tentativa leva o motivo e corrige; README passa pela verificação implícita com sintaxe; o run conclui com os dois requisitos comprovados, evidência reprovada e depois aprovada, e métricas coerentes.
 - `tests/test_progress_metrics.py` — Progresso é trabalho verificado e não atividade; pergunta simples sem decomposição excessiva; objetivo de várias etapas ponta a ponta com métricas (e rota `/runs/{id}/metrics`); irmã independente segue enquanto a dependente espera; chamadas de modelo sem trabalho verificado não contam como progresso.
 - `tests/test_functional_depth.py` — Profundidade funcional: etapa na profundidade 7 ainda é decomposta; objetivo igual ao de um ancestral e orçamento de tarefas do run acionam a proteção contra recursão (`recursion_guard`) e a etapa é executada sem nova divisão.
 - `tests/test_sufficient_context.py` — Contexto suficiente: arquivo citado entra com o conteúdo exato (fora da raiz e inexistente não), contrato, objetivo da raiz e resultado da dependência chegam à operação, compactação não altera `arquivos-alvo`.
@@ -1347,7 +1349,7 @@ Grafo de conhecimento:
 - `tests/test_persistence.py` — Persistência SQLite: árvore de tarefas sobrevive à reabertura, transição inválida rejeitada, ciclo de dependência bloqueado e caminho feliz até `COMPLETED`.
 - `tests/test_resume.py` — `scripts/resume.py`: extração de símbolos Python/JS, pastas colapsadas no inventário, detecção de itens sem descrição dentro da seção do arquivo (sem aceitar prefixos), recorte de seções e comportamento do hook do Cursor.
 - `tests/test_state_machine.py` — `domain/state_machine.py`: transições permitidas e proibidas de `TaskStatus`.
-- `tests/test_tools.py` — Ferramentas de arquivo: leitura/escrita e bloqueio de path traversal (`resolve_under_root`).
+- `tests/test_tools.py` — Ferramentas de arquivo: leitura/escrita, reescrever `.py` apaga só o bytecode dele, bloqueio de path traversal (`resolve_under_root`).
 
 ## `tests/fixtures/`
 

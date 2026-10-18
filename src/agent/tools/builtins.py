@@ -153,6 +153,7 @@ async def _write_file(ctx: ToolContext, args: dict) -> dict:
     before = full.read_text(encoding="utf-8", errors="replace") if full.is_file() else ""
     full.parent.mkdir(parents=True, exist_ok=True)
     full.write_text(content, encoding="utf-8")
+    _drop_stale_bytecode(full)
     diff = unified_diff_text(str(path), before, content)
     return {"success": True, "path": path, "bytes": len(content.encode("utf-8")), **diff}
 
@@ -346,6 +347,7 @@ async def _edit_file(ctx: ToolContext, args: dict) -> dict:
         return {"success": False, "error": f"trecho ambíguo ({count} vezes); use replace_all ou um trecho único"}
     updated = content.replace(old, new) if args.get("replace_all") else content.replace(old, new, 1)
     full.write_text(updated, encoding="utf-8")
+    _drop_stale_bytecode(full)
     diff = unified_diff_text(str(raw), content, updated)
     return {
         "success": True,
@@ -432,19 +434,32 @@ async def _run_script(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _run_pytest(ctx: ToolContext, args: dict) -> dict:
+    """Sem gravar bytecode do projeto: um `.pyc` gravado aqui poderia, depois de o arquivo ser reescrito
+    com o mesmo tamanho no mesmo segundo, ser testado no lugar da versão nova."""
     target = args.get("path", ".")
     try:
         target_path = resolve_under_root(ctx.project_root, target)
     except PathSecurityError as exc:
         return {"success": False, "error": str(exc)}
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     return await _run_command(
         ctx,
         {
-            "command": [python_for(ctx.project_root), "-m", "pytest", "-q", str(target_path)],
+            "command": [python_for(ctx.project_root), "-m", "pytest", "-q", "-p", "no:cacheprovider", str(target_path)],
             "cwd": ctx.project_root,
+            "env": env,
             "timeout": args.get("timeout", 180),
         },
     )
+
+
+def _drop_stale_bytecode(path: Path) -> None:
+    """O `.pyc` é validado por data em segundos e tamanho; ao reescrever um `.py`, o cache dele sai."""
+    if path.suffix != ".py":
+        return
+    for cached in (path.parent / "__pycache__").glob(f"{path.stem}.*.pyc"):
+        cached.unlink(missing_ok=True)
 
 
 def register_all(registry: ToolRegistry) -> None:
