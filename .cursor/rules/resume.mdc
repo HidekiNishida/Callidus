@@ -1,0 +1,22 @@
+---
+description: Manter o resume.md sincronizado com o código a cada tarefa
+alwaysApply: true
+---
+
+# resume.md — resumo vivo do projeto
+
+`resume.md` (raiz) resume o projeto inteiro: propósito, por quê, quando e onde de cada diretório, arquivo,
+classe e função, com entradas e saídas. Detalhes: `docs/regras/resumo-projeto.md`.
+
+## Ao concluir qualquer tarefa que altere arquivos do repo
+
+1. Rode `python3 scripts/resume.py check`.
+2. Se acusar itens:
+   - `python3 scripts/resume.py faltando` mostra o esqueleto (com assinaturas) do que falta descrever;
+   - edite `resume.md`: descreva itens novos, ajuste os alterados e apague os removidos;
+   - mantenha o formato: `## \`pasta/\``, `### \`caminho/arquivo\``, `- \`nome(params) → saída\` — descrição`.
+3. Rode `python3 scripts/resume.py carimbar` (recusa se ainda faltar descrição).
+4. Inclua `resume.md` e `.cursor/resume-inventario.json` no commit da tarefa.
+
+Também atualize a descrição quando o **comportamento** de um item mudar, mesmo sem mudar a assinatura.
+O hook `stop` (`.cursor/hooks.json`) relembra automaticamente quando o resumo fica para trás.

@@ -58,6 +58,7 @@ Contexto estável do projeto: [project-context.md](/docs/project-context.md).
 | ![Commits](/media/icons/commits.svg){width=28} | [commits.md](/docs/regras/commits.md) | Ao fechar mudança em repo git (ou para saber o que fazer sem repo) |
 | ![Tarefas](/media/icons/tarefas.svg){width=28} | [checklists-tarefas.md](/docs/regras/checklists-tarefas.md) | **Toda** atividade: criar/atualizar estado e retomar |
 | ![Verificação](/media/icons/verificacao.svg){width=28} | [verificacao-final.md](/docs/regras/verificacao-final.md) | **Antes de encerrar** qualquer tarefa |
+| ![Documentação](/media/icons/documentacao.svg){width=28} | [resumo-projeto.md](/docs/regras/resumo-projeto.md) | **Toda** tarefa que altera o repo: manter o [`resume.md`](/resume.md) em dia |
 
 Template de checklist: [`internal/tarefas/_modelo-checklist.md`](/internal/tarefas/_modelo-checklist.md).
 

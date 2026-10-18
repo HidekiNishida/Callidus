@@ -47,6 +47,7 @@ Copie para o arquivo de tarefa ou marque item a item:
 ### B. Consistência cruzada
 
 - [ ] **Código ↔ docs:** comportamento descrito bate com o implementado (se houver código)
+- [ ] **resume.md:** `python3 scripts/resume.py check` passa e o carimbo foi atualizado ([resumo-projeto.md](/docs/regras/resumo-projeto.md))
 - [ ] **Docs ↔ regras:** nada contradiz o [hub](/docs/regras/README.md) ou filhos vigentes
 - [ ] **Checklists ↔ realidade:** itens `- [x]` correspondem ao que de fato foi feito
 - [ ] **Hub/mapa:** filhos novos/alterados aparecem no mapa e no “quando ler”, se forem regras/guias
