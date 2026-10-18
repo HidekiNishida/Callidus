@@ -99,6 +99,8 @@ body { margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; 
 .icon-btn.danger { color: var(--bad); }
 .icon-btn.primary { background: var(--accent); color: #fff; border: 0; }
 .icon-btn.primary:hover:not(:disabled) { background: var(--accent-hover); color: #fff; }
+.icon-btn.primary.stopping, .icon-btn.primary.stopping:hover:not(:disabled) { background: var(--bad); }
+.bubble.user.sending { opacity: 0.7; }
 label.icon-btn { cursor: pointer; }
 label.icon-btn:has(input:checked) { color: var(--accent); }
 .status-ico { display: inline-flex; color: var(--muted); }

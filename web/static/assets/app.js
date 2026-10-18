@@ -60,9 +60,9 @@ const state = {
 };
 
 const CHAT = {
-  pt: { you: "Você", agent: "Agente", thought: "Pensou", thinking: "Pensando", pending: "Pensando…", planning: "Vou planejar e dividir isso em passos.", emptyTitle: "O que vamos construir?", emptyBody: "Escreva embaixo. Cada projeto guarda as conversas separadas." },
-  en: { you: "You", agent: "Agent", thought: "Thought", thinking: "Thinking", pending: "Thinking…", planning: "I'll plan this and break it into steps.", emptyTitle: "What should we build?", emptyBody: "Write below. Each project keeps its own chats." },
-  es: { you: "Tú", agent: "Agente", thought: "Pensó", thinking: "Pensando", pending: "Pensando…", planning: "Voy a planear y dividir esto en pasos.", emptyTitle: "¿Qué vamos a construir?", emptyBody: "Escribe abajo. Cada proyecto guarda sus conversaciones." },
+  pt: { you: "Você", agent: "Agente", thought: "Pensou", thinking: "Pensando", pending: "Pensando…", sending: "Enviando…", busy: "O agente ainda está trabalhando. Espere terminar ou pare a execução.", stop: "Parar o agente", send: "Enviar", planning: "Vou planejar e dividir isso em passos.", emptyTitle: "O que vamos construir?", emptyBody: "Escreva embaixo. Cada projeto guarda as conversas separadas." },
+  en: { you: "You", agent: "Agent", thought: "Thought", thinking: "Thinking", pending: "Thinking…", sending: "Sending…", busy: "The agent is still working. Wait for it to finish or stop the run.", stop: "Stop the agent", send: "Send", planning: "I'll plan this and break it into steps.", emptyTitle: "What should we build?", emptyBody: "Write below. Each project keeps its own chats." },
+  es: { you: "Tú", agent: "Agente", thought: "Pensó", thinking: "Pensando", pending: "Pensando…", sending: "Enviando…", busy: "El agente sigue trabajando. Espera a que termine o detén la ejecución.", stop: "Detener el agente", send: "Enviar", planning: "Voy a planear y dividir esto en pasos.", emptyTitle: "¿Qué vamos a construir?", emptyBody: "Escribe abajo. Cada proyecto guarda sus conversaciones." },
 };
 
 function uiLocale() {
@@ -455,6 +455,7 @@ function selectConversation(conversation) {
   paintWorkspace();
   renderProjects(document.getElementById("project-search").value);
   refreshTasks().catch((err) => toast(err.message, "error"));
+  refreshLive().catch((err) => console.warn(err));
 }
 
 function paintWorkspace() {
@@ -896,6 +897,11 @@ async function refreshLive() {
   if (live.run && !state.currentRun) {
     state.currentRun = { id: live.run.id, status: live.run.status };
     updateRunButtons();
+    if (!state.pollTimer) startPolling();
+  } else if (!live.run && state.currentRun && !state.pendingSend) {
+    state.currentRun = null;
+    stopPolling();
+    updateRunButtons();
   }
 }
 
@@ -1271,7 +1277,8 @@ function renderChat() {
   const roots = state.tasks.filter(
     (task) => !task.parent_id && (!state.conversation || task.conversation_id === state.conversation.id)
   );
-  if (!roots.length) {
+  const pending = pendingBubble();
+  if (!roots.length && !pending) {
     const body = state.conversation && !state.selectedProject
       ? "Esta conversa usa a pasta do usuário. A pasta pode ser trocada quando quiser."
       : copy.emptyBody;
@@ -1323,8 +1330,36 @@ function renderChat() {
       return `<div class="bubble user"><div class="who"><span>${copy.you}</span>${asked}${editBtn}</div>${message}${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
         <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who"><span>${copy.agent}${model}</span>${answered}${runMeter(root)}</div>${process}${pendingLine}${resumeHtml(root)}${reply}</div></div>`;
     })
-    .join("");
-  if (stick) log.scrollTop = log.scrollHeight;
+    .join("") + pending;
+  if (stick || pending) log.scrollTop = log.scrollHeight;
+}
+
+function pendingBubble() {
+  const pending = state.pendingSend;
+  if (!pending || state.tasks.some((task) => task.id === pending.taskId)) return "";
+  if (pending.conversationId && state.conversation && pending.conversationId !== state.conversation.id) return "";
+  const copy = chatCopy();
+  const chips = pending.attachments.map((name) => `<span class="chip">${escapeHtml(name)}</span>`).join("");
+  return `<div class="bubble user sending"><div class="who"><span>${copy.you}</span>${stampTag(pending.createdAt)}</div><div>${escapeHtml(pending.objective)}</div>${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
+    <div class="bubble agent live"><div class="agent-body"><div class="who"><span>${copy.agent}</span></div><p class="muted"><i class="spin"></i> ${escapeHtml(copy.sending)}</p></div></div>`;
+}
+
+function agentBusy() {
+  return Boolean(state.pendingSend || state.currentRun);
+}
+
+function paintComposer() {
+  const send = document.getElementById("btn-send");
+  if (!send) return;
+  const copy = chatCopy();
+  const busy = agentBusy();
+  const canStop = Boolean(state.currentRun);
+  send.innerHTML = icon(busy ? "stop" : "send");
+  send.classList.toggle("stopping", busy);
+  send.title = busy ? copy.stop : copy.send;
+  send.setAttribute("aria-label", send.title);
+  send.disabled = busy && !canStop;
+  document.getElementById("form-task")?.classList.toggle("busy", busy);
 }
 
 async function refreshAll() {
@@ -1354,6 +1389,7 @@ function updateRunButtons() {
   document.getElementById("btn-execute").disabled = !runActive;
   document.getElementById("btn-pause").disabled = !runActive;
   document.getElementById("btn-cancel-run").disabled = !runActive;
+  paintComposer();
 }
 
 function startPolling() {
@@ -1499,6 +1535,10 @@ async function init() {
     const form = event.target.closest("[data-edit-form]");
     if (!form || !state.conversation) return;
     event.preventDefault();
+    if (agentBusy()) {
+      toast(chatCopy().busy);
+      return;
+    }
     const taskId = form.dataset.editForm;
     const text = form.querySelector("textarea").value.trim();
     const original = state.tasks.find((task) => task.id === taskId);
@@ -1761,16 +1801,40 @@ async function init() {
     panel.hidden = !panel.hidden;
   };
 
+  async function refreshConversationList() {
+    if (state.selectedProject) {
+      state.conversations = await api(`/projects/${state.selectedProject.id}/conversations`);
+      state.conversation = state.conversations.find((item) => item.id === state.conversation?.id) || state.conversation;
+    } else {
+      state.loose = await api("/conversations");
+      state.conversation = state.loose.find((item) => item.id === state.conversation?.id) || state.conversation;
+    }
+    paintWorkspace();
+    renderProjects(document.getElementById("project-search").value);
+  }
+
+  document.getElementById("btn-send").addEventListener("click", (e) => {
+    if (!agentBusy()) return;
+    e.preventDefault();
+    if (state.currentRun) cancelRun().catch((err) => toast(err.message, "error"));
+  });
+
   document.getElementById("form-task").onsubmit = async (e) => {
     e.preventDefault();
-    const fd = new FormData(e.target);
-    let objective = String(fd.get("objective") || "").trim();
-    if (!objective && !attachments.length) return;
-    if (!objective) objective = "Use os anexos.";
+    if (agentBusy()) {
+      toast(chatCopy().busy);
+      return;
+    }
+    const form = e.target;
+    const fd = new FormData(form);
+    const typed = String(fd.get("objective") || "").trim();
+    if (!typed && !attachments.length) return;
+    const objective = typed || "Use os anexos.";
     const title = String(fd.get("title") || objective).slice(0, 80);
-    const metadata = attachments.length
+    const sent = attachments.splice(0, attachments.length);
+    const metadata = sent.length
       ? {
-          attachments: attachments.map(({ kind, name, mime, content, content_base64 }) => ({
+          attachments: sent.map(({ kind, name, mime, content, content_base64 }) => ({
             kind,
             name,
             mime,
@@ -1779,58 +1843,69 @@ async function init() {
           })),
         }
       : undefined;
-    if (!state.conversation) {
-      if (state.selectedProject) {
-        state.conversation = await api(`/projects/${state.selectedProject.id}/conversations`, {
-          method: "POST",
-          body: JSON.stringify({ title }),
-        });
-        state.conversations = [state.conversation, ...state.conversations];
-      } else {
-        await startLooseConversation();
-      }
-    }
-    const workspace = workspaceId();
-    if (!workspace || !state.conversation) {
-      toast("Não foi possível abrir a conversa", "error");
-      return;
-    }
-    let task;
-    try {
-      task = await api(`/projects/${workspace}/tasks`, {
-        method: "POST",
-        body: JSON.stringify({
-          title,
-          objective,
-          kind: "objective",
-          conversation_id: state.conversation.id,
-          metadata,
-        }),
-      });
-    } catch (err) {
-      toast(err.message || "Falha ao enviar", "error");
-      return;
-    }
-    state.selectedTaskId = task.id;
-    state.tasks = [...state.tasks, { ...task, parent_id: task.parent_id || null }];
-    if (state.selectedProject) {
-      state.conversations = await api(`/projects/${state.selectedProject.id}/conversations`);
-      state.conversation = state.conversations.find((item) => item.id === state.conversation.id) || state.conversation;
-    } else {
-      state.loose = await api("/conversations");
-      state.conversation = state.loose.find((item) => item.id === state.conversation.id) || state.conversation;
-    }
-    paintWorkspace();
-    renderProjects(document.getElementById("project-search").value);
-    attachments.splice(0, attachments.length);
-    renderAttachmentChips();
     const cfg = runConfigFromUI(objective);
-    keepComposerChoices(e.target);
+    state.pendingSend = {
+      objective,
+      attachments: sent.map((item) => item.name),
+      createdAt: new Date().toISOString(),
+      conversationId: state.conversation?.id || null,
+      taskId: null,
+    };
+    keepComposerChoices(form);
+    renderAttachmentChips();
+    updateRunButtons();
     renderChat();
+    const restore = () => {
+      const box = form.querySelector("textarea[name=objective]");
+      if (box && !box.value.trim()) box.value = typed;
+      if (!attachments.length) attachments.push(...sent);
+      renderAttachmentChips();
+    };
     try {
-      await startRun(cfg);
+      if (!state.conversation) {
+        if (state.selectedProject) {
+          state.conversation = await api(`/projects/${state.selectedProject.id}/conversations`, {
+            method: "POST",
+            body: JSON.stringify({ title }),
+          });
+          state.conversations = [state.conversation, ...state.conversations];
+          paintWorkspace();
+          renderProjects(document.getElementById("project-search").value);
+        } else {
+          await startLooseConversation();
+        }
+        state.pendingSend.conversationId = state.conversation?.id || null;
+      }
+      const workspace = workspaceId();
+      if (!workspace || !state.conversation) throw new Error("Não foi possível abrir a conversa");
+      let task;
+      try {
+        task = await api(`/projects/${workspace}/tasks`, {
+          method: "POST",
+          body: JSON.stringify({
+            title,
+            objective,
+            kind: "objective",
+            conversation_id: state.conversation.id,
+            metadata,
+          }),
+        });
+      } catch (err) {
+        restore();
+        throw new Error(err.message || "Falha ao enviar");
+      }
+      state.pendingSend.taskId = task.id;
+      state.selectedTaskId = task.id;
+      state.tasks = [...state.tasks, { ...task, parent_id: task.parent_id || null }];
+      renderChat();
+      refreshConversationList().catch((err) => console.warn(err));
+      await startRun(cfg, { onStarted: () => (state.pendingSend = null) });
     } catch (err) {
       toast(err.message || "Falha ao iniciar", "error");
+    } finally {
+      state.pendingSend = null;
+      updateRunButtons();
+      renderChat();
     }
   };
 
@@ -1838,7 +1913,8 @@ async function init() {
 
   document.getElementById("btn-run").onclick = () => startRun().catch((err) => toast(err.message, "error"));
 
-  async function startRun(config) {
+  async function startRun(config, { onStarted } = {}) {
+    if (state.currentRun) throw new Error(chatCopy().busy);
     const root = state.tasks.find((t) => t.id === state.selectedTaskId) || state.tasks.find((t) => !t.parent_id);
     const workspace = workspaceId();
     if (!root || !workspace) throw new Error("Não há mensagem para executar");
@@ -1847,6 +1923,8 @@ async function init() {
       method: "POST",
       body: JSON.stringify({ root_task_id: root.id, config: cfg }),
     });
+    onStarted?.();
+    updateRunButtons();
     await api(`/runs/${state.currentRun.id}/autonomous/enable`, { method: "POST" });
     const auto = document.getElementById("chk-autonomous");
     if (auto) auto.checked = true;
@@ -1887,7 +1965,7 @@ async function init() {
     stopPolling();
   };
 
-  document.getElementById("btn-cancel-run").onclick = async () => {
+  async function cancelRun() {
     if (!state.currentRun) return;
     await api(`/runs/${state.currentRun.id}/cancel`, { method: "POST" });
     state.currentRun = null;
@@ -1895,7 +1973,9 @@ async function init() {
     updateRunButtons();
     toast("Execução cancelada");
     await refreshAll();
-  };
+  }
+
+  document.getElementById("btn-cancel-run").onclick = () => cancelRun().catch((err) => toast(err.message, "error"));
 
   document.getElementById("poll-active").onchange = () => {
     if (document.getElementById("poll-active").checked) startPolling();
