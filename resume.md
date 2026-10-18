@@ -480,11 +480,39 @@ Grafo de conhecimento:
 - `ensure_requirements(session, root) → list[dict]` — Lê os requisitos do contrato da raiz ou deriva e grava, mantendo os ids estáveis.
 - `load_requirements(session, root) → list[dict]` — Leitura pura dos requisitos gravados.
 - `normalize_covers(raw) → list[dict] | None` — Cobertura declarada em formato uniforme `{req, partial, part}`; `None` se não declarada.
-- `effective_covers(session, task, reqs=None) → list[dict]` — Cobertura declarada ou herdada do pai; a raiz cobre todos.
+- `siblings_declare_covers(session, task) → bool` — Se alguma irmã da tarefa declara `covers`.
+- `effective_covers(session, task, reqs=None) → list[dict]` — Cobertura declarada; sem declaração herda a do pai só se nenhuma irmã declara (senão é apoio e não cobre nada); a raiz cobre todos.
 - `_subtree(session, root) → list[TaskModel]` — Raiz e descendentes.
 - `_passed_current(session, task_id) → list[EvidenceModel]` — Evidências aprovadas cujos arquivos não mudaram.
 - `_answered(task) → bool` — Se a tarefa entregou resposta final não vazia.
 - `requirement_status(session, root) → list[dict]` — Estado de cada requisito pelas folhas responsáveis: `uncovered`, `failed`, `blocked`, `pending`, `unverified` (concluído sem evidência proporcional), `satisfied`, ou a aplicabilidade se não obrigatório; com tarefas, cobertura parcial e ids de evidência.
+
+### `src/agent/orchestrator/plan_validation.py`
+
+**Propósito:** validação determinística do plano antes da execução, com correção automática segura e bloqueio recuperável. **Por quê:** plano com requisito sem responsável, dependência quebrada ou etapa sem critério verificável não deve começar a executar. **Quando/onde:** o runner chama `sanitize_spec` antes de `apply_decomposition`, `validate_and_repair` logo depois, e `plan_fingerprint` antes de cada etapa para revalidar planos alterados.
+
+- **`PlanVerdict(StrEnum)`** — `válido`, `válido com ressalvas`, `inconclusivo`, `incompleto`, `inconsistente`, `inviável`; os três primeiros executam (`RUNNABLE`).
+- **`Issue`** — Achado: código, veredito, mensagem e tarefa.
+- **`PlanValidation`** — Resultado: veredito, achados, cobertura por requisito, etapas bloqueadas, impressão do plano, correções e veredito inicial.
+  - `PlanValidation.runnable() → bool` — Se o plano pode executar.
+  - `PlanValidation.as_dict() → dict` — Forma serializável para metadados e eventos.
+- `sanitize_spec(plan) → tuple[DecompositionResult, list[Issue]]` — Remove dependências por índice fora do intervalo, para si mesma ou circulares do plano JSON, registrando cada uma como achado inconsistente.
+- `_reaches(graph, start, target) → bool` — Busca em profundidade entre índices.
+- `active_children(session, parent_id) → list[TaskModel]` — Filhos do plano atual (fora os cancelados como `invalid_plan`).
+- `plan_fingerprint(session, parent_id) → str` — Impressão do plano: etapas, cancelamento, cobertura, ferramenta, verificação e dependências.
+- `_verifiable(task) → bool` — Se a etapa tem critério verificável (verificação, operação do modelo, resposta final, subsistema/sem metadados ou critério de aceite).
+- `_norm(text) → str` — Texto normalizado para comparação.
+- `validate_children(session, parent, *, project_root, run_config=None, max_tasks=None, extra_issues=None) → PlanValidation` — Aplica as regras: objetivo e critérios, etapas e resultados, cobertura dos requisitos obrigatórios (implícita, declarada ou parcial), critério verificável, requisito e ferramenta inexistentes, bloqueios externos (aprovação, navegador, `external`), entradas ausentes, verificação só implícita, dependências, duplicatas e orçamento de tarefas.
+- `_produced_before(session, task, path) → bool` — Se alguma dependência da etapa produz o caminho que ela lê.
+- `_dependency_issues(session, kids) → list[Issue]` — Dependência inexistente, de outro projeto, em tarefa cancelada ou circular.
+- `_reaches_ids(graph, start, target) → bool` — Busca em profundidade entre ids de tarefa.
+- `_duplicate_issues(kids) → list[Issue]` — Etapa idêntica (inconsistente) ou com mesmo título (ressalva).
+- `_subtree_ids(session, root) → set[uuid]` — Ids da árvore da raiz.
+- `repair_plan(session, parent, validation) → list[str]` — Correções seguras: cancela duplicata, remove dependência em cancelada, troca ferramenta inexistente por operação do modelo, limpa requisito inexistente, rebaixa etapa sem critério a apoio e cria `Atender Rn` para requisito sem responsável (a resposta final passa a depender dela).
+- `_cancel(ts, task, reason) → None` — Cancela a etapa se o estado permitir.
+- `record_validation(session, parent, validation, run_id) → None` — Grava `metadata.plan_validation` (com `version`) e o evento `plan.validated` com o plano completo.
+- `validate_and_repair(session, parent, *, project_root, run_config, max_tasks, run_id, extra_issues=None) → PlanValidation` — Valida; se não puder executar, corrige e valida de novo; grava; se ainda não puder, cancela as etapas como `invalid_plan` para quem chama bloquear o pai.
+- `summarize(validation, limit=4) → str` — Frase com o veredito e os piores achados.
 
 ### `src/agent/orchestrator/progress.py`
 
@@ -501,7 +529,8 @@ Grafo de conhecimento:
 - `REPLAN_BUDGET = 3` — Replanejamentos por linhagem (o nó replanejado herda a contagem).
 - **`ReplanDecision`** — Decisão da política: `replan` (bool) e `reason` (por que não).
 - `replan_decision(parent_meta, stopped, completed) → ReplanDecision` — Política por categoria: falha de configuração ou externa não é replanejada (precisa de ação de fora); respeita o orçamento; recusa quando o último replanejamento não trouxe etapa nova concluída e o motivo é o mesmo.
-- `replan_parent(session, parent) → dict | None` — Se um filho não substituído está BLOCKED/FAILED e a política permite: cancela os irmãos pendentes, marca o filho parado como `superseded_by_replan` (BLOCKED vira CANCELLED), cria "Ver o que ainda falta" (list_dir) e "Seguir com o plano corrigido" (nó `subsystem` que será decomposto de novo, com o que foi feito, o motivo e o pedido de outra abordagem) e registra `replan_history`. Se a política recusa, grava `replan_refused` no pai. Saída: descrição da ação ou `None`.
+- `replan_parent(session, parent) → dict | None` — Se um filho não substituído está BLOCKED/FAILED e a política permite: cancela os irmãos pendentes, marca o filho parado como `superseded_by_replan` (BLOCKED vira CANCELLED), cria "Ver o que ainda falta" (list_dir, apoio) e "Seguir com o plano corrigido" (nó `subsystem` que será decomposto de novo, com o que foi feito, o motivo, o pedido de outra abordagem e os requisitos que a etapa parada e as irmãs não feitas cobriam) e registra `replan_history`. Se a política recusa, grava `replan_refused` no pai. Saída: descrição da ação ou `None`.
+- `_carried_covers(session, kids, stopped) → list[dict] | None` — Une a cobertura da etapa parada e das irmãs ainda não feitas (cobertura inteira vence parcial); `None` se o plano não declara cobertura.
 - `replan_under(session, root_id) → dict | None` — Percorre a raiz e seus descendentes e aplica o primeiro replanejamento que a política permitir.
 
 ### `src/agent/orchestrator/resume.py`
@@ -538,6 +567,9 @@ Grafo de conhecimento:
   - `RunOrchestrator._run_as_leaf(run, task, *, note) → dict` — Força a tarefa a ser executada como operação do modelo (sem nova divisão) e a promove se as dependências permitirem.
   - `RunOrchestrator._run_config(run) → dict` — Configuração do run (provedor, modelo, opções) ou dicionário vazio.
   - `RunOrchestrator._same_title_above(task) → bool` — Verdadeiro se algum ancestral tem o mesmo título ou o mesmo objetivo normalizado (sinal de decomposição repetida).
+  - `RunOrchestrator._validate_plan(run, parent, config, work_root, spec_issues=None) → PlanValidation` — Chama `validate_and_repair` com o limite de tarefas do run.
+  - `RunOrchestrator._block_invalid_plan(parent, validation) → dict` — Pai com plano sem correção vai a BLOCKED com `last_failure.cause = invalid_plan` (categoria por motivo: externo, limite ou trocar estratégia); ação `plan_invalid`.
+  - `RunOrchestrator._revalidate_plan(run, task, config, work_root) → dict | None` — Antes de executar uma etapa, valida de novo o plano do pai se a impressão mudou; ação `plan_revalidated` ou `plan_invalid`.
   - `RunOrchestrator._task_requirements(task) → list[dict]` — Requisitos obrigatórios que a etapa precisa atender (os da raiz filtrados pela cobertura herdada, com a parte se parcial); vão para o prompt de decomposição.
   - `RunOrchestrator._recursion_guard(run, task) → str | None` — Proteção contra recursão, separada da decisão de dividir: devolve o motivo quando a etapa repete um ancestral, passa de `max_tree_depth` ou o run já tem `max_tasks_per_run` tarefas; nesse caso a etapa é executada sem nova divisão e o motivo vai para `metadata_json.recursion_guard`.
   - `RunOrchestrator._save_requested_memory(project, task, args) → dict` — Salva memória pedida pela ferramenta de memória, no escopo da conversa (contextual) ou do projeto (canônica).
@@ -1255,6 +1287,7 @@ Grafo de conhecimento:
 - `tests/test_dev_tools.py` — Ferramentas de desenvolvimento: list/glob/edit e aliases, grep que ignora `.venv`, comando em string, executável ausente como erro de configuração, interpretador do venv do projeto, verificação que aceita entrega HTML sem testes e verificação por script.
 - `tests/test_failures.py` — Taxonomia de falhas: categorias de saída de ferramenta, provedor, resposta do modelo (cortada × malformada), contexto e verificação; JSON inválido do modelo vira tentativa falha com `last_failure` na tarefa.
 - `tests/test_proportional_verification.py` — Escrita sem verificação declarada ganha `file_contains` implícito com evidência ligada à tentativa; etapa sem ação executa em vez de concluir em silêncio.
+- `tests/test_plan_validation.py` — Validação do plano: cobertura integral válida; requisito sem responsável corrigido com `Atender Rn`; etapa sem critério verificável; dependências circulares, inexistentes e para si mesma removidas e registradas; dependência em tarefa cancelada; dependência externa identificada sem impedir a execução; decomposição que tenta perder requisito herdado; cobertura não comprovada é inconclusiva; replanejamento carrega requisitos; plano alterado é revalidado; plano sem correção bloqueia sem executar nada.
 - `tests/test_requirements.py` — Requisitos: itens do objetivo e critérios viram requisitos, ids gravados uma vez e estáveis, cobertura herdada e parcial, estado por cobertura e evidência, resposta final não atende requisito de mudança mas atende pergunta, aplicabilidade não obrigatória preservada.
 - `tests/test_progress_metrics.py` — Progresso é trabalho verificado e não atividade; pergunta simples sem decomposição excessiva; objetivo de várias etapas ponta a ponta com métricas (e rota `/runs/{id}/metrics`); irmã independente segue enquanto a dependente espera; chamadas de modelo sem trabalho verificado não contam como progresso.
 - `tests/test_functional_depth.py` — Profundidade funcional: etapa na profundidade 7 ainda é decomposta; objetivo igual ao de um ancestral e orçamento de tarefas do run acionam a proteção contra recursão (`recursion_guard`) e a etapa é executada sem nova divisão.

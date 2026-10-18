@@ -43,6 +43,14 @@ from agent.orchestrator.decomposition import (
     seal_repeated_steps,
 )
 from agent.orchestrator.planner import ensure_canonical_memory_for_objective
+from agent.orchestrator.plan_validation import (
+    PlanValidation,
+    active_children,
+    plan_fingerprint,
+    sanitize_spec,
+    summarize,
+    validate_and_repair,
+)
 from agent.orchestrator.progress import progress_state
 from agent.orchestrator.replan import replan_under
 from agent.orchestrator.requirements import effective_covers, ensure_requirements, root_of
@@ -141,6 +149,67 @@ class RunOrchestrator:
                 return True
             parent_id = parent.parent_id
         return False
+
+    def _validate_plan(
+        self,
+        run: ExecutionRunModel,
+        parent: TaskModel,
+        config: dict[str, Any],
+        work_root: str,
+        spec_issues: list | None = None,
+    ) -> PlanValidation:
+        return validate_and_repair(
+            self._session,
+            parent,
+            project_root=work_root,
+            run_config=config,
+            max_tasks=self._settings.max_tasks_per_run,
+            run_id=run.id,
+            extra_issues=spec_issues,
+        )
+
+    def _block_invalid_plan(self, parent: TaskModel, validation: PlanValidation) -> dict[str, Any]:
+        """Plano que não pôde ser corrigido: nada dele executa; o pai fica BLOCKED (recuperável) com o motivo,
+        e a falha diz ao replanejamento do nível de cima o que fazer."""
+        codes = {i.code for i in validation.issues}
+        if "all_blocked" in codes:
+            category = FailureCategory.EXTERNAL_UNAVAILABLE
+        elif "budget_exceeded" in codes:
+            category = FailureCategory.OPERATIONAL_LIMIT
+        else:
+            category = FailureCategory.CHANGE_STRATEGY
+        reason = summarize(validation)
+        noted = self._remember_failure(parent, Failure(category, FailureCause.INVALID_PLAN, reason))
+        for status in self._TO_BLOCKED.get(TaskStatus(parent.status), ()):
+            self._tasks.update_status(parent.id, TaskStatusUpdate(status=status, reason=reason))
+        return {
+            "action": "plan_invalid",
+            "task_id": str(parent.id),
+            "plan": validation.verdict.value,
+            "failure": noted,
+            "thought": reason,
+        }
+
+    def _revalidate_plan(
+        self, run: ExecutionRunModel, task: TaskModel, config: dict[str, Any], work_root: str
+    ) -> dict[str, Any] | None:
+        """Antes de executar uma etapa, confere se o plano do pai mudou desde a última validação
+        (replanejamento, dependência nova, cobertura alterada); se mudou, valida de novo."""
+        if task.parent_id is None:
+            return None
+        parent = self._tasks.get_task(task.parent_id)
+        previous = (parent.metadata_json or {}).get("plan_validation")
+        if not previous or previous.get("fingerprint") == plan_fingerprint(self._session, parent.id):
+            return None
+        validation = self._validate_plan(run, parent, config, work_root)
+        if not validation.runnable:
+            return self._block_invalid_plan(parent, validation)
+        return {
+            "action": "plan_revalidated",
+            "task_id": str(parent.id),
+            "plan": validation.verdict.value,
+            "fixes": validation.fixes,
+        }
 
     def _task_requirements(self, task: TaskModel) -> list[dict]:
         """Requisitos que esta etapa precisa atender (os da raiz filtrados pela cobertura herdada)."""
@@ -422,6 +491,10 @@ class RunOrchestrator:
                     return {"action": "global_verify_reopen", "reopened": [str(x) for x in reopened]}
             return self._stall_run(run, root, reason)
 
+        revalidated = self._revalidate_plan(run, task, config, work_root)
+        if revalidated:
+            return revalidated
+
         self._session.add(
             EventLogModel(
                 project_id=project.id,
@@ -442,7 +515,7 @@ class RunOrchestrator:
             return {"action": "started_planning", "task_id": str(task.id)}
 
         if status == TaskStatus.PLANNING:
-            kids = children_of(self._session, task.id)
+            kids = active_children(self._session, task.id)
             meta = task.metadata_json or {}
             if not kids and meta.get("final_answer"):
                 if self._tasks.dependencies_satisfied(task.id):
@@ -505,13 +578,18 @@ class RunOrchestrator:
                         task,
                         note=f"«{task.title}» repetiu o mesmo plano. Vou executar esta etapa, sem dividir de novo.",
                     )
+                plan, spec_issues = sanitize_spec(plan)
                 apply_decomposition(self._session, project.id, task.id, plan)
+                validation = self._validate_plan(run, task, config, work_root, spec_issues)
+                if not validation.runnable:
+                    return self._block_invalid_plan(task, validation)
                 titles = ", ".join(spec.title for spec in plan.subtasks[:6])
                 return {
                     "action": "decomposed",
                     "task_id": str(task.id),
                     "count": len(plan.subtasks),
                     "source": source,
+                    "plan": validation.verdict.value,
                     "thought": f"Vou fazer: {titles}.",
                 }
 

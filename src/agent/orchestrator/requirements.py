@@ -128,14 +128,25 @@ def normalize_covers(raw: Any) -> list[dict[str, Any]] | None:
     return out
 
 
+def siblings_declare_covers(session: Session, task: TaskModel) -> bool:
+    if task.parent_id is None:
+        return False
+    rows = session.scalars(select(TaskModel).where(TaskModel.parent_id == task.parent_id)).all()
+    return any(normalize_covers((t.metadata_json or {}).get("covers")) is not None for t in rows if t.id != task.id)
+
+
 def effective_covers(session: Session, task: TaskModel, reqs: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
-    """Cobertura declarada da tarefa; sem declaração, herda a do pai; a raiz cobre todos os requisitos."""
+    """Cobertura declarada da tarefa. Sem declaração: se nenhuma irmã declara, herda a do pai (cobertura
+    implícita); se alguma declara, a tarefa é apoio e não cobre nada, para uma etapa sem declaração não
+    mascarar um requisito esquecido. A raiz cobre todos os requisitos."""
     declared = normalize_covers((task.metadata_json or {}).get("covers"))
     if declared is not None:
         return declared
     if task.parent_id is None:
         reqs = reqs if reqs is not None else load_requirements(session, task)
         return [{"req": r["id"], "partial": False, "part": ""} for r in reqs]
+    if siblings_declare_covers(session, task):
+        return []
     parent = session.get(TaskModel, task.parent_id)
     return effective_covers(session, parent, reqs) if parent is not None else []
 

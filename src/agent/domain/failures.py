@@ -36,6 +36,7 @@ class FailureCause(StrEnum):
     VERIFICATION_FAILED = "verification_failed"
     VERIFICATION_INCONCLUSIVE = "verification_inconclusive"
     STALE_EVIDENCE = "stale_evidence"
+    INVALID_PLAN = "invalid_plan"
     REPEATED_OUTPUT = "repeated_output"
     REPEATED_PROMPT = "repeated_prompt"
     DEPENDENCY_FAILED = "dependency_failed"

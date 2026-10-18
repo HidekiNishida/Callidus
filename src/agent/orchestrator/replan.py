@@ -12,6 +12,7 @@ from agent.domain.schemas import TaskStatusUpdate
 from agent.orchestrator.consolidation import children_of, pending_reason, superseded
 from agent.orchestrator.decomposition import DecompositionResult, SubTaskSpec, apply_decomposition
 from agent.persistence.models import TaskModel
+from agent.orchestrator.requirements import effective_covers, normalize_covers
 from agent.services.task_service import TaskService
 
 REPLAN_BUDGET = 3
@@ -73,6 +74,21 @@ def replan_under(session: Session, root_id: uuid.UUID) -> dict | None:
     return None
 
 
+def _carried_covers(session: Session, kids: list[TaskModel], stopped: TaskModel) -> list[dict] | None:
+    """Requisitos que a etapa parada e as irmãs ainda não feitas cobriam passam para o plano corrigido,
+    para o replanejamento não perder requisito. `None` quando o plano não declara cobertura (implícita)."""
+    if not any(normalize_covers((k.metadata_json or {}).get("covers")) is not None for k in kids):
+        return None
+    pending = [stopped] + [k for k in kids if k.status in _CANCEL and k.id != stopped.id]
+    merged: dict[str, dict] = {}
+    for kid in pending:
+        for cover in effective_covers(session, kid):
+            current = merged.get(cover["req"])
+            if current is None or (current["partial"] and not cover["partial"]):
+                merged[cover["req"]] = cover
+    return list(merged.values())
+
+
 def replan_parent(session: Session, parent: TaskModel) -> dict | None:
     meta = dict(parent.metadata_json or {})
     kids = children_of(session, parent.id)
@@ -92,6 +108,7 @@ def replan_parent(session: Session, parent: TaskModel) -> dict | None:
         return None
 
     tasks = TaskService(session)
+    carried = _carried_covers(session, kids, stopped)
     cancelled: list[str] = []
     for kid in kids:
         if kid.id == stopped.id or children_of(session, kid.id):
@@ -118,13 +135,23 @@ def replan_parent(session: Session, parent: TaskModel) -> dict | None:
             SubTaskSpec(
                 title="Ver o que ainda falta",
                 objective=objective,
-                metadata={"tool": "list_dir", "tool_args": {"path": "."}, "atomic": True, "replan": True},
+                metadata={
+                    "tool": "list_dir",
+                    "tool_args": {"path": "."},
+                    "atomic": True,
+                    "replan": True,
+                    **({"covers": []} if carried is not None else {}),
+                },
             ),
             SubTaskSpec(
                 title="Seguir com o plano corrigido",
                 objective=objective,
                 kind=TaskKind.SUBSYSTEM,
-                metadata={"replan": True, "replan_count": count},
+                metadata={
+                    "replan": True,
+                    "replan_count": count,
+                    **({"covers": carried} if carried is not None else {}),
+                },
                 depends_on_indices=[0],
             ),
         ]

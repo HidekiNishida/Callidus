@@ -15,7 +15,7 @@ Validar o plano antes de executá-lo (cobertura de requisitos e integridade estr
 
 ## Próxima ação
 
-Unidade 2: validação estrutural do plano antes da execução (`orchestrator/plan_validation.py`).
+Unidade 3: evidência com estado explícito, critério, comando e código de saída; verificador de sintaxe; verificação bloqueada ≠ reprovada.
 
 ## Diagnóstico (fase A — evidências)
 
@@ -64,7 +64,7 @@ Unidade 2: validação estrutural do plano antes da execução (`orchestrator/pl
 - [x] Criar este arquivo e preencher metadados
 - [x] Fase A: inspeção e diagnóstico (baseline 147 passam)
 - [x] Unidade 1: `orchestrator/requirements.py` (derivação, ids estáveis no contrato da raiz, `covers` herdado/parcial, `requirement_status`), requisitos no prompt de decomposição
-- [ ] Unidade 2
+- [x] Unidade 2: `orchestrator/plan_validation.py` (6 vereditos, correção segura, bloqueio `invalid_plan`, versões em `plan.validated`, revalidação por impressão do plano), cobertura carregada no replanejamento
 - [ ] Unidade 3
 - [ ] Unidade 4
 - [ ] Unidade 5
@@ -82,8 +82,10 @@ Unidade 2: validação estrutural do plano antes da execução (`orchestrator/pl
 |---------------|-------|
 | `/src/agent/orchestrator/requirements.py` | requisitos rastreáveis |
 | `/tests/test_requirements.py` | testes da unidade 1 |
+| `/src/agent/orchestrator/plan_validation.py` | validação do plano |
+| `/tests/test_plan_validation.py` | testes da unidade 2 (cenários 1–9) |
 | `/docs/architecture/requisitos-verificacao-progresso.md` | documento dos três mecanismos |
 
 ## Notas de retomada
 
-Após unidade 1: 154 passam, 0 falham. Cenários numerados = seção 7 do pedido.
+Após unidade 2: 165 passam, 0 falham. Cenários numerados = seção 7 do pedido.
