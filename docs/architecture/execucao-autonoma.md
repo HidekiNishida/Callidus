@@ -28,6 +28,17 @@ Quando nenhuma tarefa pode avançar (e o replanejamento não tem mais o que faze
 
 `consolidate_parent` nunca conclui um pai com filho falho: devolve `achieved=false` e `pending`. Pai em execução com filho falho vai a `BLOCKED` (`blocked_dependency/dependency_failed`), o que aciona o replanejamento do nível de cima.
 
+## Verificação proporcional ao risco
+
+| Etapa | Verificação |
+|-------|-------------|
+| Leitura (`list_dir`, `read_file`, busca) | Nenhuma; conclui sem evidência. |
+| Escrita do modelo sem verificação declarada | Implícita: `file_contains` com o início do que foi gravado; gera evidência ligada à tentativa. |
+| Etapa com `metadata.verification` | A declarada (pytest, script, comando, `file_contains`). |
+| Verificação inconclusiva (`acceptance_manual`) | Nunca aprova: a tarefa vai a `BLOCKED`. |
+
+Folha com metadados mas sem ação (`tool`, `verification`, `model_operation`, `final_answer`, `mcp_tool`) vira operação de modelo, em vez de passar por `skipped_to_verify` e concluir sem ter feito nada.
+
 ## Replanejamento
 
 `replan_under` roda no início de cada passo e aplica `replan_decision` ao primeiro filho parado (BLOCKED/FAILED) ainda não substituído:

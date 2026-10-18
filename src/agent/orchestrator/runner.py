@@ -72,6 +72,9 @@ class RunBlockedError(RuntimeError):
     pass
 
 
+_ACTION_KEYS = ("mcp_tool", "final_answer", "model_operation", "tool", "verification")
+
+
 def _select_provider(settings: Settings, run_config: dict) -> LLMProvider:
     name = run_config.get("provider") or settings.default_provider
     if name == "ollama":
@@ -644,6 +647,11 @@ class RunOrchestrator:
         if meta.get("final_answer"):
             return await self._write_final_answer(run, project, task, config)
 
+        if meta and not any(meta.get(key) for key in _ACTION_KEYS) and not children_of(self._session, task.id):
+            meta = {**meta, "model_operation": True}
+            task.metadata_json = meta
+            self._note_thought(run, task, f"«{task.title}» não dizia como fazer; vou executar como alteração.")
+
         if meta.get("model_operation"):
             provider = _select_provider(self._settings, config)
             profile = _profile_from_config(config, self._settings)
@@ -784,7 +792,13 @@ class RunOrchestrator:
                 KnowledgeGraphService(self._session).touch_file(project.id, root_path, data["path"])
             if out.get("success"):
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                done = await self._finalize_verification(run, project, task, root_path)
+                written = str(payload.get("new_string") if tool_name == "edit_file" else payload.get("content") or "")
+                implicit = (
+                    {"type": "file_contains", "path": payload["path"], "contains": written[:200], "implicit": True}
+                    if written.strip()
+                    else None
+                )
+                done = await self._finalize_verification(run, project, task, root_path, implicit_spec=implicit)
                 if excerpt:
                     done["thought"] = excerpt
                 return done
@@ -982,10 +996,13 @@ class RunOrchestrator:
         project: ProjectModel,
         task: TaskModel,
         work_root: str | None = None,
+        implicit_spec: dict | None = None,
     ) -> dict[str, Any]:
+        """Verificação proporcional ao risco: a declarada na tarefa; senão, para escrita, a implícita
+        (`file_contains` com o que foi gravado); leitura sem verificação conclui sem evidência."""
         root_path = work_root or self._work_root(project, task)
         meta = task.metadata_json or {}
-        spec = meta.get("verification")
+        spec = meta.get("verification") or implicit_spec
         if not spec:
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
             consolidate_parent(self._session, task.parent_id) if task.parent_id else None

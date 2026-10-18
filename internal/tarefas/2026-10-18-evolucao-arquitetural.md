@@ -14,7 +14,7 @@ O orquestrador decompõe só o necessário, monta contexto suficiente por opera�
 
 ## Próxima ação
 
-Unidade 9: verificação proporcional ao risco; etapa sem ação e sem verificação não conta como evidência (`skipped_to_verify`).
+Unidade 7: profundidade funcional no lugar do corte fixo 6 (orçamento por ramo e detecção de repetição).
 
 ## Diagnóstico (fase A — evidências)
 
@@ -62,7 +62,8 @@ Unidade 9: verificação proporcional ao risco; etapa sem ação e sem verifica�
 - [x] Unidade 8 (antecipada): consolidação segue a especificação, término explicado (`run_stalled`), sem espera infinita; 2 falhas do WIP resolvidas
 - [x] Unidade 6: `replan_decision` por categoria, orçamento por linhagem, condição de progresso, filho substituído (`superseded`/`settled`), passo de replanejamento que decompõe de novo
 - [x] Unidade 5: arquivos-alvo com conteúdo exato, contrato, objetivo global e resultados das dependências no contexto
-- [ ] Unidades 7, 9, 10, 11
+- [x] Unidade 9: verificação implícita para escrita, etapa sem ação executa, inconclusivo nunca aprova, evidência com `attempt_id`
+- [ ] Unidades 7, 10, 11
 - [ ] Escolher dimensões de teste aplicáveis ([validacoes-testes.md](/docs/regras/validacoes-testes.md))
 - [ ] Verificação final: código ↔ docs ↔ checklists ↔ regras ([verificacao-final.md](/docs/regras/verificacao-final.md))
 - [ ] Marcar estado como `concluída` e listar artefatos
@@ -82,6 +83,7 @@ Unidade 9: verificação proporcional ao risco; etapa sem ação e sem verifica�
 | `/tests/test_failures.py` | testes da unidade 2 |
 | `/tests/test_context_recovery.py` | testes da unidade 3 (cenários 7 e 8) |
 | `/tests/test_retry_strategy.py` | testes da unidade 4 (cenários 10 e 13) |
+| `/tests/test_proportional_verification.py` | testes da unidade 9 (cenários 11, 12) |
 | `/tests/test_sufficient_context.py` | testes da unidade 5 (cenário 9) |
 | `/tests/test_run_termination.py` | testes da unidade 8 (cenários 6, 17, 18) |
 | `/docs/architecture/context-builder.md` | estouro e compactação |
@@ -89,4 +91,4 @@ Unidade 9: verificação proporcional ao risco; etapa sem ação e sem verifica�
 
 ## Notas de retomada
 
-Baseline após unidade 5: 132 passam, 0 falham. Cenários numerados = seção 12 do pedido.
+Baseline após unidade 9: 134 passam, 0 falham. Cenários numerados = seção 12 do pedido.
