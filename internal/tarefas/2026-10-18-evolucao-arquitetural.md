@@ -14,7 +14,7 @@ O orquestrador decompõe só o necessário, monta contexto suficiente por opera�
 
 ## Próxima ação
 
-Unidade 8 (antecipada): consolidação e término — pai com filho falho nunca COMPLETED; run com pendência termina em estado recuperável explicado, sem laço.
+Unidade 6: política de replanejamento por categoria; passo de replanejamento que replaneja de verdade (hoje `Seguir com o plano corrigido` só tem `atomic` e conclui sem fazer nada via `skipped_to_verify`).
 
 ## Diagnóstico (fase A — evidências)
 
@@ -59,7 +59,8 @@ Unidade 8 (antecipada): consolidação e término — pai com filho falho nunca 
 - [x] Unidade 2: taxonomia `domain/failures.py`, falhas gravadas em tentativa/evento/`last_failure`, evidência com `attempt_id`, JSON inválido = tentativa falha
 - [x] Unidade 3: `ContextBudgetError`, snapshot do estouro, compactação sem perda, `blocked_context` explicado, `RUNNING → BLOCKED`
 - [x] Unidade 4: `tentativas-anteriores` no contexto, `retry_hint`, impressão do prompt (`repeated_prompt`), `num_predict` dobrado em resposta cortada, saída da verificação no detalhe
-- [ ] Unidades 5–11
+- [x] Unidade 8 (antecipada): consolidação segue a especificação, término explicado (`run_stalled`), sem espera infinita; 2 falhas do WIP resolvidas
+- [ ] Unidades 5, 6, 7, 9, 10, 11
 - [ ] Escolher dimensões de teste aplicáveis ([validacoes-testes.md](/docs/regras/validacoes-testes.md))
 - [ ] Verificação final: código ↔ docs ↔ checklists ↔ regras ([verificacao-final.md](/docs/regras/verificacao-final.md))
 - [ ] Marcar estado como `concluída` e listar artefatos
@@ -79,9 +80,10 @@ Unidade 8 (antecipada): consolidação e término — pai com filho falho nunca 
 | `/tests/test_failures.py` | testes da unidade 2 |
 | `/tests/test_context_recovery.py` | testes da unidade 3 (cenários 7 e 8) |
 | `/tests/test_retry_strategy.py` | testes da unidade 4 (cenários 10 e 13) |
+| `/tests/test_run_termination.py` | testes da unidade 8 (cenários 6, 17, 18) |
 | `/docs/architecture/context-builder.md` | estouro e compactação |
 | `/docs/architecture/execucao-autonoma.md` | seção Falhas categorizadas |
 
 ## Notas de retomada
 
-Baseline após unidade 4: 121 passam, 2 falham (`test_parent_not_completed_without_verification_evidence`, `test_run_writes_final_answer`), ambas causadas pelo WIP de `consolidation.py`/`runner.py`. Cenários numerados = seção 12 do pedido.
+Baseline após unidade 8: 127 passam, 0 falham. Cenários numerados = seção 12 do pedido.

@@ -400,6 +400,7 @@ Grafo de conhecimento:
 
 **Propósito:** Garante que todo plano feche com verificação e resposta final, e monta/valida o texto final ao usuário. **Quando/onde:** `decomposition.resolve_decomposition_plan` aplica o fechamento aos planos; `RunOrchestrator._write_final_answer` e `_ensure_final_message` usam a composição e a validação.
 
+- `compose_incomplete_markdown(*, objective, pending, reason) → str` — Mensagem de "Não concluído": objetivo, motivo, tabela de pendências (etapa, estado, motivo) e como continuar. Nunca afirma conclusão.
 - `compose_final_markdown(*, objective, stages, model_text='') → str` — Monta uma conclusão em Markdown com o objetivo, data/hora atual, tabela de etapas e estados, lista de fontes e notas opcionais do modelo. Usada quando o modelo não dá resposta aproveitável.
 - `ensure_closing_stages(plan) → DecompositionResult` — Acrescenta ao fim do plano uma etapa "Verificar etapas" e uma "Resposta final" (operação de modelo) se faltarem, encadeadas por dependência.
 - `extract_sources(*chunks) → list[str]` — Extrai caminhos de arquivo citados nos textos (até 12, sem duplicatas nem prefixos de diff `a/`/`b/`).
@@ -413,7 +414,9 @@ Grafo de conhecimento:
 
 - `children_of(session, parent_id) → list[TaskModel]` — Lista as subtarefas diretas de uma tarefa.
 - `collect_evidences(session, task_id) → list[dict]` — Lê as evidências de verificação da tarefa (verificador, passou, resumo, detalhe).
-- `consolidate_parent(session, parent_id) → dict | None` — Se todos os filhos estão em estado terminal, grava no pai um relatório (`achieved`, resumo por filho, evidências e, se houver, `final_answer` e fontes) e o leva até COMPLETED, mesmo com falhas (então com `achieved=False`). Saída: o relatório, ou `None` se ainda há filhos ativos.
+- `consolidate_parent(session, parent_id) → dict | None` — Se todos os filhos estão em estado terminal, grava no pai um relatório (`achieved`, resumo por filho, evidências, `pending` e, se houver, `final_answer` e fontes). O pai só vai a COMPLETED (por transições válidas) se todo filho não cancelado concluiu com evidência; filho concluído sem evidência é reaberto e o pai volta a PLANNING; filho falho deixa o pai como está, para o runner replanejar ou parar. Saída: o relatório, ou `None` se ainda há filhos ativos.
+- `pending_reason(task) → str` — Motivo de uma pendência: detalhe da última falha, `blocked_reason` ou o status.
+- `_walk(ts, task_id, path, reason=None) → None` — Aplica uma sequência de transições de status.
 - `verification_evidence_ok(session, task) → bool` — Verdadeiro se a tarefa não exige verificação ou tem ao menos uma evidência aprovada.
 
 ### `src/agent/orchestrator/decomposition.py`
@@ -486,8 +489,10 @@ Grafo de conhecimento:
   - `RunOrchestrator._apply_provider_usage(task, provider) → None` — Soma no metadado da tarefa os tokens do último uso do provedor e zera o registro.
   - `RunOrchestrator._capture_outcome_memory(project, root) → None` — Grava uma vez a memória contextual "Resultado da conversa" com objetivo e resposta final.
   - `RunOrchestrator._depth(task) → int` — Profundidade da tarefa na árvore (usada para cortar decomposição a partir de 6 níveis).
+  - `RunOrchestrator._pending_under(root_id) → list[dict]` — Folhas da árvore que não concluíram com evidência (nem foram canceladas), com título, status e motivo.
+  - `RunOrchestrator._stall_run(run, root, reason) → dict` — Nada pode avançar e o objetivo não foi cumprido: run vai a `failed`, raiz a BLOCKED (recuperável), relatório com `achieved=False`, `pending` e mensagem "Não concluído"; evento `run.stalled`; ação `run_stalled`.
   - `RunOrchestrator._ensure_final_message(root) → None` — Garante `final_answer` no relatório da raiz: copia a do filho de resposta final ou compõe um Markdown com as etapas.
-  - `RunOrchestrator._execute_task(run, project, task, config, work_root=None) → dict` — Executa a tarefa RUNNING conforme o metadado: ferramenta MCP, resposta final, operação de modelo (gera JSON e aplica `edit_file`/`write_file`, com streaming opcional), ferramenta comum (com detecção de laço), verificação ou consolidação de pai; respeita limite de tentativas e registra tentativas. Saída: ação do passo.
+  - `RunOrchestrator._execute_task(run, project, task, config, work_root=None) → dict` — Executa a tarefa RUNNING conforme o metadado: ferramenta MCP, resposta final, operação de modelo (gera JSON e aplica `edit_file`/`write_file`, com streaming opcional), ferramenta comum (com detecção de laço), verificação ou consolidação de pai (pai com filho falho vai a BLOCKED com `dependency_failed`); respeita limite de tentativas e registra tentativas. Saída: ação do passo.
   - `RunOrchestrator._finalize_verification(run, project, task, work_root=None) → dict` — Roda a verificação da tarefa, grava a tentativa (com falha categorizada) e a evidência ligada a ela (`attempt_id`); aprovada conclui e consolida o pai, reprovada vai para nova tentativa (ou bloqueia se repetir), inconclusiva bloqueia. Sem verificação, apenas conclui.
   - `RunOrchestrator._note_thought(run, task, text, *, phase='thinking') → None` — Grava um evento `agent.thought` e faz commit para a interface mostrar o andamento durante a inferência.
   - `RunOrchestrator._context_overflow(run, project, task, provider_name, profile, exc) → dict` — Contexto obrigatório não coube nem compactado: registra tentativa falha `context_budget` com o snapshot, explica qual parte pesa mais e bloqueia a tarefa (`blocked_context`), sem chamar o modelo.
@@ -499,11 +504,11 @@ Grafo de conhecimento:
   - `RunOrchestrator._run_config(run) → dict` — Configuração do run (provedor, modelo, opções) ou dicionário vazio.
   - `RunOrchestrator._same_title_above(task) → bool` — Verdadeiro se algum ancestral tem o mesmo título (sinal de decomposição repetida).
   - `RunOrchestrator._save_requested_memory(project, task, args) → dict` — Salva memória pedida pela ferramenta de memória, no escopo da conversa (contextual) ou do projeto (canônica).
-  - `RunOrchestrator._step_body(run_id) → dict` — Lógica de um passo: replaneja se preciso, escolhe a tarefa e avança seu estado (planejar/decompor, promover, executar, verificar, reabrir); sem tarefas restantes, aplica a verificação global e conclui o run com mensagem final e memória.
+  - `RunOrchestrator._step_body(run_id) → dict` — Lógica de um passo: replaneja se preciso, escolhe a tarefa e avança seu estado (planejar/decompor, promover, executar, verificar, reabrir); sem tarefas restantes, cria a verificação global se pedida, conclui o run só se a raiz concluiu e a aceitação global passou; senão reabre lacunas de evidência ou encerra com `_stall_run` (nunca fica esperando para sempre).
   - `RunOrchestrator._subtree_ids(root_id, tasks) → set[uuid]` — Ids da raiz e de todos os descendentes.
   - `RunOrchestrator._work_root(project, task) → str` — Pasta de trabalho efetiva, considerando a conversa da tarefa.
   - `RunOrchestrator._write_final_answer(run, project, task, config) → dict` — Pede ao modelo a resposta final ao usuário com base no pedido e nas etapas irmãs; se inaproveitável, compõe Markdown padrão; grava texto e fontes, conclui a tarefa e consolida o pai.
-  - `RunOrchestrator.run_until_idle(run_id, max_steps=50) → list[dict]` — Executa passos em sequência até concluir, bloquear ou ficar parado esperando. Saída: log das ações.
+  - `RunOrchestrator.run_until_idle(run_id, max_steps=50) → list[dict]` — Executa passos em sequência até concluir, bloquear, parar com pendências (`run_stalled`) ou ficar parado esperando. Saída: log das ações.
   - `RunOrchestrator.step(run_id) → dict` — Executa um passo e registra a ação no log de eventos. Saída: ação do passo.
 - `_profile_from_config(run_config, settings) → ModelProfile` — Atalho para `profile_from_run_config`.
 - `_select_provider(settings, run_config) → LLMProvider` — Instancia o provedor do run: Ollama, llama.cpp ou mock (padrão).
@@ -725,7 +730,7 @@ Grafo de conhecimento:
   - `TaskService.get_task(task_id) → TaskModel` — Busca a tarefa ou lança `TaskNotFoundError`.
   - `TaskService.list_tasks(project_id) → list[TaskModel]` — Lista as tarefas do projeto na ordem de `sort_order`.
   - `TaskService.promote_ready_if_dependencies_met(task_id) → TaskModel | None` — Se a tarefa está em `PLANNING` e as dependências foram cumpridas, passa para `READY`; senão devolve `None`.
-  - `TaskService.update_status(task_id, update) → TaskModel` — Valida a transição na máquina de estados, aplica o novo status, marca início/fim e registra `task.status_changed`.
+  - `TaskService.update_status(task_id, update) → TaskModel` — Valida a transição na máquina de estados, aplica o novo status, marca início/fim e registra `task.status_changed`; em BLOCKED/FAILED com motivo, grava `metadata_json.blocked_reason`.
 
 ---
 
@@ -1183,6 +1188,7 @@ Grafo de conhecimento:
 - `tests/test_attachments.py` — Anexos do chat pela API: texto longo colado e imagem viram arquivos no projeto; anexo acima do limite é rejeitado.
 - `tests/test_attempt_loop.py` — `AttemptService`: detecção de saída repetida entre tentativas (loop do modelo).
 - `tests/test_consolidation.py` — `consolidate_parent`: tarefa-pai só conclui quando há evidência de verificação nos filhos.
+- `tests/test_run_termination.py` — Pai nunca conclui com filho falho; pai em RUNNING conclui por transições válidas; replanejamento preserva o irmão concluído; run sem saída termina `failed`, explicado, com raiz BLOCKED e sem laço.
 - `tests/test_context_budget.py` — `context/budget.py`: estimativa de tokens, preservação de componentes obrigatórios e erro quando o obrigatório estoura o orçamento do `ModelProfile`.
 - `tests/test_context_recovery.py` — Estouro de contexto: `ContextBudgetError` com custo por componente, `compact_text` sem perda, `RUNNING → BLOCKED`, bloqueio explicado sem chamar o modelo e recuperação por compactação.
 - `tests/test_contract_impact.py` — `ContractService`: mudança de contrato encontra as tarefas dependentes afetadas.

@@ -21,7 +21,12 @@ from agent.domain.failures import (
 )
 from agent.domain.schemas import MemoryCreate, TaskStatusUpdate
 from agent.i18n.locale import detect_language, language_instruction
-from agent.orchestrator.consolidation import children_of, consolidate_parent
+from agent.orchestrator.consolidation import (
+    children_of,
+    consolidate_parent,
+    pending_reason,
+    verification_evidence_ok,
+)
 from agent.orchestrator.global_verify import (
     ensure_global_verification_task,
     evaluate_global_acceptance,
@@ -204,6 +209,53 @@ class RunOrchestrator:
         task.metadata_json = meta
         return failure.as_dict()
 
+    _TO_BLOCKED: dict[TaskStatus, tuple[TaskStatus, ...]] = {
+        TaskStatus.PENDING: (TaskStatus.PLANNING, TaskStatus.BLOCKED),
+        TaskStatus.PLANNING: (TaskStatus.BLOCKED,),
+        TaskStatus.READY: (TaskStatus.BLOCKED,),
+        TaskStatus.RUNNING: (TaskStatus.BLOCKED,),
+        TaskStatus.RETRY_PENDING: (TaskStatus.BLOCKED,),
+        TaskStatus.VERIFYING: (TaskStatus.PLANNING, TaskStatus.BLOCKED),
+        TaskStatus.COMPLETED: (TaskStatus.VERIFYING, TaskStatus.PLANNING, TaskStatus.BLOCKED),
+    }
+
+    def _pending_under(self, root_id: uuid.UUID) -> list[dict[str, Any]]:
+        tasks = list(self._session.scalars(select(TaskModel)).all())
+        subtree = self._subtree_ids(root_id, tasks)
+        pending: list[dict[str, Any]] = []
+        for t in sorted((t for t in tasks if t.id in subtree and t.id != root_id), key=lambda t: t.sort_order):
+            done = TaskStatus(t.status) == TaskStatus.COMPLETED and verification_evidence_ok(self._session, t)
+            if done or TaskStatus(t.status) == TaskStatus.CANCELLED or children_of(self._session, t.id):
+                continue
+            pending.append({"task_id": str(t.id), "title": t.title, "status": t.status, "reason": pending_reason(t)})
+        return pending
+
+    def _stall_run(self, run: ExecutionRunModel, root: TaskModel, reason: str) -> dict[str, Any]:
+        """Nada pode avançar e o objetivo não foi cumprido: o run termina como falho, com o estado salvo,
+        a raiz em BLOCKED (recuperável) e a explicação das pendências. Nada é dado como concluído."""
+        from agent.orchestrator.closing import compose_incomplete_markdown
+
+        pending = self._pending_under(root.id)
+        for status in self._TO_BLOCKED.get(TaskStatus(root.status), ()):
+            self._tasks.update_status(root.id, TaskStatusUpdate(status=status, reason=reason))
+        report = dict(root.consolidated_result_json or {})
+        report.update(achieved=False, pending=pending, stalled_reason=reason)
+        report["final_answer"] = compose_incomplete_markdown(
+            objective=root.objective or root.title, pending=pending, reason=reason
+        )
+        root.consolidated_result_json = report
+        run.status = RunStatus.FAILED.value
+        self._session.add(
+            EventLogModel(
+                project_id=run.project_id,
+                run_id=run.id,
+                task_id=root.id,
+                event_type="run.stalled",
+                payload_json={"reason": reason, "pending": pending},
+            )
+        )
+        return {"action": "run_stalled", "run_id": str(run.id), "reason": reason, "pending": pending}
+
     def _context_overflow(
         self,
         run: ExecutionRunModel,
@@ -313,25 +365,21 @@ class RunOrchestrator:
             return revised
         task = self._pick_next_task(run.root_task_id)
         if task is None:
-            ensure_global_verification_task(self._session, project.id, root)
-            if self._all_terminal_under(root.id):
-                # If all children are terminal, try to complete the run
+            added = ensure_global_verification_task(self._session, project.id, root)
+            if added is not None:
+                return {"action": "global_verification_added", "task_id": str(added.id)}
+            reason = "nenhuma etapa pode avançar"
+            if self._all_terminal_under(root.id) and TaskStatus(root.status) == TaskStatus.COMPLETED:
                 ok, reason = evaluate_global_acceptance(self._session, root.id)
-                if not ok:
-                    # If root is still PLANNING but all children are done, mark root as READY to let it complete
-                    if TaskStatus(root.status) == TaskStatus.PLANNING:
-                        self._tasks.update_status(root.id, TaskStatusUpdate(status=TaskStatus.READY))
-                        # The next step will pick it up and complete it
-                        return {"action": "operation_ready", "task_id": str(root.id)}
-                    reopened = reopen_verification_gaps(self._session, root.id)
-                    if reopened:
-                        return {"action": "global_verify_reopen", "reopened": [str(x) for x in reopened]}
-                    return {"action": "global_verify_failed", "reason": reason}
-                run.status = RunStatus.COMPLETED.value
-                self._ensure_final_message(root)
-                self._capture_outcome_memory(project, root)
-                return {"action": "run_completed", "run_id": str(run_id)}
-            return {"action": "waiting", "run_id": str(run_id)}
+                if ok:
+                    run.status = RunStatus.COMPLETED.value
+                    self._ensure_final_message(root)
+                    self._capture_outcome_memory(project, root)
+                    return {"action": "run_completed", "run_id": str(run_id)}
+                reopened = reopen_verification_gaps(self._session, root.id)
+                if reopened:
+                    return {"action": "global_verify_reopen", "reopened": [str(x) for x in reopened]}
+            return self._stall_run(run, root, reason)
 
         self._session.add(
             EventLogModel(
@@ -469,6 +517,7 @@ class RunOrchestrator:
                 "blocked_attempts",
                 "blocked_contract",
                 "blocked_context",
+                "run_stalled",
                 "global_verify_failed",
             }:
                 break
@@ -790,12 +839,26 @@ class RunOrchestrator:
 
         kids = children_of(self._session, task.id)
         if kids:
-            consolidate_parent(self._session, task.id)
-            # Check if parent is now completed
-            parent = self._tasks.get_task(task.parent_id) if task.parent_id else self._tasks.get_task(task.id)
-            if parent and TaskStatus(parent.status) == TaskStatus.COMPLETED:
-                return {"action": "run_completed", "run_id": str(run.id)}
-            return {"action": "consolidated_parent", "task_id": str(task.id)}
+            report = consolidate_parent(self._session, task.id)
+            current = TaskStatus(task.status)
+            if report is None and current == TaskStatus.RUNNING:
+                for status in (TaskStatus.VERIFYING, TaskStatus.PLANNING):
+                    self._tasks.update_status(task.id, TaskStatusUpdate(status=status, reason="aguardando etapas"))
+            elif current == TaskStatus.RUNNING:
+                pending = ", ".join(f"«{item['title']}»" for item in (report or {}).get("pending") or [])
+                noted = self._remember_failure(
+                    task,
+                    Failure(FailureCategory.BLOCKED_DEPENDENCY, FailureCause.DEPENDENCY_FAILED, f"etapas não concluídas: {pending}"),
+                )
+                self._tasks.update_status(
+                    task.id, TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=f"etapas não concluídas: {pending}")
+                )
+                return {"action": "blocked_children", "task_id": str(task.id), "failure": noted}
+            return {
+                "action": "consolidated_parent",
+                "task_id": str(task.id),
+                "achieved": bool((report or {}).get("achieved")),
+            }
 
         if TaskKind(task.kind) == TaskKind.OPERATION and not meta:
             self._tasks.update_status(

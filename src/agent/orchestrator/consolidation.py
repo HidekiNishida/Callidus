@@ -26,7 +26,23 @@ def children_of(session: Session, parent_id: uuid.UUID) -> list[TaskModel]:
     return list(session.scalars(stmt).all())
 
 
+_TO_VERIFYING: dict[TaskStatus, list[TaskStatus]] = {
+    TaskStatus.PLANNING: [TaskStatus.VERIFYING],
+    TaskStatus.READY: [TaskStatus.RUNNING, TaskStatus.VERIFYING],
+    TaskStatus.RUNNING: [TaskStatus.VERIFYING],
+    TaskStatus.VERIFYING: [],
+}
+
+
+def _walk(ts: TaskService, task_id: uuid.UUID, path: list[TaskStatus], reason: str | None = None) -> None:
+    for status in path:
+        ts.update_status(task_id, TaskStatusUpdate(status=status, reason=reason))
+
+
 def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any] | None:
+    """Junta o resultado dos filhos no pai. O pai só conclui se todo filho não cancelado concluiu com
+    evidência. Filho concluído sem evidência é reaberto e o pai volta a PLANNING. Filho que falhou deixa o
+    pai como está, com `achieved=False` e a lista `pending`: replanejar ou parar é decisão do runner."""
     ts = TaskService(session)
     parent = ts.get_task(parent_id)
     kids = children_of(session, parent_id)
@@ -36,12 +52,14 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
         return None
 
     summaries = []
-    child_ok = True
+    gaps: list[TaskModel] = []
+    failed: list[TaskModel] = []
     for c in kids:
         ev_ok = verification_evidence_ok(session, c)
-        ok = c.status == TaskStatus.COMPLETED.value and ev_ok
-        if not ok:
-            child_ok = False
+        if c.status == TaskStatus.COMPLETED.value and not ev_ok:
+            gaps.append(c)
+        elif c.status == TaskStatus.FAILED.value:
+            failed.append(c)
         summaries.append(
             {
                 "task_id": str(c.id),
@@ -51,9 +69,13 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
             }
         )
     report: dict[str, Any] = {
-        "achieved": child_ok,
+        "achieved": not gaps and not failed,
         "children": summaries,
         "evidences": collect_evidences(session, parent_id),
+        "pending": [
+            {"task_id": str(c.id), "title": c.title, "status": c.status, "reason": pending_reason(c)}
+            for c in [*gaps, *failed]
+        ],
     }
     for child in kids:
         meta = child.metadata_json or {}
@@ -63,26 +85,24 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
             report["sources"] = result.get("sources") or []
     parent.consolidated_result_json = report
     current = TaskStatus(parent.status)
-    if current == TaskStatus.PLANNING:
-        if report["achieved"]:
-            ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-            current = TaskStatus.VERIFYING
-        else:
-            # All children terminal but some failed - complete parent anyway
-            ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-            current = TaskStatus.VERIFYING
-    if current in {TaskStatus.RUNNING, TaskStatus.VERIFYING}:
-        if report["achieved"]:
-            ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
-        else:
-            # All children terminal but some failed - complete parent with achieved=False
-            # First transition to VERIFYING if RUNNING, then to COMPLETED
-            if current == TaskStatus.RUNNING:
-                ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                current = TaskStatus.VERIFYING
-            if current == TaskStatus.VERIFYING:
-                ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
+    if current not in _TO_VERIFYING:
+        return report
+    if report["achieved"]:
+        _walk(ts, parent_id, [*_TO_VERIFYING[current], TaskStatus.COMPLETED])
+        return report
+    if gaps:
+        for c in gaps:
+            _walk(ts, c.id, [TaskStatus.VERIFYING, TaskStatus.RETRY_PENDING], "evidência insuficiente")
+        if current != TaskStatus.PLANNING:
+            _walk(ts, parent_id, [*_TO_VERIFYING[current], TaskStatus.PLANNING], "filhos sem evidência")
     return report
+
+
+def pending_reason(task: TaskModel) -> str:
+    """Por que a tarefa não concluiu: última falha categorizada, motivo do bloqueio ou o status."""
+    meta = task.metadata_json or {}
+    failure = meta.get("last_failure") or {}
+    return str(failure.get("detail") or meta.get("blocked_reason") or task.status)[:300]
 
 
 def collect_evidences(session: Session, task_id: uuid.UUID) -> list[dict[str, Any]]:

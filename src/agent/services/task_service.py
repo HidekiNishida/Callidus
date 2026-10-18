@@ -101,6 +101,8 @@ class TaskService:
             task.started_at = now
         if target in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}:
             task.completed_at = now
+        if target in {TaskStatus.BLOCKED, TaskStatus.FAILED} and update.reason:
+            task.metadata_json = {**(task.metadata_json or {}), "blocked_reason": update.reason[:500]}
 
         self._log_event(
             project_id=task.project_id,
