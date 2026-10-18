@@ -2,17 +2,23 @@
 from __future__ import annotations
 
 import asyncio
+import codecs
 import os
 import re
 import shlex
 import shutil
 import subprocess
 import sys
+import time
+import uuid
 from pathlib import Path
 
+from agent.observability import emit
+from agent.observability.batching import DeltaBatcher
+from agent.observability.sanitize import is_sensitive_path
 from agent.security.paths import PathSecurityError, resolve_under_root
 from agent.tools.diffing import unified_diff_text
-from agent.tools.registry import ToolContext, ToolRegistry, ToolSpec
+from agent.tools.registry import ToolContext, ToolRegistry, ToolSpec, current_call_id
 
 SKIP_DIRS = {
     ".git",
@@ -42,6 +48,17 @@ TOOL_CATALOG = (
     "search usa query. navigate usa url http(s). click usa text ou selector. "
     "Não invente outros nomes."
 )
+
+
+def _file_event(event_type: str, path: str, diff: dict | None = None, **extra: object) -> None:
+    """Fato do disco, emitido depois da operação ter dado certo. Arquivo sensível sai sem diff."""
+    data: dict = {"path": str(path), "call_id": current_call_id(), **extra}
+    if diff is not None:
+        if is_sensitive_path(str(path)):
+            data.update(added=diff["added"], removed=diff["removed"], diff=None, sensitive=True)
+        else:
+            data.update(diff)
+    emit(event_type, data)
 
 
 def _root(ctx: ToolContext) -> Path:
@@ -133,6 +150,7 @@ async def _read_file(ctx: ToolContext, args: dict) -> dict:
     if limit is not None and offset - 1 + limit < total:
         truncated = True
     rel = str(full.relative_to(_root(ctx)))
+    _file_event("file.read", rel, offset=offset, lines=len(window), total_lines=total, truncated=truncated)
     return {
         "success": True,
         "path": rel,
@@ -150,12 +168,16 @@ async def _write_file(ctx: ToolContext, args: dict) -> dict:
         full = resolve_under_root(ctx.project_root, path)
     except PathSecurityError as exc:
         return {"success": False, "error": str(exc)}
-    before = full.read_text(encoding="utf-8", errors="replace") if full.is_file() else ""
+    existed = full.is_file()
+    before = full.read_text(encoding="utf-8", errors="replace") if existed else ""
     full.parent.mkdir(parents=True, exist_ok=True)
     full.write_text(content, encoding="utf-8")
     _drop_stale_bytecode(full)
     diff = unified_diff_text(str(path), before, content)
-    return {"success": True, "path": path, "bytes": len(content.encode("utf-8")), **diff}
+    size = len(content.encode("utf-8"))
+    if not existed or before != content:
+        _file_event("file.changed" if existed else "file.created", str(path), diff, bytes=size)
+    return {"success": True, "path": path, "bytes": size, "created": not existed, **diff}
 
 
 async def _search_grep(ctx: ToolContext, args: dict) -> dict:
@@ -206,7 +228,30 @@ def _argv(command: object) -> list[str] | None:
     return None
 
 
-async def _run_command(ctx: ToolContext, args: dict) -> dict:
+async def _pump(stream: asyncio.StreamReader | None, chunks: list[bytes], batcher: DeltaBatcher) -> None:
+    if stream is None:
+        return
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    while True:
+        chunk = await stream.read(4096)
+        if not chunk:
+            batcher.add(decoder.decode(b"", final=True))
+            return
+        chunks.append(chunk)
+        batcher.add(decoder.decode(chunk))
+
+
+_PYTEST_SUMMARY = re.compile(r"(\d+) (passed|failed|error|errors|skipped)")
+
+
+def _test_counts(stdout: str) -> dict[str, int]:
+    tail = stdout.strip().splitlines()[-1] if stdout.strip() else ""
+    return {kind.rstrip("s") if kind == "errors" else kind: int(n) for n, kind in _PYTEST_SUMMARY.findall(tail)}
+
+
+async def _run_command(ctx: ToolContext, args: dict, *, kind: str = "command") -> dict:
+    """Saída lida aos poucos: cada trecho vai para `command.output` (ou `test.output`) enquanto o processo roda;
+    o resultado devolvido é o mesmo de antes (finais de stdout/stderr, código de saída)."""
     command = _argv(args.get("command"))
     if not command:
         return {"success": False, "error": "command deve ser lista ou string"}
@@ -218,6 +263,10 @@ async def _run_command(ctx: ToolContext, args: dict) -> dict:
     timeout = float(args.get("timeout", 120))
     if command[0] in {"python", "python3"} and shutil.which(command[0]) is None:
         command = [python_for(ctx.project_root), *command[1:]]
+    call_id = current_call_id() or uuid.uuid4().hex[:12]
+    shown = shlex.join(command)
+    started = time.monotonic()
+    emit(f"{kind}.started", {"call_id": call_id, "command": shown, "cwd": str(cwd_path)}, commit=True)
     try:
         proc = await asyncio.create_subprocess_exec(
             *command,
@@ -227,22 +276,49 @@ async def _run_command(ctx: ToolContext, args: dict) -> dict:
             stderr=asyncio.subprocess.PIPE,
         )
     except (FileNotFoundError, PermissionError) as exc:
-        return {
-            "success": False,
-            "error": f"executável indisponível: {command[0]} ({exc.strerror or exc})",
-            "category": "configuration",
-            "command": command,
-        }
+        error = f"executável indisponível: {command[0]} ({exc.strerror or exc})"
+        emit(f"{kind}.failed", {"call_id": call_id, "error": error, "exit_code": None})
+        return {"success": False, "error": error, "category": "configuration", "command": command}
+
+    def _out(stream: str) -> DeltaBatcher:
+        return DeltaBatcher(lambda text: emit(f"{kind}.output", {"call_id": call_id, "stream": stream, "text": text}))
+
+    out_batch, err_batch = _out("stdout"), _out("stderr")
+    out_chunks: list[bytes] = []
+    err_chunks: list[bytes] = []
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        await asyncio.wait_for(
+            asyncio.gather(_pump(proc.stdout, out_chunks, out_batch), _pump(proc.stderr, err_chunks, err_batch), proc.wait()),
+            timeout=timeout,
+        )
     except asyncio.TimeoutError:
         proc.kill()
+        out_batch.flush()
+        err_batch.flush()
+        emit(f"{kind}.failed", {"call_id": call_id, "error": "timeout", "exit_code": None, "duration_ms": int((time.monotonic() - started) * 1000)})
         return {"success": False, "error": "timeout", "command": command}
+    out_batch.flush()
+    err_batch.flush()
+    stdout = b"".join(out_chunks).decode("utf-8", errors="replace")
+    stderr = b"".join(err_chunks).decode("utf-8", errors="replace")
+    finished = {
+        "call_id": call_id,
+        "exit_code": proc.returncode,
+        "duration_ms": int((time.monotonic() - started) * 1000),
+        "stdout_tail": stdout[-2000:],
+        "stderr_tail": stderr[-2000:],
+    }
+    if kind == "test":
+        finished["counts"] = _test_counts(stdout)
+    if proc.returncode == 0:
+        emit(f"{kind}.completed", finished)
+    else:
+        emit(f"{kind}.failed", {**finished, "error": f"código de saída {proc.returncode}"})
     return {
         "success": proc.returncode == 0,
         "exit_code": proc.returncode,
-        "stdout": stdout.decode("utf-8", errors="replace")[-8000:],
-        "stderr": stderr.decode("utf-8", errors="replace")[-8000:],
+        "stdout": stdout[-8000:],
+        "stderr": stderr[-8000:],
         "command": command,
     }
 
@@ -349,6 +425,8 @@ async def _edit_file(ctx: ToolContext, args: dict) -> dict:
     full.write_text(updated, encoding="utf-8")
     _drop_stale_bytecode(full)
     diff = unified_diff_text(str(raw), content, updated)
+    if updated != content:
+        _file_event("file.changed", str(raw), diff)
     return {
         "success": True,
         "path": str(raw),
@@ -364,6 +442,7 @@ async def _delete_file(ctx: ToolContext, args: dict) -> dict:
     if full is None or not full.is_file():
         return {"success": False, "error": "arquivo inexistente"}
     full.unlink()
+    _file_event("file.deleted", str(args.get("path")))
     return {"success": True, "path": str(args.get("path"))}
 
 
@@ -394,6 +473,8 @@ async def _move_file(ctx: ToolContext, args: dict) -> dict:
         return {"success": False, "error": "origem inexistente"}
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(src), str(dst))
+    _file_event("file.deleted", src_raw, moved_to=dst_raw)
+    _file_event("file.created", dst_raw, moved_from=src_raw)
     return {"success": True, "from": src_raw, "to": dst_raw}
 
 
@@ -451,6 +532,7 @@ async def _run_pytest(ctx: ToolContext, args: dict) -> dict:
             "env": env,
             "timeout": args.get("timeout", 180),
         },
+        kind="test",
     )
 
 

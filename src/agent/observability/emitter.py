@@ -32,7 +32,7 @@ _UNSET: Any = object()
 _order = itertools.count()
 
 
-@dataclass(frozen=True)
+@dataclass
 class Observation:
     session: Session
     run_id: uuid.UUID
@@ -64,6 +64,13 @@ def observe(
         yield obs
     finally:
         _CURRENT.reset(token)
+
+
+def set_task(task_id: uuid.UUID | None) -> None:
+    """Fixa a tarefa do contexto aberto por `observe` (cada bloco tem o seu objeto, então não vaza)."""
+    obs = _CURRENT.get()
+    if obs is not None:
+        obs.task_id = task_id
 
 
 @contextmanager
@@ -127,10 +134,11 @@ def emit(
     if obs is None:
         return None
     spec = spec_for(event_type)
-    payload = sanitize(validate_payload(event_type, data), limit=_limit_for(event_type))
+    payload = validate_payload(event_type, data)
     tid = obs.task_id if task_id is _UNSET else task_id
     who = agent or obs.agent
     if not spec.persist:
+        payload = sanitize(payload, limit=_limit_for(event_type))
         bus = get_bus()
         env = EventEnvelope(
             id=str(uuid.uuid4()),
@@ -190,7 +198,7 @@ def _before_flush(session: Session, _ctx: Any, _instances: Any) -> None:
         if row.created_at is None:
             row.created_at = datetime.now(timezone.utc)
         row.schema_version = SCHEMA_VERSION
-        if row.payload_json is not None and row.event_type not in EVENT_SPECS:
+        if row.payload_json is not None:
             row.payload_json = sanitize(row.payload_json, limit=_limit_for(row.event_type))
         run_id = row.run_id
         row.seq = bus.allocate_seq(str(run_id), lambda: _max_seq(session, run_id))

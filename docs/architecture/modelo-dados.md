@@ -42,6 +42,6 @@ Compactação futura: nova versão com `source_refs` apontando para registros an
 
 ## Eventos
 
-Cada transição relevante grava `EventLog`: `run_id`, `task_id`, `type`, `payload_json`, `created_at`.
+Cada transição relevante grava `EventLog`: `run_id`, `task_id`, `type`, `payload_json`, `created_at`, `seq` (monotônico por run), `parent_task_id`, `agent` e `schema_version`. Catálogo, contexto e entrega em tempo real: [observabilidade.md](observabilidade.md).
 
-Tipos iniciais: `task.created`, `task.status_changed`, `run.started`, `run.paused`, `attempt.recorded`. Controle de progresso: `run.stagnation` (diagnóstico da etapa que repete o erro), `run.paused` (com limite, pendências e próxima ação) e `run.resumed` (o orçamento dos limites recomeça daqui).
+Tarefas: `task.created` e uma mudança de status por evento tipado (`task.started`, `task.progress`, `task.blocked`, `task.completed`, `task.failed`, `task.cancelled`, todos com `from`/`to`/`reason`; bancos antigos têm `task.status_changed`). Run: `run.started`, `run.progress`, `run.completed`, `run.failed` (`kind: stalled` quando nada pode avançar), `run.cancelled`, `run.paused`, `run.resumed`; `attempt.recorded`. Controle de progresso: `run.stagnation` (diagnóstico da etapa que repete o erro), `run.paused` (com limite, pendências e próxima ação) e `run.resumed` (o orçamento dos limites recomeça daqui).

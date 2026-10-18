@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agent.observability import emit
 from agent.security.paths import PathSecurityError, resolve_under_root
 from agent.tools.registry import ToolContext, build_default_registry
 
@@ -28,6 +29,30 @@ async def run_verification(
     spec: dict[str, Any],
     tool_args: dict[str, Any] | None = None,
     approved: bool = False,
+) -> VerificationResult:
+    vtype = str(spec.get("type") or spec.get("verification") or "unknown")
+    criterion = {k: spec[k] for k in ("path", "contains", "command") if k in spec}
+    emit("verification.started", {"verifier": vtype, "criterion": criterion}, commit=True)
+    result = await _verify(project_root=project_root, spec=spec, tool_args=tool_args, approved=approved)
+    outcome = {
+        "verifier": result.verifier,
+        "summary": result.summary,
+        "criterion": criterion,
+        "exit_code": (result.detail or {}).get("exit_code"),
+    }
+    if result.passed is None:
+        emit("verification.inconclusive", outcome)
+    else:
+        emit("verification.passed" if result.passed else "verification.failed", outcome)
+    return result
+
+
+async def _verify(
+    *,
+    project_root: str,
+    spec: dict[str, Any],
+    tool_args: dict[str, Any] | None,
+    approved: bool,
 ) -> VerificationResult:
     vtype = spec.get("type") or spec.get("verification")
     ctx = ToolContext(project_root=project_root)

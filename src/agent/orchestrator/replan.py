@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from agent.domain.enums import TaskKind, TaskStatus
 from agent.domain.failures import Failure, FailureCategory
 from agent.domain.schemas import TaskStatusUpdate
+from agent.observability import emit
 from agent.orchestrator.consolidation import children_of, pending_reason, superseded
 from agent.orchestrator.decomposition import DecompositionResult, SubTaskSpec, apply_decomposition
 from agent.persistence.models import TaskModel
@@ -166,6 +167,23 @@ def replan_parent(session: Session, parent: TaskModel) -> dict | None:
     meta.pop("replan_refused", None)
     parent.metadata_json = meta
     session.flush()
+    emit(
+        "task.replanned",
+        {
+            "reason": reason[:500],
+            "stopped_at": stopped.title,
+            "stopped_task_id": str(stopped.id),
+            "count": count,
+            "kept": done,
+            "cancelled": cancelled,
+            "tasks": [
+                {"id": str(k.id), "title": k.title}
+                for k in children_of(session, parent.id)
+                if (k.metadata_json or {}).get("replan") and k.status == TaskStatus.PENDING.value
+            ],
+        },
+        task_id=parent.id,
+    )
     return {
         "action": "replanned",
         "task_id": str(parent.id),

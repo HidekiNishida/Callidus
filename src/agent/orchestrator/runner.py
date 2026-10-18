@@ -54,7 +54,8 @@ from agent.orchestrator.plan_validation import (
     summarize,
     validate_and_repair,
 )
-from agent.orchestrator.progress import progress_state
+from agent.observability import emit, observe, set_task
+from agent.orchestrator.progress import made_progress, progress_state
 from agent.orchestrator.replan import replan_decision, replan_under
 from agent.orchestrator.stagnation import (
     diagnose,
@@ -292,9 +293,13 @@ class RunOrchestrator:
         return {"action": "operation_wait_deps", "task_id": str(task.id)}
 
     async def step(self, run_id: uuid.UUID) -> dict[str, Any]:
-        out = await self._step_body(run_id)
-        out = self._check_stagnation(run_id, out) or out
-        self._record_action(run_id, out)
+        run = self._session.get(ExecutionRunModel, run_id)
+        if run is None:
+            raise LookupError(str(run_id))
+        with observe(self._session, run_id=run.id, project_id=run.project_id):
+            out = await self._step_body(run_id)
+            out = self._check_stagnation(run_id, out) or out
+            self._record_action(run_id, out)
         return out
 
     def _check_stagnation(self, run_id: uuid.UUID, out: dict[str, Any]) -> dict[str, Any] | None:
@@ -427,6 +432,23 @@ class RunOrchestrator:
         payload = {k: v for k, v in out.items() if k not in {"log"}}
         self._session.flush()
         payload["progress"] = progress_state(self._session, run.root_task_id)
+        previous = self._session.scalars(
+            select(EventLogModel.payload_json)
+            .where(EventLogModel.run_id == run_id, EventLogModel.event_type == "orchestrator.action")
+            .order_by(EventLogModel.created_at.desc())
+            .limit(1)
+        ).first()
+        before = (previous or {}).get("progress")
+        if before != payload["progress"]:
+            emit(
+                "run.progress",
+                {
+                    "state": payload["progress"],
+                    "previous": before,
+                    "made_progress": made_progress(before, payload["progress"]),
+                },
+                task_id=None,
+            )
         self._session.add(
             EventLogModel(
                 project_id=run.project_id,
@@ -510,8 +532,8 @@ class RunOrchestrator:
                 project_id=run.project_id,
                 run_id=run.id,
                 task_id=root.id,
-                event_type="run.stalled",
-                payload_json={"reason": reason, "pending": pending, "requirements": requirements},
+                event_type="run.failed",
+                payload_json={"reason": reason, "kind": "stalled", "pending": pending, "requirements": requirements},
             )
         )
         return {"action": "run_stalled", "run_id": str(run.id), "reason": reason, "pending": pending}
@@ -644,6 +666,15 @@ class RunOrchestrator:
                     run.status = RunStatus.COMPLETED.value
                     self._ensure_final_message(root)
                     self._capture_outcome_memory(project, root)
+                    reqs = root.consolidated_result_json["requirements"]
+                    emit(
+                        "run.completed",
+                        {
+                            "requirements": len(reqs) if isinstance(reqs, list) else None,
+                            "progress": progress_state(self._session, root.id),
+                        },
+                        task_id=root.id,
+                    )
                     return {"action": "run_completed", "run_id": str(run_id)}
                 reopened = reopen_verification_gaps(self._session, root.id)
                 if reopened:
@@ -654,6 +685,7 @@ class RunOrchestrator:
                     return {"action": "requirements_reopen", "created": [str(x) for x in fixes], "reason": reason}
             return self._stall_run(run, root, reason)
 
+        set_task(task.id)
         revalidated = self._revalidate_plan(run, task, config, work_root)
         if revalidated:
             return revalidated
@@ -702,6 +734,7 @@ class RunOrchestrator:
                 )
             if not kids:
                 attempts = self._attempts.count_attempts(task.id)
+                emit("plan.started", {"title": task.title, "depth": self._depth(task)})
                 if meta.get("atomize") or (
                     attempts >= 2
                     and should_decompose_further(
@@ -743,6 +776,17 @@ class RunOrchestrator:
                     )
                 plan, spec_issues = sanitize_spec(plan)
                 apply_decomposition(self._session, project.id, task.id, plan)
+                emit(
+                    "plan.updated",
+                    {
+                        "source": source,
+                        "tasks": [
+                            {"id": str(k.id), "title": k.title, "kind": k.kind}
+                            for k in children_of(self._session, task.id)
+                            if k.status == TaskStatus.PENDING.value
+                        ],
+                    },
+                )
                 validation = self._validate_plan(run, task, config, work_root, spec_issues)
                 if not validation.runnable:
                     return self._block_invalid_plan(task, validation)

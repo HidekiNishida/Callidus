@@ -844,7 +844,10 @@ function eventLabel(ev) {
     const extra = p.source ? ` (${p.source})` : p.count ? ` · ${p.count} itens` : "";
     return `${label}${extra}`;
   }
-  if (ev.event_type === "task.status_changed") return `${p.from} → ${p.to}${p.reason ? ` (${p.reason})` : ""}`;
+  // `task.status_changed` é o nome antigo (bancos de antes dos eventos tipados).
+  if (ev.event_type === "task.status_changed" || (ev.event_type.startsWith("task.") && p.from && p.to)) {
+    return `${p.from} → ${p.to}${p.reason ? ` (${p.reason})` : ""}`;
+  }
   if (ev.event_type === "orchestrator.step") return `Olhando “${p.task || "tarefa"}” · ${p.status || ""}`;
   if (ev.event_type === "attempt.recorded") return p.success ? "Tentativa registrada" : "Tentativa com falha";
   return ev.event_type;

@@ -29,7 +29,7 @@ Na retomada, se um arquivo mudou depois da verificação, a aceitação global r
 Quando nenhuma tarefa pode avançar (e o replanejamento não tem mais o que fazer), o run nunca fica em espera infinita:
 
 - **Concluído** só se a raiz está `COMPLETED`, todos os descendentes terminaram e `evaluate_global_acceptance` passou. Verificação concluída sem evidência é reaberta (`global_verify_reopen`).
-- **Parado com pendências** (`_stall_run`) em qualquer outro caso: run `failed`, raiz `BLOCKED` (recuperável: `BLOCKED → PLANNING`), relatório com `achieved=false`, `pending` (etapa, status, motivo) e `final_answer` em "## Não concluído". Evento `run.stalled`; ação `run_stalled`. O que já concluiu fica salvo.
+- **Parado com pendências** (`_stall_run`) em qualquer outro caso: run `failed`, raiz `BLOCKED` (recuperável: `BLOCKED → PLANNING`), relatório com `achieved=false`, `pending` (etapa, status, motivo) e `final_answer` em "## Não concluído". Evento `run.failed` com `kind: stalled`; ação `run_stalled`. O que já concluiu fica salvo.
 
 `consolidate_parent` nunca conclui um pai com filho falho: devolve `achieved=false` e `pending`. Pai em execução com filho falho vai a `BLOCKED` (`blocked_dependency/dependency_failed`), o que aciona o replanejamento do nível de cima.
 

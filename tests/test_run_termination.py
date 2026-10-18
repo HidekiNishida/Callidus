@@ -102,8 +102,8 @@ async def test_stalled_run_ends_explained_and_keeps_finished_work(session, tmp_p
     assert "pytest ausente" in report["final_answer"]
     assert [item["title"] for item in report["pending"]] == ["Rodar testes"]
     assert TaskService(session).get_task(done.id).status == TaskStatus.COMPLETED.value
-    events = session.query(EventLogModel).filter(EventLogModel.event_type == "run.stalled").all()
-    assert len(events) == 1
+    events = session.query(EventLogModel).filter(EventLogModel.event_type == "run.failed").all()
+    assert len(events) == 1 and events[0].payload_json["kind"] == "stalled"
 
     again = await RunOrchestrator(session, Settings(data_dir=tmp_path / "data")).step(run.id)
     assert again["action"] == "run_terminal"

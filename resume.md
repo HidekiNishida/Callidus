@@ -402,6 +402,16 @@ Grafo de conhecimento:
   - `EventBus._track(st, env) → None` — Abre/fecha saídas e operações conforme os eventos e acumula fragmentos.
 - `get_bus() → EventBus` — Instância única do processo, com limites de `Settings`.
 
+### `src/agent/observability/batching.py`
+
+**Propósito:** agrupa fragmentos de texto (resposta do modelo, saída de comando) antes de publicar, por tempo e por tamanho. **Quando/onde:** `_run_command` e o streaming dos provedores.
+
+- `_defaults() → tuple[int, int]` — Intervalo e tamanho máximo de `Settings` (cache).
+- **`DeltaBatcher`** — Acumulador com temporizador no loop atual.
+  - `DeltaBatcher.__init__(publish, *, interval_ms=None, max_chars=None) → None` — Função de publicação e limites.
+  - `DeltaBatcher.add(text) → None` — Acumula; publica ao passar do tamanho ou agenda a publicação após o intervalo.
+  - `DeltaBatcher.flush() → None` — Publica o que estiver pendente e cancela o temporizador.
+
 ### `src/agent/observability/emitter.py`
 
 **Propósito:** contexto de observação (`ContextVar`), emissão tipada e listeners do SQLAlchemy que numeram, completam e publicam eventos depois do commit. **Quando/onde:** orquestrador (`observe`), produtores (`emit`), todas as sessões (listeners).
@@ -409,6 +419,7 @@ Grafo de conhecimento:
 - **`Observation`** — Sessão, run, projeto, tarefa e agente do trecho em execução.
 - `current() → Observation | None` — Contexto ativo.
 - `observe(session, *, run_id, project_id=None, task_id=None, agent='orchestrator') → Iterator[Observation]` — Liga os eventos do bloco à run/tarefa.
+- `set_task(task_id) → None` — Fixa a tarefa do contexto aberto por `observe` (o orquestrador chama ao escolher a etapa).
 - `scoped(*, task_id=_UNSET, agent=None) → Iterator[Observation | None]` — Troca tarefa/agente por um trecho; sem contexto não faz nada.
 - `_limits() → tuple[int, int]` — Limites de texto e de resposta final (cache).
 - `_limit_for(event_type) → int` — Limite aplicado ao tipo (resposta final e tipos antigos usam o maior).
@@ -628,7 +639,7 @@ Grafo de conhecimento:
 - `REPLAN_BUDGET = 3` — Replanejamentos por linhagem (o nó replanejado herda a contagem).
 - **`ReplanDecision`** — Decisão da política: `replan` (bool) e `reason` (por que não).
 - `replan_decision(parent_meta, stopped, completed) → ReplanDecision` — Política por categoria: falha de configuração ou externa não é replanejada (precisa de ação de fora); respeita o orçamento; recusa quando o último replanejamento não trouxe etapa nova concluída e o motivo é o mesmo (comparado normalizado).
-- `replan_parent(session, parent) → dict | None` — Se um filho não substituído está BLOCKED/FAILED e a política permite: cancela os irmãos pendentes, marca o filho parado como `superseded_by_replan` (BLOCKED vira CANCELLED), cria "Ver o que ainda falta" (list_dir, apoio) e "Seguir com o plano corrigido" (nó `subsystem` que será decomposto de novo, com o que foi feito, o motivo, o pedido de outra abordagem e os requisitos que a etapa parada e as irmãs não feitas cobriam) e registra `replan_history`. Se a política recusa, grava `replan_refused` no pai. Saída: descrição da ação ou `None`.
+- `replan_parent(session, parent) → dict | None` — Se um filho não substituído está BLOCKED/FAILED e a política permite: cancela os irmãos pendentes, marca o filho parado como `superseded_by_replan` (BLOCKED vira CANCELLED), cria "Ver o que ainda falta" (list_dir, apoio) e "Seguir com o plano corrigido" (nó `subsystem` que será decomposto de novo, com o que foi feito, o motivo, o pedido de outra abordagem e os requisitos que a etapa parada e as irmãs não feitas cobriam) e registra `replan_history` e o evento `task.replanned` (motivo, etapa parada, mantidas, canceladas, novas). Se a política recusa, grava `replan_refused` no pai. Saída: descrição da ação ou `None`.
 - `_carried_covers(session, kids, stopped) → list[dict] | None` — Une a cobertura da etapa parada e das irmãs ainda não feitas (cobertura inteira vence parcial); `None` se o plano não declara cobertura.
 - `replan_under(session, root_id) → dict | None` — Percorre a raiz e seus descendentes e aplica o primeiro replanejamento que a política permitir.
 
@@ -654,7 +665,7 @@ Grafo de conhecimento:
   - `RunOrchestrator._capture_outcome_memory(project, root) → None` — Grava uma vez a memória contextual "Resultado da conversa" com objetivo e resposta final.
   - `RunOrchestrator._depth(task) → int` — Profundidade da tarefa na árvore (usada para cortar decomposição a partir de 6 níveis).
   - `RunOrchestrator._pending_under(root_id) → list[dict]` — Folhas da árvore que não concluíram com evidência (nem foram canceladas), com título, status e motivo.
-  - `RunOrchestrator._stall_run(run, root, reason) → dict` — Nada pode avançar e o objetivo não foi cumprido (o motivo inclui as recusas de replanejamento): run vai a `failed`, raiz a BLOCKED (recuperável), relatório com `achieved=False`, `pending`, `requirements` (estado de cada requisito) e mensagem "Não concluído"; evento `run.stalled`; ação `run_stalled`.
+  - `RunOrchestrator._stall_run(run, root, reason) → dict` — Nada pode avançar e o objetivo não foi cumprido (o motivo inclui as recusas de replanejamento): run vai a `failed`, raiz a BLOCKED (recuperável), relatório com `achieved=False`, `pending`, `requirements` (estado de cada requisito) e mensagem "Não concluído"; evento `run.failed` com `kind: stalled`; ação `run_stalled`.
   - `RunOrchestrator._ensure_final_message(root) → None` — Garante `final_answer` no relatório da raiz: copia a do filho de resposta final ou compõe um Markdown com as etapas.
   - `RunOrchestrator._execute_task(run, project, task, config, work_root=None) → dict` — Executa a tarefa RUNNING conforme o metadado: ferramenta MCP, resposta final, operação de modelo (gera JSON e aplica `edit_file`/`write_file`, com streaming opcional), ferramenta comum (com detecção de laço), verificação ou consolidação de pai (folha com metadados mas sem ação vira operação de modelo, em vez de concluir sem fazer nada; pai com filho falho vai a BLOCKED com `dependency_failed`); respeita limite de tentativas e registra tentativas. Saída: ação do passo.
   - `RunOrchestrator._finalize_verification(run, project, task, work_root=None, implicit_spec=None) → dict` — Roda a verificação declarada da tarefa ou, para escrita do modelo sem verificação declarada, a implícita (`file_contains` com o que foi gravado e sintaxe), grava a tentativa (com falha categorizada) e a evidência ligada a ela (`attempt_id`) com estado, critério, comando, código de saída, motivo e impressão digital dos arquivos avaliados; a implícita fica em `metadata.implicit_verification`; aprovada conclui e consolida o pai, reprovada vai para nova tentativa (ou bloqueia se repetir), bloqueada por ambiente (executável ausente, aprovação) e inconclusiva vão a BLOCKED sem refazer a implementação. Sem verificação nenhuma (leitura), apenas conclui.
@@ -663,7 +674,7 @@ Grafo de conhecimento:
   - `RunOrchestrator._remember_failure(task, failure) → dict` — Guarda a falha categorizada, com assinatura do erro e da estratégia, em `metadata_json.last_failure` e nas últimas 5 de `failures`, para a próxima tentativa, a detecção de estagnação e o replanejamento lerem.
   - `RunOrchestrator._pick_next_task(root_id) → TaskModel | None` — Escolhe a próxima tarefa da subárvore por prioridade de status (RUNNING, VERIFYING, READY, RETRY_PENDING, PLANNING, PENDING), respeitando dependências; um pai em PLANNING só é escolhido quando todos os filhos estão resolvidos (`settled`).
   - `RunOrchestrator._promote_ready_or_block(task_id) → dict | None` — Valida o contrato da tarefa; se inválido, bloqueia e retorna os erros, senão marca READY.
-  - `RunOrchestrator._record_action(run_id, out) → None` — Registra o resultado do passo como evento `orchestrator.action`, com o estado de progresso verificável (`payload.progress`).
+  - `RunOrchestrator._record_action(run_id, out) → None` — Registra o resultado do passo como evento `orchestrator.action`, com o estado de progresso verificável (`payload.progress`); se esse estado mudou desde a ação anterior, emite `run.progress` (estado, anterior, se houve progresso).
   - `RunOrchestrator._run_as_leaf(run, task, *, note) → dict` — Força a tarefa a ser executada como operação do modelo (sem nova divisão) e a promove se as dependências permitirem.
   - `RunOrchestrator._run_config(run) → dict` — Configuração do run (provedor, modelo, opções) ou dicionário vazio.
   - `RunOrchestrator._same_title_above(task) → bool` — Verdadeiro se algum ancestral tem o mesmo título ou o mesmo objetivo normalizado (sinal de decomposição repetida).
@@ -674,12 +685,12 @@ Grafo de conhecimento:
   - `RunOrchestrator._task_requirements(task) → list[dict]` — Requisitos obrigatórios que a etapa precisa atender (os da raiz filtrados pela cobertura herdada, com a parte se parcial); vão para o prompt de decomposição.
   - `RunOrchestrator._recursion_guard(run, task) → str | None` — Proteção contra recursão, separada da decisão de dividir: devolve o motivo quando a etapa repete um ancestral, passa de `max_tree_depth` ou o run já tem `max_tasks_per_run` tarefas; nesse caso a etapa é executada sem nova divisão e o motivo vai para `metadata_json.recursion_guard`.
   - `RunOrchestrator._save_requested_memory(project, task, args) → dict` — Salva memória pedida pela ferramenta de memória, no escopo da conversa (contextual) ou do projeto (canônica).
-  - `RunOrchestrator._step_body(run_id) → dict` — Lógica de um passo: replaneja se preciso, escolhe a tarefa e avança seu estado (planejar/decompor, promover, executar, verificar, reabrir); sem tarefas restantes, cria a verificação global se pedida, conclui o run só se a raiz concluiu e a aceitação global passou; senão reabre lacunas de evidência ou encerra com `_stall_run` (nunca fica esperando para sempre).
+  - `RunOrchestrator._step_body(run_id) → dict` — Lógica de um passo: replaneja se preciso, escolhe a tarefa e avança seu estado (planejar/decompor, promover, executar, verificar, reabrir); sem tarefas restantes, cria a verificação global se pedida, conclui o run só se a raiz concluiu e a aceitação global passou; senão reabre lacunas de evidência ou encerra com `_stall_run` (nunca fica esperando para sempre). Liga a tarefa escolhida ao contexto de observação, emite `plan.started`/`plan.updated` ao decompor e `run.completed` ao concluir.
   - `RunOrchestrator._subtree_ids(root_id, tasks) → set[uuid]` — Ids da raiz e de todos os descendentes.
   - `RunOrchestrator._work_root(project, task) → str` — Pasta de trabalho efetiva, considerando a conversa da tarefa.
   - `RunOrchestrator._write_final_answer(run, project, task, config) → dict` — Pede ao modelo a resposta final ao usuário com base no pedido e nas etapas irmãs; se inaproveitável, compõe Markdown padrão; grava texto e fontes, conclui a tarefa e consolida o pai.
   - `RunOrchestrator.run_until_idle(run_id, max_steps=50) → list[dict]` — Executa passos em sequência até concluir, bloquear, parar com pendências (`run_stalled`), pausar (`run_paused`) ou ficar parado esperando. Saída: log das ações.
-  - `RunOrchestrator.step(run_id) → dict` — Executa um passo, confere estagnação e registra a ação no log de eventos. Saída: ação do passo.
+  - `RunOrchestrator.step(run_id) → dict` — Executa um passo dentro de um contexto de observação da run (`observe`), confere estagnação e registra a ação no log de eventos. Saída: ação do passo.
   - `RunOrchestrator._check_stagnation(run_id, out) → dict | None` — Depois do passo: se a etapa foi para nova tentativa com o mesmo erro e a mesma estratégia `attempts_per_strategy` vezes, interrompe (BLOCKED), grava `metadata.stagnation` (estado anterior, assinaturas, diagnóstico, próxima ação) e o evento `run.stagnation`; segue com replanejamento (`stagnation_replan`) se a correção é automática e a política aceita, senão pausa o run.
   - `RunOrchestrator._pause_run(run, root, hit, next_action, *, diagnosis=None) → dict` — Pausa o run (retomável) sem mudar tarefas: `metadata.pause` da raiz com limite, motivo, próxima ação, progresso, pendências e requisitos; mensagem "Não concluído" com a próxima ação; evento `run.paused`; ação `run_paused`.
 - `_profile_from_config(run_config, settings) → ModelProfile` — Atalho para `profile_from_run_config`.
@@ -903,12 +914,12 @@ Grafo de conhecimento:
   - `TaskService._creates_cycle(task_id, new_dep) → bool` — Busca em profundidade no grafo de dependências para saber se a nova aresta fecharia um ciclo.
   - `TaskService._log_event(*, project_id, task_id, event_type, payload, run_id=None) → None` — Adiciona um registro em `EventLogModel`.
   - `TaskService.add_dependency(task_id, data) → TaskDependencyModel` — Cria dependência entre tarefas do mesmo projeto, recusando autodependência e ciclos; registra `task.dependency_added`.
-  - `TaskService.create_task(project_id, data) → TaskModel` — Cria a tarefa validando projeto, pai e conversa; herda conversa e ramo do pai ou usa o ramo ativo da conversa; registra `task.created`.
+  - `TaskService.create_task(project_id, data) → TaskModel` — Cria a tarefa validando projeto, pai e conversa; herda conversa e ramo do pai ou usa o ramo ativo da conversa; registra `task.created` (título, tipo, pai, ordem).
   - `TaskService.dependencies_satisfied(task_id) → bool` — Verdadeiro se todas as dependências estão `COMPLETED`.
   - `TaskService.get_task(task_id) → TaskModel` — Busca a tarefa ou lança `TaskNotFoundError`.
   - `TaskService.list_tasks(project_id) → list[TaskModel]` — Lista as tarefas do projeto na ordem de `sort_order`.
   - `TaskService.promote_ready_if_dependencies_met(task_id) → TaskModel | None` — Se a tarefa está em `PLANNING` e as dependências foram cumpridas, passa para `READY`; senão devolve `None`.
-  - `TaskService.update_status(task_id, update) → TaskModel` — Valida a transição na máquina de estados, aplica o novo status, marca início/fim e registra `task.status_changed`; em BLOCKED/FAILED com motivo, grava `metadata_json.blocked_reason`.
+  - `TaskService.update_status(task_id, update) → TaskModel` — Valida a transição na máquina de estados, aplica o novo status, marca início/fim e registra o evento tipado do destino (`task.started`, `task.blocked`, `task.completed`, `task.failed`, `task.cancelled` ou `task.progress`, com `from`/`to`/`reason`/`title`); em BLOCKED/FAILED com motivo, grava `metadata_json.blocked_reason`.
 
 ---
 
@@ -1137,27 +1148,30 @@ Grafo de conhecimento:
 
 - `_argv(command) → list[str] | None` — Normaliza o comando (string ou lista) em argv.
 - `_browser(ctx, args) → dict` — Ferramenta `browser`: pesquisa (`search`) ou ações de navegação conforme o modo do compositor (`off`, invisível ou visível).
-- `_delete_file(ctx, args) → dict` — Ferramenta `delete_file` (exige aprovação): apaga um arquivo do projeto.
-- `_edit_file(ctx, args) → dict` — Ferramenta `edit_file`: substitui um trecho único (ou todos, com `replace_all`) e devolve o diff; aceita nomes alternativos de argumentos; apaga o bytecode antigo do `.py` editado.
+- `_delete_file(ctx, args) → dict` — Ferramenta `delete_file` (exige aprovação): apaga um arquivo do projeto; emite `file.deleted`.
+- `_edit_file(ctx, args) → dict` — Ferramenta `edit_file`: substitui um trecho único (ou todos, com `replace_all`) e devolve o diff; aceita nomes alternativos de argumentos; apaga o bytecode antigo do `.py` editado; emite `file.changed` com o diff.
 - `_drop_stale_bytecode(path) → None` — Ao reescrever um `.py`, apaga os `.pyc` dele em `__pycache__` (o cache é validado por data em segundos e tamanho e poderia ser testado no lugar da versão nova).
 - `_git_diff(ctx, args) → dict` — Ferramenta `git_diff`: `git diff` do projeto (opções `stat`, `staged`, `path`), saída limitada.
 - `_git_status(ctx, args) → dict` — Ferramenta `git_status`: `git status --short`.
 - `_glob_files(ctx, args) → dict` — Ferramenta `glob_files`: encontra arquivos por padrão glob dentro do projeto.
 - `_list_dir(ctx, args) → dict` — Ferramenta `list_dir`: lista entradas de uma pasta (opcionalmente recursiva), até 200.
 - `_make_dir(ctx, args) → dict` — Ferramenta `make_dir`: cria um diretório.
-- `_move_file(ctx, args) → dict` — Ferramenta `move_file` (exige aprovação): move ou renomeia um arquivo.
-- `_read_file(ctx, args) → dict` — Ferramenta `read_file`: lê um arquivo com `offset`/`limit` opcionais (máximo de 400 linhas sem limite explícito).
+- `_move_file(ctx, args) → dict` — Ferramenta `move_file` (exige aprovação): move ou renomeia um arquivo; emite `file.deleted` da origem e `file.created` do destino.
+- `_read_file(ctx, args) → dict` — Ferramenta `read_file`: lê um arquivo com `offset`/`limit` opcionais (máximo de 400 linhas sem limite explícito); emite `file.read` com linhas lidas (sem conteúdo).
 - `_remember(ctx, args) → dict` — Ferramenta `remember`: grava uma memória pelo `memory_saver` do contexto.
 - `_resolve(ctx, raw) → tuple[Path | None, dict | None]` — Resolve um caminho dentro da raiz ou devolve um dicionário de erro.
 - `_root(ctx) → Path` — Raiz absoluta do projeto.
-- `_run_command(ctx, args) → dict` — Ferramenta `run_command` (exige aprovação): executa um processo com timeout e devolve código de saída, stdout e stderr. `python` ausente do PATH vira o interpretador de `python_for`; executável inexistente volta como erro com `category: "configuration"`, sem derrubar o passo.
+- `_run_command(ctx, args, *, kind='command') → dict` — Ferramenta `run_command` (exige aprovação): executa um processo com timeout e devolve código de saída e os finais de stdout e stderr. A saída é lida enquanto o processo roda e sai em `{kind}.output` agrupada; início, fim e falha/timeout viram `{kind}.started/completed/failed` (`kind="test"` no pytest, com contagens). `python` ausente do PATH vira o interpretador de `python_for`; executável inexistente volta como erro com `category: "configuration"`, sem derrubar o passo.
 - `python_for(project_root) → str` — Escolhe o interpretador Python: o `.venv`/`venv` do projeto, se existir, senão o que roda o agente.
 - `_run_pytest(ctx, args) → dict` — Ferramenta `run_pytest`: roda `pytest -q` com o interpretador de `python_for` num caminho do projeto, sem gravar bytecode nem cache do pytest.
 - `_run_script(ctx, args) → dict` — Ferramenta `run_script` (exige aprovação): executa um `.py` do projeto, ajustando `PYTHONPATH` para testes em `tests/`.
 - `_search_grep(ctx, args) → dict` — Ferramenta `search_grep`: busca por regex em arquivos de texto, até 100 ocorrências.
 - `_skipped(rel) → bool` — Indica se o caminho está numa pasta ignorada (`.git`, `node_modules`, `.venv`…).
 - `_system_info(ctx, args) → dict` — Ferramenta `system_info`: sistema operacional, data/hora, usuário, pasta pessoal e workspace.
-- `_write_file(ctx, args) → dict` — Ferramenta `write_file`: grava um arquivo (cria pastas), apaga o bytecode antigo se for `.py` e devolve o diff.
+- `_write_file(ctx, args) → dict` — Ferramenta `write_file`: grava um arquivo (cria pastas), apaga o bytecode antigo se for `.py` e devolve o diff e `created`; emite `file.created` ou `file.changed` (sem evento se o conteúdo não mudou).
+- `_file_event(event_type, path, diff=None, **extra) → None` — Emite um fato de arquivo com o `call_id` da ferramenta; arquivo sensível sai só com contagens, sem diff.
+- `_pump(stream, chunks, batcher) → None` — Lê um pipe aos poucos, guarda os bytes e manda o texto decodificado ao agrupador.
+- `_test_counts(stdout) → dict[str, int]` — Contagens `passed`/`failed`/`error`/`skipped` da última linha do pytest.
 - `register_all(registry) → None` — Registra no `ToolRegistry` as 17 ferramentas com seus `ToolSpec` (descrição, schema e necessidade de aprovação).
 
 ### `src/agent/tools/diffing.py`
@@ -1173,13 +1187,17 @@ Grafo de conhecimento:
 - `ToolContext` — Dados de execução: raiz do projeto, ids da execução e da tarefa, função para salvar memória e modo do navegador.
 - **`ToolRegistry`** — Mapeia ids de ferramenta para spec e função executora.
   - `ToolRegistry.__init__() → None` — Inicia os dicionários vazios.
-  - `ToolRegistry.execute(tool_id, ctx, args, *, approved=False) → dict` — Normaliza o nome pelo alias, recusa ferramenta desconhecida (listando as conhecidas), bloqueia com `approval_required` se precisar de aprovação e executa.
+  - `ToolRegistry.execute(tool_id, ctx, args, *, approved=False) → dict` — Normaliza o nome pelo alias, recusa ferramenta desconhecida (listando as conhecidas), bloqueia com `approval_required` se precisar de aprovação e executa. Dentro de uma run emite `tool.started` (com commit), `tool.completed` ou `tool.failed` com `call_id`, duração e resumo; recusas saem como `tool.failed` com `executed: false`.
   - `ToolRegistry.get_spec(tool_id) → ToolSpec` — Devolve o spec ou lança `KeyError`.
   - `ToolRegistry.list_specs() → list[ToolSpec]` — Lista todos os specs.
   - `ToolRegistry.register(spec, handler) → None` — Registra uma ferramenta.
 - `ToolSpec(BaseModel)` — Contrato de uma ferramenta: id, descrição, schema de entrada, se exige aprovação e timeout.
 - `build_default_registry() → ToolRegistry` — Cria um registro com todas as ferramentas embutidas.
 - `canonical_tool_id(tool_id) → str` — Traduz nomes que o modelo costuma inventar (`ls`, `grep`, `bash`, `str_replace`…) para o id real (`list_dir`, `search_grep`, `run_command`, `edit_file`…).
+- `current_call_id() → str | None` — Id da chamada de ferramenta em andamento; comandos e arquivos usam o mesmo `call_id`.
+- `_ms(started) → int` — Milissegundos desde `started`.
+- `_args_preview(args) → dict` — Argumentos para exibição, com conteúdo longo de arquivo trocado pelo tamanho.
+- `_summary(result) → dict` — Campos curtos do resultado (caminho, código de saída, contagens, linhas alteradas).
 
 ## `src/agent/verification/`
 
@@ -1206,7 +1224,8 @@ Grafo de conhecimento:
 - `VerificationResult` — Resultado: nome do verificador, aprovado (`True`/`False`/`None` para pendente), resumo e detalhes.
 - `_has_non_python_deliverable(root) → bool` — Indica se o projeto tem entregáveis não Python (HTML, CSS, JS, MD…).
 - `_no_tests_collected(out) → bool` — Detecta se o pytest não encontrou testes (código 5 ou mensagem equivalente).
-- `run_verification(*, project_root, spec, tool_args=None, approved=False) → VerificationResult` — Executa o tipo pedido: `stages`, `pytest` (aceita ausência de testes se houver entrega não Python), `script`, `command`, `file_contains` (arquivo inteiro; com `syntax` também analisa a sintaxe), `syntax`, `acceptance_manual` (pendente) ou devolve falha para tipo desconhecido.
+- `run_verification(*, project_root, spec, tool_args=None, approved=False) → VerificationResult` — Emite `verification.started` (com commit, para aparecer já), executa `_verify` e emite `verification.passed`, `verification.failed` ou `verification.inconclusive` com resumo, critério e código de saída.
+- `_verify(*, project_root, spec, tool_args, approved) → VerificationResult` — Executa o tipo pedido: `stages`, `pytest` (aceita ausência de testes se houver entrega não Python), `script`, `command`, `file_contains` (arquivo inteiro; com `syntax` também analisa a sintaxe), `syntax`, `acceptance_manual` (pendente) ou devolve falha para tipo desconhecido.
 - `_read_whole(project_root, path) → dict` — Lê o arquivo inteiro sob a raiz (o `read_file` pagina e corta a quebra final).
 - `syntax_problem(path, content) → str | None` — Análise sintática pela extensão (Python com `ast`, JSON); `None` se válido ou sem analisador.
 
@@ -1420,6 +1439,7 @@ Grafo de conhecimento:
 - `tests/test_mcp_manager.py` — `McpManager`: parse de ids `mcp:{server}:{tool}` e chamada a servidor desabilitado.
 - `tests/test_model_choice.py` — Provedor Ollama: o modelo escolhido é o chamado, sem flag de raciocínio oculto em modelos simples, mensagem para timeout sem texto, run lembrando o modelo e JSON após bloco de "thinking" preservado (`parse_json_object`).
 - `tests/test_observability_events.py` — Eventos observáveis: fora de run nada é gravado; tipo desconhecido e campo faltando recusados; `seq` monotônico por run cobrindo produtores antigos, tarefa pai e agente, continuação após reinício; runs com sequências independentes; publicação só após commit (rollback não publica); fragmentos não persistidos com texto parcial na foto; segredos redigidos e texto truncado; assinante lento recebe ressincronização.
+- `tests/test_observability_executor.py` — Executor real (correção de `calc.py`): eventos tipados em ordem de `seq`, tarefa pai vinda do estado, `file.changed` com o diff do disco ligado à chamada da ferramenta, testes com saída progressiva só em memória e contagem final, entrega aos assinantes em ordem e sem duplicar, e nenhuma tarefa concluída sem `task.completed`.
 - `tests/test_operation_context.py` — `OperationContextBuilder`: o snapshot de contexto da operação é persistido.
 - `tests/test_orchestrator_recovery.py` — Retomada de run após passos parciais e bloqueio quando falta contrato.
 - `tests/test_persistence.py` — Persistência SQLite: árvore de tarefas sobrevive à reabertura, transição inválida rejeitada, ciclo de dependência bloqueado e caminho feliz até `COMPLETED`.

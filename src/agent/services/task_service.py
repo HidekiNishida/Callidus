@@ -19,6 +19,16 @@ from agent.persistence.models import (
 )
 
 
+# Demais destinos (PLANNING, READY, VERIFYING, RETRY_PENDING) são `task.progress`.
+_STATUS_EVENT: dict[TaskStatus, str] = {
+    TaskStatus.RUNNING: "task.started",
+    TaskStatus.BLOCKED: "task.blocked",
+    TaskStatus.COMPLETED: "task.completed",
+    TaskStatus.FAILED: "task.failed",
+    TaskStatus.CANCELLED: "task.cancelled",
+}
+
+
 class TaskNotFoundError(LookupError):
     pass
 
@@ -72,7 +82,12 @@ class TaskService:
             project_id=project_id,
             task_id=task.id,
             event_type="task.created",
-            payload={"title": task.title, "kind": task.kind},
+            payload={
+                "title": task.title,
+                "kind": task.kind,
+                "parent_id": None if task.parent_id is None else str(task.parent_id),
+                "sort_order": task.sort_order,
+            },
         )
         return task
 
@@ -107,11 +122,12 @@ class TaskService:
         self._log_event(
             project_id=task.project_id,
             task_id=task.id,
-            event_type="task.status_changed",
+            event_type=_STATUS_EVENT.get(target, "task.progress"),
             payload={
                 "from": current.value,
                 "to": target.value,
                 "reason": update.reason,
+                "title": task.title,
             },
         )
         return task

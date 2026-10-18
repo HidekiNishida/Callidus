@@ -78,6 +78,7 @@ EVENT_SPECS: dict[str, EventSpec] = {
         _spec("verification.started", ("verifier",), description="verificação iniciada"),
         _spec("verification.passed", ("verifier",), description="verificação aprovada"),
         _spec("verification.failed", ("verifier",), description="verificação reprovada"),
+        _spec("verification.inconclusive", ("verifier",), description="verificação sem veredito (nunca aprova)"),
     )
 }
 
