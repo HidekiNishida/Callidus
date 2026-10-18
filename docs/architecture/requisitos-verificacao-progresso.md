@@ -105,3 +105,23 @@ Quem executa não aprova o próprio resultado. A resposta do modelo ("pronto, co
 | não executado | — | requisito sem evidência (`pending`/`unverified` em `requirement_status`) |
 
 Nenhum resultado é inventado: sem execução não há linha de evidência. Evidência nunca é apagada. Só a mais recente vale, e só se passou, não foi marcada como desatualizada e os arquivos não mudaram.
+
+## Aceite global por requisito
+
+O run só termina como concluído quando cada requisito obrigatório está `comprovado` (`satisfied`), além das condições anteriores (evidências atuais e consolidação sem falha). `não aplicável` e `informativo` não bloqueiam; requisito declarado `bloqueado` bloqueia.
+
+| Estado (`requirements_report`) | Rótulo | Significado |
+|--------------------------------|--------|-------------|
+| `satisfied` | comprovado | todas as folhas que o cobrem concluíram com evidência proporcional |
+| `uncovered` | sem etapa responsável | nenhuma folha viva cobre o requisito |
+| `unverified` | concluído sem evidência suficiente | as folhas concluíram, mas falta verificador (mudança) ou resposta final (resposta); "o modelo disse que terminou" cai aqui |
+| `pending` | não executado | alguma folha responsável ainda não concluiu ou sua evidência não vale |
+| `failed` / `blocked` | reprovado / bloqueado | uma folha responsável parou |
+
+Raiz sem filhas é a própria folha e cobre todos os requisitos.
+
+**Integração.** A etapa `Verificação global` (quando a raiz pede `global_verification`) cobre todos os requisitos obrigatórios. Etapas aprovadas uma a uma não bastam: se a integração reprova ou bloqueia, os requisitos ficam `pending`/`blocked` e o run não conclui.
+
+**Correção localizada** (`correct_requirement_gaps`). No aceite global, se faltar comprovar um requisito, primeiro reabrem-se as tarefas com evidência reprovada ou desatualizada (`reopen_verification_gaps`, só a tarefa afetada e seus ancestrais). Se não houver, cria-se sob a raiz uma etapa por requisito (`Atender Rn` para sem etapa, `Comprovar Rn` para sem evidência), com `covers: [Rn]` e `requirement_fix`, uma vez por requisito. A resposta final é reaberta e passa a depender dela; etapas irmãs comprovadas não são refeitas.
+
+**Relatório parcial.** Se ainda assim faltar, o run para (`run_stalled`) com `consolidated_result_json.requirements` e uma tabela "Requisitos" na mensagem (comprovado, não executado, sem evidência...), além das pendências. Na conclusão, o mesmo relatório fica em `requirements`, com os ids das evidências.

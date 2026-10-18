@@ -7,15 +7,16 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from agent.domain.enums import TaskStatus
+from agent.domain.enums import TaskKind, TaskStatus
 from agent.domain.failures import Failure, FailureCategory, FailureCause
-from agent.domain.schemas import TaskCreate, TaskStatusUpdate
+from agent.domain.schemas import TaskCreate, TaskDependencyCreate, TaskStatusUpdate
 from agent.orchestrator.consolidation import (
     children_of,
     collect_evidences,
     verification_evidence_ok,
     verification_spec,
 )
+from agent.orchestrator.requirements import MANDATORY, load_requirements, requirement_status
 from agent.persistence.models import EvidenceModel, TaskModel
 from agent.services.task_service import TaskService
 from agent.verification.fingerprint import is_current
@@ -34,6 +35,41 @@ def _subtree_tasks(session: Session, root_id: uuid.UUID) -> list[TaskModel]:
     return [t for t in all_tasks if t.id in ids]
 
 
+REQUIREMENT_LABELS = {
+    "satisfied": "comprovado",
+    "uncovered": "sem etapa responsável",
+    "unverified": "concluído sem evidência suficiente",
+    "pending": "não executado",
+    "failed": "reprovado",
+    "blocked": "bloqueado",
+    "bloqueado": "bloqueado (declarado)",
+    "não_aplicável": "não aplicável",
+    "informativo": "informativo",
+}
+_ACCEPTABLE = {"satisfied", "não_aplicável", "informativo"}
+
+
+def requirements_report(session: Session, root: TaskModel) -> list[dict]:
+    """Estado de cada requisito do objetivo, com rótulo legível, para o aceite e o relatório final."""
+    return [
+        {
+            "id": r["id"],
+            "description": r["description"],
+            "applicability": r["applicability"],
+            "status": r["status"],
+            "label": REQUIREMENT_LABELS.get(r["status"], r["status"]),
+            "partial": r["partial"],
+            "tasks": r["tasks"],
+            "evidence_ids": r["evidence_ids"],
+        }
+        for r in requirement_status(session, root)
+    ]
+
+
+def unmet_requirements(report: list[dict]) -> list[dict]:
+    return [r for r in report if r["status"] not in _ACCEPTABLE]
+
+
 def evaluate_global_acceptance(session: Session, root_id: uuid.UUID) -> tuple[bool, str]:
     root = session.get(TaskModel, root_id)
     if root is None:
@@ -49,6 +85,11 @@ def evaluate_global_acceptance(session: Session, root_id: uuid.UUID) -> tuple[bo
     report = root.consolidated_result_json or {}
     if report and report.get("achieved") is False:
         return False, "consolidação do objetivo falhou"
+
+    unmet = unmet_requirements(requirements_report(session, root))
+    if unmet:
+        listed = ", ".join(f"{r['id']} ({r['label']})" for r in unmet)
+        return False, f"requisitos obrigatórios sem comprovação: {listed}"
 
     return True, "ok"
 
@@ -126,12 +167,71 @@ def reopen_verification_gaps(session: Session, root_id: uuid.UUID) -> list[uuid.
     return reopened
 
 
+def correct_requirement_gaps(session: Session, root: TaskModel) -> list[uuid.UUID]:
+    """Correção localizada no aceite global: para cada requisito obrigatório sem etapa responsável ou
+    concluído sem evidência, cria uma etapa sob a raiz que cobre só ele (uma vez por requisito) e reabre
+    a resposta final para depender dela. Etapas irmãs já comprovadas ficam como estão."""
+    kids = children_of(session, root.id)
+    tried = {(k.metadata_json or {}).get("requirement_fix") for k in kids}
+    targets = [
+        r
+        for r in requirement_status(session, root)
+        if r["status"] in {"uncovered", "unverified"} and r["id"] not in tried
+    ]
+    if not targets:
+        return []
+    ts = TaskService(session)
+    created: list[uuid.UUID] = []
+    for req in targets:
+        unverified = req["status"] == "unverified"
+        objective = req["description"]
+        if unverified:
+            objective = (
+                f"{objective}\n\nO trabalho foi dado como feito sem evidência. Verifique o estado atual "
+                "(testes, sintaxe, conteúdo dos arquivos) e corrija o que faltar."
+            )
+        task = ts.create_task(
+            root.project_id,
+            TaskCreate(
+                title=f"{'Comprovar' if unverified else 'Atender'} {req['id']}",
+                objective=objective,
+                acceptance_criteria=req["criterion"] or req["description"],
+                kind=TaskKind.SUBSYSTEM,
+                parent_id=root.id,
+                metadata={"covers": [req["id"]], "requirement_fix": req["id"]},
+            ),
+        )
+        created.append(task.id)
+    final = next(
+        (
+            k
+            for k in kids
+            if (k.metadata_json or {}).get("final_answer") and TaskStatus(k.status) != TaskStatus.CANCELLED
+        ),
+        None,
+    )
+    if final is not None:
+        for task_id in created:
+            ts.add_dependency(final.id, TaskDependencyCreate(depends_on_task_id=task_id))
+        _reopen(ts, final, "nova etapa de correção de requisito")
+    _reopen(ts, root, "requisito obrigatório sem comprovação")
+    session.flush()
+    return created
+
+
+def _reopen(ts: TaskService, task: TaskModel, reason: str) -> None:
+    if TaskStatus(task.status) == TaskStatus.COMPLETED:
+        ts.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING, reason=reason))
+        ts.update_status(task.id, TaskStatusUpdate(status=TaskStatus.PLANNING, reason=reason))
+
+
 def ensure_global_verification_task(
     session: Session,
     project_id: uuid.UUID,
     root: TaskModel,
 ) -> TaskModel | None:
-    """Cria subtarefa de verificação global se o root pedir explicitamente."""
+    """Cria subtarefa de verificação global se o root pedir explicitamente. Ela cobre todos os requisitos
+    obrigatórios: integração reprovada impede o aceite mesmo com as etapas aprovadas uma a uma."""
     meta = root.metadata_json or {}
     if not meta.get("global_verification"):
         return None
@@ -148,12 +248,12 @@ def ensure_global_verification_task(
             objective="Validar critérios globais do objetivo",
             kind="operation",
             parent_id=root.id,
-            metadata={"verification": spec, "global_verification_step": True},
+            metadata={
+                "verification": spec,
+                "global_verification_step": True,
+                "covers": [r["id"] for r in load_requirements(session, root) if r["applicability"] == MANDATORY],
+            },
         ),
     )
-    if TaskStatus(root.status) == TaskStatus.COMPLETED:
-        TaskService(session).update_status(
-            root.id,
-            TaskStatusUpdate(status=TaskStatus.PLANNING, reason="verificação global pendente"),
-        )
+    _reopen(TaskService(session), root, "verificação global pendente")
     return task

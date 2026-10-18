@@ -15,7 +15,7 @@ Validar o plano antes de executá-lo (cobertura de requisitos e integridade estr
 
 ## Próxima ação
 
-Unidade 4: aceite global por requisito, integração reprovada, correção localizada e relatório parcial.
+Unidade 5: assinatura normalizada de erro, estagnação, resposta em 10 passos, limites configuráveis, pausa com diagnóstico e retomada pela API.
 
 ## Diagnóstico (fase A — evidências)
 
@@ -66,7 +66,7 @@ Unidade 4: aceite global por requisito, integração reprovada, correção local
 - [x] Unidade 1: `orchestrator/requirements.py` (derivação, ids estáveis no contrato da raiz, `covers` herdado/parcial, `requirement_status`), requisitos no prompt de decomposição
 - [x] Unidade 2: `orchestrator/plan_validation.py` (6 vereditos, correção segura, bloqueio `invalid_plan`, versões em `plan.validated`, revalidação por impressão do plano), cobertura carregada no replanejamento
 - [x] Unidade 3: evidência com estado, critério, comando, código de saída e motivo; sintaxe Python/JSON; verificação bloqueada (`VERIFYING → BLOCKED`) separada de reprovada; desatualizada marcada sem apagar; `file_contains` lê o arquivo inteiro (corrige falso reprovado com quebra final)
-- [ ] Unidade 4
+- [x] Unidade 4: aceite global exige requisito obrigatório comprovado; etapa de verificação global cobre todos os requisitos; `correct_requirement_gaps` (Atender/Comprovar Rn, uma vez por requisito); relatório de requisitos na conclusão e na parada; corrigida a reabertura inválida COMPLETED → PLANNING em `ensure_global_verification_task`
 - [ ] Unidade 5
 - [ ] Unidade 6
 - [ ] Verificação final: código ↔ docs ↔ checklists ↔ regras
@@ -85,8 +85,9 @@ Unidade 4: aceite global por requisito, integração reprovada, correção local
 | `/src/agent/orchestrator/plan_validation.py` | validação do plano |
 | `/tests/test_plan_validation.py` | testes da unidade 2 (cenários 1–9) |
 | `/tests/test_independent_verification.py` | testes da unidade 3 (cenários 10–15, 17, 29) |
+| `/tests/test_global_acceptance.py` | testes da unidade 4 (cenários 15, 16, 18, 19, 23, 24, 28) |
 | `/docs/architecture/requisitos-verificacao-progresso.md` | documento dos três mecanismos |
 
 ## Notas de retomada
 
-Após unidade 3: 173 passam, 0 falham. Cenários numerados = seção 7 do pedido.
+Após unidade 4: 178 passam, 0 falham. Cenários numerados = seção 7 do pedido.

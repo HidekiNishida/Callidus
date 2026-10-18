@@ -175,7 +175,8 @@ def _answered(task: TaskModel) -> bool:
 
 
 def requirement_status(session: Session, root: TaskModel) -> list[dict[str, Any]]:
-    """Estado de cada requisito pelas folhas que o cobrem (canceladas e substituídas não contam):
+    """Estado de cada requisito pelas folhas que o cobrem (canceladas e substituídas não contam; raiz
+    sem filhas é a própria folha):
     `uncovered` sem folha responsável; `failed`/`blocked` se uma delas parou; `pending` enquanto alguma
     não concluiu; `unverified` se todas concluíram mas falta evidência proporcional (mudança exige
     verificador aprovado e atual; resposta aceita a resposta final entregue); `satisfied` com evidência.
@@ -186,8 +187,7 @@ def requirement_status(session: Session, root: TaskModel) -> list[dict[str, Any]
     live = [
         t
         for t in tasks
-        if t.id != root.id
-        and t.id not in parents
+        if t.id not in parents
         and TaskStatus(t.status) != TaskStatus.CANCELLED
         and not superseded(t)
     ]

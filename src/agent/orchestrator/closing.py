@@ -93,18 +93,29 @@ def compose_final_markdown(*, objective: str, stages: list[dict], model_text: st
     )
 
 
-def compose_incomplete_markdown(*, objective: str, pending: list[dict], reason: str) -> str:
-    """Mensagem de quando o trabalho parou sem cumprir tudo. Nunca afirma conclusão."""
+def compose_incomplete_markdown(
+    *, objective: str, pending: list[dict], reason: str, requirements: list[dict] | None = None
+) -> str:
+    """Mensagem de quando o trabalho parou sem cumprir tudo: pendências e, se houver, o estado de cada
+    requisito (o que foi comprovado e o que não foi). Nunca afirma conclusão."""
     rows = ["| Etapa | Estado | Motivo |", "| --- | --- | --- |"]
     for item in pending:
         cells = [str(item.get(key) or "").replace("|", "/").replace("\n", " ") for key in ("title", "status", "reason")]
         rows.append(f"| {cells[0]} | {cells[1]} | {cells[2][:200]} |")
     table = "\n".join(rows) if pending else "- (nenhuma etapa pendente listada)"
+    reqs = ""
+    if requirements:
+        lines = ["| Requisito | Estado |", "| --- | --- |"]
+        for r in requirements:
+            text = str(r.get("description") or "").replace("|", "/").replace("\n", " ")[:160]
+            part = " (parcial)" if r.get("partial") else ""
+            lines.append(f"| {r.get('id')}: {text} | {r.get('label') or r.get('status')}{part} |")
+        reqs = "### Requisitos\n\n" + "\n".join(lines) + "\n\n"
     return (
         f"## Não concluído\n\n{objective.strip()}\n\n"
         f"O trabalho parou antes de cumprir todos os requisitos ({reason}). "
         "O que já foi feito continua salvo.\n\n"
-        f"### Pendências\n\n{table}\n\n"
+        f"{reqs}### Pendências\n\n{table}\n\n"
         "### Para continuar\n\n"
         "- Resolva o motivo indicado (configuração, permissão, informação que faltou) "
         "e peça para continuar; as etapas concluídas não serão refeitas."

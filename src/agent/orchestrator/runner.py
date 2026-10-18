@@ -30,8 +30,10 @@ from agent.orchestrator.consolidation import (
 )
 from agent.orchestrator.global_verify import (
     ensure_global_verification_task,
+    correct_requirement_gaps,
     evaluate_global_acceptance,
     reopen_verification_gaps,
+    requirements_report,
 )
 from agent.services.contract_service import ContractService
 from agent.orchestrator.atomizer import micro_decompose_operation, should_decompose_further
@@ -368,9 +370,10 @@ class RunOrchestrator:
         for status in self._TO_BLOCKED.get(TaskStatus(root.status), ()):
             self._tasks.update_status(root.id, TaskStatusUpdate(status=status, reason=reason))
         report = dict(root.consolidated_result_json or {})
-        report.update(achieved=False, pending=pending, stalled_reason=reason)
+        requirements = requirements_report(self._session, root)
+        report.update(achieved=False, pending=pending, stalled_reason=reason, requirements=requirements)
         report["final_answer"] = compose_incomplete_markdown(
-            objective=root.objective or root.title, pending=pending, reason=reason
+            objective=root.objective or root.title, pending=pending, reason=reason, requirements=requirements
         )
         root.consolidated_result_json = report
         run.status = RunStatus.FAILED.value
@@ -380,7 +383,7 @@ class RunOrchestrator:
                 run_id=run.id,
                 task_id=root.id,
                 event_type="run.stalled",
-                payload_json={"reason": reason, "pending": pending},
+                payload_json={"reason": reason, "pending": pending, "requirements": requirements},
             )
         )
         return {"action": "run_stalled", "run_id": str(run.id), "reason": reason, "pending": pending}
@@ -501,6 +504,10 @@ class RunOrchestrator:
             if self._all_terminal_under(root.id) and TaskStatus(root.status) == TaskStatus.COMPLETED:
                 ok, reason = evaluate_global_acceptance(self._session, root.id)
                 if ok:
+                    root.consolidated_result_json = {
+                        **(root.consolidated_result_json or {}),
+                        "requirements": requirements_report(self._session, root),
+                    }
                     run.status = RunStatus.COMPLETED.value
                     self._ensure_final_message(root)
                     self._capture_outcome_memory(project, root)
@@ -508,6 +515,10 @@ class RunOrchestrator:
                 reopened = reopen_verification_gaps(self._session, root.id)
                 if reopened:
                     return {"action": "global_verify_reopen", "reopened": [str(x) for x in reopened]}
+                fixes = correct_requirement_gaps(self._session, root)
+                if fixes:
+                    self._note_thought(run, root, f"Faltou comprovar um requisito ({reason}). Vou tratar só ele.")
+                    return {"action": "requirements_reopen", "created": [str(x) for x in fixes], "reason": reason}
             return self._stall_run(run, root, reason)
 
         revalidated = self._revalidate_plan(run, task, config, work_root)
