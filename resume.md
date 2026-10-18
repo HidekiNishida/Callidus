@@ -130,6 +130,21 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `db_session() → Generator[Session]` — Dependência por requisição: abre uma sessão, faz commit ao final, rollback em erro e sempre fecha.
 - `read_settings() → Settings` — Dependência que devolve `get_settings()` para as rotas.
 
+### `src/agent/api/observe_routes.py`
+
+**Propósito:** rotas de acompanhamento de uma run: histórico paginado, foto do estado e transmissão SSE com reconexão. Só leitura: nenhuma rota executa comando ou muda estado. **Quando/onde:** incluídas em `main.app`; consumidas pela interface (`observe.js`).
+
+- **`_Disconnectable(Protocol)`** — O que o stream precisa da requisição: saber se o cliente saiu.
+  - `_Disconnectable.is_disconnected() → bool` — Cliente desconectado.
+- `_run_or_404(session, run_id) → ExecutionRunModel` — Run ou HTTP 404.
+- `run_events(run_id, after=0, limit=200, types=None, task_id=None, tail=None, session) → dict` — `GET /runs/{id}/events`: eventos persistidos em ordem de `seq`, paginados ou os últimos; filtros por tipo/categoria/prefixo e por tarefa.
+- `run_observe(run_id, session) → dict` — `GET /runs/{id}/observe`: foto do estado (`run_snapshot`).
+- `_sse(data, *, event=None, seq=None) → str` — Formata um bloco SSE (`id` só para persistidos).
+- `_page(factory, run_id, after) → dict` — Página de 500 eventos numa sessão própria.
+- `_status(factory, run_id) → str | None` — Status atual da run.
+- `sse_stream(run_id, request, after, *, factory, bus, heartbeat=15.0) → AsyncIterator[str]` — Assina antes de ler o banco, reenvia o persistido depois de `after`, envia `live` (saídas em andamento), segue com o barramento sem repetir `seq`, manda `: ping` sem atividade, relê o banco em `resync` (fila estourada) e termina com `end` quando a run acaba (inclusive se o fim veio na releitura); sempre cancela a assinatura.
+- `run_stream(run_id, request, after=None, last_event_id=None) → StreamingResponse` — `GET /runs/{id}/stream`: `text/event-stream` começando de `after` ou do cabeçalho `Last-Event-ID`.
+
 ### `src/agent/api/main.py`
 
 **Propósito:** define a aplicação FastAPI (`app`, versão 0.5.0), todas as rotas REST, helpers de apresentação (tarefas, conversas, trilha de "pensamentos"), o texto amigável das ações do orquestrador (`ACTION_COPY`) e a montagem da interface web estática. **Quando/onde:** carregado pelo uvicorn (`agent.api.main:app`) via `run()`; a interface web em `web/static/` consome estas rotas.
@@ -369,6 +384,18 @@ Grafo de conhecimento:
 - `_s(value) → str | None` — Converte UUID/valor em texto preservando `None`.
 - `envelope_from_row(row) → dict` — Envelope JSON de uma linha de `event_logs`.
 
+### `src/agent/observability/snapshot.py`
+
+**Propósito:** foto do estado real de uma run e páginas do histórico, lidas do banco (mais o texto parcial que só existe em memória). **Quando/onde:** `GET /runs/{id}/observe`, `GET /runs/{id}/events` e releituras do SSE.
+
+- `_type_filter(types)` — Filtro SQL por tipo exato, categoria (`tool`) ou prefixo (`agent.output.`).
+- `last_seq(session, run_id) → int` — Maior `seq` gravado.
+- `events_page(session, run_id, *, after=0, limit=200, types=None, task_id=None, tail=None) → dict` — Eventos persistidos depois de `after` (até 1000) ou os `tail` últimos, com `next_after`, `has_more` e `last_seq`; linhas antigas sem `seq` ficam de fora.
+- `open_operations(session, run_id) → list[dict]` — Chamadas ao modelo, ferramentas, comandos e testes iniciados sem fim gravado.
+- `_iso(value) → str | None` — Data em ISO.
+- `_aware(value) → datetime` — Garante fuso UTC.
+- `run_snapshot(session, run_id, *, bus=None, recent=300) → dict` — Run, cabeçalho (objetivo, status, modo `live`/`idle`/`interrupted`/`paused`/`replay`, tempo, progresso verificável, etapa atual, saídas ativas, última retomada), árvore plana de tarefas (status, motivo de bloqueio, última falha, tentativas, evidência mais recente, `interrupted`), saídas em andamento, operações interrompidas, últimos eventos e contadores.
+
 ### `src/agent/observability/sanitize.py`
 
 **Propósito:** impede que segredos e textos enormes saiam em eventos. **Quando/onde:** todo payload emitido e todo payload antigo gravado com run.
@@ -399,6 +426,9 @@ Grafo de conhecimento:
   - `EventBus.recent(run_id, after_seq=0) → list[dict]` — Eventos do anel depois de um `seq`.
   - `EventBus.live(run_id) → dict` — Saídas do modelo e operações abertas com texto parcial, último `seq` e contadores.
   - `EventBus.reset() → None` — Limpa tudo (testes e simulação de reinício).
+  - `EventBus.step_started(run_id) → None` — Marca um passo do orquestrador em execução.
+  - `EventBus.step_finished(run_id) → None` — Desmarca o passo.
+  - `EventBus.active_steps(run_id) → int` — Passos rodando agora neste processo (zero após reinício); distingue ao vivo de interrompido.
   - `EventBus._track(st, env) → None` — Abre/fecha saídas e operações conforme os eventos e acumula fragmentos.
 - `get_bus() → EventBus` — Instância única do processo, com limites de `Settings`.
 
@@ -690,7 +720,7 @@ Grafo de conhecimento:
   - `RunOrchestrator._work_root(project, task) → str` — Pasta de trabalho efetiva, considerando a conversa da tarefa.
   - `RunOrchestrator._write_final_answer(run, project, task, config) → dict` — Pede ao modelo (por `observed_chat`, transmitindo quando possível) a resposta final ao usuário com base no pedido e nas etapas irmãs; se inaproveitável, compõe Markdown padrão; grava texto e fontes, conclui a tarefa e consolida o pai.
   - `RunOrchestrator.run_until_idle(run_id, max_steps=50) → list[dict]` — Executa passos em sequência até concluir, bloquear, parar com pendências (`run_stalled`), pausar (`run_paused`) ou ficar parado esperando. Saída: log das ações.
-  - `RunOrchestrator.step(run_id) → dict` — Executa um passo dentro de um contexto de observação da run (`observe`), confere estagnação e registra a ação no log de eventos. Saída: ação do passo.
+  - `RunOrchestrator.step(run_id) → dict` — Executa um passo dentro de um contexto de observação da run (`observe`), marcado no barramento como passo em andamento, confere estagnação e registra a ação no log de eventos. Saída: ação do passo.
   - `RunOrchestrator._check_stagnation(run_id, out) → dict | None` — Depois do passo: se a etapa foi para nova tentativa com o mesmo erro e a mesma estratégia `attempts_per_strategy` vezes, interrompe (BLOCKED), grava `metadata.stagnation` (estado anterior, assinaturas, diagnóstico, próxima ação) e o evento `run.stagnation`; segue com replanejamento (`stagnation_replan`) se a correção é automática e a política aceita, senão pausa o run.
   - `RunOrchestrator._pause_run(run, root, hit, next_action, *, diagnosis=None) → dict` — Pausa o run (retomável) sem mudar tarefas: `metadata.pause` da raiz com limite, motivo, próxima ação, progresso, pendências e requisitos; mensagem "Não concluído" com a próxima ação; evento `run.paused`; ação `run_paused`.
 - `_profile_from_config(run_config, settings) → ModelProfile` — Atalho para `profile_from_run_config`.
@@ -1448,6 +1478,7 @@ Grafo de conhecimento:
 - `tests/test_model_choice.py` — Provedor Ollama: o modelo escolhido é o chamado, sem flag de raciocínio oculto em modelos simples, mensagem para timeout sem texto, run lembrando o modelo e JSON após bloco de "thinking" preservado (`parse_json_object`).
 - `tests/test_observability_events.py` — Eventos observáveis: fora de run nada é gravado; tipo desconhecido e campo faltando recusados; `seq` monotônico por run cobrindo produtores antigos, tarefa pai e agente, continuação após reinício; runs com sequências independentes; publicação só após commit (rollback não publica); fragmentos não persistidos com texto parcial na foto; segredos redigidos e texto truncado; assinante lento recebe ressincronização.
 - `tests/test_observability_executor.py` — Executor real (correção de `calc.py`): eventos tipados em ordem de `seq`, tarefa pai vinda do estado, `file.changed` com o diff do disco ligado à chamada da ferramenta, testes com saída progressiva só em memória e contagem final, entrega aos assinantes em ordem e sem duplicar, e nenhuma tarefa concluída sem `task.completed`.
+- `tests/test_observability_api.py` — API de acompanhamento: paginação e filtros do histórico iguais ao banco, foto em modo `replay` com árvore e evidências, SSE de run encerrada termina com `end`, reconexão por `Last-Event-ID` sem repetir, 404; SSE ao vivo em ordem, sem duplicar, só da própria run, fragmentos sem `id`, `live` e fim; consumidor lento ressincroniza pelo banco sem perder persistidos; operações interrompidas aparecem após reinício, nunca como concluídas, e a run volta a `live` com um passo em andamento.
 - `tests/test_observability_streaming.py` — Streaming real: Ollama (NDJSON) e llama.cpp (SSE OpenAI) entregam fragmentos cuja soma é a resposta final, gravada uma vez com uso de tokens; transmissão cortada vira falha com o texto parcial; provedor sem streaming não inventa fragmentos; cancelamento é registrado como cancelado; fora de run só chama o provedor.
 - `tests/test_operation_context.py` — `OperationContextBuilder`: o snapshot de contexto da operação é persistido.
 - `tests/test_orchestrator_recovery.py` — Retomada de run após passos parciais e bloqueio quando falta contrato.

@@ -54,7 +54,7 @@ from agent.orchestrator.plan_validation import (
     summarize,
     validate_and_repair,
 )
-from agent.observability import emit, observe, set_task
+from agent.observability import emit, get_bus, observe, set_task
 from agent.orchestrator.progress import made_progress, progress_state
 from agent.orchestrator.replan import replan_decision, replan_under
 from agent.orchestrator.stagnation import (
@@ -297,10 +297,15 @@ class RunOrchestrator:
         run = self._session.get(ExecutionRunModel, run_id)
         if run is None:
             raise LookupError(str(run_id))
-        with observe(self._session, run_id=run.id, project_id=run.project_id):
-            out = await self._step_body(run_id)
-            out = self._check_stagnation(run_id, out) or out
-            self._record_action(run_id, out)
+        bus = get_bus()
+        bus.step_started(str(run.id))
+        try:
+            with observe(self._session, run_id=run.id, project_id=run.project_id):
+                out = await self._step_body(run_id)
+                out = self._check_stagnation(run_id, out) or out
+                self._record_action(run_id, out)
+        finally:
+            bus.step_finished(str(run.id))
         return out
 
     def _check_stagnation(self, run_id: uuid.UUID, out: dict[str, Any]) -> dict[str, Any] | None:

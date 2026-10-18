@@ -49,6 +49,7 @@ class EventBus:
         self._lock = threading.RLock()
         self._runs: OrderedDict[str, _RunState] = OrderedDict()
         self._subs: dict[str, set[Subscription]] = {}
+        self._steps: dict[str, int] = {}
         self.ring_size = ring_size
         self.queue_size = queue_size
         self.max_runs = max_runs
@@ -154,8 +155,26 @@ class EventBus:
                 "stats": {"published": st.published, "ephemeral": st.ephemeral},
             }
 
+    def step_started(self, run_id: str) -> None:
+        with self._lock:
+            self._steps[run_id] = self._steps.get(run_id, 0) + 1
+
+    def step_finished(self, run_id: str) -> None:
+        with self._lock:
+            left = self._steps.get(run_id, 0) - 1
+            if left > 0:
+                self._steps[run_id] = left
+            else:
+                self._steps.pop(run_id, None)
+
+    def active_steps(self, run_id: str) -> int:
+        """Passos do orquestrador rodando agora neste processo (zero depois de um reinício)."""
+        with self._lock:
+            return self._steps.get(run_id, 0)
+
     def reset(self) -> None:
         with self._lock:
+            self._steps.clear()
             self._runs.clear()
             for subs in self._subs.values():
                 for sub in subs:
