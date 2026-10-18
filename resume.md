@@ -525,7 +525,7 @@ Grafo de conhecimento:
 - `fallback_plan(objective) → tuple[DecompositionResult, str]` — Template de página ou template genérico (inspecionar, alterar, testar) e o nome da origem.
 - `page_plan(objective) → DecompositionResult` — Plano para páginas: listar a pasta, escrever `index.html` pelo modelo e conferir a estrutura HTML.
 - `plan_copies_siblings(sibling_titles, plan_titles, current_title) → bool` — Detecta plano que só repete a lista de irmãos da etapa atual (sinal de laço de decomposição).
-- `plan_with_model(provider, profile, objective, context_snippet, *, language='pt', browser_mode='off', requirements=None) → DecompositionResult | None` — Pede ao modelo local um plano em JSON (com catálogo de ferramentas, guias do projeto, requisitos da etapa com pedido de `covers` e regra de fechar com verificação e resposta final) e valida a resposta. Saída: plano ou `None` se inválido.
+- `plan_with_model(provider, profile, objective, context_snippet, *, language='pt', browser_mode='off', requirements=None) → DecompositionResult | None` — Pede ao modelo local um plano em JSON (com catálogo de ferramentas, guias do projeto, requisitos da etapa com pedido de `covers` e regra de fechar com verificação e resposta final) por `observed_chat` e valida a resposta. Saída: plano ou `None` se inválido.
 - `profile_from_run_config(run_config, settings) → ModelProfile` — Monta o perfil do modelo (id, limites de contexto, suporte a visão, opções de geração) a partir da configuração do run.
 - `requirements_block(requirements) → str` — Trecho do prompt com os requisitos obrigatórios da etapa (e a parte, se parcial) e a instrução de declarar `metadata.covers`; vazio sem requisitos.
 - `resolve_decomposition_plan(*, settings, run_config, objective, project_root, provider=None, requirements=None) → tuple[DecompositionResult | None, str]` — Escolhe o plano na ordem: embutido e2e, resposta direta, modelo (Ollama/llama.cpp), template genérico, fallback mock; aplica alinhamento e fechamento. Saída: plano e nome da origem.
@@ -667,7 +667,7 @@ Grafo de conhecimento:
   - `RunOrchestrator._pending_under(root_id) → list[dict]` — Folhas da árvore que não concluíram com evidência (nem foram canceladas), com título, status e motivo.
   - `RunOrchestrator._stall_run(run, root, reason) → dict` — Nada pode avançar e o objetivo não foi cumprido (o motivo inclui as recusas de replanejamento): run vai a `failed`, raiz a BLOCKED (recuperável), relatório com `achieved=False`, `pending`, `requirements` (estado de cada requisito) e mensagem "Não concluído"; evento `run.failed` com `kind: stalled`; ação `run_stalled`.
   - `RunOrchestrator._ensure_final_message(root) → None` — Garante `final_answer` no relatório da raiz: copia a do filho de resposta final ou compõe um Markdown com as etapas.
-  - `RunOrchestrator._execute_task(run, project, task, config, work_root=None) → dict` — Executa a tarefa RUNNING conforme o metadado: ferramenta MCP, resposta final, operação de modelo (gera JSON e aplica `edit_file`/`write_file`, com streaming opcional), ferramenta comum (com detecção de laço), verificação ou consolidação de pai (folha com metadados mas sem ação vira operação de modelo, em vez de concluir sem fazer nada; pai com filho falho vai a BLOCKED com `dependency_failed`); respeita limite de tentativas e registra tentativas. Saída: ação do passo.
+  - `RunOrchestrator._execute_task(run, project, task, config, work_root=None) → dict` — Executa a tarefa RUNNING conforme o metadado: ferramenta MCP, resposta final, operação de modelo (gera JSON por `observed_chat`, com fragmentos ao vivo quando o provedor transmite e `stream` não é `false`, e aplica `edit_file`/`write_file`), ferramenta comum (com detecção de laço), verificação ou consolidação de pai (folha com metadados mas sem ação vira operação de modelo, em vez de concluir sem fazer nada; pai com filho falho vai a BLOCKED com `dependency_failed`); respeita limite de tentativas e registra tentativas. Saída: ação do passo.
   - `RunOrchestrator._finalize_verification(run, project, task, work_root=None, implicit_spec=None) → dict` — Roda a verificação declarada da tarefa ou, para escrita do modelo sem verificação declarada, a implícita (`file_contains` com o que foi gravado e sintaxe), grava a tentativa (com falha categorizada) e a evidência ligada a ela (`attempt_id`) com estado, critério, comando, código de saída, motivo e impressão digital dos arquivos avaliados; a implícita fica em `metadata.implicit_verification`; aprovada conclui e consolida o pai, reprovada vai para nova tentativa (ou bloqueia se repetir), bloqueada por ambiente (executável ausente, aprovação) e inconclusiva vão a BLOCKED sem refazer a implementação. Sem verificação nenhuma (leitura), apenas conclui.
   - `RunOrchestrator._note_thought(run, task, text, *, phase='thinking') → None` — Grava um evento `agent.thought` e faz commit para a interface mostrar o andamento durante a inferência.
   - `RunOrchestrator._context_overflow(run, project, task, provider_name, profile, exc) → dict` — Contexto obrigatório não coube nem compactado: registra tentativa falha `context_budget` com o snapshot, explica qual parte pesa mais e bloqueia a tarefa (`blocked_context`), sem chamar o modelo.
@@ -688,7 +688,7 @@ Grafo de conhecimento:
   - `RunOrchestrator._step_body(run_id) → dict` — Lógica de um passo: replaneja se preciso, escolhe a tarefa e avança seu estado (planejar/decompor, promover, executar, verificar, reabrir); sem tarefas restantes, cria a verificação global se pedida, conclui o run só se a raiz concluiu e a aceitação global passou; senão reabre lacunas de evidência ou encerra com `_stall_run` (nunca fica esperando para sempre). Liga a tarefa escolhida ao contexto de observação, emite `plan.started`/`plan.updated` ao decompor e `run.completed` ao concluir.
   - `RunOrchestrator._subtree_ids(root_id, tasks) → set[uuid]` — Ids da raiz e de todos os descendentes.
   - `RunOrchestrator._work_root(project, task) → str` — Pasta de trabalho efetiva, considerando a conversa da tarefa.
-  - `RunOrchestrator._write_final_answer(run, project, task, config) → dict` — Pede ao modelo a resposta final ao usuário com base no pedido e nas etapas irmãs; se inaproveitável, compõe Markdown padrão; grava texto e fontes, conclui a tarefa e consolida o pai.
+  - `RunOrchestrator._write_final_answer(run, project, task, config) → dict` — Pede ao modelo (por `observed_chat`, transmitindo quando possível) a resposta final ao usuário com base no pedido e nas etapas irmãs; se inaproveitável, compõe Markdown padrão; grava texto e fontes, conclui a tarefa e consolida o pai.
   - `RunOrchestrator.run_until_idle(run_id, max_steps=50) → list[dict]` — Executa passos em sequência até concluir, bloquear, parar com pendências (`run_stalled`), pausar (`run_paused`) ou ficar parado esperando. Saída: log das ações.
   - `RunOrchestrator.step(run_id) → dict` — Executa um passo dentro de um contexto de observação da run (`observe`), confere estagnação e registra a ação no log de eventos. Saída: ação do passo.
   - `RunOrchestrator._check_stagnation(run_id, out) → dict | None` — Depois do passo: se a etapa foi para nova tentativa com o mesmo erro e a mesma estratégia `attempts_per_strategy` vezes, interrompe (BLOCKED), grava `metadata.stagnation` (estado anterior, assinaturas, diagnóstico, próxima ação) e o evento `run.stagnation`; segue com replanejamento (`stagnation_replan`) se a correção é automática e a política aceita, senão pausa o run.
@@ -1077,9 +1077,9 @@ Grafo de conhecimento:
 - `ChatCompletionRequest(BaseModel)` — Requisição de chat: mensagens, perfil do modelo, formato de resposta opcional (JSON schema) e flag de streaming.
 - `ChatCompletionResponse(BaseModel)` — Resposta: texto, payload bruto e contagens de tokens de entrada e saída quando o motor informa.
 - `ChatMessage(BaseModel)` — Mensagem com papel, conteúdo e imagens opcionais em base64.
-- **`LLMProvider(ABC)`** — Interface abstrata que todo provedor implementa.
+- **`LLMProvider(ABC)`** — Interface abstrata que todo provedor implementa; `supports_streaming` só é verdadeiro em quem recebe fragmentos do servidor.
   - `LLMProvider.chat(request) → ChatCompletionResponse` — Abstrato: gera uma resposta completa.
-  - `LLMProvider.chat_stream(request)` — Gerador assíncrono de pedaços de texto; o padrão chama `chat` e devolve tudo em um pedaço só.
+  - `LLMProvider.chat_streaming(request, on_delta) → ChatCompletionResponse` — Recebe a resposta em fragmentos chamando `on_delta` e devolve a resposta completa com uso; o padrão lança `NotImplementedError` (sem streaming simulado).
   - `LLMProvider.list_models() → list[str]` — Abstrato: lista os modelos disponíveis no motor.
 - `ModelProfile(BaseModel)` — Perfil do modelo: id, limite de contexto, orçamento de entrada, reserva de saída, suporte a ferramentas e a visão, e parâmetros de geração.
 - `ProviderError(RuntimeError)` — Erro de provedor indisponível ou falha de inferência.
@@ -1090,10 +1090,18 @@ Grafo de conhecimento:
 
 - **`LlamaCppProvider(LLMProvider)`** — Cliente HTTP para `/v1/models` e `/v1/chat/completions`.
   - `LlamaCppProvider.__init__(base_url, timeout=120.0) → None` — Guarda URL base e timeout.
-  - `LlamaCppProvider.chat(request) → ChatCompletionResponse` — Envia as mensagens (com imagens em formato OpenAI), `max_tokens` igual à reserva de saída e parâmetros do perfil; registra o uso de tokens. Erros HTTP viram `ProviderError`.
+  - `LlamaCppProvider._body(request) → dict` — Corpo OpenAI: mensagens (com imagens), `max_tokens` igual à reserva de saída, parâmetros do perfil e formato de resposta.
+  - `LlamaCppProvider.chat(request) → ChatCompletionResponse` — Envia o corpo de `_body`; registra o uso de tokens. Erros HTTP viram `ProviderError`.
+  - `LlamaCppProvider.chat_streaming(request, on_delta) → ChatCompletionResponse` — `stream: true` com `include_usage`: lê eventos `data:` até `[DONE]`, repassa `delta.content`, junta o texto, registra o uso; erro no meio ou fim sem conclusão viram `ProviderError`.
   - `LlamaCppProvider.list_models() → list[str]` — Lista ids de modelos do servidor.
 - `_data_url(encoded) → str` — Converte base64 em data URL, deduzindo JPEG ou PNG.
 - `_openai_message(message) → dict` — Converte `ChatMessage` no formato OpenAI (texto mais partes `image_url` se houver imagens).
+
+### `src/agent/providers/observed.py`
+
+**Propósito:** chamada ao modelo acompanhada em tempo real. **Quando/onde:** operação do modelo e resposta final (`runner`) e planejamento (`decomposition.plan_with_model`).
+
+- `observed_chat(provider, request, *, purpose, stream=True) → ChatCompletionResponse` — Dentro de uma run: `agent.started` (provedor, modelo, se transmite, finalidade), `agent.status`, fragmentos agrupados em `agent.output.delta` só se o provedor transmite de verdade, e `agent.output.completed` (conteúdo inteiro, tokens, duração) ou `agent.output.failed` (erro ou cancelamento, com o texto parcial). Fora de run chama `chat` direto.
 
 ### `src/agent/providers/mock.py`
 
@@ -1112,7 +1120,7 @@ Grafo de conhecimento:
 - **`OllamaProvider(LLMProvider)`** — Cliente HTTP do Ollama.
   - `OllamaProvider.__init__(base_url, timeout=120.0) → None` — Guarda URL base e timeout.
   - `OllamaProvider.chat(request) → ChatCompletionResponse` — Chamada sem streaming; devolve o texto e as contagens de tokens (`prompt_eval_count`, `eval_count`) e registra o uso.
-  - `OllamaProvider.chat_stream(request)` — Chamada com streaming; devolve pedaços de texto conforme chegam (usado pelo orquestrador para mostrar a resposta ao vivo).
+  - `OllamaProvider.chat_streaming(request, on_delta) → ChatCompletionResponse` — `/api/chat` com `stream: true`: repassa cada fragmento, monta a resposta igual à de `chat` (conteúdo inteiro, contagens da linha `done`) e registra o uso; linha de erro, linha inválida ou fim sem `done` viram `ProviderError`.
   - `OllamaProvider.list_models() → list[str]` — Lista os modelos instalados no Ollama.
 - `_ollama_message(message) → dict` — Converte `ChatMessage` para o formato do Ollama (campo `images` quando houver).
 - `_reasoning_model(model_id) → bool` — Detecta pelo nome modelos de raciocínio (qwen3, gpt-oss, deepseek, reason).
@@ -1440,6 +1448,7 @@ Grafo de conhecimento:
 - `tests/test_model_choice.py` — Provedor Ollama: o modelo escolhido é o chamado, sem flag de raciocínio oculto em modelos simples, mensagem para timeout sem texto, run lembrando o modelo e JSON após bloco de "thinking" preservado (`parse_json_object`).
 - `tests/test_observability_events.py` — Eventos observáveis: fora de run nada é gravado; tipo desconhecido e campo faltando recusados; `seq` monotônico por run cobrindo produtores antigos, tarefa pai e agente, continuação após reinício; runs com sequências independentes; publicação só após commit (rollback não publica); fragmentos não persistidos com texto parcial na foto; segredos redigidos e texto truncado; assinante lento recebe ressincronização.
 - `tests/test_observability_executor.py` — Executor real (correção de `calc.py`): eventos tipados em ordem de `seq`, tarefa pai vinda do estado, `file.changed` com o diff do disco ligado à chamada da ferramenta, testes com saída progressiva só em memória e contagem final, entrega aos assinantes em ordem e sem duplicar, e nenhuma tarefa concluída sem `task.completed`.
+- `tests/test_observability_streaming.py` — Streaming real: Ollama (NDJSON) e llama.cpp (SSE OpenAI) entregam fragmentos cuja soma é a resposta final, gravada uma vez com uso de tokens; transmissão cortada vira falha com o texto parcial; provedor sem streaming não inventa fragmentos; cancelamento é registrado como cancelado; fora de run só chama o provedor.
 - `tests/test_operation_context.py` — `OperationContextBuilder`: o snapshot de contexto da operação é persistido.
 - `tests/test_orchestrator_recovery.py` — Retomada de run após passos parciais e bloqueio quando falta contrato.
 - `tests/test_persistence.py` — Persistência SQLite: árvore de tarefas sobrevive à reabertura, transição inválida rejeitada, ciclo de dependência bloqueado e caminho feliz até `COMPLETED`.

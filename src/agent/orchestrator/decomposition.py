@@ -126,8 +126,10 @@ async def plan_with_model(
         profile,
         [ContextComponent(name="decomposição", text=prompt, required=True, priority=100)],
     )
-    resp = await provider.chat(
-        ChatCompletionRequest(messages=budget.messages, profile=profile)
+    from agent.providers.observed import observed_chat
+
+    resp = await observed_chat(
+        provider, ChatCompletionRequest(messages=budget.messages, profile=profile), purpose="plan"
     )
     data, err = parse_json_object(resp.content)
     if err or not data:

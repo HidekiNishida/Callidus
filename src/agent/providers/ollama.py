@@ -1,6 +1,9 @@
 # src/agent/providers/ollama.py — integração HTTP com Ollama
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
+
 import httpx
 
 from agent.providers.base import (
@@ -50,6 +53,7 @@ def chat_body(request: ChatCompletionRequest) -> dict:
 
 class OllamaProvider(LLMProvider):
     name = "ollama"
+    supports_streaming = True
 
     def __init__(self, base_url: str, timeout: float = 120.0) -> None:
         self._base_url = base_url.rstrip("/")
@@ -92,23 +96,48 @@ class OllamaProvider(LLMProvider):
         remember_usage(self, response.prompt_tokens_estimate, response.completion_tokens_estimate)
         return response
 
-    async def chat_stream(self, request: ChatCompletionRequest):
+    async def chat_streaming(
+        self, request: ChatCompletionRequest, on_delta: Callable[[str], None]
+    ) -> ChatCompletionResponse:
+        """`/api/chat` com `stream: true`: uma linha JSON por fragmento; a última (`done`) traz uso de tokens
+        e `done_reason`. A resposta devolvida é a mesma que `chat` daria (conteúdo inteiro + uso)."""
         url = f"{self._base_url}/api/chat"
         body = chat_body(request)
         body["stream"] = True
+        parts: list[str] = []
+        final: dict = {}
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 async with client.stream("POST", url, json=body) as resp:
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():
-                        if line:
-                            import json
+                        if not line.strip():
+                            continue
+                        try:
                             data = json.loads(line)
-                            if data.get("done"):
-                                break
-                            chunk = data.get("message", {})
-                            content = chunk.get("content", "")
-                            if content:
-                                yield content
+                        except json.JSONDecodeError as exc:
+                            raise ProviderError(f"Falha na inferência Ollama (stream): linha inválida ({exc})") from exc
+                        if data.get("error"):
+                            raise ProviderError(f"Falha na inferência Ollama: {data['error']}")
+                        piece = (data.get("message") or {}).get("content") or ""
+                        if piece:
+                            parts.append(piece)
+                            on_delta(piece)
+                        if data.get("done"):
+                            final = data
+                            break
         except httpx.HTTPError as exc:
-            raise ProviderError(f"Falha na inferência Ollama (stream): {inference_failure_text(exc)}") from exc
+            raise ProviderError(f"Falha na inferência Ollama: {inference_failure_text(exc)}") from exc
+        if not final:
+            raise ProviderError("Falha na inferência Ollama: a transmissão terminou sem a mensagem final")
+        content = "".join(parts)
+        response = ChatCompletionResponse(
+            content=content,
+            raw={**final, "message": {"role": "assistant", "content": content}},
+            prompt_tokens_estimate=final.get("prompt_eval_count"),
+            completion_tokens_estimate=final.get("eval_count"),
+        )
+        from agent.orchestrator.usage import remember_usage
+
+        remember_usage(self, response.prompt_tokens_estimate, response.completion_tokens_estimate)
+        return response

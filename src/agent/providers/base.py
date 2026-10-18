@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -43,6 +44,8 @@ class ProviderError(RuntimeError):
 
 class LLMProvider(ABC):
     name: str
+    # Só é `True` em provedores que recebem a resposta em fragmentos do servidor (`chat_streaming`).
+    supports_streaming: bool = False
 
     @abstractmethod
     async def list_models(self) -> list[str]:
@@ -52,8 +55,9 @@ class LLMProvider(ABC):
     async def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         raise NotImplementedError
 
-    async def chat_stream(self, request: ChatCompletionRequest):
-        """Stream chat completion chunks. Default implementation falls back to chat."""
-        # Non-streaming provider: yield the whole response as one chunk.
-        response = await self.chat(request)
-        yield response.content or ""
+    async def chat_streaming(
+        self, request: ChatCompletionRequest, on_delta: Callable[[str], None]
+    ) -> ChatCompletionResponse:
+        """Recebe a resposta em fragmentos, chama `on_delta` a cada um e devolve a resposta completa (com uso
+        de tokens). Provedores sem streaming real não implementam: quem chama usa `chat`."""
+        raise NotImplementedError

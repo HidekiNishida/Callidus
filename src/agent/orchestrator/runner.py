@@ -83,6 +83,7 @@ from agent.services.inbox import effective_root
 from agent.providers.base import LLMProvider, ModelProfile, ProviderError
 from agent.providers.mock import MockProvider
 from agent.providers.llamacpp import LlamaCppProvider
+from agent.providers.observed import observed_chat
 from agent.providers.ollama import OllamaProvider
 from agent.services.attempt_service import AttemptService
 from agent.services.project_service import ProjectService
@@ -1001,8 +1002,8 @@ class RunOrchestrator:
                     return self._context_overflow(run, project, task, provider.name, profile, exc)
                 self._note_thought(run, task, "O contexto não cabia; segui com a versão compactada, sem cortar conteúdo.")
             self._note_thought(run, task, f"Pensando na alteração «{task.title}» com {profile.model_id}.")
-            # Check if streaming is requested
-            stream_requested = bool(meta.get("stream") or config.get("stream", False))
+            # Fragmentos só quando o provedor transmite de verdade; `stream: false` (etapa ou run) desliga.
+            stream_allowed = meta.get("stream", config.get("stream", True)) is not False
             prompt_fp = AttemptService.fingerprint(
                 "\n".join(m.content for m in budget.messages) + repr(sorted(profile.generation.items()))
             )
@@ -1032,18 +1033,13 @@ class RunOrchestrator:
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=failure.detail))
                 return {"action": "blocked_loop", "task_id": str(task.id), "failure": noted}
             try:
-                if stream_requested:
-                    chunks: list[str] = []
-                    async for chunk in provider.chat_stream(
-                        ChatCompletionRequest(messages=budget.messages, profile=profile, stream=True)
-                    ):
-                        chunks.append(chunk)
-                        excerpt = " ".join("".join(chunks).split())[:200]
-                        self._note_thought(run, task, f"Gerando... {excerpt}", phase="generating")
-                    content = "".join(chunks)
-                else:
-                    resp = await provider.chat(ChatCompletionRequest(messages=budget.messages, profile=profile))
-                    content = resp.content or ""
+                resp = await observed_chat(
+                    provider,
+                    ChatCompletionRequest(messages=budget.messages, profile=profile),
+                    purpose="operation",
+                    stream=stream_allowed,
+                )
+                content = resp.content or ""
             except ProviderError as exc:
                 self._note_thought(run, task, f"A inferência falhou: {exc}.")
                 failure = classify_provider_error(str(exc))
@@ -1287,11 +1283,14 @@ class RunOrchestrator:
         model_text = ""
         try:
             self._note_thought(run, task, "Escrevendo a resposta final.")
-            resp = await provider.chat(
+            resp = await observed_chat(
+                provider,
                 ChatCompletionRequest(
                     messages=[ChatMessage(role="user", content=prompt)],
                     profile=profile,
-                )
+                ),
+                purpose="final_answer",
+                stream=config.get("stream", True) is not False,
             )
             model_text = (resp.content or "").strip()
             self._apply_provider_usage(task, provider)
