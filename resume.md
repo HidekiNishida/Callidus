@@ -262,7 +262,9 @@ Grafo de conhecimento:
 - `looks_truncated(content) → bool` — Resposta que abriu JSON ou cerca de código e não fechou.
 - `classify_model_output(content, parse_error, missing=None) → Failure | None` — JSON do modelo: cortado (`change_strategy`) ou malformado/incompleto (`recoverable`).
 - `classify_context_error(message) → Failure` — Contexto obrigatório acima do orçamento (`change_strategy`).
-- `classify_verification(passed, summary) → Failure | None` — Reprovado é `recoverable`; inconclusivo nunca passa (`external_unavailable`).
+- `classify_verification(passed, summary, output='') → Failure | None` — Reprovado é `recoverable`, com o fim da saída do verificador no detalhe; inconclusivo nunca passa (`external_unavailable`).
+- `retry_hint(failure) → str` — Instrução para a próxima tentativa conforme a causa (ex.: "responda só o JSON", "edite um trecho curto").
+- `describe_failures(history, *, limit=3, detail_chars=400) → str` — Texto das últimas falhas (causa, detalhe, o que fazer diferente) para o componente `tentativas-anteriores` do contexto.
 
 ### `src/agent/domain/schemas.py`
 
@@ -583,6 +585,7 @@ Grafo de conhecimento:
   - `AttemptService.fingerprint(data) → str` — Método estático: hash SHA-256 curto (16 caracteres) de um texto ou dicionário, usado para comparar saídas.
   - `AttemptService.record(*, run_id, task_id, kind, provider, request, response, success, error=None, project_id=None, failure=None) → OperationAttemptModel` — Grava uma tentativa com pedido, resposta e sucesso; com `failure`, a categoria e a causa vão para `error_message` e para o evento `attempt.recorded` (nunca para `response_json`, que alimenta a detecção de loop).
   - `AttemptService.repeated_output_detected(task_id, output_fingerprint, window=3) → bool` — Verdadeiro se as últimas `window` tentativas tiveram a mesma saída igual à impressão informada (sinal de loop).
+  - `AttemptService.prompt_already_sent(task_id, prompt_fp) → bool` — Diz se o mesmo prompt (impressão em `request_json.prompt_fp`) já foi enviado ao modelo nesta tarefa.
 
 ### `src/agent/services/autonomous_worker.py`
 
@@ -742,7 +745,7 @@ Grafo de conhecimento:
 
 **Propósito:** define a receita padrão de componentes de contexto de uma operação e suas prioridades. **Quando/onde:** chamado por `OperationContextBuilder.build_for_task`.
 
-- `build_operation_context(profile, *, global_rules, project_rules, objective, technical, acceptance, tools_summary, output_format, compact=False) → BudgetResult` — Cria os componentes do prompt: regras globais, objetivo, critérios e formato de saída são obrigatórios; regras do projeto, contexto técnico e catálogo de ferramentas são opcionais, em prioridade decrescente. Entrada: perfil do modelo e os textos. Com `compact=True`, passa todos os textos por `compact_text` e anota a estratégia. Saída: mensagens prontas e estimativa de tokens.
+- `build_operation_context(profile, *, global_rules, project_rules, objective, technical, acceptance, tools_summary, output_format, previous_failures='', compact=False) → BudgetResult` — Cria os componentes do prompt: regras globais, objetivo, critérios, formato de saída e, se houver, `tentativas-anteriores` são obrigatórios; regras do projeto, contexto técnico e catálogo de ferramentas são opcionais, em prioridade decrescente. Entrada: perfil do modelo e os textos. Com `compact=True`, passa todos os textos por `compact_text` e anota a estratégia. Saída: mensagens prontas e estimativa de tokens.
 
 ### `src/agent/context/budget.py`
 
@@ -1189,6 +1192,7 @@ Grafo de conhecimento:
 - `tests/test_decomposition.py` — `resolve_decomposition_plan`: seleção do plano builtin E2E.
 - `tests/test_dev_tools.py` — Ferramentas de desenvolvimento: list/glob/edit e aliases, grep que ignora `.venv`, comando em string, executável ausente como erro de configuração, interpretador do venv do projeto, verificação que aceita entrega HTML sem testes e verificação por script.
 - `tests/test_failures.py` — Taxonomia de falhas: categorias de saída de ferramenta, provedor, resposta do modelo (cortada × malformada), contexto e verificação; JSON inválido do modelo vira tentativa falha com `last_failure` na tarefa.
+- `tests/test_retry_strategy.py` — Nova tentativa: motivo e instrução no prompt, nenhum prompt repetido (bloqueia com `repeated_prompt`), resposta cortada dobra o limite de saída, saída da verificação no detalhe da falha.
 - `tests/test_diff_resume_browser.py` — Diff unificado (`tools/diffing.py`), `edit_file` devolvendo diff, resumo de retomada (`build_resume_brief`) e ferramenta de navegador (proteção de URL, parse de resultados, desligada até ser habilitada).
 - `tests/test_e2e_orchestrator.py` — Fluxo ponta a ponta com mock: o `RunOrchestrator` corrige `calc.py` da fixture `sample_project` e passa na verificação.
 - `tests/test_evolution_api.py` — Endpoints de evolução: reindexação do grafo e métricas, upsert de contrato de tarefa, painel "live" após um passo e liga/desliga do modo autônomo.

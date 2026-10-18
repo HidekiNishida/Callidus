@@ -14,7 +14,7 @@ O orquestrador decompõe só o necessário, monta contexto suficiente por opera�
 
 ## Próxima ação
 
-Unidade 4: JSON inválido do modelo é reenviado com o motivo da falha e estratégia diferente; nunca prompt idêntico.
+Unidade 8 (antecipada): consolidação e término — pai com filho falho nunca COMPLETED; run com pendência termina em estado recuperável explicado, sem laço.
 
 ## Diagnóstico (fase A — evidências)
 
@@ -58,7 +58,8 @@ Unidade 4: JSON inválido do modelo é reenviado com o motivo da falha e estrat�
 - [x] Decisão sobre o WIP: commitado à parte (`1b92a41`); consolidação segue a especificação
 - [x] Unidade 2: taxonomia `domain/failures.py`, falhas gravadas em tentativa/evento/`last_failure`, evidência com `attempt_id`, JSON inválido = tentativa falha
 - [x] Unidade 3: `ContextBudgetError`, snapshot do estouro, compactação sem perda, `blocked_context` explicado, `RUNNING → BLOCKED`
-- [ ] Unidades 4–11
+- [x] Unidade 4: `tentativas-anteriores` no contexto, `retry_hint`, impressão do prompt (`repeated_prompt`), `num_predict` dobrado em resposta cortada, saída da verificação no detalhe
+- [ ] Unidades 5–11
 - [ ] Escolher dimensões de teste aplicáveis ([validacoes-testes.md](/docs/regras/validacoes-testes.md))
 - [ ] Verificação final: código ↔ docs ↔ checklists ↔ regras ([verificacao-final.md](/docs/regras/verificacao-final.md))
 - [ ] Marcar estado como `concluída` e listar artefatos
@@ -77,9 +78,10 @@ Unidade 4: JSON inválido do modelo é reenviado com o motivo da falha e estrat�
 | `/src/agent/domain/failures.py` | taxonomia de falhas |
 | `/tests/test_failures.py` | testes da unidade 2 |
 | `/tests/test_context_recovery.py` | testes da unidade 3 (cenários 7 e 8) |
+| `/tests/test_retry_strategy.py` | testes da unidade 4 (cenários 10 e 13) |
 | `/docs/architecture/context-builder.md` | estouro e compactação |
 | `/docs/architecture/execucao-autonoma.md` | seção Falhas categorizadas |
 
 ## Notas de retomada
 
-Baseline após unidade 3: 117 passam, 2 falham (`test_parent_not_completed_without_verification_evidence`, `test_run_writes_final_answer`), ambas causadas pelo WIP de `consolidation.py`/`runner.py`. Cenários numerados = seção 12 do pedido.
+Baseline após unidade 4: 121 passam, 2 falham (`test_parent_not_completed_without_verification_evidence`, `test_run_writes_final_answer`), ambas causadas pelo WIP de `consolidation.py`/`runner.py`. Cenários numerados = seção 12 do pedido.

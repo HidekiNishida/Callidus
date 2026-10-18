@@ -83,6 +83,14 @@ class AttemptService:
             hashes.append(hashlib.sha256(raw.encode()).hexdigest()[:16])
         return len(set(hashes)) == 1 and hashes[0] == output_fingerprint
 
+    def prompt_already_sent(self, task_id: uuid.UUID, prompt_fp: str) -> bool:
+        """O mesmo prompt já foi enviado ao modelo nesta tarefa (impressão em `request_json.prompt_fp`)."""
+        stmt = select(OperationAttemptModel.request_json).where(
+            OperationAttemptModel.task_id == task_id,
+            OperationAttemptModel.kind == AttemptKind.MODEL.value,
+        )
+        return any((req or {}).get("prompt_fp") == prompt_fp for req in self._session.scalars(stmt))
+
     @staticmethod
     def fingerprint(data: dict | str) -> str:
         text = data if isinstance(data, str) else str(data)

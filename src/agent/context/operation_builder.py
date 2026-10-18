@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from agent.context.assembler import build_operation_context
 from agent.context.budget import BudgetResult, ContextBudgetError
+from agent.domain.failures import describe_failures
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.knowledge.indexer import grep_symbols_in_objective
 from agent.persistence.models import ContextSnapshotModel, MemoryRecordModel, TaskModel
@@ -81,6 +82,7 @@ class OperationContextBuilder:
                 acceptance=acceptance,
                 tools_summary=tools_summary,
                 output_format=output_format,
+                previous_failures=describe_failures((task.metadata_json or {}).get("failures") or []),
                 compact=compact,
             )
         except ContextBudgetError as exc:

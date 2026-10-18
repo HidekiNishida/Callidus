@@ -36,6 +36,7 @@ class FailureCause(StrEnum):
     VERIFICATION_FAILED = "verification_failed"
     VERIFICATION_INCONCLUSIVE = "verification_inconclusive"
     REPEATED_OUTPUT = "repeated_output"
+    REPEATED_PROMPT = "repeated_prompt"
     DEPENDENCY_FAILED = "dependency_failed"
     ATTEMPTS_EXHAUSTED = "attempts_exhausted"
 
@@ -79,6 +80,43 @@ _INPUT_ERRORS = (
     "deve ser lista",
 )
 _DISABLED = ("navegador desligado", "memória indisponível")
+
+
+_RETRY_HINTS: dict[FailureCause, str] = {
+    FailureCause.INVALID_OUTPUT: "Responda apenas o objeto JSON pedido, sem texto, explicação ou cerca de código.",
+    FailureCause.TRUNCATED_OUTPUT: (
+        "A resposta foi cortada pelo limite de saída. Prefira editar um trecho curto "
+        "(old_string/new_string) em vez de reescrever o arquivo inteiro."
+    ),
+    FailureCause.TOOL_INPUT: (
+        "A gravação foi recusada pelos argumentos. Para editar, copie old_string exatamente como está "
+        "no arquivo atual; para criar, informe path e content."
+    ),
+    FailureCause.TOOL_ERROR: "A execução falhou; corrija a causa indicada antes de repetir.",
+    FailureCause.VERIFICATION_FAILED: "A verificação reprovou a mudança; corrija o que a saída da verificação aponta.",
+    FailureCause.PROVIDER_ERROR: "A chamada anterior ao modelo falhou; responda de forma direta e curta.",
+}
+
+
+def retry_hint(failure: Failure) -> str:
+    """Instrução para a próxima tentativa, conforme a causa. Vazia quando não há o que mudar no pedido."""
+    return _RETRY_HINTS.get(failure.cause, "")
+
+
+def describe_failures(history: list[dict[str, Any]], *, limit: int = 3, detail_chars: int = 400) -> str:
+    """Resumo das últimas falhas para o contexto da próxima tentativa (motivo + o que fazer diferente)."""
+    lines: list[str] = []
+    for raw in history[-limit:]:
+        failure = Failure.from_dict(raw)
+        if failure is None:
+            continue
+        detail = " ".join(failure.detail.split())[:detail_chars]
+        line = f"- {failure.cause.value}: {detail}" if detail else f"- {failure.cause.value}"
+        hint = retry_hint(failure)
+        lines.append(f"{line}\n  O que fazer diferente: {hint}" if hint else line)
+    if not lines:
+        return ""
+    return "As tentativas anteriores desta etapa falharam. Não repita a mesma resposta.\n" + "\n".join(lines)
 
 
 def classify_tool_result(out: dict[str, Any]) -> Failure | None:
@@ -141,10 +179,13 @@ def classify_context_error(message: str) -> Failure:
     return Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.CONTEXT_BUDGET, message)
 
 
-def classify_verification(passed: bool | None, summary: str) -> Failure | None:
-    """Resultado de verificador → falha. Inconclusivo nunca conta como aprovado."""
+def classify_verification(passed: bool | None, summary: str, output: str = "") -> Failure | None:
+    """Resultado de verificador → falha. Inconclusivo nunca conta como aprovado. O fim da saída do
+    verificador entra no detalhe para a próxima tentativa saber o que corrigir."""
     if passed is True:
         return None
     if passed is None:
         return Failure(FailureCategory.EXTERNAL_UNAVAILABLE, FailureCause.VERIFICATION_INCONCLUSIVE, summary)
-    return Failure(FailureCategory.RECOVERABLE, FailureCause.VERIFICATION_FAILED, summary)
+    tail = (output or "").strip()[-600:]
+    detail = f"{summary}: {tail}" if tail else summary
+    return Failure(FailureCategory.RECOVERABLE, FailureCause.VERIFICATION_FAILED, detail)

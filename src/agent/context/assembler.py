@@ -15,6 +15,7 @@ def build_operation_context(
     acceptance: str,
     tools_summary: str,
     output_format: str,
+    previous_failures: str = "",
     compact: bool = False,
 ) -> BudgetResult:
     components = [
@@ -26,6 +27,10 @@ def build_operation_context(
         ContextComponent(name="contexto-técnico", text=technical, required=False, priority=70),
         ContextComponent(name="ferramentas", text=tools_summary, required=False, priority=60),
     ]
+    if previous_failures:
+        components.append(
+            ContextComponent(name="tentativas-anteriores", text=previous_failures, required=True, priority=96)
+        )
     if compact:
         for comp in components:
             comp.text = compact_text(comp.text)

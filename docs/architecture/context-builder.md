@@ -16,6 +16,12 @@ A resposta final usa os formatos que o chat desenha (título, lista, tabela, có
 
 `build_operation_context` aplica limite do `ModelProfile`, reserva de saída e margem de segurança (256 tokens). Regras globais, objetivo, critérios e formato de saída são **obrigatórios**; regras do projeto, contexto técnico e ferramentas entram se couberem, e os omitidos ficam em `refs_json` e `strategy_notes_json`.
 
+### Nova tentativa
+
+Quando a tarefa já falhou, o componente obrigatório `tentativas-anteriores` (`describe_failures`) traz as últimas 3 falhas: causa, detalhe (com o fim da saída da verificação, se for o caso) e o que fazer diferente (`retry_hint`). Assim cada tentativa recebe um pedido diferente da anterior.
+
+O runner guarda a impressão do prompt (`request_json.prompt_fp`, que inclui os parâmetros de geração). Se o próximo pedido for idêntico a um já enviado, ele não é enviado: falha `change_strategy/repeated_prompt` e a tarefa vai a `BLOCKED`. Resposta cortada (`truncated_output`) dobra `num_predict` a cada ocorrência, até 16384.
+
 ### Quando o obrigatório não cabe
 
 1. `assemble_messages` lança `ContextBudgetError` com o custo de cada componente.

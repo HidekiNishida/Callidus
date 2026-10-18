@@ -594,6 +594,14 @@ class RunOrchestrator:
                 generation = dict(profile.generation)
                 generation["num_predict"] = max(int(generation.get("num_predict") or 0), 4096)
                 profile = profile.model_copy(update={"generation": generation})
+            truncations = sum(
+                1 for item in meta.get("failures") or [] if item.get("cause") == FailureCause.TRUNCATED_OUTPUT.value
+            )
+            if truncations:
+                generation = dict(profile.generation)
+                base = max(int(generation.get("num_predict") or 0), 2048)
+                generation["num_predict"] = min(16384, base * 2**truncations)
+                profile = profile.model_copy(update={"generation": generation})
             from agent.providers.base import ChatCompletionRequest
             from agent.util.json_parse import parse_json_object
 
@@ -610,7 +618,34 @@ class RunOrchestrator:
             self._note_thought(run, task, f"Pensando na alteração «{task.title}» com {profile.model_id}.")
             # Check if streaming is requested
             stream_requested = bool(meta.get("stream") or config.get("stream", False))
-            attempt_request = {"context_snapshot_id": str(snap.id), "tokens_est": budget.estimated_tokens}
+            prompt_fp = AttemptService.fingerprint(
+                "\n".join(m.content for m in budget.messages) + repr(sorted(profile.generation.items()))
+            )
+            attempt_request = {
+                "context_snapshot_id": str(snap.id),
+                "tokens_est": budget.estimated_tokens,
+                "prompt_fp": prompt_fp,
+            }
+            if self._attempts.prompt_already_sent(task.id, prompt_fp):
+                failure = Failure(
+                    FailureCategory.CHANGE_STRATEGY,
+                    FailureCause.REPEATED_PROMPT,
+                    "o pedido ao modelo seria idêntico a uma tentativa anterior",
+                )
+                self._attempts.record(
+                    run_id=run.id,
+                    task_id=task.id,
+                    kind=AttemptKind.MODEL,
+                    provider=provider.name,
+                    request=attempt_request,
+                    response=None,
+                    success=False,
+                    project_id=project.id,
+                    failure=failure,
+                )
+                noted = self._remember_failure(task, failure)
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=failure.detail))
+                return {"action": "blocked_loop", "task_id": str(task.id), "failure": noted}
             try:
                 if stream_requested:
                     chunks: list[str] = []
@@ -894,10 +929,11 @@ class RunOrchestrator:
             tool_args=tool_args,
             approved=approved,
         )
-        failure = classify_verification(vresult.passed, vresult.summary)
-        if failure is not None and isinstance(vresult.detail, dict):
-            if vresult.detail.get("category") == FailureCategory.CONFIGURATION.value:
-                failure = classify_tool_result(vresult.detail)
+        detail = vresult.detail if isinstance(vresult.detail, dict) else {}
+        output = f"{detail.get('stdout') or ''}\n{detail.get('stderr') or detail.get('error') or ''}"
+        failure = classify_verification(vresult.passed, vresult.summary, output)
+        if failure is not None and detail.get("category") == FailureCategory.CONFIGURATION.value:
+            failure = classify_tool_result(detail)
         attempt = self._attempts.record(
             run_id=run.id,
             task_id=task.id,
