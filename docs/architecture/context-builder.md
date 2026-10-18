@@ -6,7 +6,12 @@ Cada chamada ao modelo para uma tarefa passa por `OperationContextBuilder`, que 
 
 - Memória canônica do projeto (até 5 registros recentes).
 - Objetivo e critérios da tarefa.
-- Trechos técnicos (arquivos/símbolos sugeridos pelo grafo).
+- **Arquivos-alvo** (obrigatório): conteúdo atual dos arquivos citados no título, objetivo, critérios, contrato ou `tool_args.path` que existem dentro do projeto — até 8 mil caracteres por arquivo e 12 mil no total; arquivo maior entra com o início e o aviso do tamanho. Nunca é compactado, para `old_string` casar com o disco. A lista vai em `strategy_notes_json` (`arquivos: …`).
+- **Contrato** (obrigatório, se existir): entradas, saídas, invariantes e aceite do `TaskContractModel`.
+- **Objetivo global** (opcional): objetivo da raiz, quando a tarefa é um passo dele.
+- **Resultados das dependências** (opcional): título, status e resumo do resultado de cada tarefa da qual esta depende.
+- **Tentativas anteriores** (obrigatório, se houver falhas): ver abaixo.
+- Trechos técnicos (símbolos sugeridos pelo grafo).
 - Guias do repositório na raiz: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, Copilot, `.cursor/rules`, `llms.txt`, índice de `SKILL.md`. Um `AGENTS.md` de subpasta entra só se o pedido cita essa pasta.
 - Regras globais fixas e resumo de ferramentas autorizadas.
 

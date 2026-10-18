@@ -14,7 +14,7 @@ O orquestrador decompõe só o necessário, monta contexto suficiente por opera�
 
 ## Próxima ação
 
-Unidade 5: contexto suficiente — arquivos citados no objetivo, resultados das dependências, contrato e objetivo da raiz no contexto da operação.
+Unidade 9: verificação proporcional ao risco; etapa sem ação e sem verificação não conta como evidência (`skipped_to_verify`).
 
 ## Diagnóstico (fase A — evidências)
 
@@ -61,7 +61,8 @@ Unidade 5: contexto suficiente — arquivos citados no objetivo, resultados das 
 - [x] Unidade 4: `tentativas-anteriores` no contexto, `retry_hint`, impressão do prompt (`repeated_prompt`), `num_predict` dobrado em resposta cortada, saída da verificação no detalhe
 - [x] Unidade 8 (antecipada): consolidação segue a especificação, término explicado (`run_stalled`), sem espera infinita; 2 falhas do WIP resolvidas
 - [x] Unidade 6: `replan_decision` por categoria, orçamento por linhagem, condição de progresso, filho substituído (`superseded`/`settled`), passo de replanejamento que decompõe de novo
-- [ ] Unidades 5, 7, 9, 10, 11
+- [x] Unidade 5: arquivos-alvo com conteúdo exato, contrato, objetivo global e resultados das dependências no contexto
+- [ ] Unidades 7, 9, 10, 11
 - [ ] Escolher dimensões de teste aplicáveis ([validacoes-testes.md](/docs/regras/validacoes-testes.md))
 - [ ] Verificação final: código ↔ docs ↔ checklists ↔ regras ([verificacao-final.md](/docs/regras/verificacao-final.md))
 - [ ] Marcar estado como `concluída` e listar artefatos
@@ -81,10 +82,11 @@ Unidade 5: contexto suficiente — arquivos citados no objetivo, resultados das 
 | `/tests/test_failures.py` | testes da unidade 2 |
 | `/tests/test_context_recovery.py` | testes da unidade 3 (cenários 7 e 8) |
 | `/tests/test_retry_strategy.py` | testes da unidade 4 (cenários 10 e 13) |
+| `/tests/test_sufficient_context.py` | testes da unidade 5 (cenário 9) |
 | `/tests/test_run_termination.py` | testes da unidade 8 (cenários 6, 17, 18) |
 | `/docs/architecture/context-builder.md` | estouro e compactação |
 | `/docs/architecture/execucao-autonoma.md` | seção Falhas categorizadas |
 
 ## Notas de retomada
 
-Baseline após unidade 6: 129 passam, 0 falham. Cenários numerados = seção 12 do pedido.
+Baseline após unidade 5: 132 passam, 0 falham. Cenários numerados = seção 12 do pedido.

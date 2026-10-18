@@ -755,7 +755,7 @@ Grafo de conhecimento:
 
 **Propósito:** define a receita padrão de componentes de contexto de uma operação e suas prioridades. **Quando/onde:** chamado por `OperationContextBuilder.build_for_task`.
 
-- `build_operation_context(profile, *, global_rules, project_rules, objective, technical, acceptance, tools_summary, output_format, previous_failures='', compact=False) → BudgetResult` — Cria os componentes do prompt: regras globais, objetivo, critérios, formato de saída e, se houver, `tentativas-anteriores` são obrigatórios; regras do projeto, contexto técnico e catálogo de ferramentas são opcionais, em prioridade decrescente. Entrada: perfil do modelo e os textos. Com `compact=True`, passa todos os textos por `compact_text` e anota a estratégia. Saída: mensagens prontas e estimativa de tokens.
+- `build_operation_context(profile, *, global_rules, project_rules, objective, technical, acceptance, tools_summary, output_format, previous_failures='', contract='', target_files='', global_objective='', dependency_results='', compact=False) → BudgetResult` — Cria os componentes do prompt: regras globais, objetivo, critérios, formato de saída e, se houver, `tentativas-anteriores`, `contrato` e `arquivos-alvo` são obrigatórios; `objetivo-global`, `resultados-dependências`, regras do projeto, contexto técnico e catálogo de ferramentas são opcionais, em prioridade decrescente. Entrada: perfil do modelo e os textos. Com `compact=True`, passa os textos por `compact_text` (menos `arquivos-alvo`, que precisa ficar idêntico ao disco) e anota a estratégia. Saída: mensagens prontas e estimativa de tokens.
 
 ### `src/agent/context/budget.py`
 
@@ -773,6 +773,7 @@ Grafo de conhecimento:
 
 **Propósito:** o "Context Builder" de uma tarefa: junta memória, trechos técnicos do grafo de conhecimento, guias do repositório, anexos e imagens, monta o prompt com orçamento e grava um snapshot do contexto no banco. **Quando/onde:** usado pelo orquestrador (`orchestrator/runner.py`) logo antes de pedir ao modelo uma operação de tarefa.
 
+- `_result_summary(result, limit=400) → str` — Resumo de `consolidated_result_json` (summary, stdout, content, markdown ou o JSON) para os resultados de dependências.
 - **`OperationContextBuilder`** — Constrói o contexto de uma tarefa a partir do banco e do workspace.
   - `OperationContextBuilder.__init__(session) → None` — Guarda a sessão SQLAlchemy e cria um `KnowledgeGraphService`.
   - `OperationContextBuilder._ancestor_attachments(task) → list[dict]` — Sobe pela cadeia de tarefas-pai e coleta os anexos gravados em `metadata_json`.
@@ -781,7 +782,11 @@ Grafo de conhecimento:
   - `OperationContextBuilder._memory_block(project_id, task) → tuple[str, str]` — Escolhe memórias relevantes ao objetivo e devolve o texto das memórias para o prompt e uma nota de diagnóstico (tamanho do índice e quantas foram escolhidas).
   - `OperationContextBuilder._memory_bodies(ids) → dict[uuid, str]` — Busca no banco o conteúdo completo das memórias escolhidas.
   - `OperationContextBuilder._memory_index(project_id, task) → list[dict]` — Monta o índice das 24 memórias mais recentes do projeto ou da conversa visíveis no ramo da tarefa (título, resumo, fatos, tópicos, tipo, escopo).
-  - `OperationContextBuilder._technical_snippet(root_path, project_id, objective) → str` — Procura no grafo de conhecimento identificadores citados no objetivo e anexa trechos de `calc.py`, `main.py` ou `app.py` se mencionados; senão sugere usar `list_dir`/`search_grep`.
+  - `OperationContextBuilder._technical_snippet(project_id, objective) → str` — Procura no grafo de conhecimento identificadores citados no objetivo; senão sugere usar `list_dir`/`search_grep`.
+  - `OperationContextBuilder._contract_block(task) → tuple[str, list[str]]` — Texto do contrato da tarefa (entradas, saídas, invariantes, aceite) e os arquivos que ele cita.
+  - `OperationContextBuilder._target_files(root_path, task, extra) → tuple[str, list[str]]` — Conteúdo atual dos arquivos citados no título, objetivo, critérios, contrato ou `tool_args.path` que existem dentro do projeto (até 8 mil caracteres por arquivo e 12 mil no total; binário e fora da raiz ficam de fora). Saída: bloco de texto e lista de arquivos incluídos.
+  - `OperationContextBuilder._global_objective(task) → str` — Objetivo da raiz, quando a tarefa é um passo dele.
+  - `OperationContextBuilder._dependency_results(task) → str` — Uma linha por dependência: título, status e resumo do resultado.
   - `OperationContextBuilder.build_for_task(*, project_id, root_path, task, profile, run_id=None, compact=False) → tuple[BudgetResult, ContextSnapshotModel]` — Ponto de entrada: reúne todos os blocos, escolhe o formato de saída (página HTML completa, operação de arquivo em JSON ou JSON genérico), chama `build_operation_context`, grava um `ContextSnapshotModel` e anexa imagens à última mensagem. Saída: prompt orçado e snapshot persistido. Se o obrigatório não couber, grava um snapshot do estouro (tokens por componente) e relança `ContextBudgetError` com `snapshot_id`.
 
 ## `src/agent/guides/`
@@ -1203,6 +1208,7 @@ Grafo de conhecimento:
 - `tests/test_decomposition.py` — `resolve_decomposition_plan`: seleção do plano builtin E2E.
 - `tests/test_dev_tools.py` — Ferramentas de desenvolvimento: list/glob/edit e aliases, grep que ignora `.venv`, comando em string, executável ausente como erro de configuração, interpretador do venv do projeto, verificação que aceita entrega HTML sem testes e verificação por script.
 - `tests/test_failures.py` — Taxonomia de falhas: categorias de saída de ferramenta, provedor, resposta do modelo (cortada × malformada), contexto e verificação; JSON inválido do modelo vira tentativa falha com `last_failure` na tarefa.
+- `tests/test_sufficient_context.py` — Contexto suficiente: arquivo citado entra com o conteúdo exato (fora da raiz e inexistente não), contrato, objetivo da raiz e resultado da dependência chegam à operação, compactação não altera `arquivos-alvo`.
 - `tests/test_retry_strategy.py` — Nova tentativa: motivo e instrução no prompt, nenhum prompt repetido (bloqueia com `repeated_prompt`), resposta cortada dobra o limite de saída, saída da verificação no detalhe da falha.
 - `tests/test_diff_resume_browser.py` — Diff unificado (`tools/diffing.py`), `edit_file` devolvendo diff, resumo de retomada (`build_resume_brief`) e ferramenta de navegador (proteção de URL, parse de resultados, desligada até ser habilitada).
 - `tests/test_e2e_orchestrator.py` — Fluxo ponta a ponta com mock: o `RunOrchestrator` corrige `calc.py` da fixture `sample_project` e passa na verificação.

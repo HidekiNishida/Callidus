@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import base64
+import json
+import re
 import uuid
-from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -12,7 +13,8 @@ from agent.context.budget import BudgetResult, ContextBudgetError
 from agent.domain.failures import describe_failures
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.knowledge.indexer import grep_symbols_in_objective
-from agent.persistence.models import ContextSnapshotModel, MemoryRecordModel, TaskModel
+from agent.persistence.models import ContextSnapshotModel, MemoryRecordModel, TaskDependencyModel, TaskModel
+from agent.services.contract_service import ContractService
 from agent.providers.base import ModelProfile
 from agent.security.paths import PathSecurityError, resolve_under_root
 from agent.guides.discover import guide_digest
@@ -21,6 +23,23 @@ from agent.persistence.models import BranchModel
 from agent.services.branches import memory_visible
 from agent.tools.builtins import TOOL_CATALOG
 from sqlalchemy import select
+
+
+FILE_CHARS = 8000
+FILES_TOTAL = 12000
+_PATH_TOKEN = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w-][\w.-]*\.[A-Za-z0-9]{1,6})(?![\w/-])")
+
+
+def _result_summary(result: dict | None, limit: int = 400) -> str:
+    """Resumo de `consolidated_result_json`: saída da ferramenta, conteúdo lido ou o resultado em JSON."""
+    if not result:
+        return "(sem resultado)"
+    inner = result.get("result") if isinstance(result.get("result"), dict) else result
+    for key in ("summary", "stdout", "content", "markdown"):
+        value = inner.get(key) if isinstance(inner, dict) else None
+        if isinstance(value, str) and value.strip():
+            return " ".join(value.split())[:limit]
+    return json.dumps(inner, ensure_ascii=False, default=str)[:limit]
 
 
 GLOBAL_RULES = (
@@ -47,7 +66,11 @@ class OperationContextBuilder:
         """Monta o contexto da operação e grava o snapshot. Se o obrigatório não couber, grava um snapshot
         do estouro (custo por componente) e relança `ContextBudgetError` com `snapshot_id`."""
         project_rules, memory_note = self._memory_block(project_id, task)
-        technical = self._technical_snippet(root_path, project_id, task.objective)
+        technical = self._technical_snippet(project_id, task.objective)
+        contract, contract_paths = self._contract_block(task)
+        target_files, included = self._target_files(root_path, task, contract_paths)
+        global_objective = self._global_objective(task)
+        dependency_results = self._dependency_results(task)
         guides = guide_digest(root_path, task.objective)
         if guides:
             technical = f"{technical}\n\n## Guias do repositório\n{guides}".strip()
@@ -83,6 +106,10 @@ class OperationContextBuilder:
                 tools_summary=tools_summary,
                 output_format=output_format,
                 previous_failures=describe_failures((task.metadata_json or {}).get("failures") or []),
+                contract=contract,
+                target_files=target_files,
+                global_objective=global_objective,
+                dependency_results=dependency_results,
                 compact=compact,
             )
         except ContextBudgetError as exc:
@@ -104,6 +131,8 @@ class OperationContextBuilder:
             raise
         if memory_note:
             budget.strategy_notes.append(memory_note)
+        if included:
+            budget.strategy_notes.append("arquivos: " + ", ".join(included))
         components = [{"role": m.role, "chars": len(m.content)} for m in budget.messages]
 
         snap = ContextSnapshotModel(
@@ -203,23 +232,91 @@ class OperationContextBuilder:
         stmt = select(MemoryRecordModel.id, MemoryRecordModel.content).where(MemoryRecordModel.id.in_(ids))
         return {row.id: row.content or "" for row in self._session.execute(stmt)}
 
-    def _technical_snippet(self, root_path: str, project_id: uuid.UUID, objective: str) -> str:
+    def _technical_snippet(self, project_id: uuid.UUID, objective: str) -> str:
         parts: list[str] = []
         for token in grep_symbols_in_objective(objective)[:8]:
             hits = self._kg.search(project_id, token, limit=3)
             for h in hits:
                 parts.append(f"[{h['kind']}] {h['ref']}")
-        root = Path(root_path).expanduser().resolve()
-        for hint in ("calc.py", "main.py", "app.py"):
-            if hint in objective.lower():
-                try:
-                    full = resolve_under_root(root, hint)
-                    if full.is_file():
-                        text = full.read_text(encoding="utf-8", errors="replace")
-                        parts.append(f"--- {hint} (trecho) ---\n" + text[:1200])
-                except PathSecurityError:
-                    pass
         return "\n".join(parts) if parts else "(nenhum trecho automático; use list_dir ou search_grep)"
+
+    def _contract_block(self, task: TaskModel) -> tuple[str, list[str]]:
+        service = ContractService(self._session)
+        row = service.get(task.id)
+        if row is None:
+            return "", []
+        parts = {
+            "entradas": row.inputs_json,
+            "saídas": row.outputs_json,
+            "invariantes": row.invariants_json,
+            "aceite": row.acceptance_json,
+        }
+        body = "\n".join(
+            f"{label}: {json.dumps(value, ensure_ascii=False)[:600]}" for label, value in parts.items() if value
+        )
+        return body, service.file_refs_from_contract(row)
+
+    def _target_files(self, root_path: str, task: TaskModel, extra: list[str]) -> tuple[str, list[str]]:
+        """Arquivos citados no pedido (título, objetivo, critérios, contrato, path da ferramenta) que existem
+        no projeto, com o conteúdo atual. Arquivo grande entra com o início e o aviso do tamanho."""
+        meta = task.metadata_json or {}
+        tool_path = (meta.get("tool_args") or {}).get("path")
+        candidates = [*extra, *([tool_path] if isinstance(tool_path, str) else [])]
+        for text in (task.title, task.objective, task.acceptance_criteria or ""):
+            candidates.extend(_PATH_TOKEN.findall(text or ""))
+        blocks: list[str] = []
+        included: list[str] = []
+        used = 0
+        for rel in dict.fromkeys(c.strip().strip("`'\"") for c in candidates if c):
+            try:
+                full = resolve_under_root(root_path, rel)
+            except PathSecurityError:
+                continue
+            if not full.is_file() or full.stat().st_size > 2_000_000:
+                continue
+            raw = full.read_bytes()
+            if b"\0" in raw[:4096]:
+                continue
+            text = raw.decode("utf-8", errors="replace")
+            room = min(FILE_CHARS, FILES_TOTAL - used)
+            if room <= 0:
+                break
+            if len(text) > room:
+                lines = text.count("\n") + 1
+                body = text[:room] + f"\n… (arquivo com {len(text)} caracteres e {lines} linhas; leia o resto se precisar)"
+            else:
+                body = text
+            blocks.append(f"--- {rel} ---\n{body}")
+            included.append(rel)
+            used += min(len(text), room)
+        return "\n\n".join(blocks), included
+
+    def _global_objective(self, task: TaskModel) -> str:
+        current, seen = task, set()
+        while current.parent_id and current.parent_id not in seen:
+            seen.add(current.parent_id)
+            parent = self._session.get(TaskModel, current.parent_id)
+            if parent is None:
+                break
+            current = parent
+        if current.id == task.id or (current.objective or "").strip() == (task.objective or "").strip():
+            return ""
+        return (current.objective or current.title)[:800]
+
+    def _dependency_results(self, task: TaskModel) -> str:
+        """O que as etapas das quais esta depende produziram (resumo curto de cada uma)."""
+        dep_ids = list(
+            self._session.scalars(
+                select(TaskDependencyModel.depends_on_task_id).where(TaskDependencyModel.task_id == task.id)
+            )
+        )
+        lines: list[str] = []
+        for dep_id in dep_ids:
+            dep = self._session.get(TaskModel, dep_id)
+            if dep is None:
+                continue
+            lines.append(f"- {dep.title} ({dep.status}): {_result_summary(dep.consolidated_result_json)}")
+        return "\n".join(lines)
 
     def _ancestor_attachments(self, task: TaskModel) -> list[dict]:
         current: TaskModel | None = task
