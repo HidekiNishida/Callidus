@@ -21,6 +21,8 @@ Registro: `src/agent/tools/registry.py` · builtins: `src/agent/tools/builtins.p
 
 Nomes que o modelo costuma inventar (`ls`, `grep`, `str_replace`, `shell`, `python`, `pytest`, `rm`) apontam para a ferramenta real. Verificação aceita `pytest`, `script` e `command`.
 
+`run_pytest` e `run_script` usam o interpretador de `python_for`: o `.venv`/`venv` do projeto, se existir, senão o Python que roda o agente. Em sistemas sem o comando `python` (macOS só tem `python3`), `run_command` troca `python` por esse interpretador. Executável inexistente não derruba o passo: volta `success: false` com `category: "configuration"`, para o orquestrador separar erro de configuração de falha de verificação.
+
 Anexos do chat (texto longo, imagem, documento) vão para `.agente/anexos/<tarefa>/`. O objetivo guarda só o caminho; o Context Builder inclui um trecho do texto e, em modelo com visão, a imagem.
 
 Paths validados em `src/agent/security/paths.py` — traversal bloqueado.

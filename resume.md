@@ -937,8 +937,9 @@ Grafo de conhecimento:
 - `_remember(ctx, args) → dict` — Ferramenta `remember`: grava uma memória pelo `memory_saver` do contexto.
 - `_resolve(ctx, raw) → tuple[Path | None, dict | None]` — Resolve um caminho dentro da raiz ou devolve um dicionário de erro.
 - `_root(ctx) → Path` — Raiz absoluta do projeto.
-- `_run_command(ctx, args) → dict` — Ferramenta `run_command` (exige aprovação): executa um processo com timeout e devolve código de saída, stdout e stderr.
-- `_run_pytest(ctx, args) → dict` — Ferramenta `run_pytest`: roda `python -m pytest -q` num caminho do projeto.
+- `_run_command(ctx, args) → dict` — Ferramenta `run_command` (exige aprovação): executa um processo com timeout e devolve código de saída, stdout e stderr. `python` ausente do PATH vira o interpretador de `python_for`; executável inexistente volta como erro com `category: "configuration"`, sem derrubar o passo.
+- `python_for(project_root) → str` — Escolhe o interpretador Python: o `.venv`/`venv` do projeto, se existir, senão o que roda o agente.
+- `_run_pytest(ctx, args) → dict` — Ferramenta `run_pytest`: roda `pytest -q` com o interpretador de `python_for` num caminho do projeto.
 - `_run_script(ctx, args) → dict` — Ferramenta `run_script` (exige aprovação): executa um `.py` do projeto, ajustando `PYTHONPATH` para testes em `tests/`.
 - `_search_grep(ctx, args) → dict` — Ferramenta `search_grep`: busca por regex em arquivos de texto, até 100 ocorrências.
 - `_skipped(rel) → bool` — Indica se o caminho está numa pasta ignorada (`.git`, `node_modules`, `.venv`…).

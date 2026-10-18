@@ -7,6 +7,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from agent.security.paths import PathSecurityError, resolve_under_root
@@ -214,13 +215,23 @@ async def _run_command(ctx: ToolContext, args: dict) -> dict:
     except PathSecurityError as exc:
         return {"success": False, "error": str(exc)}
     timeout = float(args.get("timeout", 120))
-    proc = await asyncio.create_subprocess_exec(
-        *command,
-        cwd=str(cwd_path),
-        env=args.get("env"),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+    if command[0] in {"python", "python3"} and shutil.which(command[0]) is None:
+        command = [python_for(ctx.project_root), *command[1:]]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *command,
+            cwd=str(cwd_path),
+            env=args.get("env"),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except (FileNotFoundError, PermissionError) as exc:
+        return {
+            "success": False,
+            "error": f"executável indisponível: {command[0]} ({exc.strerror or exc})",
+            "category": "configuration",
+            "command": command,
+        }
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
@@ -384,6 +395,17 @@ async def _move_file(ctx: ToolContext, args: dict) -> dict:
     return {"success": True, "from": src_raw, "to": dst_raw}
 
 
+def python_for(project_root: str) -> str:
+    """Interpretador do projeto: o venv dele se existir, senão o que roda o agente."""
+    root = Path(project_root)
+    for venv in (".venv", "venv"):
+        for rel in ("bin/python", "Scripts/python.exe"):
+            candidate = root / venv / rel
+            if candidate.is_file():
+                return str(candidate)
+    return sys.executable
+
+
 async def _run_script(ctx: ToolContext, args: dict) -> dict:
     """Executa um arquivo Python dentro do projeto. Testes em tests/ rodam com o pacote no PYTHONPATH."""
     raw = args.get("path")
@@ -401,7 +423,7 @@ async def _run_script(ctx: ToolContext, args: dict) -> dict:
     return await _run_command(
         ctx,
         {
-            "command": ["python", str(script)],
+            "command": [python_for(ctx.project_root), str(script)],
             "cwd": str(cwd),
             "env": env,
             "timeout": args.get("timeout", 90),
@@ -418,7 +440,7 @@ async def _run_pytest(ctx: ToolContext, args: dict) -> dict:
     return await _run_command(
         ctx,
         {
-            "command": ["python", "-m", "pytest", "-q", str(target_path)],
+            "command": [python_for(ctx.project_root), "-m", "pytest", "-q", str(target_path)],
             "cwd": ctx.project_root,
             "timeout": args.get("timeout", 180),
         },

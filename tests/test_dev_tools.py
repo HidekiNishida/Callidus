@@ -1,6 +1,9 @@
 # tests/test_dev_tools.py — ferramentas que o desenvolvimento local precisa
+import sys
+
 import pytest
 
+from agent.tools.builtins import python_for
 from agent.tools.registry import ToolContext, build_default_registry
 from agent.verification.runner import run_verification
 
@@ -72,6 +75,23 @@ async def test_pytest_without_tests_accepts_html_delivery(tmp_path):
     )
     assert result.passed is True
     assert "não há testes" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_missing_executable_is_a_configuration_error(ctx):
+    reg = build_default_registry()
+    out = await reg.execute("shell", ctx, {"command": ["no-such-binary-xyz", "-v"]}, approved=True)
+    assert out["success"] is False
+    assert out["category"] == "configuration"
+    assert "no-such-binary-xyz" in out["error"]
+
+
+def test_python_prefers_project_venv(tmp_path):
+    assert python_for(str(tmp_path)) == sys.executable
+    venv_python = tmp_path / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("", encoding="utf-8")
+    assert python_for(str(tmp_path)) == str(venv_python)
 
 
 @pytest.mark.asyncio

@@ -637,6 +637,7 @@
   "sym:src/agent/tools/builtins.py::_skipped(rel: Path) -> bool",
   "sym:src/agent/tools/builtins.py::_system_info(ctx: ToolContext, args: dict) -> dict",
   "sym:src/agent/tools/builtins.py::_write_file(ctx: ToolContext, args: dict) -> dict",
+  "sym:src/agent/tools/builtins.py::python_for(project_root: str) -> str",
   "sym:src/agent/tools/builtins.py::register_all(registry: ToolRegistry) -> None",
   "sym:src/agent/tools/diffing.py::unified_diff_text(path: str, before: str, after: str, *, limit: int=4000) -> dict",
   "sym:src/agent/tools/registry.py::ToolContext",
