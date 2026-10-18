@@ -228,11 +228,11 @@ Grafo de conhecimento:
 
 ## `src/agent/domain/`
 
-**Propósito:** contratos e regras de negócio sem I/O: enums, schemas Pydantic e máquina de estados das tarefas. **Por quê:** fonte única de vocabulário e regras compartilhada por API, serviços e orquestrador. **Quando:** importado em quase todo o runtime.
+**Propósito:** contratos e regras de negócio sem I/O: enums, schemas Pydantic, máquina de estados das tarefas e taxonomia de falhas. **Por quê:** fonte única de vocabulário e regras compartilhada por API, serviços e orquestrador. **Quando:** importado em quase todo o runtime.
 
 ### `src/agent/domain/README.md`
 
-**Propósito:** descreve os três arquivos do domínio e aponta para a doc da máquina de estados. **Quando/onde:** documentação.
+**Propósito:** descreve os arquivos do domínio e aponta para a doc da máquina de estados. **Quando/onde:** documentação.
 
 ### `src/agent/domain/__init__.py`
 
@@ -247,6 +247,22 @@ Grafo de conhecimento:
 - **`MemoryKind(StrEnum)`** — Tipos de memória: `canonical`, `execution`, `contextual`, `evidence`, `procedure`.
 - **`RunStatus(StrEnum)`** — Estado de um run: `active`, `paused`, `completed`, `failed`, `cancelled`.
 - **`AttemptKind(StrEnum)`** — Tipo de tentativa registrada: `model`, `tool`, `verification`.
+
+### `src/agent/domain/failures.py`
+
+**Propósito:** taxonomia de falhas do orquestrador. Cada falha tem uma **categoria** (o que fazer a seguir) e uma **causa** (o que aconteceu). **Por quê:** separar erro de configuração, limite operacional, saída cortada e falha de verificação, em vez de tratar tudo como "tentar de novo". **Quando/onde:** o `RunOrchestrator` classifica cada tentativa falha, grava a categoria no evento `attempt.recorded` e em `metadata_json.last_failure` da tarefa.
+
+- **`FailureCategory(StrEnum)`** — `recoverable`, `change_strategy`, `blocked_dependency`, `external_unavailable`, `configuration`, `operational_limit`.
+- **`FailureCause(StrEnum)`** — Causa concreta: orçamento de contexto, saída inválida ou cortada, timeout, provedor fora do ar, erro/entrada de ferramenta, ferramenta desconhecida, executável ausente, aprovação pendente, verificação falha ou inconclusiva, saída repetida, dependência falha, tentativas esgotadas, etc.
+- **`Failure`** — Dataclass imutável (categoria, causa, detalhe).
+  - `Failure.retry_same_strategy → bool` — Só `recoverable` admite repetir a mesma abordagem.
+  - `Failure.as_dict() → dict` / `Failure.from_dict(data) → Failure | None` — Serialização para JSON (eventos e metadados); dado inválido volta `None`.
+- `classify_tool_result(out) → Failure | None` — Saída de ferramenta → falha (`None` se deu certo).
+- `classify_provider_error(message) → Failure` — `ProviderError` → timeout, provedor indisponível ou erro recuperável.
+- `looks_truncated(content) → bool` — Resposta que abriu JSON ou cerca de código e não fechou.
+- `classify_model_output(content, parse_error, missing=None) → Failure | None` — JSON do modelo: cortado (`change_strategy`) ou malformado/incompleto (`recoverable`).
+- `classify_context_error(message) → Failure` — Contexto obrigatório acima do orçamento (`change_strategy`).
+- `classify_verification(passed, summary) → Failure | None` — Reprovado é `recoverable`; inconclusivo nunca passa (`external_unavailable`).
 
 ### `src/agent/domain/schemas.py`
 
@@ -470,8 +486,9 @@ Grafo de conhecimento:
   - `RunOrchestrator._depth(task) → int` — Profundidade da tarefa na árvore (usada para cortar decomposição a partir de 6 níveis).
   - `RunOrchestrator._ensure_final_message(root) → None` — Garante `final_answer` no relatório da raiz: copia a do filho de resposta final ou compõe um Markdown com as etapas.
   - `RunOrchestrator._execute_task(run, project, task, config, work_root=None) → dict` — Executa a tarefa RUNNING conforme o metadado: ferramenta MCP, resposta final, operação de modelo (gera JSON e aplica `edit_file`/`write_file`, com streaming opcional), ferramenta comum (com detecção de laço), verificação ou consolidação de pai; respeita limite de tentativas e registra tentativas. Saída: ação do passo.
-  - `RunOrchestrator._finalize_verification(run, project, task, work_root=None) → dict` — Roda a verificação da tarefa, grava evidência e tentativa; aprovada conclui e consolida o pai, reprovada vai para nova tentativa (ou bloqueia se repetir), inconclusiva bloqueia. Sem verificação, apenas conclui.
+  - `RunOrchestrator._finalize_verification(run, project, task, work_root=None) → dict` — Roda a verificação da tarefa, grava a tentativa (com falha categorizada) e a evidência ligada a ela (`attempt_id`); aprovada conclui e consolida o pai, reprovada vai para nova tentativa (ou bloqueia se repetir), inconclusiva bloqueia. Sem verificação, apenas conclui.
   - `RunOrchestrator._note_thought(run, task, text, *, phase='thinking') → None` — Grava um evento `agent.thought` e faz commit para a interface mostrar o andamento durante a inferência.
+  - `RunOrchestrator._remember_failure(task, failure) → dict` — Guarda a falha categorizada em `metadata_json.last_failure` e nas últimas 5 de `failures`, para a próxima tentativa e o replanejamento lerem.
   - `RunOrchestrator._pick_next_task(root_id) → TaskModel | None` — Escolhe a próxima tarefa da subárvore por prioridade de status (RUNNING, VERIFYING, READY, RETRY_PENDING, PLANNING, PENDING), respeitando dependências e filhos não concluídos.
   - `RunOrchestrator._promote_ready_or_block(task_id) → dict | None` — Valida o contrato da tarefa; se inválido, bloqueia e retorna os erros, senão marca READY.
   - `RunOrchestrator._record_action(run_id, out) → None` — Registra o resultado do passo como evento `orchestrator.action`.
@@ -563,7 +580,7 @@ Grafo de conhecimento:
   - `AttemptService.attempts_exhausted(task_id) → bool` — Verdadeiro quando a tarefa atingiu o número máximo de tentativas.
   - `AttemptService.count_attempts(task_id) → int` — Conta as tentativas já registradas para a tarefa.
   - `AttemptService.fingerprint(data) → str` — Método estático: hash SHA-256 curto (16 caracteres) de um texto ou dicionário, usado para comparar saídas.
-  - `AttemptService.record(*, run_id, task_id, kind, provider, request, response, success, error=None, project_id=None) → OperationAttemptModel` — Grava uma tentativa com pedido, resposta e sucesso; se houver projeto, registra também o evento `attempt.recorded`.
+  - `AttemptService.record(*, run_id, task_id, kind, provider, request, response, success, error=None, project_id=None, failure=None) → OperationAttemptModel` — Grava uma tentativa com pedido, resposta e sucesso; com `failure`, a categoria e a causa vão para `error_message` e para o evento `attempt.recorded` (nunca para `response_json`, que alimenta a detecção de loop).
   - `AttemptService.repeated_output_detected(task_id, output_fingerprint, window=3) → bool` — Verdadeiro se as últimas `window` tentativas tiveram a mesma saída igual à impressão informada (sinal de loop).
 
 ### `src/agent/services/autonomous_worker.py`
@@ -1165,7 +1182,8 @@ Grafo de conhecimento:
 - `tests/test_conversations_memory_i18n.py` — Detecção de idioma e tradução de títulos (`i18n`), memória guardada completa e dividida no uso, memória restrita à conversa, rotas de conversas/pastas/memória e ferramenta de "lembrar".
 - `tests/test_decompose_loop.py` — Anti-loop de decomposição: pedido de página verifica HTML em vez de pytest, timeout do modelo é registrado, soma de uso de tokens, título repetido vira folha, plano copiado/igual é executado em vez de aninhado e marcação de pensamento repetido (`_mark_repeated_thought`).
 - `tests/test_decomposition.py` — `resolve_decomposition_plan`: seleção do plano builtin E2E.
-- `tests/test_dev_tools.py` — Ferramentas de desenvolvimento: list/glob/edit e aliases, grep que ignora `.venv`, comando em string, verificação que aceita entrega HTML sem testes e verificação por script.
+- `tests/test_dev_tools.py` — Ferramentas de desenvolvimento: list/glob/edit e aliases, grep que ignora `.venv`, comando em string, executável ausente como erro de configuração, interpretador do venv do projeto, verificação que aceita entrega HTML sem testes e verificação por script.
+- `tests/test_failures.py` — Taxonomia de falhas: categorias de saída de ferramenta, provedor, resposta do modelo (cortada × malformada), contexto e verificação; JSON inválido do modelo vira tentativa falha com `last_failure` na tarefa.
 - `tests/test_diff_resume_browser.py` — Diff unificado (`tools/diffing.py`), `edit_file` devolvendo diff, resumo de retomada (`build_resume_brief`) e ferramenta de navegador (proteção de URL, parse de resultados, desligada até ser habilitada).
 - `tests/test_e2e_orchestrator.py` — Fluxo ponta a ponta com mock: o `RunOrchestrator` corrige `calc.py` da fixture `sample_project` e passa na verificação.
 - `tests/test_evolution_api.py` — Endpoints de evolução: reindexação do grafo e métricas, upsert de contrato de tarefa, painel "live" após um passo e liga/desliga do modo autônomo.

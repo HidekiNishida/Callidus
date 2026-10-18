@@ -9,6 +9,15 @@ from sqlalchemy.orm import Session
 
 from agent.config import Settings
 from agent.domain.enums import AttemptKind, MemoryKind, RunStatus, TaskKind, TaskStatus
+from agent.domain.failures import (
+    Failure,
+    FailureCategory,
+    FailureCause,
+    classify_model_output,
+    classify_provider_error,
+    classify_tool_result,
+    classify_verification,
+)
 from agent.domain.schemas import MemoryCreate, TaskStatusUpdate
 from agent.i18n.locale import detect_language, language_instruction
 from agent.orchestrator.consolidation import children_of, consolidate_parent
@@ -182,6 +191,16 @@ class RunOrchestrator:
             )
         )
         self._session.commit()
+
+    def _remember_failure(self, task: TaskModel, failure: Failure) -> dict[str, Any]:
+        """Guarda a falha na tarefa: a próxima tentativa e a política de replanejamento leem daqui."""
+        meta = dict(task.metadata_json or {})
+        history = list(meta.get("failures") or [])[-4:]
+        history.append(failure.as_dict())
+        meta["failures"] = history
+        meta["last_failure"] = failure.as_dict()
+        task.metadata_json = meta
+        return failure.as_dict()
 
     def _save_requested_memory(self, project: ProjectModel, task: TaskModel, args: dict) -> dict:
         content = str(args.get("content") or args.get("text") or "").strip()
@@ -482,11 +501,15 @@ class RunOrchestrator:
     ) -> dict[str, Any]:
         root_path = work_root or self._work_root(project, task)
         if self._attempts.attempts_exhausted(task.id):
+            failure = self._remember_failure(
+                task,
+                Failure(FailureCategory.OPERATIONAL_LIMIT, FailureCause.ATTEMPTS_EXHAUSTED, "limite de tentativas"),
+            )
             self._tasks.update_status(
                 task.id,
                 TaskStatusUpdate(status=TaskStatus.FAILED, reason="limite de tentativas"),
             )
-            return {"action": "blocked_attempts", "task_id": str(task.id)}
+            return {"action": "blocked_attempts", "task_id": str(task.id), "failure": failure}
 
         meta = task.metadata_json or {}
         ctx = ToolContext(
@@ -505,6 +528,7 @@ class RunOrchestrator:
 
             mgr = McpManager(self._settings.mcp_config_path or self._settings.data_dir / "mcp.json")
             out = await mgr.call_tool(meta["mcp_tool"], meta.get("mcp_args") or {})
+            failure = classify_tool_result(out)
             self._attempts.record(
                 run_id=run.id,
                 task_id=task.id,
@@ -512,15 +536,17 @@ class RunOrchestrator:
                 provider="mcp",
                 request=meta,
                 response=out,
-                success=bool(out.get("success")),
+                success=failure is None,
                 project_id=project.id,
+                failure=failure,
             )
             task.consolidated_result_json = {"mcp": meta["mcp_tool"], "result": out}
-            if out.get("success"):
+            if failure is None:
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
                 return await self._finalize_verification(run, project, task, root_path)
+            noted = self._remember_failure(task, failure)
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-            return {"action": "mcp_tool", "task_id": str(task.id), "success": False}
+            return {"action": "mcp_tool", "task_id": str(task.id), "success": False, "failure": noted}
 
         if meta.get("final_answer"):
             return await self._write_final_answer(run, project, task, config)
@@ -546,83 +572,68 @@ class RunOrchestrator:
             self._note_thought(run, task, f"Pensando na alteração «{task.title}» com {profile.model_id}.")
             # Check if streaming is requested
             stream_requested = bool(meta.get("stream") or config.get("stream", False))
-            if stream_requested:
-                # Streaming mode: collect chunks and emit thoughts incrementally
-                content_chunks = []
-                try:
+            attempt_request = {"context_snapshot_id": str(snap.id), "tokens_est": budget.estimated_tokens}
+            try:
+                if stream_requested:
+                    chunks: list[str] = []
                     async for chunk in provider.chat_stream(
                         ChatCompletionRequest(messages=budget.messages, profile=profile, stream=True)
                     ):
-                        content_chunks.append(chunk)
-                        # Emit thought with accumulated content so far (limit length for display)
-                        accumulated = "".join(content_chunks)
-                        excerpt = " ".join(accumulated.split())[:200]
+                        chunks.append(chunk)
+                        excerpt = " ".join("".join(chunks).split())[:200]
                         self._note_thought(run, task, f"Gerando... {excerpt}", phase="generating")
-                except ProviderError as exc:
-                    self._note_thought(run, task, f"A inferência falhou: {exc}.")
-                    response = {"error": str(exc)}
-                    self._attempts.record(
-                        run_id=run.id,
-                        task_id=task.id,
-                        kind=AttemptKind.MODEL,
-                        provider=provider.name,
-                        request={"context_snapshot_id": str(snap.id), "tokens_est": budget.estimated_tokens},
-                        response=response,
-                        success=False,
-                        error=str(exc),
-                        project_id=project.id,
-                    )
-                    self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-                    return {"action": "model_operation_error", "task_id": str(task.id), "error": str(exc)}
-                # Combine all chunks for further processing
-                full_content = "".join(content_chunks)
-                # Create a mock response object similar to what chat() returns
-                class MockResponse:
-                    def __init__(self, content):
-                        self.content = content
-                resp = MockResponse(full_content)
-            else:
-                # Non-streaming mode (original behavior)
-                try:
-                    resp = await provider.chat(
-                        ChatCompletionRequest(messages=budget.messages, profile=profile)
-                    )
-                except ProviderError as exc:
-                    self._note_thought(run, task, f"A inferência falhou: {exc}.")
-                    response = {"error": str(exc)}
-                    self._attempts.record(
-                        run_id=run.id,
-                        task_id=task.id,
-                        kind=AttemptKind.MODEL,
-                        provider=provider.name,
-                        request={"context_snapshot_id": str(snap.id), "tokens_est": budget.estimated_tokens},
-                        response=response,
-                        success=False,
-                        error=str(exc),
-                        project_id=project.id,
-                    )
-                    self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-                    return {"action": "model_operation_error", "task_id": str(task.id), "error": str(exc)}
+                    content = "".join(chunks)
+                else:
+                    resp = await provider.chat(ChatCompletionRequest(messages=budget.messages, profile=profile))
+                    content = resp.content or ""
+            except ProviderError as exc:
+                self._note_thought(run, task, f"A inferência falhou: {exc}.")
+                failure = classify_provider_error(str(exc))
+                self._attempts.record(
+                    run_id=run.id,
+                    task_id=task.id,
+                    kind=AttemptKind.MODEL,
+                    provider=provider.name,
+                    request=attempt_request,
+                    response={"error": str(exc)},
+                    success=False,
+                    error=str(exc),
+                    project_id=project.id,
+                    failure=failure,
+                )
+                noted = self._remember_failure(task, failure)
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
+                return {
+                    "action": "model_operation_error",
+                    "task_id": str(task.id),
+                    "error": str(exc),
+                    "failure": noted,
+                }
+            excerpt = " ".join(content.split())[:280]
+            self._apply_provider_usage(task, provider)
+            data, err = parse_json_object(content)
+            missing = ["path"] if data is not None and "path" not in data else None
+            failure = classify_model_output(content, err, missing)
             self._attempts.record(
                 run_id=run.id,
                 task_id=task.id,
                 kind=AttemptKind.MODEL,
                 provider=provider.name,
-                request={"context_snapshot_id": str(snap.id), "tokens_est": budget.estimated_tokens},
-                response={"content_preview": resp.content[:500]},
-                success=True,
+                request=attempt_request,
+                response={"content_preview": content[:500]},
+                success=failure is None,
                 project_id=project.id,
+                failure=failure,
             )
-            excerpt = " ".join((resp.content or "").split())[:280]
-            self._apply_provider_usage(task, provider)
-            data, err = parse_json_object(resp.content)
-            if err or not data or "path" not in data:
+            if failure is not None or data is None:
+                noted = self._remember_failure(task, failure) if failure else None
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
                 return {
                     "action": "model_operation_invalid",
                     "task_id": str(task.id),
                     "error": err,
                     "thought": excerpt,
+                    "failure": noted,
                 }
             old = data.get("old_string", data.get("old"))
             new = data["new_string"] if "new_string" in data else data.get("new")
@@ -647,8 +658,14 @@ class RunOrchestrator:
                 if excerpt:
                     done["thought"] = excerpt
                 return done
+            noted = self._remember_failure(task, classify_tool_result(out))
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-            return {"action": "model_operation_failed", "task_id": str(task.id), "thought": excerpt}
+            return {
+                "action": "model_operation_failed",
+                "task_id": str(task.id),
+                "thought": excerpt,
+                "failure": noted,
+            }
 
         if meta.get("tool"):
             from agent.tools.registry import canonical_tool_id
@@ -661,11 +678,16 @@ class RunOrchestrator:
             out = await self._tools.execute(tool_id, ctx, args, approved=approved)
             fp = AttemptService.fingerprint(out)
             if self._attempts.repeated_output_detected(task.id, fp):
+                noted = self._remember_failure(
+                    task,
+                    Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.REPEATED_OUTPUT, "loop detectado"),
+                )
                 self._tasks.update_status(
                     task.id,
                     TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="loop detectado"),
                 )
-                return {"action": "blocked_loop", "task_id": str(task.id)}
+                return {"action": "blocked_loop", "task_id": str(task.id), "failure": noted}
+            failure = classify_tool_result(out)
             self._attempts.record(
                 run_id=run.id,
                 task_id=task.id,
@@ -673,19 +695,21 @@ class RunOrchestrator:
                 provider=tool_id,
                 request=args,
                 response=out,
-                success=bool(out.get("success")),
+                success=failure is None,
                 project_id=project.id,
+                failure=failure,
             )
             task.consolidated_result_json = {"tool": tool_id, "result": out}
             if out.get("success") and tool_id in {"write_file", "edit_file", "move_file"}:
                 p = args.get("path") or args.get("to") or args.get("dest")
                 if isinstance(p, str):
                     KnowledgeGraphService(self._session).touch_file(project.id, root_path, p)
-            if out.get("success"):
+            if failure is None:
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
                 return await self._finalize_verification(run, project, task, root_path)
+            noted = self._remember_failure(task, failure)
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-            return {"action": "tool_executed", "task_id": str(task.id), "success": False}
+            return {"action": "tool_executed", "task_id": str(task.id), "success": False, "failure": noted}
 
         if meta.get("verification"):
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
@@ -832,24 +856,30 @@ class RunOrchestrator:
             tool_args=tool_args,
             approved=approved,
         )
-        self._session.add(
-            EvidenceModel(
-                task_id=task.id,
-                verifier=vresult.verifier,
-                passed=vresult.passed,
-                summary=vresult.summary,
-                detail_json=vresult.detail,
-            )
-        )
-        self._attempts.record(
+        failure = classify_verification(vresult.passed, vresult.summary)
+        if failure is not None and isinstance(vresult.detail, dict):
+            if vresult.detail.get("category") == FailureCategory.CONFIGURATION.value:
+                failure = classify_tool_result(vresult.detail)
+        attempt = self._attempts.record(
             run_id=run.id,
             task_id=task.id,
             kind=AttemptKind.VERIFICATION,
             provider=vresult.verifier,
             request=spec,
             response={"passed": vresult.passed, "summary": vresult.summary},
-            success=bool(vresult.passed),
+            success=failure is None,
             project_id=project.id,
+            failure=failure,
+        )
+        self._session.add(
+            EvidenceModel(
+                task_id=task.id,
+                attempt_id=attempt.id,
+                verifier=vresult.verifier,
+                passed=vresult.passed,
+                summary=vresult.summary,
+                detail_json=vresult.detail,
+            )
         )
 
         if vresult.passed is True:
@@ -868,16 +898,22 @@ class RunOrchestrator:
         if vresult.passed is False:
             fp = AttemptService.fingerprint({"passed": False, "summary": vresult.summary})
             if self._attempts.repeated_output_detected(task.id, fp, window=2):
+                noted = self._remember_failure(
+                    task,
+                    Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.REPEATED_OUTPUT, vresult.summary),
+                )
                 self._tasks.update_status(
                     task.id,
                     TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="a mesma verificação falhou de novo"),
                 )
-                return {"action": "blocked_loop", "task_id": str(task.id)}
+                return {"action": "blocked_loop", "task_id": str(task.id), "failure": noted}
+            noted = self._remember_failure(task, failure)
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-            return {"action": "verify_failed", "task_id": str(task.id)}
+            return {"action": "verify_failed", "task_id": str(task.id), "failure": noted}
 
+        noted = self._remember_failure(task, failure)
         self._tasks.update_status(
             task.id,
             TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="verificação inconclusiva"),
         )
-        return {"action": "verify_inconclusive", "task_id": str(task.id)}
+        return {"action": "verify_inconclusive", "task_id": str(task.id), "failure": noted}

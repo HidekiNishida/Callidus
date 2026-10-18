@@ -1,0 +1,150 @@
+# src/agent/domain/failures.py — taxonomia de falhas do orquestrador
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from enum import StrEnum
+from typing import Any
+
+
+class FailureCategory(StrEnum):
+    """O que fazer a seguir: cada categoria pede uma política diferente."""
+
+    RECOVERABLE = "recoverable"
+    CHANGE_STRATEGY = "change_strategy"
+    BLOCKED_DEPENDENCY = "blocked_dependency"
+    EXTERNAL_UNAVAILABLE = "external_unavailable"
+    CONFIGURATION = "configuration"
+    OPERATIONAL_LIMIT = "operational_limit"
+
+
+class FailureCause(StrEnum):
+    """Por que falhou: a causa concreta, para log, contexto da próxima tentativa e métricas."""
+
+    CONTEXT_BUDGET = "context_budget"
+    INVALID_OUTPUT = "invalid_output"
+    TRUNCATED_OUTPUT = "truncated_output"
+    TIMEOUT = "timeout"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    PROVIDER_ERROR = "provider_error"
+    TOOL_ERROR = "tool_error"
+    TOOL_INPUT = "tool_input"
+    UNKNOWN_TOOL = "unknown_tool"
+    PATH_OUTSIDE_ROOT = "path_outside_root"
+    MISSING_EXECUTABLE = "missing_executable"
+    FEATURE_DISABLED = "feature_disabled"
+    APPROVAL_REQUIRED = "approval_required"
+    VERIFICATION_FAILED = "verification_failed"
+    VERIFICATION_INCONCLUSIVE = "verification_inconclusive"
+    REPEATED_OUTPUT = "repeated_output"
+    DEPENDENCY_FAILED = "dependency_failed"
+    ATTEMPTS_EXHAUSTED = "attempts_exhausted"
+
+
+@dataclass(frozen=True)
+class Failure:
+    category: FailureCategory
+    cause: FailureCause
+    detail: str = ""
+
+    @property
+    def retry_same_strategy(self) -> bool:
+        """Só falha recuperável admite repetir a mesma abordagem (com o motivo no contexto)."""
+        return self.category == FailureCategory.RECOVERABLE
+
+    def as_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["category"] = self.category.value
+        data["cause"] = self.cause.value
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> Failure | None:
+        if not data:
+            return None
+        try:
+            return cls(FailureCategory(data["category"]), FailureCause(data["cause"]), data.get("detail", ""))
+        except (KeyError, ValueError):
+            return None
+
+
+_INPUT_ERRORS = (
+    "obrigatório",
+    "não encontrado",
+    "inexistente",
+    "trecho ambíguo",
+    "old_string vazio",
+    "offset além",
+    "regex inválida",
+    "já existe",
+    "deve ser lista",
+)
+_DISABLED = ("navegador desligado", "memória indisponível")
+
+
+def classify_tool_result(out: dict[str, Any]) -> Failure | None:
+    """Saída de ferramenta → falha categorizada; `None` quando deu certo."""
+    if out.get("success"):
+        return None
+    error = str(out.get("error") or "")
+    low = error.lower()
+    if out.get("category") == FailureCategory.CONFIGURATION.value:
+        return Failure(FailureCategory.CONFIGURATION, FailureCause.MISSING_EXECUTABLE, error)
+    if error == "approval_required":
+        return Failure(FailureCategory.EXTERNAL_UNAVAILABLE, FailureCause.APPROVAL_REQUIRED, error)
+    if low.startswith("ferramenta desconhecida"):
+        return Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.UNKNOWN_TOOL, error)
+    if any(token in low for token in _DISABLED):
+        return Failure(FailureCategory.CONFIGURATION, FailureCause.FEATURE_DISABLED, error)
+    if "fora do" in low or "traversal" in low:
+        return Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.PATH_OUTSIDE_ROOT, error)
+    if low == "timeout":
+        return Failure(FailureCategory.OPERATIONAL_LIMIT, FailureCause.TIMEOUT, error)
+    if any(token in low for token in _INPUT_ERRORS):
+        return Failure(FailureCategory.RECOVERABLE, FailureCause.TOOL_INPUT, error)
+    detail = error or (str(out.get("stderr") or "")[-500:]) or f"exit_code={out.get('exit_code')}"
+    return Failure(FailureCategory.RECOVERABLE, FailureCause.TOOL_ERROR, detail)
+
+
+def classify_provider_error(message: str) -> Failure:
+    """Mensagem de `ProviderError` → falha. Servidor fora do ar é configuração/ambiente, não estratégia."""
+    low = message.lower()
+    if "tempo esgotado" in low or "timeout" in low or "timed out" in low:
+        return Failure(FailureCategory.OPERATIONAL_LIMIT, FailureCause.TIMEOUT, message)
+    if "indisponível" in low or "connect" in low or "refused" in low:
+        return Failure(FailureCategory.EXTERNAL_UNAVAILABLE, FailureCause.PROVIDER_UNAVAILABLE, message)
+    return Failure(FailureCategory.RECOVERABLE, FailureCause.PROVIDER_ERROR, message)
+
+
+def looks_truncated(content: str) -> bool:
+    """Resposta que abriu JSON (ou cerca de código) e não fechou: o limite de saída cortou."""
+    text = (content or "").strip()
+    if not text:
+        return False
+    if text.count("```") % 2 == 1:
+        return True
+    start = text.find("{")
+    return start >= 0 and text.count("{", start) > text.count("}", start)
+
+
+def classify_model_output(content: str, parse_error: str | None, missing: list[str] | None = None) -> Failure | None:
+    """Resposta do modelo que deveria ser JSON → falha, distinguindo corte de saída de JSON malformado."""
+    if not parse_error and not missing:
+        return None
+    if looks_truncated(content):
+        return Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.TRUNCATED_OUTPUT, parse_error or "resposta cortada")
+    detail = parse_error or f"faltam campos: {', '.join(missing or [])}"
+    return Failure(FailureCategory.RECOVERABLE, FailureCause.INVALID_OUTPUT, detail)
+
+
+def classify_context_error(message: str) -> Failure:
+    """Contexto obrigatório maior que o orçamento: repetir igual não resolve; é preciso reduzir ou dividir."""
+    return Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.CONTEXT_BUDGET, message)
+
+
+def classify_verification(passed: bool | None, summary: str) -> Failure | None:
+    """Resultado de verificador → falha. Inconclusivo nunca conta como aprovado."""
+    if passed is True:
+        return None
+    if passed is None:
+        return Failure(FailureCategory.EXTERNAL_UNAVAILABLE, FailureCause.VERIFICATION_INCONCLUSIVE, summary)
+    return Failure(FailureCategory.RECOVERABLE, FailureCause.VERIFICATION_FAILED, summary)

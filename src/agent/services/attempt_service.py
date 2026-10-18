@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from agent.domain.enums import AttemptKind
+from agent.domain.failures import Failure
 from agent.persistence.models import EventLogModel, OperationAttemptModel
 
 
@@ -28,7 +29,10 @@ class AttemptService:
         success: bool,
         error: str | None = None,
         project_id: uuid.UUID | None = None,
+        failure: Failure | None = None,
     ) -> OperationAttemptModel:
+        if failure is not None and not error:
+            error = f"[{failure.category.value}/{failure.cause.value}] {failure.detail}"[:2000]
         row = OperationAttemptModel(
             run_id=run_id,
             task_id=task_id,
@@ -42,13 +46,16 @@ class AttemptService:
         self._session.add(row)
         self._session.flush()
         if project_id:
+            payload: dict = {"kind": kind.value, "success": success}
+            if failure is not None:
+                payload["failure"] = failure.as_dict()
             self._session.add(
                 EventLogModel(
                     project_id=project_id,
                     run_id=run_id,
                     task_id=task_id,
                     event_type="attempt.recorded",
-                    payload_json={"kind": kind.value, "success": success},
+                    payload_json=payload,
                 )
             )
         return row

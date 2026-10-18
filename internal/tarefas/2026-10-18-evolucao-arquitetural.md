@@ -14,7 +14,7 @@ O orquestrador decompõe só o necessário, monta contexto suficiente por opera�
 
 ## Próxima ação
 
-Decidir com o dono como tratar o WIP não commitado em `runner.py`, `consolidation.py`, `replan.py` e afins; depois, unidade 2.
+Unidade 3: erro de orçamento de contexto vira falha `context_budget` com recuperação (reduzir opcionais → atomizar).
 
 ## Diagnóstico (fase A — evidências)
 
@@ -55,15 +55,16 @@ Decidir com o dono como tratar o WIP não commitado em `runner.py`, `consolidati
 - [x] Identificar ramos de regras necessários no hub
 - [x] Fase A: inspeção do código real e baseline de testes (HEAD: 5 falhas; WIP: +2)
 - [x] Unidade 1: interpretador Python / erro de configuração (`tools/builtins.py`, testes, `ferramentas.md`, `resume.md`)
-- [ ] Decisão sobre o WIP não commitado
-- [ ] Unidades 2–11
+- [x] Decisão sobre o WIP: commitado à parte (`1b92a41`); consolidação segue a especificação
+- [x] Unidade 2: taxonomia `domain/failures.py`, falhas gravadas em tentativa/evento/`last_failure`, evidência com `attempt_id`, JSON inválido = tentativa falha
+- [ ] Unidades 3–11
 - [ ] Escolher dimensões de teste aplicáveis ([validacoes-testes.md](/docs/regras/validacoes-testes.md))
 - [ ] Verificação final: código ↔ docs ↔ checklists ↔ regras ([verificacao-final.md](/docs/regras/verificacao-final.md))
 - [ ] Marcar estado como `concluída` e listar artefatos
 
 ## Bloqueios
 
-- WIP não commitado do dono está nos arquivos das unidades 3–9; commitar essas unidades sem decidir o destino do WIP misturaria mudanças alheias.
+- Nenhum no momento.
 
 ## Artefatos
 
@@ -72,7 +73,10 @@ Decidir com o dono como tratar o WIP não commitado em `runner.py`, `consolidati
 | `/src/agent/tools/builtins.py` | `python_for`, erro `configuration` |
 | `/tests/test_dev_tools.py` | testes da unidade 1 |
 | `/docs/architecture/ferramentas.md` | interpretador e categoria |
+| `/src/agent/domain/failures.py` | taxonomia de falhas |
+| `/tests/test_failures.py` | testes da unidade 2 |
+| `/docs/architecture/execucao-autonoma.md` | seção Falhas categorizadas |
 
 ## Notas de retomada
 
-Baseline após unidade 1: 99 passam, 2 falham (`test_parent_not_completed_without_verification_evidence`, `test_run_writes_final_answer`), ambas causadas pelo WIP de `consolidation.py`/`runner.py`. Cenários numerados = seção 12 do pedido.
+Baseline após unidade 2: 112 passam, 2 falham (`test_parent_not_completed_without_verification_evidence`, `test_run_writes_final_answer`), ambas causadas pelo WIP de `consolidation.py`/`runner.py`. Cenários numerados = seção 12 do pedido.

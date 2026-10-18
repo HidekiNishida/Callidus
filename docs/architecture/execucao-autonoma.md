@@ -19,4 +19,19 @@ Runs com `config_json.autonomous = true` são avançados pelo worker asyncio (`a
 
 Estado em SQLite; após reinício da API o worker retoma runs ativos autônomos.
 
+## Falhas categorizadas
+
+Toda tentativa que falha é classificada por `src/agent/domain/failures.py` em **categoria** (o que fazer) e **causa** (o que houve):
+
+| Categoria | Significado | Exemplos de causa |
+|-----------|-------------|-------------------|
+| `recoverable` | Corrigir localmente e tentar de novo, com o motivo no contexto | JSON malformado, trecho não encontrado, pytest reprovado |
+| `change_strategy` | Repetir igual não resolve: reduzir, dividir ou trocar abordagem | resposta cortada, contexto acima do orçamento, saída repetida, ferramenta desconhecida |
+| `blocked_dependency` | Depende de tarefa que falhou | dependência falha |
+| `external_unavailable` | Falta algo de fora (pessoa, servidor, dado) | aprovação pendente, provedor fora do ar, verificação inconclusiva |
+| `configuration` | Ambiente mal configurado | executável ausente, navegador desligado |
+| `operational_limit` | Limite atingido | timeout, tentativas esgotadas |
+
+A falha vai para `error_message` da tentativa, para o evento `attempt.recorded` (`payload.failure`) e para `metadata_json.last_failure` / `failures` (últimas 5) da tarefa. A resposta de `step` traz `failure`. Tentativa de modelo só conta como sucesso depois que o JSON foi validado. A evidência de verificação guarda `attempt_id`.
+
 Desative em testes com `Settings(enable_background_worker=False)`.
