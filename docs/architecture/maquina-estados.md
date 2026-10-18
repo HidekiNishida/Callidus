@@ -32,6 +32,7 @@ stateDiagram-v2
   VERIFYING --> RETRY_PENDING
   VERIFYING --> RUNNING
   VERIFYING --> PLANNING
+  VERIFYING --> BLOCKED
   COMPLETED --> VERIFYING
   READY --> BLOCKED
   RETRY_PENDING --> READY
@@ -48,6 +49,8 @@ stateDiagram-v2
 Transições inválidas levantam `InvalidTransitionError` — nunca silenciosamente.
 
 ## Conclusão
+
+`VERIFYING → BLOCKED`: verificação que não pôde rodar (executável ausente, aprovação pendente) ou inconclusiva; não é falha da implementação.
 
 `COMPLETED` exige passagem por `VERIFYING` (exceto tarefas marcadas como `no_verification` no metadata, uso restrito a testes).
 

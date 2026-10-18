@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,7 +16,7 @@ from agent.orchestrator.consolidation import (
     verification_evidence_ok,
     verification_spec,
 )
-from agent.persistence.models import TaskModel
+from agent.persistence.models import EvidenceModel, TaskModel
 from agent.services.task_service import TaskService
 from agent.verification.fingerprint import is_current
 
@@ -55,14 +56,36 @@ def evaluate_global_acceptance(session: Session, root_id: uuid.UUID) -> tuple[bo
 def _gap_failure(session: Session, task: TaskModel) -> Failure:
     evs = collect_evidences(session, task.id)
     last = evs[-1] if evs else None
-    if last and last.get("passed") is True and not is_current((last.get("detail") or {}).get("artifacts")):
-        paths = ", ".join((last["detail"]["artifacts"].get("paths") or []))
+    detail = (last or {}).get("detail") or {}
+    if last and last.get("passed") is True and (detail.get("state") == "desatualizado" or not is_current(detail.get("artifacts"))):
+        paths = ", ".join(((detail.get("artifacts") or {}).get("paths") or []))
         return Failure(
             FailureCategory.RECOVERABLE,
             FailureCause.STALE_EVIDENCE,
             f"os arquivos verificados ({paths}) mudaram depois da verificação; refazer com o estado atual",
         )
     return Failure(FailureCategory.RECOVERABLE, FailureCause.VERIFICATION_FAILED, "concluída sem evidência válida")
+
+
+def invalidate_latest(session: Session, task_id: uuid.UUID, reason: str) -> None:
+    """Marca a evidência mais recente como desatualizada (estado, momento e motivo); nunca apaga."""
+    row = session.scalars(
+        select(EvidenceModel)
+        .where(EvidenceModel.task_id == task_id)
+        .order_by(EvidenceModel.created_at.desc(), EvidenceModel.id.desc())
+    ).first()
+    if row is None:
+        return
+    detail = dict(row.detail_json or {})
+    if detail.get("state") == "desatualizado":
+        return
+    detail.update(
+        state="desatualizado",
+        previous_state=detail.get("state") or "aprovado",
+        invalidated_at=datetime.now(timezone.utc).isoformat(),
+        invalidated_reason=reason[:300],
+    )
+    row.detail_json = detail
 
 
 def reopen_verification_gaps(session: Session, root_id: uuid.UUID) -> list[uuid.UUID]:
@@ -79,6 +102,8 @@ def reopen_verification_gaps(session: Session, root_id: uuid.UUID) -> list[uuid.
         if verification_evidence_ok(session, t):
             continue
         failure = _gap_failure(session, t)
+        if failure.cause == FailureCause.STALE_EVIDENCE:
+            invalidate_latest(session, t.id, failure.detail)
         meta = dict(t.metadata_json or {})
         meta["last_failure"] = failure.as_dict()
         meta["failures"] = [*(meta.get("failures") or []), failure.as_dict()][-5:]

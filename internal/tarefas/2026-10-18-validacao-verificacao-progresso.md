@@ -15,7 +15,7 @@ Validar o plano antes de executá-lo (cobertura de requisitos e integridade estr
 
 ## Próxima ação
 
-Unidade 3: evidência com estado explícito, critério, comando e código de saída; verificador de sintaxe; verificação bloqueada ≠ reprovada.
+Unidade 4: aceite global por requisito, integração reprovada, correção localizada e relatório parcial.
 
 ## Diagnóstico (fase A — evidências)
 
@@ -65,7 +65,7 @@ Unidade 3: evidência com estado explícito, critério, comando e código de sa�
 - [x] Fase A: inspeção e diagnóstico (baseline 147 passam)
 - [x] Unidade 1: `orchestrator/requirements.py` (derivação, ids estáveis no contrato da raiz, `covers` herdado/parcial, `requirement_status`), requisitos no prompt de decomposição
 - [x] Unidade 2: `orchestrator/plan_validation.py` (6 vereditos, correção segura, bloqueio `invalid_plan`, versões em `plan.validated`, revalidação por impressão do plano), cobertura carregada no replanejamento
-- [ ] Unidade 3
+- [x] Unidade 3: evidência com estado, critério, comando, código de saída e motivo; sintaxe Python/JSON; verificação bloqueada (`VERIFYING → BLOCKED`) separada de reprovada; desatualizada marcada sem apagar; `file_contains` lê o arquivo inteiro (corrige falso reprovado com quebra final)
 - [ ] Unidade 4
 - [ ] Unidade 5
 - [ ] Unidade 6
@@ -84,8 +84,9 @@ Unidade 3: evidência com estado explícito, critério, comando e código de sa�
 | `/tests/test_requirements.py` | testes da unidade 1 |
 | `/src/agent/orchestrator/plan_validation.py` | validação do plano |
 | `/tests/test_plan_validation.py` | testes da unidade 2 (cenários 1–9) |
+| `/tests/test_independent_verification.py` | testes da unidade 3 (cenários 10–15, 17, 29) |
 | `/docs/architecture/requisitos-verificacao-progresso.md` | documento dos três mecanismos |
 
 ## Notas de retomada
 
-Após unidade 2: 165 passam, 0 falham. Cenários numerados = seção 7 do pedido.
+Após unidade 3: 173 passam, 0 falham. Cenários numerados = seção 7 do pedido.

@@ -104,6 +104,16 @@ def _profile_from_config(run_config: dict, settings: Settings) -> ModelProfile:
     return profile_from_run_config(run_config, settings)
 
 
+_ENVIRONMENT = {FailureCategory.CONFIGURATION, FailureCategory.EXTERNAL_UNAVAILABLE}
+
+
+def evidence_state(passed: bool | None, blocked: bool = False) -> str:
+    """Estado gravado na evidência; `desatualizado` é marcado depois, por `reopen_verification_gaps`."""
+    if blocked:
+        return "bloqueado"
+    return {True: "aprovado", False: "reprovado"}.get(passed, "inconclusivo")
+
+
 class RunOrchestrator:
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self._session = session
@@ -209,6 +219,15 @@ class RunOrchestrator:
             "task_id": str(parent.id),
             "plan": validation.verdict.value,
             "fixes": validation.fixes,
+        }
+
+    def _criteria_of(self, task: TaskModel) -> dict[str, Any]:
+        """Critério avaliado pela verificação: requisitos que a etapa cobre e o critério de aceite dela."""
+        covers = effective_covers(self._session, task)
+        return {
+            "requirements": [c["req"] for c in covers],
+            "partial": [c["req"] for c in covers if c["partial"]],
+            "acceptance": task.acceptance_criteria or "",
         }
 
     def _task_requirements(self, task: TaskModel) -> list[dict]:
@@ -906,7 +925,7 @@ class RunOrchestrator:
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
                 written = str(payload.get("new_string") if tool_name == "edit_file" else payload.get("content") or "")
                 implicit = (
-                    {"type": "file_contains", "path": payload["path"], "contains": written[:200], "implicit": True}
+                    {"type": "file_contains", "path": payload["path"], "contains": written[:200], "implicit": True, "syntax": True}
                     if written.strip()
                     else None
                 )
@@ -1137,8 +1156,20 @@ class RunOrchestrator:
             task.metadata_json = {**meta, "implicit_verification": spec}
         output = f"{detail.get('stdout') or ''}\n{detail.get('stderr') or detail.get('error') or ''}"
         failure = classify_verification(vresult.passed, vresult.summary, output)
-        if failure is not None and detail.get("category") == FailureCategory.CONFIGURATION.value:
+        if failure is not None and (
+            detail.get("category") == FailureCategory.CONFIGURATION.value or detail.get("error") == "approval_required"
+        ):
             failure = classify_tool_result(detail)
+        blocked = vresult.passed is False and failure is not None and failure.category in _ENVIRONMENT
+        passed = None if blocked else vresult.passed
+        detail.update(
+            state=evidence_state(passed, blocked),
+            criteria=self._criteria_of(task),
+            command={k: v for k, v in spec.items() if k != "implicit"},
+            exit_code=detail.get("exit_code"),
+        )
+        if failure is not None:
+            detail["reason"] = failure.detail[:500]
         attempt = self._attempts.record(
             run_id=run.id,
             task_id=task.id,
@@ -1155,7 +1186,7 @@ class RunOrchestrator:
                 task_id=task.id,
                 attempt_id=attempt.id,
                 verifier=vresult.verifier,
-                passed=vresult.passed,
+                passed=passed,
                 summary=vresult.summary,
                 detail_json=detail,
             )
@@ -1174,6 +1205,14 @@ class RunOrchestrator:
                 if kids and all(settled(k) for k in kids):
                     consolidate_parent(self._session, parent.id)
             return {"action": "verified_ok", "task_id": str(task.id)}
+
+        if blocked:
+            noted = self._remember_failure(task, failure)
+            self._tasks.update_status(
+                task.id,
+                TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=f"verificação bloqueada: {failure.detail[:200]}"),
+            )
+            return {"action": "verify_blocked", "task_id": str(task.id), "failure": noted}
 
         if vresult.passed is False:
             fp = AttemptService.fingerprint({"passed": False, "summary": vresult.summary})

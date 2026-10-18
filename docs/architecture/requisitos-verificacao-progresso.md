@@ -71,3 +71,37 @@ O resultado é o pior entre os achados: `válido`, `válido com ressalvas`, `inc
 Se ainda não puder executar, nada do plano roda: as etapas são canceladas com `invalid_plan` (ficam no histórico) e o pai vai a `BLOCKED` com `last_failure.cause = invalid_plan`. A categoria é `change_strategy`, ou `external_unavailable` se tudo está bloqueado, ou `operational_limit` se o orçamento estoura. Ação `plan_invalid`. Desbloqueado (`BLOCKED → PLANNING`), o pai é decomposto de novo.
 
 **Versões e revalidação.** `metadata_json.plan_validation` do pai guarda o resultado atual: veredito, achados, cobertura, bloqueadas, correções, veredito inicial, `version` e `fingerprint`. Cada versão gera um evento `plan.validated` com o plano completo. Antes de executar uma etapa, o runner compara a impressão do plano do pai (etapas, cobertura, ferramenta, verificação, dependências) e, se mudou (replanejamento, dependência nova), valida de novo (`plan_revalidated`).
+
+## Verificação independente
+
+Quem executa não aprova o próprio resultado. A resposta do modelo ("pronto, corrigido") não é evidência; só verificadores determinísticos geram evidência (`verification/runner.py`), escolhidos pelo risco ([verificação proporcional](/docs/architecture/execucao-autonoma.md#verificação-proporcional-ao-risco)).
+
+| Nível | Verificador |
+|-------|-------------|
+| Estrutura e arquivo | `file_contains` (lê o arquivo inteiro, como gravado) |
+| Sintaxe | `syntax` (Python via `ast`, JSON); a escrita implícita do modelo usa `file_contains` com `syntax: true` |
+| Testes unitários, integração, regressão | `pytest`, `script`, `command` |
+| Aceite global | etapa `Verificação global` (`metadata.global_verification` da raiz) e aceite por requisito |
+
+**Evidência persistida** (`evidence`, sem tabela nova; extras em `detail_json`):
+
+| Campo | Onde |
+|-------|------|
+| Identificador, tarefa, tentativa, momento | `id`, `task_id`, `attempt_id`, `created_at` |
+| Verificador e comando | `verifier`, `detail.command` (o spec executado) |
+| Resultado e código de saída | `passed`, `detail.state`, `detail.exit_code` |
+| Critério avaliado | `detail.criteria` (requisitos cobertos, parciais, critério de aceite da etapa) |
+| Artefatos avaliados | `detail.artifacts` (impressão digital) |
+| Motivo de falha ou impossibilidade | `detail.reason` |
+| Validade | `detail.state = desatualizado`, `previous_state`, `invalidated_at`, `invalidated_reason` |
+
+| Estado | `passed` | Efeito na tarefa |
+|--------|----------|------------------|
+| `aprovado` | `true` | conclui |
+| `reprovado` | `false` | `RETRY_PENDING` (corrigir a implementação, com o motivo no contexto); repetido igual → `BLOCKED` |
+| `bloqueado` | `null` | `BLOCKED`: a verificação não rodou (executável ausente, aprovação pendente). Falha de ambiente não é falha da implementação, então não refaz o código. |
+| `inconclusivo` | `null` | `BLOCKED`: nunca conta como sucesso |
+| `desatualizado` | mantém | deixa de valer; a tarefa reabre e verifica de novo |
+| não executado | — | requisito sem evidência (`pending`/`unverified` em `requirement_status`) |
+
+Nenhum resultado é inventado: sem execução não há linha de evidência. Evidência nunca é apagada. Só a mais recente vale, e só se passou, não foi marcada como desatualizada e os arquivos não mudaram.

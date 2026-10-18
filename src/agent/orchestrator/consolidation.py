@@ -28,7 +28,8 @@ def verification_evidence_ok(session: Session, task: TaskModel) -> bool:
     evs = collect_evidences(session, task.id)
     if not evs or evs[-1].get("passed") is not True:
         return False
-    return is_current((evs[-1].get("detail") or {}).get("artifacts"))
+    detail = evs[-1].get("detail") or {}
+    return detail.get("state") != "desatualizado" and is_current(detail.get("artifacts"))
 
 
 def superseded(task: TaskModel) -> bool:

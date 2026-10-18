@@ -292,7 +292,7 @@ Grafo de conhecimento:
 
 ### `src/agent/domain/state_machine.py`
 
-**Propósito:** define as transições válidas de `TaskStatus` (`ALLOWED_TRANSITIONS`) e os estados terminais (COMPLETED, FAILED, CANCELLED). **Quando/onde:** usado pelo `TaskService` e pelo orquestrador antes de mudar o status de uma tarefa (`RUNNING → BLOCKED` existe para parar uma operação que não pode prosseguir, como contexto que não cabe); a rota `PATCH /tasks/{id}/status` converte o erro em 409.
+**Propósito:** define as transições válidas de `TaskStatus` (`ALLOWED_TRANSITIONS`) e os estados terminais (COMPLETED, FAILED, CANCELLED). **Quando/onde:** usado pelo `TaskService` e pelo orquestrador antes de mudar o status de uma tarefa (`RUNNING → BLOCKED` para uma operação que não pode prosseguir, como contexto que não cabe; `VERIFYING → BLOCKED` para verificação que não pôde rodar ou ficou inconclusiva); a rota `PATCH /tasks/{id}/status` converte o erro em 409.
 
 - **`InvalidTransitionError(ValueError)`** — Erro lançado quando uma mudança de status não é permitida; guarda o status atual e o alvo.
   - `InvalidTransitionError.__init__(current, target) → None` — Monta a mensagem "Transição inválida: atual → alvo" e guarda os dois status.
@@ -421,7 +421,7 @@ Grafo de conhecimento:
 - `pending_reason(task) → str` — Motivo de uma pendência: detalhe da última falha, `blocked_reason` ou o status.
 - `_walk(ts, task_id, path, reason=None) → None` — Aplica uma sequência de transições de status.
 - `verification_spec(task) → dict | None` — Verificação declarada da tarefa ou a implícita que já rodou (`implicit_verification`).
-- `verification_evidence_ok(session, task) → bool` — Verdadeiro se a tarefa não tem verificação ou se a evidência mais recente passou e os arquivos que ela avaliou não mudaram (`is_current`).
+- `verification_evidence_ok(session, task) → bool` — Verdadeiro se a tarefa não tem verificação ou se a evidência mais recente passou, não foi marcada `desatualizado` e os arquivos que ela avaliou não mudaram (`is_current`).
 
 ### `src/agent/orchestrator/decomposition.py`
 
@@ -459,6 +459,7 @@ Grafo de conhecimento:
 - `_subtree_tasks(session, root_id) → list[TaskModel]` — Todas as tarefas descendentes da raiz (incluindo ela).
 - `ensure_global_verification_task(session, project_id, root) → TaskModel | None` — Se a raiz pede `global_verification` nos metadados, cria uma única subtarefa "Verificação global" (pytest por padrão) e reabre a raiz para planejamento.
 - `evaluate_global_acceptance(session, root_id) → tuple[bool, str]` — Aprova o objetivo se a raiz terminou, toda verificação concluída (declarada ou implícita) tem evidência válida e atual e a consolidação não marcou falha. Saída: ok e motivo.
+- `invalidate_latest(session, task_id, reason) → None` — Marca a evidência mais recente como `desatualizado` (estado anterior, momento e motivo), sem apagar.
 - `_gap_failure(session, task) → Failure` — Motivo da reabertura: `stale_evidence` (arquivos mudaram depois da verificação) ou `verification_failed` (sem evidência válida).
 - `reopen_verification_gaps(session, root_id) → list[uuid]` — Reabre as verificações concluídas sem evidência válida, gravando o motivo em `last_failure`/`failures`: desatualizada volta a VERIFYING (verifica o estado atual antes de refazer), sem evidência vai a RETRY_PENDING; o pai concluído volta a PLANNING. Evidência antiga não é apagada. Saída: ids reabertos.
 
@@ -547,6 +548,7 @@ Grafo de conhecimento:
 **Propósito:** Implementação real do ciclo: `RunOrchestrator` executa um passo por chamada sobre a árvore de tarefas de um run. **Quando/onde:** rotas `POST /runs/{id}/step` e `POST /runs/{id}/execute` e o worker autônomo (`services/autonomous_worker.py`).
 
 - `RunBlockedError(RuntimeError)` — Exceção para run bloqueado; declarada, mas não lançada no código atual.
+- `evidence_state(passed, blocked=False) → str` — Estado gravado na evidência: `aprovado`, `reprovado`, `inconclusivo` ou `bloqueado`.
 - **`RunOrchestrator`** — Máquina de estados do run: escolhe a próxima tarefa e avança seu status (planejar, executar, verificar, consolidar, concluir).
   - `RunOrchestrator.__init__(session, settings=None) → None` — Prepara serviços de tarefas e tentativas (com limite de tentativas) e o registro de ferramentas.
   - `RunOrchestrator._all_terminal_under(root_id) → bool` — Verdadeiro se todos os descendentes da raiz estão concluídos, cancelados ou falhos.
@@ -557,7 +559,7 @@ Grafo de conhecimento:
   - `RunOrchestrator._stall_run(run, root, reason) → dict` — Nada pode avançar e o objetivo não foi cumprido (o motivo inclui as recusas de replanejamento): run vai a `failed`, raiz a BLOCKED (recuperável), relatório com `achieved=False`, `pending` e mensagem "Não concluído"; evento `run.stalled`; ação `run_stalled`.
   - `RunOrchestrator._ensure_final_message(root) → None` — Garante `final_answer` no relatório da raiz: copia a do filho de resposta final ou compõe um Markdown com as etapas.
   - `RunOrchestrator._execute_task(run, project, task, config, work_root=None) → dict` — Executa a tarefa RUNNING conforme o metadado: ferramenta MCP, resposta final, operação de modelo (gera JSON e aplica `edit_file`/`write_file`, com streaming opcional), ferramenta comum (com detecção de laço), verificação ou consolidação de pai (folha com metadados mas sem ação vira operação de modelo, em vez de concluir sem fazer nada; pai com filho falho vai a BLOCKED com `dependency_failed`); respeita limite de tentativas e registra tentativas. Saída: ação do passo.
-  - `RunOrchestrator._finalize_verification(run, project, task, work_root=None, implicit_spec=None) → dict` — Roda a verificação declarada da tarefa ou, para escrita do modelo sem verificação declarada, a implícita (`file_contains` com o que foi gravado), grava a tentativa (com falha categorizada) e a evidência ligada a ela (`attempt_id`) com a impressão digital dos arquivos avaliados (`detail.artifacts`); a implícita fica em `metadata.implicit_verification`; aprovada conclui e consolida o pai, reprovada vai para nova tentativa (ou bloqueia se repetir), inconclusiva bloqueia. Sem verificação nenhuma (leitura), apenas conclui.
+  - `RunOrchestrator._finalize_verification(run, project, task, work_root=None, implicit_spec=None) → dict` — Roda a verificação declarada da tarefa ou, para escrita do modelo sem verificação declarada, a implícita (`file_contains` com o que foi gravado e sintaxe), grava a tentativa (com falha categorizada) e a evidência ligada a ela (`attempt_id`) com estado, critério, comando, código de saída, motivo e impressão digital dos arquivos avaliados; a implícita fica em `metadata.implicit_verification`; aprovada conclui e consolida o pai, reprovada vai para nova tentativa (ou bloqueia se repetir), bloqueada por ambiente (executável ausente, aprovação) e inconclusiva vão a BLOCKED sem refazer a implementação. Sem verificação nenhuma (leitura), apenas conclui.
   - `RunOrchestrator._note_thought(run, task, text, *, phase='thinking') → None` — Grava um evento `agent.thought` e faz commit para a interface mostrar o andamento durante a inferência.
   - `RunOrchestrator._context_overflow(run, project, task, provider_name, profile, exc) → dict` — Contexto obrigatório não coube nem compactado: registra tentativa falha `context_budget` com o snapshot, explica qual parte pesa mais e bloqueia a tarefa (`blocked_context`), sem chamar o modelo.
   - `RunOrchestrator._remember_failure(task, failure) → dict` — Guarda a falha categorizada em `metadata_json.last_failure` e nas últimas 5 de `failures`, para a próxima tentativa e o replanejamento lerem.
@@ -570,6 +572,7 @@ Grafo de conhecimento:
   - `RunOrchestrator._validate_plan(run, parent, config, work_root, spec_issues=None) → PlanValidation` — Chama `validate_and_repair` com o limite de tarefas do run.
   - `RunOrchestrator._block_invalid_plan(parent, validation) → dict` — Pai com plano sem correção vai a BLOCKED com `last_failure.cause = invalid_plan` (categoria por motivo: externo, limite ou trocar estratégia); ação `plan_invalid`.
   - `RunOrchestrator._revalidate_plan(run, task, config, work_root) → dict | None` — Antes de executar uma etapa, valida de novo o plano do pai se a impressão mudou; ação `plan_revalidated` ou `plan_invalid`.
+  - `RunOrchestrator._criteria_of(task) → dict` — Critério avaliado por uma verificação: requisitos cobertos, parciais e critério de aceite da etapa.
   - `RunOrchestrator._task_requirements(task) → list[dict]` — Requisitos obrigatórios que a etapa precisa atender (os da raiz filtrados pela cobertura herdada, com a parte se parcial); vão para o prompt de decomposição.
   - `RunOrchestrator._recursion_guard(run, task) → str | None` — Proteção contra recursão, separada da decisão de dividir: devolve o motivo quando a etapa repete um ancestral, passa de `max_tree_depth` ou o run já tem `max_tasks_per_run` tarefas; nesse caso a etapa é executada sem nova divisão e o motivo vai para `metadata_json.recursion_guard`.
   - `RunOrchestrator._save_requested_memory(project, task, args) → dict` — Salva memória pedida pela ferramenta de memória, no escopo da conversa (contextual) ou do projeto (canônica).
@@ -1100,7 +1103,9 @@ Grafo de conhecimento:
 - `VerificationResult` — Resultado: nome do verificador, aprovado (`True`/`False`/`None` para pendente), resumo e detalhes.
 - `_has_non_python_deliverable(root) → bool` — Indica se o projeto tem entregáveis não Python (HTML, CSS, JS, MD…).
 - `_no_tests_collected(out) → bool` — Detecta se o pytest não encontrou testes (código 5 ou mensagem equivalente).
-- `run_verification(*, project_root, spec, tool_args=None, approved=False) → VerificationResult` — Executa o tipo pedido: `stages`, `pytest` (aceita ausência de testes se houver entrega não Python), `script`, `command`, `file_contains`, `acceptance_manual` (pendente) ou devolve falha para tipo desconhecido.
+- `run_verification(*, project_root, spec, tool_args=None, approved=False) → VerificationResult` — Executa o tipo pedido: `stages`, `pytest` (aceita ausência de testes se houver entrega não Python), `script`, `command`, `file_contains` (arquivo inteiro; com `syntax` também analisa a sintaxe), `syntax`, `acceptance_manual` (pendente) ou devolve falha para tipo desconhecido.
+- `_read_whole(project_root, path) → dict` — Lê o arquivo inteiro sob a raiz (o `read_file` pagina e corta a quebra final).
+- `syntax_problem(path, content) → str | None` — Análise sintática pela extensão (Python com `ast`, JSON); `None` se válido ou sem analisador.
 
 ## `src/agent/vision/`
 
@@ -1287,6 +1292,7 @@ Grafo de conhecimento:
 - `tests/test_dev_tools.py` — Ferramentas de desenvolvimento: list/glob/edit e aliases, grep que ignora `.venv`, comando em string, executável ausente como erro de configuração, interpretador do venv do projeto, verificação que aceita entrega HTML sem testes e verificação por script.
 - `tests/test_failures.py` — Taxonomia de falhas: categorias de saída de ferramenta, provedor, resposta do modelo (cortada × malformada), contexto e verificação; JSON inválido do modelo vira tentativa falha com `last_failure` na tarefa.
 - `tests/test_proportional_verification.py` — Escrita sem verificação declarada ganha `file_contains` implícito com evidência ligada à tentativa; etapa sem ação executa em vez de concluir em silêncio.
+- `tests/test_independent_verification.py` — Evidência independente: testes aprovados gravam estado, código de saída, comando, critério e artefatos; testes reprovados pedem correção; sintaxe determinística; código inválido pego pelo verificador apesar de o modelo dizer "pronto"; executável ausente e comando sem aprovação bloqueiam sem culpar o código; inconclusivo nunca aprova; mudança posterior marca a evidência como desatualizada sem apagar.
 - `tests/test_plan_validation.py` — Validação do plano: cobertura integral válida; requisito sem responsável corrigido com `Atender Rn`; etapa sem critério verificável; dependências circulares, inexistentes e para si mesma removidas e registradas; dependência em tarefa cancelada; dependência externa identificada sem impedir a execução; decomposição que tenta perder requisito herdado; cobertura não comprovada é inconclusiva; replanejamento carrega requisitos; plano alterado é revalidado; plano sem correção bloqueia sem executar nada.
 - `tests/test_requirements.py` — Requisitos: itens do objetivo e critérios viram requisitos, ids gravados uma vez e estáveis, cobertura herdada e parcial, estado por cobertura e evidência, resposta final não atende requisito de mudança mas atende pergunta, aplicabilidade não obrigatória preservada.
 - `tests/test_progress_metrics.py` — Progresso é trabalho verificado e não atividade; pergunta simples sem decomposição excessiva; objetivo de várias etapas ponta a ponta com métricas (e rota `/runs/{id}/metrics`); irmã independente segue enquanto a dependente espera; chamadas de modelo sem trabalho verificado não contam como progresso.
