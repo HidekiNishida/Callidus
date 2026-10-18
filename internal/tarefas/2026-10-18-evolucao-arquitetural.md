@@ -14,14 +14,14 @@ O orquestrador decompõe só o necessário, monta contexto suficiente por opera�
 
 ## Próxima ação
 
-Unidade 7: profundidade funcional no lugar do corte fixo 6 (orçamento por ramo e detecção de repetição).
+Unidade 10: retomada revalida arquivos (impressão digital) antes de confiar em evidência ou repetir operação.
 
 ## Diagnóstico (fase A — evidências)
 
 | # | Achado | Onde |
 |---|--------|------|
 | A1 | `python` inexistente no macOS: toda verificação pytest/script falhava com `FileNotFoundError` não tratado | `tools/builtins.py` (**corrigido na unidade 1**) |
-| A2 | Corte fixo de profundidade 6 vira folha forçada | `orchestrator/runner.py` `_depth ≥ 6` |
+| A2 | Corte fixo de profundidade 6 vira folha forçada | `orchestrator/runner.py` `_depth ≥ 6` (**corrigido na unidade 7**) |
 | A3 | Contexto obrigatório acima do orçamento lança `ValueError` fora de try; tarefa fica RUNNING | `context/assembler.py`, `runner._execute_task` |
 | A4 | JSON inválido do modelo grava tentativa `success=True` e repete o prompt idêntico até 8 tentativas | `runner._execute_task` (model_operation) |
 | A5 | Contexto da operação não leva motivo das falhas anteriores nem resultados de dependências | `context/operation_builder.py` |
@@ -63,7 +63,8 @@ Unidade 7: profundidade funcional no lugar do corte fixo 6 (orçamento por ramo 
 - [x] Unidade 6: `replan_decision` por categoria, orçamento por linhagem, condição de progresso, filho substituído (`superseded`/`settled`), passo de replanejamento que decompõe de novo
 - [x] Unidade 5: arquivos-alvo com conteúdo exato, contrato, objetivo global e resultados das dependências no contexto
 - [x] Unidade 9: verificação implícita para escrita, etapa sem ação executa, inconclusivo nunca aprova, evidência com `attempt_id`
-- [ ] Unidades 7, 10, 11
+- [x] Unidade 7: `_recursion_guard` (objetivo/título repetido acima, `max_tree_depth`, `max_tasks_per_run`) separado da decisão de dividir; corte fixo removido
+- [ ] Unidades 10, 11
 - [ ] Escolher dimensões de teste aplicáveis ([validacoes-testes.md](/docs/regras/validacoes-testes.md))
 - [ ] Verificação final: código ↔ docs ↔ checklists ↔ regras ([verificacao-final.md](/docs/regras/verificacao-final.md))
 - [ ] Marcar estado como `concluída` e listar artefatos
@@ -85,10 +86,11 @@ Unidade 7: profundidade funcional no lugar do corte fixo 6 (orçamento por ramo 
 | `/tests/test_retry_strategy.py` | testes da unidade 4 (cenários 10 e 13) |
 | `/tests/test_proportional_verification.py` | testes da unidade 9 (cenários 11, 12) |
 | `/tests/test_sufficient_context.py` | testes da unidade 5 (cenário 9) |
+| `/tests/test_functional_depth.py` | testes da unidade 7 (cenários 2, 3, 14) |
 | `/tests/test_run_termination.py` | testes da unidade 8 (cenários 6, 17, 18) |
 | `/docs/architecture/context-builder.md` | estouro e compactação |
 | `/docs/architecture/execucao-autonoma.md` | seção Falhas categorizadas |
 
 ## Notas de retomada
 
-Baseline após unidade 9: 134 passam, 0 falham. Cenários numerados = seção 12 do pedido.
+Baseline após unidade 7: 137 passam, 0 falham. Cenários numerados = seção 12 do pedido.

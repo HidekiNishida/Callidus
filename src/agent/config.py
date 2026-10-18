@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     api_port: int = 8765
     max_attempts_per_task: int = 8
     max_orchestrator_steps: int = 100
+    # Proteção contra recursão, não critério de decomposição: só para árvores que crescem sem fim.
+    max_tree_depth: int = 16
+    max_tasks_per_run: int = 400
     static_web_dir: Path | None = None
     mcp_config_path: Path | None = None
     enable_background_worker: bool = True

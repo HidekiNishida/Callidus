@@ -124,6 +124,7 @@ class RunOrchestrator:
 
     def _same_title_above(self, task: TaskModel) -> bool:
         title = task.title.strip().casefold()
+        objective = " ".join((task.objective or "").split()).casefold()
         parent_id = task.parent_id
         seen: set[uuid.UUID] = set()
         while parent_id and parent_id not in seen:
@@ -133,8 +134,22 @@ class RunOrchestrator:
                 return False
             if parent.title.strip().casefold() == title:
                 return True
+            if objective and " ".join((parent.objective or "").split()).casefold() == objective:
+                return True
             parent_id = parent.parent_id
         return False
+
+    def _recursion_guard(self, run: ExecutionRunModel, task: TaskModel) -> str | None:
+        """Proteção contra recursão, separada da decisão de dividir: plano que repete um ancestral,
+        árvore mais funda que `max_tree_depth` ou run com mais de `max_tasks_per_run` tarefas."""
+        if self._same_title_above(task):
+            return "repete o título ou o objetivo de uma etapa acima"
+        if self._depth(task) >= self._settings.max_tree_depth:
+            return f"profundidade de proteção ({self._settings.max_tree_depth}) atingida"
+        tasks = list(self._session.scalars(select(TaskModel).where(TaskModel.project_id == task.project_id)).all())
+        if len(self._subtree_ids(run.root_task_id, tasks)) >= self._settings.max_tasks_per_run:
+            return f"limite de {self._settings.max_tasks_per_run} tarefas no run atingido"
+        return None
 
     def _depth(self, task: TaskModel) -> int:
         depth = 0
@@ -425,11 +440,13 @@ class RunOrchestrator:
                         return blocked
                     return {"action": "operation_ready", "task_id": str(task.id)}
                 return {"action": "operation_wait_deps", "task_id": str(task.id)}
-            if not kids and (self._same_title_above(task) or self._depth(task) >= 6):
+            guard = self._recursion_guard(run, task) if not kids else None
+            if guard:
+                task.metadata_json = {**meta, "recursion_guard": guard}
                 return self._run_as_leaf(
                     run,
                     task,
-                    note=f"«{task.title}» repetiu o mesmo plano. Vou executar esta etapa, sem dividir de novo.",
+                    note=f"«{task.title}» {guard}. Vou executar esta etapa, sem dividir de novo.",
                 )
             if not kids:
                 attempts = self._attempts.count_attempts(task.id)

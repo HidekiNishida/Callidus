@@ -52,6 +52,18 @@ Folha com metadados mas sem ação (`tool`, `verification`, `model_operation`, `
 
 Ao replanejar: irmãos pendentes são cancelados, o que concluiu fica; o filho parado é marcado `superseded_by_replan` (BLOCKED vira CANCELLED) e deixa de contar como pendência; entram "Ver o que ainda falta" e "Seguir com o plano corrigido", um nó `subsystem` que é decomposto de novo com o que já foi feito, o motivo da parada e o pedido de outra abordagem. Esse nó herda `replan_count`, então replanejamentos aninhados dividem o mesmo orçamento.
 
+## Profundidade funcional
+
+Não há profundidade máxima de decomposição. Uma etapa é dividida enquanto não for executável (`executable_leaf`, atomizador, plano que não copia os irmãos). A proteção contra recursão é separada da decisão de dividir (`_recursion_guard`) e só age quando a árvore cresce sem fim:
+
+| Proteção | Configuração |
+|----------|--------------|
+| Título ou objetivo igual ao de uma etapa acima | sempre |
+| Profundidade de segurança | `MAX_TREE_DEPTH` (padrão 16) |
+| Tarefas no run | `MAX_TASKS_PER_RUN` (padrão 400) |
+
+Ao acionar, a etapa é executada como operação de modelo, sem nova divisão, e o motivo fica em `metadata_json.recursion_guard`.
+
 ## Falhas categorizadas
 
 Toda tentativa que falha é classificada por `src/agent/domain/failures.py` em **categoria** (o que fazer) e **causa** (o que houve):
