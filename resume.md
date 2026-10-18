@@ -289,7 +289,7 @@ Grafo de conhecimento:
 
 ### `src/agent/domain/state_machine.py`
 
-**Propósito:** define as transições válidas de `TaskStatus` (`ALLOWED_TRANSITIONS`) e os estados terminais (COMPLETED, FAILED, CANCELLED). **Quando/onde:** usado pelo `TaskService` e pelo orquestrador antes de mudar o status de uma tarefa; a rota `PATCH /tasks/{id}/status` converte o erro em 409.
+**Propósito:** define as transições válidas de `TaskStatus` (`ALLOWED_TRANSITIONS`) e os estados terminais (COMPLETED, FAILED, CANCELLED). **Quando/onde:** usado pelo `TaskService` e pelo orquestrador antes de mudar o status de uma tarefa (`RUNNING → BLOCKED` existe para parar uma operação que não pode prosseguir, como contexto que não cabe); a rota `PATCH /tasks/{id}/status` converte o erro em 409.
 
 - **`InvalidTransitionError(ValueError)`** — Erro lançado quando uma mudança de status não é permitida; guarda o status atual e o alvo.
   - `InvalidTransitionError.__init__(current, target) → None` — Monta a mensagem "Transição inválida: atual → alvo" e guarda os dois status.
@@ -488,6 +488,7 @@ Grafo de conhecimento:
   - `RunOrchestrator._execute_task(run, project, task, config, work_root=None) → dict` — Executa a tarefa RUNNING conforme o metadado: ferramenta MCP, resposta final, operação de modelo (gera JSON e aplica `edit_file`/`write_file`, com streaming opcional), ferramenta comum (com detecção de laço), verificação ou consolidação de pai; respeita limite de tentativas e registra tentativas. Saída: ação do passo.
   - `RunOrchestrator._finalize_verification(run, project, task, work_root=None) → dict` — Roda a verificação da tarefa, grava a tentativa (com falha categorizada) e a evidência ligada a ela (`attempt_id`); aprovada conclui e consolida o pai, reprovada vai para nova tentativa (ou bloqueia se repetir), inconclusiva bloqueia. Sem verificação, apenas conclui.
   - `RunOrchestrator._note_thought(run, task, text, *, phase='thinking') → None` — Grava um evento `agent.thought` e faz commit para a interface mostrar o andamento durante a inferência.
+  - `RunOrchestrator._context_overflow(run, project, task, provider_name, profile, exc) → dict` — Contexto obrigatório não coube nem compactado: registra tentativa falha `context_budget` com o snapshot, explica qual parte pesa mais e bloqueia a tarefa (`blocked_context`), sem chamar o modelo.
   - `RunOrchestrator._remember_failure(task, failure) → dict` — Guarda a falha categorizada em `metadata_json.last_failure` e nas últimas 5 de `failures`, para a próxima tentativa e o replanejamento lerem.
   - `RunOrchestrator._pick_next_task(root_id) → TaskModel | None` — Escolhe a próxima tarefa da subárvore por prioridade de status (RUNNING, VERIFYING, READY, RETRY_PENDING, PLANNING, PENDING), respeitando dependências e filhos não concluídos.
   - `RunOrchestrator._promote_ready_or_block(task_id) → dict | None` — Valida o contrato da tarefa; se inválido, bloqueia e retorna os erros, senão marca READY.
@@ -741,7 +742,7 @@ Grafo de conhecimento:
 
 **Propósito:** define a receita padrão de componentes de contexto de uma operação e suas prioridades. **Quando/onde:** chamado por `OperationContextBuilder.build_for_task`.
 
-- `build_operation_context(profile, *, global_rules, project_rules, objective, technical, acceptance, tools_summary, output_format) → BudgetResult` — Cria os componentes do prompt: regras globais, objetivo, critérios e formato de saída são obrigatórios; regras do projeto, contexto técnico e catálogo de ferramentas são opcionais, em prioridade decrescente. Entrada: perfil do modelo e os textos. Saída: mensagens prontas e estimativa de tokens.
+- `build_operation_context(profile, *, global_rules, project_rules, objective, technical, acceptance, tools_summary, output_format, compact=False) → BudgetResult` — Cria os componentes do prompt: regras globais, objetivo, critérios e formato de saída são obrigatórios; regras do projeto, contexto técnico e catálogo de ferramentas são opcionais, em prioridade decrescente. Entrada: perfil do modelo e os textos. Com `compact=True`, passa todos os textos por `compact_text` e anota a estratégia. Saída: mensagens prontas e estimativa de tokens.
 
 ### `src/agent/context/budget.py`
 
@@ -749,8 +750,11 @@ Grafo de conhecimento:
 
 - `BudgetResult` — Resultado da montagem: lista de `ChatMessage`, tokens estimados, nomes dos componentes descartados e notas de estratégia.
 - `ContextComponent` — Um bloco de contexto com nome, texto, prioridade (padrão 50) e flag `required`.
-- `assemble_messages(profile, components, *, safety_margin=256) → BudgetResult` — Calcula o orçamento a partir do perfil (limite de contexto menos reserva de saída e margem), inclui os obrigatórios e os opcionais que couberem e gera uma mensagem de sistema e uma de usuário com seções `## nome`. Lança `ValueError` se o orçamento for inválido ou os obrigatórios não couberem (sinal para decompor a tarefa).
+- `assemble_messages(profile, components, *, safety_margin=256) → BudgetResult` — Calcula o orçamento a partir do perfil (limite de contexto menos reserva de saída e margem), inclui os obrigatórios e os opcionais que couberem e gera uma mensagem de sistema e uma de usuário com seções `## nome`. Lança `ValueError` se o orçamento do perfil for inválido e `ContextBudgetError` se os obrigatórios não couberem.
+- **`ContextBudgetError(ValueError)`** — Obrigatório acima do orçamento; guarda `budget`, `required_tokens`, `breakdown` (tokens por componente) e `snapshot_id` (preenchido pelo builder).
+  - `ContextBudgetError.__init__(budget, required_tokens, breakdown) → None` — Monta a mensagem e guarda os números.
 - `estimate_tokens(text) → int` — Estimativa conservadora de tokens (cerca de 4 caracteres por token).
+- `compact_text(text) → str` — Encolhe sem perder conteúdo: espaços internos repetidos, linhas em branco seguidas e linhas duplicadas consecutivas; preserva a indentação.
 
 ### `src/agent/context/operation_builder.py`
 
@@ -765,7 +769,7 @@ Grafo de conhecimento:
   - `OperationContextBuilder._memory_bodies(ids) → dict[uuid, str]` — Busca no banco o conteúdo completo das memórias escolhidas.
   - `OperationContextBuilder._memory_index(project_id, task) → list[dict]` — Monta o índice das 24 memórias mais recentes do projeto ou da conversa visíveis no ramo da tarefa (título, resumo, fatos, tópicos, tipo, escopo).
   - `OperationContextBuilder._technical_snippet(root_path, project_id, objective) → str` — Procura no grafo de conhecimento identificadores citados no objetivo e anexa trechos de `calc.py`, `main.py` ou `app.py` se mencionados; senão sugere usar `list_dir`/`search_grep`.
-  - `OperationContextBuilder.build_for_task(*, project_id, root_path, task, profile, run_id=None) → tuple[BudgetResult, ContextSnapshotModel]` — Ponto de entrada: reúne todos os blocos, escolhe o formato de saída (página HTML completa, operação de arquivo em JSON ou JSON genérico), chama `build_operation_context`, grava um `ContextSnapshotModel` e anexa imagens à última mensagem. Saída: prompt orçado e snapshot persistido.
+  - `OperationContextBuilder.build_for_task(*, project_id, root_path, task, profile, run_id=None, compact=False) → tuple[BudgetResult, ContextSnapshotModel]` — Ponto de entrada: reúne todos os blocos, escolhe o formato de saída (página HTML completa, operação de arquivo em JSON ou JSON genérico), chama `build_operation_context`, grava um `ContextSnapshotModel` e anexa imagens à última mensagem. Saída: prompt orçado e snapshot persistido. Se o obrigatório não couber, grava um snapshot do estouro (tokens por componente) e relança `ContextBudgetError` com `snapshot_id`.
 
 ## `src/agent/guides/`
 
@@ -1177,6 +1181,7 @@ Grafo de conhecimento:
 - `tests/test_attempt_loop.py` — `AttemptService`: detecção de saída repetida entre tentativas (loop do modelo).
 - `tests/test_consolidation.py` — `consolidate_parent`: tarefa-pai só conclui quando há evidência de verificação nos filhos.
 - `tests/test_context_budget.py` — `context/budget.py`: estimativa de tokens, preservação de componentes obrigatórios e erro quando o obrigatório estoura o orçamento do `ModelProfile`.
+- `tests/test_context_recovery.py` — Estouro de contexto: `ContextBudgetError` com custo por componente, `compact_text` sem perda, `RUNNING → BLOCKED`, bloqueio explicado sem chamar o modelo e recuperação por compactação.
 - `tests/test_contract_impact.py` — `ContractService`: mudança de contrato encontra as tarefas dependentes afetadas.
 - `tests/test_contract_service.py` — `ContractService`: tarefa que exige contrato fica bloqueada enquanto ele não é definido.
 - `tests/test_conversations_memory_i18n.py` — Detecção de idioma e tradução de títulos (`i18n`), memória guardada completa e dividida no uso, memória restrita à conversa, rotas de conversas/pastas/memória e ferramenta de "lembrar".

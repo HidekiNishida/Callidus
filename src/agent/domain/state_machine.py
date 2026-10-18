@@ -10,7 +10,13 @@ ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     ),
     TaskStatus.READY: frozenset({TaskStatus.RUNNING, TaskStatus.CANCELLED, TaskStatus.BLOCKED}),
     TaskStatus.RUNNING: frozenset(
-        {TaskStatus.VERIFYING, TaskStatus.RETRY_PENDING, TaskStatus.FAILED, TaskStatus.CANCELLED}
+        {
+            TaskStatus.VERIFYING,
+            TaskStatus.RETRY_PENDING,
+            TaskStatus.BLOCKED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+        }
     ),
     TaskStatus.VERIFYING: frozenset(
         {TaskStatus.COMPLETED, TaskStatus.RETRY_PENDING, TaskStatus.RUNNING, TaskStatus.PLANNING}

@@ -13,6 +13,7 @@ from agent.domain.failures import (
     Failure,
     FailureCategory,
     FailureCause,
+    classify_context_error,
     classify_model_output,
     classify_provider_error,
     classify_tool_result,
@@ -38,6 +39,7 @@ from agent.orchestrator.decomposition import (
 from agent.orchestrator.planner import ensure_canonical_memory_for_objective
 from agent.orchestrator.replan import replan_under
 from agent.orchestrator.usage import accumulate_usage
+from agent.context.budget import ContextBudgetError
 from agent.context.operation_builder import OperationContextBuilder
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.persistence.models import (
@@ -201,6 +203,39 @@ class RunOrchestrator:
         meta["last_failure"] = failure.as_dict()
         task.metadata_json = meta
         return failure.as_dict()
+
+    def _context_overflow(
+        self,
+        run: ExecutionRunModel,
+        project: ProjectModel,
+        task: TaskModel,
+        provider_name: str,
+        profile: ModelProfile,
+        exc: ContextBudgetError,
+    ) -> dict[str, Any]:
+        """O obrigatório não cabe nem compactado: nada é enviado ao modelo e a tarefa para com a explicação."""
+        biggest = max((item for item in exc.breakdown if item["required"]), key=lambda item: item["tokens"])
+        detail = (
+            f"{exc.required_tokens} tokens obrigatórios > orçamento {exc.budget} de {profile.model_id}; "
+            f"maior parte: {biggest['name']} ({biggest['tokens']} tokens). "
+            "Divida o pedido ou use um modelo com contexto maior."
+        )
+        failure = classify_context_error(detail)
+        self._attempts.record(
+            run_id=run.id,
+            task_id=task.id,
+            kind=AttemptKind.MODEL,
+            provider=provider_name,
+            request={"context_snapshot_id": exc.snapshot_id, "breakdown": exc.breakdown, "budget": exc.budget},
+            response=None,
+            success=False,
+            project_id=project.id,
+            failure=failure,
+        )
+        noted = self._remember_failure(task, failure)
+        self._note_thought(run, task, f"O contexto necessário não cabe no modelo: {detail}")
+        self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=detail))
+        return {"action": "blocked_context", "task_id": str(task.id), "failure": noted}
 
     def _save_requested_memory(self, project: ProjectModel, task: TaskModel, args: dict) -> dict:
         content = str(args.get("content") or args.get("text") or "").strip()
@@ -433,6 +468,7 @@ class RunOrchestrator:
                 "blocked_loop",
                 "blocked_attempts",
                 "blocked_contract",
+                "blocked_context",
                 "global_verify_failed",
             }:
                 break
@@ -562,13 +598,15 @@ class RunOrchestrator:
             from agent.util.json_parse import parse_json_object
 
             builder = OperationContextBuilder(self._session)
-            budget, snap = builder.build_for_task(
-                project_id=project.id,
-                root_path=root_path,
-                task=task,
-                profile=profile,
-                run_id=run.id,
-            )
+            build = dict(project_id=project.id, root_path=root_path, task=task, profile=profile, run_id=run.id)
+            try:
+                budget, snap = builder.build_for_task(**build)
+            except ContextBudgetError:
+                try:
+                    budget, snap = builder.build_for_task(**build, compact=True)
+                except ContextBudgetError as exc:
+                    return self._context_overflow(run, project, task, provider.name, profile, exc)
+                self._note_thought(run, task, "O contexto não cabia; segui com a versão compactada, sem cortar conteúdo.")
             self._note_thought(run, task, f"Pensando na alteração «{task.title}» com {profile.model_id}.")
             # Check if streaming is requested
             stream_requested = bool(meta.get("stream") or config.get("stream", False))

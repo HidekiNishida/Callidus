@@ -8,7 +8,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from agent.context.assembler import build_operation_context
-from agent.context.budget import BudgetResult
+from agent.context.budget import BudgetResult, ContextBudgetError
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.knowledge.indexer import grep_symbols_in_objective
 from agent.persistence.models import ContextSnapshotModel, MemoryRecordModel, TaskModel
@@ -41,7 +41,10 @@ class OperationContextBuilder:
         task: TaskModel,
         profile: ModelProfile,
         run_id: uuid.UUID | None = None,
+        compact: bool = False,
     ) -> tuple[BudgetResult, ContextSnapshotModel]:
+        """Monta o contexto da operação e grava o snapshot. Se o obrigatório não couber, grava um snapshot
+        do estouro (custo por componente) e relança `ContextBudgetError` com `snapshot_id`."""
         project_rules, memory_note = self._memory_block(project_id, task)
         technical = self._technical_snippet(root_path, project_id, task.objective)
         guides = guide_digest(root_path, task.objective)
@@ -68,16 +71,35 @@ class OperationContextBuilder:
         )
         rules = GLOBAL_RULES if not page else f"{GLOBAL_RULES} O arquivo pedido é o produto completo."
 
-        budget = build_operation_context(
-            profile,
-            global_rules=rules,
-            project_rules=project_rules,
-            objective=task.objective,
-            technical=technical,
-            acceptance=acceptance,
-            tools_summary=tools_summary,
-            output_format=output_format,
-        )
+        try:
+            budget = build_operation_context(
+                profile,
+                global_rules=rules,
+                project_rules=project_rules,
+                objective=task.objective,
+                technical=technical,
+                acceptance=acceptance,
+                tools_summary=tools_summary,
+                output_format=output_format,
+                compact=compact,
+            )
+        except ContextBudgetError as exc:
+            overflow = ContextSnapshotModel(
+                project_id=project_id,
+                task_id=task.id,
+                run_id=run_id,
+                estimated_tokens=exc.required_tokens,
+                components_json=exc.breakdown,
+                strategy_notes_json=[
+                    f"estouro: {exc.required_tokens} tokens obrigatórios > orçamento {exc.budget}",
+                    "compactado" if compact else "completo",
+                ],
+                refs_json=[item["name"] for item in exc.breakdown if not item["required"]],
+            )
+            self._session.add(overflow)
+            self._session.flush()
+            exc.snapshot_id = str(overflow.id)
+            raise
         if memory_note:
             budget.strategy_notes.append(memory_note)
         components = [{"role": m.role, "chars": len(m.content)} for m in budget.messages]

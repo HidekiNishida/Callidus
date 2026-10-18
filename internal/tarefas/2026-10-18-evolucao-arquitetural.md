@@ -14,7 +14,7 @@ O orquestrador decompõe só o necessário, monta contexto suficiente por opera�
 
 ## Próxima ação
 
-Unidade 3: erro de orçamento de contexto vira falha `context_budget` com recuperação (reduzir opcionais → atomizar).
+Unidade 4: JSON inválido do modelo é reenviado com o motivo da falha e estratégia diferente; nunca prompt idêntico.
 
 ## Diagnóstico (fase A — evidências)
 
@@ -57,7 +57,8 @@ Unidade 3: erro de orçamento de contexto vira falha `context_budget` com recupe
 - [x] Unidade 1: interpretador Python / erro de configuração (`tools/builtins.py`, testes, `ferramentas.md`, `resume.md`)
 - [x] Decisão sobre o WIP: commitado à parte (`1b92a41`); consolidação segue a especificação
 - [x] Unidade 2: taxonomia `domain/failures.py`, falhas gravadas em tentativa/evento/`last_failure`, evidência com `attempt_id`, JSON inválido = tentativa falha
-- [ ] Unidades 3–11
+- [x] Unidade 3: `ContextBudgetError`, snapshot do estouro, compactação sem perda, `blocked_context` explicado, `RUNNING → BLOCKED`
+- [ ] Unidades 4–11
 - [ ] Escolher dimensões de teste aplicáveis ([validacoes-testes.md](/docs/regras/validacoes-testes.md))
 - [ ] Verificação final: código ↔ docs ↔ checklists ↔ regras ([verificacao-final.md](/docs/regras/verificacao-final.md))
 - [ ] Marcar estado como `concluída` e listar artefatos
@@ -75,8 +76,10 @@ Unidade 3: erro de orçamento de contexto vira falha `context_budget` com recupe
 | `/docs/architecture/ferramentas.md` | interpretador e categoria |
 | `/src/agent/domain/failures.py` | taxonomia de falhas |
 | `/tests/test_failures.py` | testes da unidade 2 |
+| `/tests/test_context_recovery.py` | testes da unidade 3 (cenários 7 e 8) |
+| `/docs/architecture/context-builder.md` | estouro e compactação |
 | `/docs/architecture/execucao-autonoma.md` | seção Falhas categorizadas |
 
 ## Notas de retomada
 
-Baseline após unidade 2: 112 passam, 2 falham (`test_parent_not_completed_without_verification_evidence`, `test_run_writes_final_answer`), ambas causadas pelo WIP de `consolidation.py`/`runner.py`. Cenários numerados = seção 12 do pedido.
+Baseline após unidade 3: 117 passam, 2 falham (`test_parent_not_completed_without_verification_evidence`, `test_run_writes_final_answer`), ambas causadas pelo WIP de `consolidation.py`/`runner.py`. Cenários numerados = seção 12 do pedido.

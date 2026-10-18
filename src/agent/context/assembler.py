@@ -1,7 +1,7 @@
 # src/agent/context/assembler.py — montagem de contexto por operação
 from __future__ import annotations
 
-from agent.context.budget import ContextComponent, BudgetResult, assemble_messages
+from agent.context.budget import ContextComponent, BudgetResult, assemble_messages, compact_text
 from agent.providers.base import ModelProfile
 
 
@@ -15,6 +15,7 @@ def build_operation_context(
     acceptance: str,
     tools_summary: str,
     output_format: str,
+    compact: bool = False,
 ) -> BudgetResult:
     components = [
         ContextComponent(name="regras-globais", text=global_rules, required=True, priority=100),
@@ -25,4 +26,10 @@ def build_operation_context(
         ContextComponent(name="contexto-técnico", text=technical, required=False, priority=70),
         ContextComponent(name="ferramentas", text=tools_summary, required=False, priority=60),
     ]
-    return assemble_messages(profile, components)
+    if compact:
+        for comp in components:
+            comp.text = compact_text(comp.text)
+    result = assemble_messages(profile, components)
+    if compact:
+        result.strategy_notes.append("contexto compactado (espaços e linhas repetidas)")
+    return result
