@@ -21,5 +21,6 @@ Hub técnico do **Agente de IA Local** (código em [/src/agent/](/src/agent/READ
 | [knowledge-graph.md](/docs/architecture/knowledge-graph.md) | Grafo do projeto |
 | [context-builder.md](/docs/architecture/context-builder.md) | Contexto por operação |
 | [execucao-autonoma.md](/docs/architecture/execucao-autonoma.md) | Worker autônomo |
+| [requisitos-verificacao-progresso.md](/docs/architecture/requisitos-verificacao-progresso.md) | Requisitos rastreáveis, validação do plano, verificação independente, progresso real |
 
 Voltar: [docs/README.md](/docs/README.md) · [README raiz](/README.md)

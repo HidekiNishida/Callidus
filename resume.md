@@ -438,9 +438,10 @@ Grafo de conhecimento:
 - `fallback_plan(objective) → tuple[DecompositionResult, str]` — Template de página ou template genérico (inspecionar, alterar, testar) e o nome da origem.
 - `page_plan(objective) → DecompositionResult` — Plano para páginas: listar a pasta, escrever `index.html` pelo modelo e conferir a estrutura HTML.
 - `plan_copies_siblings(sibling_titles, plan_titles, current_title) → bool` — Detecta plano que só repete a lista de irmãos da etapa atual (sinal de laço de decomposição).
-- `plan_with_model(provider, profile, objective, context_snippet, *, language='pt', browser_mode='off') → DecompositionResult | None` — Pede ao modelo local um plano em JSON (com catálogo de ferramentas, guias do projeto e regra de fechar com verificação e resposta final) e valida a resposta. Saída: plano ou `None` se inválido.
+- `plan_with_model(provider, profile, objective, context_snippet, *, language='pt', browser_mode='off', requirements=None) → DecompositionResult | None` — Pede ao modelo local um plano em JSON (com catálogo de ferramentas, guias do projeto, requisitos da etapa com pedido de `covers` e regra de fechar com verificação e resposta final) e valida a resposta. Saída: plano ou `None` se inválido.
 - `profile_from_run_config(run_config, settings) → ModelProfile` — Monta o perfil do modelo (id, limites de contexto, suporte a visão, opções de geração) a partir da configuração do run.
-- `resolve_decomposition_plan(*, settings, run_config, objective, project_root, provider=None) → tuple[DecompositionResult | None, str]` — Escolhe o plano na ordem: embutido e2e, resposta direta, modelo (Ollama/llama.cpp), template genérico, fallback mock; aplica alinhamento e fechamento. Saída: plano e nome da origem.
+- `requirements_block(requirements) → str` — Trecho do prompt com os requisitos obrigatórios da etapa (e a parte, se parcial) e a instrução de declarar `metadata.covers`; vazio sem requisitos.
+- `resolve_decomposition_plan(*, settings, run_config, objective, project_root, provider=None, requirements=None) → tuple[DecompositionResult | None, str]` — Escolhe o plano na ordem: embutido e2e, resposta direta, modelo (Ollama/llama.cpp), template genérico, fallback mock; aplica alinhamento e fechamento. Saída: plano e nome da origem.
 - `seal_repeated_steps(parent_title, plan) → DecompositionResult` — Marca como operação atômica o filho aberto que repete o título do pai, evitando dividir de novo o mesmo passo.
 
 ### `src/agent/orchestrator/engine.py`
@@ -466,6 +467,24 @@ Grafo de conhecimento:
 **Propósito:** Registra o objetivo como memória canônica persistente do projeto e da conversa. **Quando/onde:** chamado pelo runner quando a tarefa-raiz sai de PENDING para PLANNING.
 
 - `ensure_canonical_memory_for_objective(session, project_id, root_task) → None` — Cria, se ainda não existir, a memória "Objetivo global" do projeto e uma memória canônica ligada à conversa e à tarefa-raiz.
+
+### `src/agent/orchestrator/requirements.py`
+
+**Propósito:** requisitos do objetivo original com ids estáveis, cobertura por tarefa e estado calculado por evidência. **Por quê:** o plano e a conclusão precisam ser conferidos contra o que foi pedido, não contra a palavra do modelo. **Quando/onde:** o runner grava os requisitos quando a raiz entra em planejamento e passa os da etapa ao prompt de decomposição; validação do plano e aceite global consultam `requirement_status`. Requisitos ficam em `task_contracts.acceptance_json.requirements` da raiz; cobertura em `metadata_json.covers`.
+
+- `_items(text) → list[str]` — Itens enumerados (`-`, `*`, `•`, `1.`, `1)`) de um texto.
+- `evidence_kind(text) → str` — `change` se o texto pede mudança (arquivo, código, teste, página…), senão `answer`.
+- `derive_requirements(objective, acceptance_criteria=None) → list[dict]` — Requisitos determinísticos: um por item do objetivo e por linha dos critérios; sem itens, o objetivo inteiro é `R1`.
+- `normalize_requirement(raw, index) → dict` — Completa um requisito vindo do contrato (id, critério, aplicabilidade, tipo de evidência, refs).
+- `root_of(session, task) → TaskModel` — Sobe até a raiz da árvore.
+- `ensure_requirements(session, root) → list[dict]` — Lê os requisitos do contrato da raiz ou deriva e grava, mantendo os ids estáveis.
+- `load_requirements(session, root) → list[dict]` — Leitura pura dos requisitos gravados.
+- `normalize_covers(raw) → list[dict] | None` — Cobertura declarada em formato uniforme `{req, partial, part}`; `None` se não declarada.
+- `effective_covers(session, task, reqs=None) → list[dict]` — Cobertura declarada ou herdada do pai; a raiz cobre todos.
+- `_subtree(session, root) → list[TaskModel]` — Raiz e descendentes.
+- `_passed_current(session, task_id) → list[EvidenceModel]` — Evidências aprovadas cujos arquivos não mudaram.
+- `_answered(task) → bool` — Se a tarefa entregou resposta final não vazia.
+- `requirement_status(session, root) → list[dict]` — Estado de cada requisito pelas folhas responsáveis: `uncovered`, `failed`, `blocked`, `pending`, `unverified` (concluído sem evidência proporcional), `satisfied`, ou a aplicabilidade se não obrigatório; com tarefas, cobertura parcial e ids de evidência.
 
 ### `src/agent/orchestrator/progress.py`
 
@@ -519,6 +538,7 @@ Grafo de conhecimento:
   - `RunOrchestrator._run_as_leaf(run, task, *, note) → dict` — Força a tarefa a ser executada como operação do modelo (sem nova divisão) e a promove se as dependências permitirem.
   - `RunOrchestrator._run_config(run) → dict` — Configuração do run (provedor, modelo, opções) ou dicionário vazio.
   - `RunOrchestrator._same_title_above(task) → bool` — Verdadeiro se algum ancestral tem o mesmo título ou o mesmo objetivo normalizado (sinal de decomposição repetida).
+  - `RunOrchestrator._task_requirements(task) → list[dict]` — Requisitos obrigatórios que a etapa precisa atender (os da raiz filtrados pela cobertura herdada, com a parte se parcial); vão para o prompt de decomposição.
   - `RunOrchestrator._recursion_guard(run, task) → str | None` — Proteção contra recursão, separada da decisão de dividir: devolve o motivo quando a etapa repete um ancestral, passa de `max_tree_depth` ou o run já tem `max_tasks_per_run` tarefas; nesse caso a etapa é executada sem nova divisão e o motivo vai para `metadata_json.recursion_guard`.
   - `RunOrchestrator._save_requested_memory(project, task, args) → dict` — Salva memória pedida pela ferramenta de memória, no escopo da conversa (contextual) ou do projeto (canônica).
   - `RunOrchestrator._step_body(run_id) → dict` — Lógica de um passo: replaneja se preciso, escolhe a tarefa e avança seu estado (planejar/decompor, promover, executar, verificar, reabrir); sem tarefas restantes, cria a verificação global se pedida, conclui o run só se a raiz concluiu e a aceitação global passou; senão reabre lacunas de evidência ou encerra com `_stall_run` (nunca fica esperando para sempre).
@@ -1235,6 +1255,7 @@ Grafo de conhecimento:
 - `tests/test_dev_tools.py` — Ferramentas de desenvolvimento: list/glob/edit e aliases, grep que ignora `.venv`, comando em string, executável ausente como erro de configuração, interpretador do venv do projeto, verificação que aceita entrega HTML sem testes e verificação por script.
 - `tests/test_failures.py` — Taxonomia de falhas: categorias de saída de ferramenta, provedor, resposta do modelo (cortada × malformada), contexto e verificação; JSON inválido do modelo vira tentativa falha com `last_failure` na tarefa.
 - `tests/test_proportional_verification.py` — Escrita sem verificação declarada ganha `file_contains` implícito com evidência ligada à tentativa; etapa sem ação executa em vez de concluir em silêncio.
+- `tests/test_requirements.py` — Requisitos: itens do objetivo e critérios viram requisitos, ids gravados uma vez e estáveis, cobertura herdada e parcial, estado por cobertura e evidência, resposta final não atende requisito de mudança mas atende pergunta, aplicabilidade não obrigatória preservada.
 - `tests/test_progress_metrics.py` — Progresso é trabalho verificado e não atividade; pergunta simples sem decomposição excessiva; objetivo de várias etapas ponta a ponta com métricas (e rota `/runs/{id}/metrics`); irmã independente segue enquanto a dependente espera; chamadas de modelo sem trabalho verificado não contam como progresso.
 - `tests/test_functional_depth.py` — Profundidade funcional: etapa na profundidade 7 ainda é decomposta; objetivo igual ao de um ancestral e orçamento de tarefas do run acionam a proteção contra recursão (`recursion_guard`) e a etapa é executada sem nova divisão.
 - `tests/test_sufficient_context.py` — Contexto suficiente: arquivo citado entra com o conteúdo exato (fora da raiz e inexistente não), contrato, objetivo da raiz e resultado da dependência chegam à operação, compactação não altera `arquivos-alvo`.
@@ -1278,7 +1299,8 @@ Grafo de conhecimento:
 - `docs/architecture/README.md` — Hub técnico: tabela com cada documento de arquitetura e seu tema.
 - `docs/architecture/context-builder.md` — Como `OperationContextBuilder` monta o contexto mínimo de cada chamada ao modelo (memória, objetivo, trechos do grafo, guias do repositório, regras), o orçamento por `ModelProfile` e o snapshot persistido.
 - `docs/architecture/diagnostico-evolucao.md` — Diagnóstico da versão v0.4 e lacunas endereçadas na v0.5 (planner, atomizador, Context Builder, grafo, verificador etc.) com status por módulo.
-- `docs/architecture/execucao-autonoma.md` — Worker asyncio que avança runs com `autonomous = true`: ciclo, rotas de liga/desliga, recuperação após reinício e como desativar em testes.
+- `docs/architecture/execucao-autonoma.md` — Worker asyncio que avança runs com `autonomous = true` e as regras do ciclo: retomada e evidência desatualizada, término do run, verificação proporcional, replanejamento, profundidade funcional, progresso e métricas, falhas categorizadas.
+- `docs/architecture/requisitos-verificacao-progresso.md` — Requisitos rastreáveis (contrato da raiz, `covers`, estados), validação do plano, verificação independente e controle de progresso real.
 - `docs/architecture/execucao-local.md` — Instalação local (venv, `pip install -e`, correção do Python 3.14), variáveis de ambiente padrão (Ollama, llama.cpp, dados) e como subir a API.
 - `docs/architecture/ferramentas.md` — Catálogo das ferramentas registradas (id, função, se exige aprovação) e regras de segurança.
 - `docs/architecture/frontend.md` — Layout da interface web (sidebar, topbar, plano, inspetor, atividade) e comportamento do envio de mensagens e da execução única.

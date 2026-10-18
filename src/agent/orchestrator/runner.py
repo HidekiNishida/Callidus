@@ -45,6 +45,7 @@ from agent.orchestrator.decomposition import (
 from agent.orchestrator.planner import ensure_canonical_memory_for_objective
 from agent.orchestrator.progress import progress_state
 from agent.orchestrator.replan import replan_under
+from agent.orchestrator.requirements import effective_covers, ensure_requirements, root_of
 from agent.orchestrator.usage import accumulate_usage
 from agent.context.budget import ContextBudgetError
 from agent.context.operation_builder import OperationContextBuilder
@@ -140,6 +141,16 @@ class RunOrchestrator:
                 return True
             parent_id = parent.parent_id
         return False
+
+    def _task_requirements(self, task: TaskModel) -> list[dict]:
+        """Requisitos que esta etapa precisa atender (os da raiz filtrados pela cobertura herdada)."""
+        reqs = ensure_requirements(self._session, root_of(self._session, task))
+        covered = {c["req"]: c for c in effective_covers(self._session, task, reqs)}
+        return [
+            {**r, "partial": covered[r["id"]]["partial"], "part": covered[r["id"]]["part"]}
+            for r in reqs
+            if r["id"] in covered and r["applicability"] == "obrigatório"
+        ]
 
     def _recursion_guard(self, run: ExecutionRunModel, task: TaskModel) -> str | None:
         """Proteção contra recursão, separada da decisão de dividir: plano que repete um ancestral,
@@ -427,6 +438,7 @@ class RunOrchestrator:
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.PLANNING))
             if task.id == run.root_task_id:
                 ensure_canonical_memory_for_objective(self._session, project.id, task)
+                ensure_requirements(self._session, task)
             return {"action": "started_planning", "task_id": str(task.id)}
 
         if status == TaskStatus.PLANNING:
@@ -476,6 +488,7 @@ class RunOrchestrator:
                         provider=provider
                         if (config.get("provider") or self._settings.default_provider) in {"ollama", "llamacpp"}
                         else None,
+                        requirements=self._task_requirements(task),
                     )
                 self._apply_provider_usage(task, provider)
                 if plan is None or not plan.subtasks:

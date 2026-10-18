@@ -96,6 +96,7 @@ async def plan_with_model(
     *,
     language: str = "pt",
     browser_mode: str = "off",
+    requirements: list[dict[str, Any]] | None = None,
 ) -> DecompositionResult | None:
     browser_line = (
         "O navegador está ligado. Use browser para pesquisa, checagem, demonstração ou teste. "
@@ -106,6 +107,7 @@ async def plan_with_model(
     prompt = (
         f"{language_instruction(language)}\n{browser_line}\n"
         f"Objetivo: {objective}\n\nContexto do projeto:\n{context_snippet}\n\n"
+        f"{requirements_block(requirements)}"
         "Decomponha TODAS as etapas, do entendimento do pedido até a verificação e a conclusão.\n"
         "A última subtarefa deve ser a resposta final ao usuário "
         '(metadata.final_answer=true e metadata.model_operation=true). '
@@ -135,6 +137,23 @@ async def plan_with_model(
         return plan if plan.subtasks else None
     except Exception:
         return None
+
+
+def requirements_block(requirements: list[dict[str, Any]] | None) -> str:
+    """Requisitos que o plano precisa cobrir; cada subtarefa declara em metadata.covers os que atende."""
+    if not requirements:
+        return ""
+    lines = [
+        f"- {r['id']}: {r['description']}" + (f" (parte: {r['part']})" if r.get("part") else "")
+        for r in requirements
+    ]
+    return (
+        "Requisitos obrigatórios desta etapa (nenhum pode ficar de fora nem virar opcional):\n"
+        + "\n".join(lines)
+        + '\nCada subtarefa declara metadata.covers com os ids que atende, por exemplo ["R1"]; '
+        'se atende só uma parte, {"req":"R1","partial":true,"part":"..."}. '
+        "Todo requisito precisa de ao menos uma subtarefa com verificação concreta.\n\n"
+    )
 
 
 _CHANGE_REQUEST = re.compile(
@@ -237,6 +256,7 @@ async def resolve_decomposition_plan(
     objective: str,
     project_root: str,
     provider: LLMProvider | None = None,
+    requirements: list[dict[str, Any]] | None = None,
 ) -> tuple[DecompositionResult | None, str]:
     """Ordem: builtin e2e → Ollama (padrão) → template genérico → mock (se permitido)."""
     if builtin := builtin_plan_for_objective(objective):
@@ -265,6 +285,7 @@ async def resolve_decomposition_plan(
                 f"{project_root}\n\n{digest}",
                 language=language,
                 browser_mode=str(run_config.get("browser_mode") or "off"),
+                requirements=requirements,
             )
             if plan:
                 return ensure_closing_stages(align_verification(objective, plan)), provider_name
