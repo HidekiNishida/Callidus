@@ -1,5 +1,5 @@
 // web/static/assets/app/components/sidebar.js
-import { state, selectProject, selectConversation, toast } from "../store.js";
+import { state, selectProject, selectConversation, deleteConversation, toast } from "../store.js";
 import { icon, ago } from "../ui.js";
 
 export const Sidebar = {
@@ -15,7 +15,7 @@ export const Sidebar = {
       if (!term) return state.loose;
       return state.loose.filter((item) => (item.title || "").toLowerCase().includes(term));
     });
-    return { state, filteredProjects, filteredLoose, selectProject, selectConversation, toast, ago, icon };
+    return { state, filteredProjects, filteredLoose, selectProject, selectConversation, deleteConversation, toast, ago, icon };
   },
   template: `
     <aside class="sidebar">
@@ -33,11 +33,21 @@ export const Sidebar = {
         <p class="side-label" v-if="filteredLoose.length">Conversas</p>
         <ul class="side-list">
           <li v-for="item in filteredLoose" :key="item.id">
-            <button type="button" class="side-item" :class="{ active: state.conversation && state.conversation.id === item.id }" @click="selectConversation(item)">
-              <span class="side-ico" v-html="icon('chat', 14)"></span>
-              <span class="side-name">{{ item.title || 'Conversa' }}</span>
-              <span class="side-meta">{{ ago(item.updated_at) }}</span>
-            </button>
+            <div class="side-item" :class="{ active: state.conversation && state.conversation.id === item.id }">
+              <button type="button" class="side-hit" @click="selectConversation(item)">
+                <span class="side-ico" v-html="icon('chat', 14)"></span>
+                <span class="side-name">{{ item.title || 'Conversa' }}</span>
+                <span class="side-meta">{{ ago(item.updated_at) }}</span>
+              </button>
+              <button
+                type="button"
+                class="icon-btn ghost side-remove"
+                title="Apagar conversa"
+                aria-label="Apagar conversa"
+                @click.stop="deleteConversation(item)"
+                v-html="icon('trash', 14)"
+              ></button>
+            </div>
           </li>
         </ul>
 

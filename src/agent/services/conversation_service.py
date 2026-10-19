@@ -162,7 +162,12 @@ class ConversationService:
             remaining = set(task_ids)
             parent_by_id = {task.id: task.parent_id for task in tasks}
             while remaining:
-                leaves = {item for item in remaining if parent_by_id.get(item) not in remaining}
+                # Folha = tarefa que não é pai de nenhuma outra dentro do conjunto restante.
+                # Remover pela raiz antes dos filhos viola a chave estrangeira.
+                referenced = {
+                    parent_by_id[item] for item in remaining if parent_by_id.get(item) in remaining
+                }
+                leaves = {item for item in remaining if item not in referenced}
                 if not leaves:
                     leaves = set(remaining)
                 self._session.execute(delete(TaskModel).where(TaskModel.id.in_(leaves)))

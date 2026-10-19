@@ -155,6 +155,30 @@ export async function selectConversation(conversation) {
   await refreshTasks();
 }
 
+export async function deleteConversation(conversation) {
+  if (!window.confirm(`Apagar a conversa “${conversation.title || "sem título"}”? O histórico dela vai junto.`)) {
+    return false;
+  }
+  try {
+    await api(`/conversations/${conversation.id}`, { method: "DELETE" });
+    if (state.conversation?.id === conversation.id) {
+      disconnectStream();
+      state.conversation = null;
+      state.tasks = [];
+      state.currentRun = null;
+    }
+    state.loose = await api("/conversations").catch(() => []);
+    if (state.selectedProject) {
+      state.conversations = await api(`/projects/${state.selectedProject.id}/conversations`).catch(() => []);
+    }
+    toast("Conversa apagada", "ok");
+    return true;
+  } catch (err) {
+    toast(err.message || "Falha ao apagar a conversa", "error");
+    return false;
+  }
+}
+
 export async function refreshTasks() {
   if (state.conversation) {
     state.tasks = await api(`/conversations/${state.conversation.id}/tasks`).catch(() => []);

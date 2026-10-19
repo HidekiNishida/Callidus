@@ -13,6 +13,7 @@ from agent.domain.schemas import ConversationCreate, MemoryCreate, ProjectCreate
 from agent.i18n.locale import detect_language, translate
 from agent.memory.store import decompose_for_use, extract_memory_request, summarize_text
 from agent.persistence.database import build_session_factory, init_db
+from agent.persistence.models import ConversationModel, TaskModel
 from agent.providers.base import ModelProfile
 from agent.services.conversation_service import ConversationService
 from agent.services.project_service import ProjectService
@@ -172,3 +173,28 @@ async def test_remember_tool_uses_saver():
     )
     assert out["success"] is True
     assert seen["content"] == "usar pytest"
+
+
+def test_deleting_a_conversation_removes_the_whole_task_tree(tmp_path: Path):
+    """Conversa com árvore de tarefas (raiz → filha → neta) e run: apaga sem violar a chave
+    estrangeira (a remoção precisa ir das folhas para a raiz)."""
+    settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
+    session = build_session_factory(init_db(settings=settings))()
+    project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
+    conversation = ConversationService(session).create_conversation(project.id, ConversationCreate(title="c"))
+    root = TaskService(session).create_task(
+        project.id, TaskCreate(title="root", objective="o", conversation_id=conversation.id)
+    )
+    child = TaskService(session).create_task(
+        project.id, TaskCreate(title="child", objective="o", conversation_id=conversation.id, parent_id=root.id)
+    )
+    TaskService(session).create_task(
+        project.id, TaskCreate(title="grand", objective="o", conversation_id=conversation.id, parent_id=child.id)
+    )
+    session.commit()
+
+    ConversationService(session).delete_conversation(conversation.id)
+    session.commit()
+
+    assert session.get(ConversationModel, conversation.id) is None
+    assert session.query(TaskModel).filter(TaskModel.conversation_id == conversation.id).count() == 0

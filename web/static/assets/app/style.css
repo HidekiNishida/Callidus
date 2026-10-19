@@ -391,6 +391,7 @@ pre,
 }
 
 .side-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -411,6 +412,31 @@ pre,
 .side-item.active {
   background: var(--accent-soft);
   color: var(--text);
+}
+
+.side-hit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+
+.side-remove {
+  opacity: 0;
+  width: 26px;
+  height: 26px;
+}
+
+.side-item:hover .side-remove,
+.side-item.active .side-remove {
+  opacity: 1;
 }
 
 .side-ico {
