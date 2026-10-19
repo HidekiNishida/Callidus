@@ -260,6 +260,7 @@ const App = {
           v-for="item in navItems"
           :key="item.id"
           :class="{ active: state.view === item.id }"
+          :disabled="item.id === 'live' && !state.currentRun"
           :aria-current="state.view === item.id ? 'page' : null"
           @click="openView(item.id)"
         >

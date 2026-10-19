@@ -265,7 +265,7 @@ export const ChatView = {
           <textarea
             v-model="state.objective"
             rows="2"
-            placeholder="Pedir ao Callidus…  (Enter envia, Shift+Enter quebra linha)"
+            placeholder="Pedir ao Callidus… (Enter envia)"
             aria-label="Pedido"
             @keydown="onKeydown"
           ></textarea>
