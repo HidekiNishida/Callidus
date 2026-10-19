@@ -31,6 +31,8 @@ export const ICONS = {
   sun: '<circle cx="8" cy="8" r="3.2"/><path d="M8 1.2v1.4M8 13.4v1.4M14.8 8h-1.4M2.6 8H1.2M12.8 3.2l-1 1M4.2 11.8l-1 1M12.8 12.8l-1-1M4.2 4.2l-1-1"/>',
   key: '<circle cx="5.5" cy="6" r="2.8"/><path d="M7.6 8.1L13 13.5M11 11.5l1.2-1.2M9.4 9.9l1.2-1.2"/>',
   trash: '<path d="M3 4.5h10M6 4.5V3h4v1.5M4.5 4.5l.6 9h5.8l.6-9"/>',
+  keyboard: '<rect x="1.5" y="4" width="13" height="8" rx="1.5"/><path d="M4 7h.01M6.5 7h.01M9 7h.01M11.5 7h.01M4 9.5h.01M6.5 9.5h.01M9 9.5h.01M11.5 9.5h.01M5 11h6"/>',
+  info: '<circle cx="8" cy="8" r="6"/><path d="M8 7.2v4M8 5h.01"/>',
   plug2: '<path d="M6 2.5v3M10 2.5v3M4.5 6h7v2.2a3.5 3.5 0 0 1-7 0zM8 11.7V14"/>',
   globe: '<circle cx="8" cy="8" r="5.6"/><path d="M2.6 8h10.8M8 2.4c1.6 1.7 2.4 3.6 2.4 5.6S9.6 12 8 13.6C6.4 12 5.6 10 5.6 8s.8-4 2.4-5.6z"/>',
   chevron: '<path d="M6 4l4 4-4 4"/>',

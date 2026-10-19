@@ -6,6 +6,17 @@ Comparativo inspirado em **Cursor**, **Hermes** e IDEs agentic — adaptado ao n
 
 Voltar: [frontend.md](/docs/architecture/frontend.md) · [visao-geral.md](/docs/architecture/visao-geral.md)
 
+## Referências estudadas
+
+A interface atual segue padrões que já se provaram em ferramentas de agente de código:
+
+| Ferramenta | Padrão aproveitado |
+|------------|--------------------|
+| **Cursor 3** (Agents Window) | Janela centrada no agente: lista de conversas à esquerda, conversa ao centro, detalhes à direita; cor de status por agente; botão de “rolar para o fim”; paleta de comandos |
+| **Google Antigravity** (Side Panel) | Barra de contexto **acima** do campo de envio (status, tarefa atual, artefatos alterados); seletor de modelo e modo no composer; lixeira para apagar conversa no painel do agente |
+| **Kilo Code** (extensão VS Code) | Abas de configuração (Providers, Auto-Approve, Models) com busca; painel em abas;Gerência de sessão por item com ação direta |
+| **Material 3 / HIG** | Barra inferior com 3–5 destinos na zona do polegar; alvos de toque ≥ 44 px; folha inferior no lugar de dropdown; `safe-area` |
+
 ## O que copiamos (valor alto, baixo risco)
 
 | Padrão (Cursor / agentes) | Nossa implementação |
@@ -17,6 +28,8 @@ Voltar: [frontend.md](/docs/architecture/frontend.md) · [visao-geral.md](/docs/
 | Diff / alterações | Aba **Git diff** (`GET /projects/{id}/git-diff`) |
 | Seleção de modelo | Seletor **provedor / modelo** no composer (provedores vêm do servidor) |
 | Configuração em tela | Aba **Provedores**: criar, testar, listar modelos, definir padrão, gravar credencial |
+| Paleta de comandos | `⌘K` com busca de ações (padrão Cursor/Kilo) |
+| Gerência de projetos | Ajustes → Projetos: renomear, trocar pasta, **remover** (com confirmação explícita) |
 | Run / stop | Iniciar · Passo · Auto · Pausar · Cancelar |
 | Feed de eventos | **Atividade** legível + filtro por tarefa |
 | Atalhos | `Ctrl+Enter` executar auto · `Ctrl+.` passo |
@@ -46,6 +59,17 @@ flowchart LR
 A interface é uma SPA **Vue 3** (`web/static/assets/app/`), sem etapa de build: o vendor do Vue é
 versionado localmente e a tela funciona offline. Detalhes: [frontend.md](/docs/architecture/frontend.md).
 
+## Regras de responsividade e movimento
+
+| Regra | Como aparece |
+|-------|--------------|
+| Função essencial nunca some no celular | O painel de detalhes vira folha inferior; a barra lateral vira gaveta; navegação vai para a barra inferior |
+| Zona do polegar | Ações principais (enviar, navegação) ficam na metade inferior; barra inferior com 4 destinos |
+| Toque, não hover | Ações de item (apagar) ficam visíveis com `pointer: coarse`; alvos de 40–56 px |
+| Movimento com propósito | Cada animação comunica mudança de tela, entrada de conteúdo ou resposta a um toque — nunca enfeite parado |
+| Respeito ao sistema | `prefers-reduced-motion` desliga transições; `prefers-contrast: more` reforça bordas |
+| Sem estouro de layout | Nenhuma faixa horizontal em 390 px, 768 px, 1024 px e 1440 px |
+
 ## Métricas de sucesso UX
 
 1. Criar projeto + objetivo + ver execução **sem ler JSON bruto**.
@@ -53,6 +77,7 @@ versionado localmente e a tela funciona offline. Detalhes: [frontend.md](/docs/a
 3. Confirmar verificação na aba **Evidências**.
 4. Trocar de provedor (ou apontar para um servidor remoto) **sem editar arquivo nem reiniciar**.
 5. Confirmar que a credencial nunca aparece na tela, no log ou no arquivo de configuração.
+6. Concluir um pedido pelo celular sem rodar a interface de desktop.
 
 ## Manutenção
 

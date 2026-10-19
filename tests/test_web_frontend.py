@@ -62,6 +62,8 @@ def test_vue_is_vendored_locally():
         "components/details.js",
         "components/providers.js",
         "components/live.js",
+        "components/palette.js",
+        "components/settings.js",
     ],
 )
 def test_application_modules_exist(module):
@@ -97,6 +99,38 @@ def test_frontend_uses_endpoints_that_exist():
         assert any(candidate.startswith(prefix) for candidate in routes), (
             f"rota usada pela interface não existe: {prefix}"
         )
+
+
+def test_interface_exposes_project_management():
+    """A interface precisa conseguir criar, renomear e remover projetos."""
+    store = (APP_DIR / "store.js").read_text(encoding="utf-8")
+    for action in ("deleteProject", "renameProject", "moveProject"):
+        assert f"export async function {action}" in store, action
+    assert 'api(`/projects/${project.id}`, { method: "DELETE" })' in store
+    routes = _all_paths(app)
+    assert "/projects/{project_id}" in routes
+
+
+def test_interface_has_command_palette_and_settings():
+    """Paleta de comandos (⌘K) e tela de ajustes existem e estão ligados."""
+    palette = (APP_DIR / "components" / "palette.js").read_text(encoding="utf-8")
+    settings = (APP_DIR / "components" / "settings.js").read_text(encoding="utf-8")
+    main = (APP_DIR / "main.js").read_text(encoding="utf-8")
+    assert "state.paletteOpen" in palette
+    assert "key.toLowerCase() === \"k\"" in main
+    assert "watchViewport" in main
+    for tab in ("geral", "execucao", "projetos", "atalhos"):
+        assert f'id: "{tab}"' in settings
+
+
+def test_stylesheet_declares_responsive_and_motion_rules():
+    css = (APP_DIR / "style.css").read_text(encoding="utf-8")
+    assert "prefers-reduced-motion" in css
+    assert "pointer: coarse" in css
+    assert "max-width: 899px" in css
+    assert "max-width: 1179px" in css
+    assert "bottom-nav" in css
+    assert "--dur-" in css
 
 
 def test_providers_view_uses_the_configuration_endpoints():

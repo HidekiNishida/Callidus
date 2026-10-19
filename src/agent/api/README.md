@@ -40,6 +40,7 @@ Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) 
 | `GET` | `/config/ui-defaults` | Defaults para UI (provider, model, approve_tools) |
 | `GET` | `/fs/browse`, `/fs/pick-folder` | Navegação de pastas |
 | `GET` | `/projects/{id}/git-diff` | Diff git do projeto |
+| `DELETE` | `/projects/{id}` | Remove o projeto e o que pertence a ele (conversas, tarefas, execuções, memória, grafo). **Os arquivos da pasta não são apagados** |
 | `POST` | `/debug/chat/ollama` | Chat direto Ollama (debug) |
 
 ## Provedores (configuração)

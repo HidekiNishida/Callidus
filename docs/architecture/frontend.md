@@ -22,7 +22,7 @@ servida pela API em `/`. Ela conversa só com a API HTTP — nenhuma regra de ne
 | [`assets/app/live-state.js`](/web/static/assets/app/live-state.js) | Redutor puro do acompanhamento (tarefas, saídas, arquivos, verificações) |
 | [`assets/app/live-stream.js`](/web/static/assets/app/live-stream.js) | Conexão SSE com reconexão e cursor do último `seq` |
 | [`assets/app/live-view.js`](/web/static/assets/app/live-view.js) | Renderizadores do painel de acompanhamento (usados pelo redutor) |
-| [`assets/app/components/`](/web/static/assets/app/components/) | `sidebar`, `topbar`, `chat`, `details`, `live`, `providers` |
+| [`assets/app/components/`](/web/static/assets/app/components/) | `sidebar`, `topbar`, `chat`, `details`, `live`, `providers`, `settings`, `palette` |
 | [`assets/app/style.css`](/web/static/assets/app/style.css) | Sistema visual: tokens, tema claro/escuro, componentes |
 
 O redutor (`live-state.js`) e os renderizadores (`live-view.js`) são os mesmos testados pelo Node
@@ -32,9 +32,41 @@ O redutor (`live-state.js`) e os renderizadores (`live-view.js`) são os mesmos 
 
 | Tela | Onde | O que faz |
 |------|------|-----------|
-| **Conversa** | Aba na topbar | Chat com o agente, etapas da execução, anexos, escolha de provedor/modelo/navegador e controles do run |
+| **Conversa** | Aba na topbar (ou barra inferior no celular) | Chat com o agente, etapas da execução, anexos, escolha de provedor/modelo/navegador e controles do run |
 | **Acompanhamento** | Aba na topbar (habilitada com run ativo) | Plano da execução, chamadas ao modelo em streaming, arquivos, verificações, atividade e métricas |
 | **Provedores** | Aba na topbar | Configuração de provedores: criar, editar, testar conexão, listar modelos, definir o padrão, gravar/apagar credencial |
+| **Ajustes** | Aba “Ajustes” / barra inferior | Aparência (tema, densidade), padrões de execução, **gerência de projetos** (renomear, trocar pasta, remover) e atalhos |
+| **Paleta de comandos** | `⌘K` / `Ctrl+K` | Busca de comandos: navegar, executar, alternar tema, renomear/apagar conversa, remover projeto |
+
+## Layout responsivo
+
+A interface se adapta em três faixas, sem esconder função essencial:
+
+| Faixa | Largura | Comportamento |
+|-------|---------|---------------|
+| **Desktop** | ≥ 1180 px | Três colunas: barra lateral · conversa · painel de detalhes (fixo) |
+| **Tablet** | 900–1179 px | Barra lateral vira **gaveta** (botão no topo, `⌘B`); detalhes viram painel sobreposto à direita; abas da topbar viram só ícones |
+| **Celular** | < 900 px | Coluna única, **barra de navegação inferior** (Conversa · Execução · Provedores · Ajustes), detalhes em **folha inferior**, controles de execução na barra de contexto e alvos de toque de 40–56 px |
+
+Regras de toque (Material/HIG aplicadas): alvo mínimo de 40–44 px, folga de 8 px entre alvos, nenhuma ação depende de *hover*, navegação principal na zona do polegar (barra inferior), `safe-area-inset-bottom` respeitada e tipografia mínima de 15 px no campo de texto.
+
+## Movimento
+
+Tokens de motion no `style.css` (`--dur-1` a `--dur-4`, `--ease`, `--ease-out`, `--spring`) e animações
+em todas as interações:
+
+| Interação | Movimento |
+|-----------|-----------|
+| Troca de tela | Fade + deslocamento de 8 px (`<Transition name="view">`) |
+| Gaveta lateral / folha inferior | Deslize horizontal/vertical com `cubic-bezier` próprio |
+| Entrada de mensagens e etapas | Fade + subida escalonada |
+| Paleta de comandos | Escala 0.97 → 1 com mola (`--spring`) |
+| Avisos (toasts) | Deslize lateral + saída animada (`TransitionGroup`) |
+| Botões e chips | Escala 0.92 no toque, brilho no hover |
+| Ponto de status “working” | Pulso contínuo |
+| Estado vazio / carregando | Fade e spinner |
+
+`prefers-reduced-motion: reduce` desliga todas as animações e transições.
 
 ## Configuração de provedores pela interface
 
@@ -86,9 +118,22 @@ Claro e escuro, com o tema guardado em `localStorage` (`callidus-theme`) e aplic
 `document.documentElement.dataset.theme`. As cores saem de tokens CSS (`--bg`, `--surface`,
 `--accent`, …) — trocar a paleta é editar o bloco `:root` do `style.css`.
 
+## Gerência de projetos
+
+A interface permite configurar tudo o que é ajustável sem editar arquivo:
+
+- **Projetos** (Ajustes → Projetos, ou o botão de lixeira na barra lateral): renomear, trocar a
+  pasta e **remover**. A remoção apaga conversas, tarefas, execuções, memória e o grafo do projeto
+  pela API (`DELETE /projects/{id}`) — **os arquivos da pasta não são apagados**, e a confirmação
+  deixa isso explícito.
+- **Provedores** (aba Provedores): provedores nomeados, credencial, timeout, cabeçalhos e padrão.
+- **Execução** (Ajustes → Execução): provedor, modelo, navegador e permissão de ferramentas.
+- **Aparência** (Ajustes → Geral): tema claro/escuro e densidade.
+
 ## Preferências
 
-Persistidas em `localStorage` (`callidus-ui-v1`): último projeto, provider, modelo, tema.
+Persistidas em `localStorage`: `callidus-ui-v1` (projeto, provedor, modelo), `callidus-theme` e
+`callidus-density`.
 
 ## Regras de uso
 
@@ -101,9 +146,14 @@ Persistidas em `localStorage` (`callidus-ui-v1`): último projeto, provider, mod
 ## Testes
 
 ```bash
-pytest tests/test_web_frontend.py -v     # shell, módulos e contrato de rotas
+pytest tests/test_web_frontend.py -v     # shell, módulos, rotas, responsivo e motion
+pytest tests/test_project_delete.py -v    # remoção de projeto em cascata
 node tests/web/observe-core.test.mjs     # redutor e renderizadores do acompanhamento
 node tests/web/observe-stream.test.mjs   # stream SSE com reconexão
 ```
+
+A checagem visual (desktop, tablet e celular) é feita com Playwright/Chromium em headed ou
+headless: `python -m playwright` não é dependência da suíte — o teste de interface roda por
+inspeção manual e pelos contratos automatizados acima.
 
 Voltar: [architecture/README.md](/docs/architecture/README.md)

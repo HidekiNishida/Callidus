@@ -16,7 +16,18 @@ export async function api(path, opts = {}) {
 function cleanError(text) {
   try {
     const parsed = JSON.parse(text);
-    if (parsed && typeof parsed.detail === "string") return parsed.detail;
+    const detail = parsed?.detail;
+    if (typeof detail === "string") return detail;
+    // Validação do FastAPI: lista de erros por campo.
+    if (Array.isArray(detail)) {
+      return detail
+        .map((item) => {
+          const field = Array.isArray(item.loc) ? item.loc[item.loc.length - 1] : item.loc;
+          return `${field}: ${item.msg}`;
+        })
+        .join(" · ")
+        .slice(0, 300);
+    }
   } catch {
     /* resposta não é JSON: usa o texto */
   }

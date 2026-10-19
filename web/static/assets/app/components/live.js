@@ -1,5 +1,5 @@
 // web/static/assets/app/components/live.js — painel de acompanhamento (reduzir + stream)
-import { state, liveState, refreshTasks } from "../store.js";
+import { state, refreshTasks } from "../store.js";
 import {
   renderActivity,
   renderFiles,
@@ -25,43 +25,42 @@ export const LivePanel = {
     const collapsed = Vue.reactive(new Set());
 
     const header = Vue.computed(() => {
-      void liveState.version;
-      return liveState.data ? renderHeader(liveState.data) : "";
+      void state.liveState.version;
+      return state.liveState.data ? renderHeader(state.liveState.data) : "";
     });
     const tree = Vue.computed(() => {
-      void liveState.version;
-      return liveState.data
-        ? renderTree(liveState.data, { expanded, collapsed, selected: state.selectedTaskId })
+      void state.liveState.version;
+      return state.liveState.data
+        ? renderTree(state.liveState.data, { expanded, collapsed, selected: state.selectedTaskId })
         : "";
     });
     const outputs = Vue.computed(() => {
-      void liveState.version;
-      return liveState.data ? renderOutputs(liveState.data, filters) : "";
+      void state.liveState.version;
+      return state.liveState.data ? renderOutputs(state.liveState.data, filters) : "";
     });
     const files = Vue.computed(() => {
-      void liveState.version;
-      return liveState.data ? renderFiles(liveState.data, filters, new Set()) : "";
+      void state.liveState.version;
+      return state.liveState.data ? renderFiles(state.liveState.data, filters, new Set()) : "";
     });
     const verifications = Vue.computed(() => {
-      void liveState.version;
-      return liveState.data ? renderVerification(liveState.data, filters) : "";
+      void state.liveState.version;
+      return state.liveState.data ? renderVerification(state.liveState.data, filters) : "";
     });
     const tools = Vue.computed(() => {
-      void liveState.version;
-      return liveState.data ? renderTools(liveState.data, filters) : "";
+      void state.liveState.version;
+      return state.liveState.data ? renderTools(state.liveState.data, filters) : "";
     });
     const activity = Vue.computed(() => {
-      void liveState.version;
-      return liveState.data ? renderActivity(liveState.data, filters, 120) : "";
+      void state.liveState.version;
+      return state.liveState.data ? renderActivity(state.liveState.data, filters, 120) : "";
     });
     const metrics = Vue.computed(() => {
-      void liveState.version;
-      return liveState.data ? renderMetrics(liveState.data) : "";
+      void state.liveState.version;
+      return state.liveState.data ? renderMetrics(state.liveState.data) : "";
     });
 
     return {
       state,
-      liveState,
       filters,
       expanded,
       collapsed,
@@ -79,7 +78,7 @@ export const LivePanel = {
   },
   template: `
     <section class="live-view">
-      <div v-if="!liveState.data" class="boot">
+      <div v-if="!state.liveState.data" class="boot">
         <span class="spinner"></span> Acompanhando a execução…
       </div>
       <template v-else>

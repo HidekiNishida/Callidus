@@ -314,6 +314,19 @@ def update_project(
     return ProjectRead.model_validate(project)
 
 
+@app.delete("/projects/{project_id}")
+def delete_project(project_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    """Remove o projeto e o que pertence a ele (conversas, tarefas, execuções, memória, grafo).
+    Os arquivos da pasta do projeto não são apagados."""
+    try:
+        result = ProjectService(session).delete_project(project_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result
+
+
 def _present_conversation(session: Session, item: ConversationModel) -> ConversationRead:
     service = ConversationService(session)
     service.ensure_branch(item)

@@ -8,8 +8,13 @@ import {
   loadModels,
   selectTask,
   toast,
+  stepRun,
+  autoRun,
+  pauseRun,
+  cancelRun,
 } from "../store.js";
 import { icon, renderMarkdown, stamp, modelLabel, statusLabel, toolOf as toolOfTask, TOOL_ICON, BUSY_STATUSES } from "../ui.js";
+import { filesList, currentTask } from "../live-state.js";
 
 export const ChatView = {
   name: "ChatView",
@@ -67,6 +72,32 @@ export const ChatView = {
       return (live.thoughts || []).filter((item) => !noisy.test(item.text || ""));
     });
 
+    const changedFiles = Vue.computed(() => {
+      const reducer = state.liveState?.data;
+      if (!reducer) return [];
+      return filesList(reducer, {});
+    });
+
+    const currentStage = Vue.computed(() => {
+      const reducer = state.liveState?.data;
+      if (!reducer) return null;
+      const task = currentTask(reducer);
+      return task ? task.title : null;
+    });
+
+    const atBottom = Vue.ref(true);
+
+    function onScroll() {
+      const element = logRef.value;
+      if (!element) return;
+      atBottom.value = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+    }
+
+    function scrollToBottom() {
+      const element = logRef.value;
+      if (element) element.scrollTop = element.scrollHeight;
+    }
+
     async function onProviderChange() {
       state.modelId = "";
       const found = await loadModels(state.provider);
@@ -115,6 +146,11 @@ export const ChatView = {
       state,
       messages,
       logRef,
+      changedFiles,
+      currentStage,
+      atBottom,
+      onScroll,
+      scrollToBottom,
       providerOptions,
       models,
       thoughts,
@@ -131,7 +167,7 @@ export const ChatView = {
   },
   template: `
     <section class="chat">
-      <div class="chat-log" ref="logRef" v-if="messages.length">
+      <div class="chat-log" ref="logRef" v-if="messages.length" @scroll="onScroll">
         <article v-for="message in messages" :key="message.id" class="turn">
           <div class="bubble user">
             <div class="bubble-meta">
@@ -189,6 +225,35 @@ export const ChatView = {
         <p>Escreva embaixo como no chat. O Callidus divide o trabalho, edita arquivos e mostra cada passo aqui.</p>
       </div>
 
+      <button
+        type="button"
+        class="scroll-bottom"
+        :class="{ show: !atBottom }"
+        title="Rolar para o fim"
+        aria-label="Rolar para o fim"
+        @click="scrollToBottom"
+        v-html="icon('down', 16)"
+      ></button>
+
+      <div class="context-bar" :class="{ 'context-bar-always': true }">
+        <div class="run-controls compact-run" v-if="state.currentRun || state.compact">
+          <button type="button" class="icon-btn" title="Um passo" aria-label="Um passo" :disabled="!state.currentRun" @click="stepRun()" v-html="icon('play', 15)"></button>
+          <button type="button" class="icon-btn" title="Pausar" aria-label="Pausar" :disabled="!state.currentRun" @click="pauseRun()" v-html="icon('pause', 15)"></button>
+          <button type="button" class="icon-btn danger" title="Parar" aria-label="Parar" :disabled="!state.currentRun" @click="cancelRun()" v-html="icon('stop', 15)"></button>
+          <button type="button" class="btn-ghost small" :disabled="!state.currentRun" @click="autoRun()">Auto</button>
+        </div>
+        <span class="context-chip" v-if="state.currentRun">
+          <span class="dot" :class="state.currentRun ? 'dot-live' : 'dot-idle'"></span>
+          {{ state.currentRun ? 'Run ' + state.currentRun.status : 'parado' }}
+        </span>
+        <span class="context-chip" v-if="currentStage">
+          <span v-html="icon('spark', 12)"></span>{{ currentStage }}
+        </span>
+        <span class="context-chip" v-if="changedFiles.length">
+          <span v-html="icon('file', 12)"></span>{{ changedFiles.length }} arquivo(s) alterado(s)
+        </span>
+      </div>
+
       <form class="composer" @submit.prevent="sendMessage()">
         <div class="chips" v-if="state.attachments.length">
           <span class="chip" v-for="(item, index) in state.attachments" :key="item.name + index">
@@ -196,48 +261,50 @@ export const ChatView = {
             <button type="button" class="chip-remove" @click="removeAttachment(index)" aria-label="Remover anexo">×</button>
           </span>
         </div>
-        <textarea
-          v-model="state.objective"
-          rows="2"
-          placeholder="Pedir ao Callidus…  (Enter envia, Shift+Enter quebra linha)"
-          aria-label="Pedido"
-          @keydown="onKeydown"
-        ></textarea>
-        <div class="composer-bar">
-          <button type="button" class="icon-btn ghost" title="Anexar imagem ou documento" aria-label="Anexar" @click="$refs.fileInput.click()" v-html="icon('paperclip', 15)"></button>
-          <input ref="fileInput" type="file" multiple hidden accept="image/*,.pdf,.txt,.md,.py,.json,.csv,.js,.ts,.tsx,.html,.css,.xml,.yaml,.yml,.toml,.zip,.doc,.docx,.svg" @change="onFiles" />
-          <div class="composer-pickers">
-            <label class="picker">
-              <span class="picker-label">Provedor</span>
-              <select v-model="state.provider" @change="onProviderChange" aria-label="Provedor">
-                <option v-for="item in providerOptions" :key="item.name" :value="item.name">
-                  {{ item.name }}<template v-if="item.type && item.type !== item.name"> · {{ item.type }}</template>
-                </option>
-              </select>
-            </label>
-            <label class="picker">
-              <span class="picker-label">Modelo</span>
-              <select v-model="state.modelId" aria-label="Modelo">
-                <option v-if="!models.length" :value="state.modelId">{{ state.modelId || 'modelo' }}</option>
-                <option v-for="item in models" :key="item" :value="item">{{ item }}</option>
-              </select>
-            </label>
-            <label class="picker">
-              <span class="picker-label">Navegador</span>
-              <select v-model="state.browserMode" aria-label="Navegador">
-                <option value="off">Desligado</option>
-                <option value="headless">Invisível</option>
-                <option value="visible">Janela</option>
-              </select>
-            </label>
-            <label class="picker picker-check" title="Permitir comandos e scripts">
-              <input type="checkbox" v-model="state.approveTools" />
-              <span>Ferramentas</span>
-            </label>
+        <div class="composer-box">
+          <textarea
+            v-model="state.objective"
+            rows="2"
+            placeholder="Pedir ao Callidus…  (Enter envia, Shift+Enter quebra linha)"
+            aria-label="Pedido"
+            @keydown="onKeydown"
+          ></textarea>
+          <div class="composer-bar">
+            <button type="button" class="icon-btn ghost" title="Anexar imagem ou documento" aria-label="Anexar" @click="$refs.fileInput.click()" v-html="icon('paperclip', 15)"></button>
+            <input ref="fileInput" type="file" multiple hidden accept="image/*,.pdf,.txt,.md,.py,.json,.csv,.js,.ts,.tsx,.html,.css,.xml,.yaml,.yml,.toml,.zip,.doc,.docx,.svg" @change="onFiles" />
+            <div class="composer-pickers">
+              <label class="picker">
+                <span class="picker-label">Provedor</span>
+                <select v-model="state.provider" @change="onProviderChange" aria-label="Provedor">
+                  <option v-for="item in providerOptions" :key="item.name" :value="item.name">
+                    {{ item.name }}<template v-if="item.type && item.type !== item.name"> · {{ item.type }}</template>
+                  </option>
+                </select>
+              </label>
+              <label class="picker">
+                <span class="picker-label">Modelo</span>
+                <select v-model="state.modelId" aria-label="Modelo">
+                  <option v-if="!models.length" :value="state.modelId">{{ state.modelId || 'modelo' }}</option>
+                  <option v-for="item in models" :key="item" :value="item">{{ item }}</option>
+                </select>
+              </label>
+              <label class="picker">
+                <span class="picker-label">Navegador</span>
+                <select v-model="state.browserMode" aria-label="Navegador">
+                  <option value="off">Desligado</option>
+                  <option value="headless">Invisível</option>
+                  <option value="visible">Janela</option>
+                </select>
+              </label>
+              <label class="picker picker-check" title="Permitir comandos e scripts">
+                <input type="checkbox" v-model="state.approveTools" />
+                <span>Ferramentas</span>
+              </label>
+            </div>
+            <button type="submit" class="btn-primary send-btn" :disabled="state.sending || !state.objective.trim()">
+              <span v-html="icon('send', 15)"></span> Enviar
+            </button>
           </div>
-          <button type="submit" class="btn-primary send-btn" :disabled="state.sending || !state.objective.trim()">
-            <span v-html="icon('send', 15)"></span> Enviar
-          </button>
         </div>
       </form>
     </section>

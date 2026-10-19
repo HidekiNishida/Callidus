@@ -133,7 +133,7 @@ flowchart TB
 sequenceDiagram
   autonumber
   actor U as Usuário
-  participant UI as web/static (app.js)
+  participant UI as web/static (SPA Vue 3)
   participant API as FastAPI (main.py)
   participant SVC as Services
   participant ORCH as RunOrchestrator
@@ -286,8 +286,8 @@ sequenceDiagram
 | **`src/agent/skills/catalog/loader.py`** | Catálogo de skills em Markdown (fonte de verdade) | `SkillRegistry.reload()` | `skills/*.md` → `SkillSpec` (frontmatter + seções) |
 | **`src/agent/skills/discovery.py`** | Registro central de skills | `get_skill_registry(project_root)` | Built-ins + catálogo do repo + skills do projeto → catálogo priorizado |
 | **`src/agent/skills/selector.py`** | Seleção de skills sob demanda | `OperationContextBuilder` | Objetivo + tipo + ferramentas → `SkillMatch[]` → bloco no prompt (dentro do orçamento) |
-| **`web/static/assets/app.js`** | SPA IDE-like (chat, árvore, diff, live, SSE) | Navegador em `http://127.0.0.1:8765/` | Fetch API → `/api/*` + SSE `/events` → DOM updates |
-| **`web/static/assets/style.css`** | Estilos (tema escuro, layout IDE) | Carregado pelo `index.html` | CSS custom properties + grid/flex |
+| **`web/static/assets/app/`** | SPA **Vue 3** (chat, plano, diff, acompanhamento, provedores, ajustes) | Navegador em `http://127.0.0.1:8765/` | Fetch API → `/api/*` + SSE `/runs/{id}/stream` → DOM updates |
+| **`web/static/assets/app/style.css`** | Sistema visual: tokens, tema claro/escuro, responsivo e animações | Carregado pelo `index.html` | CSS custom properties + grid/flex + `prefers-reduced-motion` |
 
 ---
 
@@ -586,7 +586,7 @@ pytest tests/test_observability_*.py -v
 | 15 | [`src/agent/tools/builtins.py`](src/agent/tools/builtins.py) | 17 ferramentas reais + `TOOL_CATALOG` que o modelo vê |
 | 16 | [`src/agent/providers/ollama.py`](src/agent/providers/ollama.py) | Integração HTTP + streaming real com Ollama |
 | 17 | [`src/agent/services/autonomous_worker.py`](src/agent/services/autonomous_worker.py) | Loop background que roda sozinho |
-| 18 | [`web/static/assets/app.js`](web/static/assets/app.js) | SPA: polling, SSE, árvore, diff, live board |
+| 18 | [`web/static/assets/app/`](web/static/assets/app/) | SPA Vue 3: chat, plano, diff, acompanhamento, paleta de comandos, provedores e ajustes (responsivo) |
 | 19 | [`tests/test_e2e_orchestrator.py`](tests/test_e2e_orchestrator.py) | Teste E2E completo (mock provider) |
 
 ### READMEs dos Subdiretórios (Índices Navegáveis)

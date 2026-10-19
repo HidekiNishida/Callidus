@@ -8,7 +8,12 @@ const { reactive } = Vue;
 export const state = reactive({
   view: "chat",
   theme: localStorage.getItem("callidus-theme") || "dark",
+  density: localStorage.getItem("callidus-density") || "confortavel",
   ready: false,
+  railOpen: false,
+  paletteOpen: false,
+  compact: typeof window !== "undefined" ? window.matchMedia("(max-width: 1179px)").matches : false,
+  settingsTab: "geral",
 
   projects: [],
   conversations: [],
@@ -55,7 +60,7 @@ let stream = null;
 let pollTimer = null;
 
 /** Estado do redutor de acompanhamento (tarefas, saídas, arquivos, verificações). */
-export const liveState = { data: null, version: 0 };
+state.liveState = { data: null, version: 0 };
 
 export function toast(message, type = "info") {
   const id = Date.now() + Math.random();
@@ -101,6 +106,33 @@ export function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
 }
 
+export function setDensity(density) {
+  state.density = density;
+  localStorage.setItem("callidus-density", density);
+  document.documentElement.dataset.density = density;
+}
+
+/** Ajusta o estado quando a janela muda de tamanho (desktop ⇄ tablet/mobile). */
+export function watchViewport() {
+  if (typeof window === "undefined") return;
+  const query = window.matchMedia("(max-width: 1179px)");
+  const apply = () => {
+    state.compact = query.matches;
+    if (query.matches) {
+      state.railOpen = false;
+      state.detailsOpen = false;
+    }
+  };
+  query.addEventListener("change", apply);
+  apply();
+}
+
+export function openView(view) {
+  state.view = view;
+  state.railOpen = false;
+  state.paletteOpen = false;
+}
+
 export async function bootstrap() {
   setTheme(state.theme);
   const [projects, loose, defaults, health] = await Promise.all([
@@ -121,6 +153,69 @@ export async function bootstrap() {
     if (!current) state.provider = state.providers[0].name;
   }
   void health;
+}
+
+export async function renameProject(project, name) {
+  const clean = (name || "").trim();
+  if (!clean) return;
+  try {
+    await api(`/projects/${project.id}`, { method: "PATCH", body: JSON.stringify({ name: clean }) });
+    state.projects = await api("/projects").catch(() => state.projects);
+    if (state.selectedProject?.id === project.id) {
+      state.selectedProject = state.projects.find((item) => item.id === project.id) || state.selectedProject;
+    }
+    toast(`Projeto renomeado para “${clean}”`, "ok");
+  } catch (err) {
+    toast(err.message || "Falha ao renomear o projeto", "error");
+  }
+}
+
+export async function moveProject(project, rootPath) {
+  try {
+    await api(`/projects/${project.id}`, { method: "PATCH", body: JSON.stringify({ root_path: rootPath }) });
+    state.projects = await api("/projects").catch(() => state.projects);
+    if (state.selectedProject?.id === project.id) {
+      state.selectedProject = state.projects.find((item) => item.id === project.id) || state.selectedProject;
+    }
+    toast("Pasta do projeto atualizada", "ok");
+  } catch (err) {
+    toast(err.message || "Falha ao trocar a pasta", "error");
+  }
+}
+
+export async function deleteProject(project) {
+  const label = project.name || "projeto";
+  if (!window.confirm(`Remover o projeto “${label}”? Conversas, tarefas e memórias dele vão junto. Os arquivos da pasta NÃO são apagados.`)) {
+    return false;
+  }
+  try {
+    const result = await api(`/projects/${project.id}`, { method: "DELETE" });
+    state.projects = await api("/projects").catch(() => []);
+    if (state.selectedProject?.id === project.id) {
+      state.selectedProject = null;
+      state.conversation = null;
+      state.tasks = [];
+      state.currentRun = null;
+    }
+    toast(`Projeto “${label}” removido`, "ok");
+    return result;
+  } catch (err) {
+    toast(err.message || "Falha ao remover o projeto", "error");
+    return false;
+  }
+}
+
+/** Estado por conversa: trabalhando, concluída ou parada — usado na cor da lista. */
+export function conversationStatus(conversation) {
+  if (!conversation) return "idle";
+  const tasks = state.tasks.filter((task) => task.conversation_id === conversation.id);
+  if (!tasks.length) return "idle";
+  if (tasks.some((task) => ["RUNNING", "PLANNING", "VERIFYING", "RETRY_PENDING"].includes(task.status))) {
+    return "working";
+  }
+  if (tasks.some((task) => ["BLOCKED", "FAILED"].includes(task.status))) return "attention";
+  if (tasks.every((task) => task.status === "COMPLETED")) return "done";
+  return "idle";
 }
 
 export async function loadProviders() {
@@ -315,8 +410,8 @@ export async function connectStream(runId) {
   state.streamEvents = [];
   const snapshot = await api(`/runs/${runId}/observe`).catch(() => ({}));
   const reducer = createState(snapshot || {});
-  liveState.data = reducer;
-  liveState.version += 1;
+  state.liveState.data = reducer;
+  state.liveState.version += 1;
   stream = createStream({
     runId,
     cursor: () => reducer.lastSeq,
@@ -325,25 +420,25 @@ export async function connectStream(runId) {
       applyEvent(reducer, envelope);
       state.streamEvents.push(envelope);
       if (state.streamEvents.length > 400) state.streamEvents.splice(0, 100);
-      liveState.version += 1;
+      state.liveState.version += 1;
     },
     onLive: (snapshot) => {
       applyLive(reducer, snapshot);
       state.live = snapshot;
-      liveState.version += 1;
+      state.liveState.version += 1;
     },
     onResync: () => {
       markResync(reducer);
-      liveState.version += 1;
+      state.liveState.version += 1;
     },
     onEnd: () => {
       markConnection(reducer, "ended");
-      liveState.version += 1;
+      state.liveState.version += 1;
       refreshTasks();
     },
     onStatus: (status) => {
       reducer.connection = status;
-      liveState.version += 1;
+      state.liveState.version += 1;
     },
   });
 }

@@ -85,15 +85,26 @@ export const DetailsPanel = {
     };
   },
   template: `
-    <aside class="details" v-if="state.detailsOpen">
+    <aside class="details" :class="{ open: state.detailsOpen }">
+      <div class="sheet-handle" v-if="state.compact" aria-hidden="true"></div>
       <div class="panel-head">
         <h2>Plano</h2>
-        <select v-model="state.taskFilter" aria-label="Filtrar status">
-          <option value="">Todos</option>
-          <option value="RUNNING">Executando</option>
-          <option value="BLOCKED">Bloqueados</option>
-          <option value="COMPLETED">Concluídos</option>
-        </select>
+        <div class="panel-head-actions">
+          <select v-model="state.taskFilter" aria-label="Filtrar status">
+            <option value="">Todos</option>
+            <option value="RUNNING">Executando</option>
+            <option value="BLOCKED">Bloqueados</option>
+            <option value="COMPLETED">Concluídos</option>
+          </select>
+          <button
+            type="button"
+            class="icon-btn ghost sheet-close"
+            title="Fechar painel"
+            aria-label="Fechar painel"
+            @click="state.detailsOpen = false"
+            v-html="icon('stop', 14)"
+          ></button>
+        </div>
       </div>
 
       <div class="task-tree" role="tree">

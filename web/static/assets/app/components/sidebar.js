@@ -1,9 +1,17 @@
 // web/static/assets/app/components/sidebar.js
-import { state, selectProject, selectConversation, deleteConversation, toast } from "../store.js";
+import { state, selectProject, selectConversation, deleteConversation, deleteProject, conversationStatus, toast } from "../store.js";
 import { icon, ago } from "../ui.js";
+
+const STATUS_DOT = {
+  working: "dot-live",
+  attention: "dot-err",
+  done: "dot-ok",
+  idle: "dot-idle",
+};
 
 export const Sidebar = {
   name: "Sidebar",
+  emits: ["new-project"],
   setup() {
     const filteredProjects = Vue.computed(() => {
       const term = state.search.trim().toLowerCase();
@@ -15,10 +23,30 @@ export const Sidebar = {
       if (!term) return state.loose;
       return state.loose.filter((item) => (item.title || "").toLowerCase().includes(term));
     });
-    return { state, filteredProjects, filteredLoose, selectProject, selectConversation, deleteConversation, toast, ago, icon };
+    const looseStatus = Vue.computed(() => {
+      const map = {};
+      state.loose.forEach((item) => {
+        map[item.id] = conversationStatus(item);
+      });
+      return map;
+    });
+    return {
+      state,
+      filteredProjects,
+      filteredLoose,
+      looseStatus,
+      STATUS_DOT,
+      selectProject,
+      selectConversation,
+      deleteConversation,
+      deleteProject,
+      toast,
+      icon,
+      ago,
+    };
   },
   template: `
-    <aside class="sidebar">
+    <aside class="sidebar" :class="{ open: state.railOpen }">
       <div class="sidebar-head">
         <img class="brand-lockup" src="/assets/brand/callidus-lockup.svg" alt="Callidus" width="132" height="34" />
         <button type="button" class="icon-btn" title="Novo projeto" aria-label="Novo projeto" @click="$emit('new-project')" v-html="icon('plus')"></button>
@@ -30,13 +58,16 @@ export const Sidebar = {
       </div>
 
       <div class="side-scroll">
-        <p class="side-label" v-if="filteredLoose.length">Conversas</p>
+        <p class="side-label" v-if="filteredLoose.length">
+          Conversas <span class="count">{{ filteredLoose.length }}</span>
+        </p>
         <ul class="side-list">
           <li v-for="item in filteredLoose" :key="item.id">
             <div class="side-item" :class="{ active: state.conversation && state.conversation.id === item.id }">
               <button type="button" class="side-hit" @click="selectConversation(item)">
                 <span class="side-ico" v-html="icon('chat', 14)"></span>
                 <span class="side-name">{{ item.title || 'Conversa' }}</span>
+                <span class="dot" :class="STATUS_DOT[looseStatus[item.id] || 'idle']"></span>
                 <span class="side-meta">{{ ago(item.updated_at) }}</span>
               </button>
               <button
@@ -51,14 +82,25 @@ export const Sidebar = {
           </li>
         </ul>
 
-        <p class="side-label" v-if="filteredProjects.length">Projetos</p>
+        <p class="side-label" v-if="filteredProjects.length">
+          Projetos <span class="count">{{ filteredProjects.length }}</span>
+        </p>
         <ul class="side-list">
           <li v-for="project in filteredProjects" :key="project.id">
-            <button type="button" class="side-item" :class="{ active: state.selectedProject && state.selectedProject.id === project.id }" @click="selectProject(project)">
-              <span class="side-ico" v-html="icon('folder', 14)"></span>
-              <span class="side-name">{{ project.name }}</span>
-              <span class="side-meta">{{ ago(project.updated_at) }}</span>
-            </button>
+            <div class="side-item" :class="{ active: state.selectedProject && state.selectedProject.id === project.id }">
+              <button type="button" class="side-hit" @click="selectProject(project)">
+                <span class="side-ico" v-html="icon('folder', 14)"></span>
+                <span class="side-name">{{ project.name }}</span>
+              </button>
+              <button
+                type="button"
+                class="icon-btn ghost side-remove"
+                title="Remover projeto"
+                aria-label="Remover projeto"
+                @click.stop="deleteProject(project)"
+                v-html="icon('trash', 14)"
+              ></button>
+            </div>
           </li>
         </ul>
 
