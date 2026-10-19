@@ -138,6 +138,43 @@ async def _verify(
             {"syntax_error": problem} if problem else {},
         )
 
+    if vtype == "file_exists":
+        path = spec.get("path", "")
+        min_bytes = int(spec.get("min_bytes", 1))
+        read = _read_whole(project_root, path)
+        if not read.get("success"):
+            return VerificationResult("file_exists", False, f"arquivo {path} não existe: {read.get('error')}", read)
+        size = len(read["content"].encode("utf-8"))
+        ok = size >= min_bytes
+        return VerificationResult(
+            "file_exists",
+            ok,
+            f"arquivo {path} existe ({size} bytes)" if ok else f"arquivo {path} tem apenas {size} bytes (< {min_bytes})",
+            {"path": path, "size": size, "min_bytes": min_bytes},
+        )
+
+    if vtype in {"static_analysis", "ast_check"}:
+        path = spec.get("path", ".")
+        try:
+            full_path = resolve_under_root(project_root, path) if path != "." else Path(project_root)
+        except Exception as exc:
+            return VerificationResult("static_analysis", False, str(exc), {"error": str(exc)})
+        files = [full_path] if full_path.is_file() else list(full_path.rglob("*.py"))
+        problems = {}
+        for f in files:
+            if any(part in _SKIP_DIRS for part in f.parts):
+                continue
+            prob = syntax_problem(str(f), f.read_text(encoding="utf-8", errors="replace"))
+            if prob:
+                problems[str(f.relative_to(project_root))] = prob
+        ok = len(problems) == 0
+        return VerificationResult(
+            "static_analysis",
+            ok,
+            "análise estática sem erros sintáticos" if ok else f"erros sintáticos em {len(problems)} arquivos",
+            {"problems": problems, "files_checked": len(files)},
+        )
+
     if vtype == "acceptance_manual":
         return VerificationResult(
             "acceptance_manual",

@@ -279,6 +279,65 @@ class RunOrchestrator:
             parent_id = parent.parent_id
         return depth
 
+    def _propagate_strategy(self, parent: TaskModel, plan: Any) -> None:
+        """Repassa a estratégia profissional do pai para os filhos recém-criados.
+
+        Cada filho herda a especialidade líder (para o prompt) e recebe `atomize=True`
+        quando a estratégia é complexa — é o gatilho da decomposição recursiva da etapa
+        interna (diagnóstico → correção → verificação).
+        """
+        from agent.orchestrator.strategy import ProfessionalStrategy
+
+        meta = parent.metadata_json or {}
+        strategy = ProfessionalStrategy.from_dict(meta.get("professional_strategy"))
+        if strategy is None:
+            return
+        for child in children_of(self._session, parent.id):
+            child_meta = dict(child.metadata_json or {})
+            child_meta.setdefault("lead_specialty", strategy.lead_specialty)
+            if strategy.needs_atomization and not child_meta.get("tool") and not child_meta.get("verification"):
+                child_meta.setdefault("atomize", True)
+            if strategy.extracted_requirements:
+                child_meta.setdefault("strategy_requirements", strategy.extracted_requirements[:5])
+            child.metadata_json = child_meta
+
+    def _plan_verification_recovery(
+        self,
+        task: TaskModel,
+        vresult: Any,
+        detail: dict[str, Any],
+        spec: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Diagnostica a reprovação e decide o próximo passo (diagnóstico → correção → re-verificação)."""
+        from agent.verification.recovery import (
+            diagnose_verification_failure,
+            plan_recovery,
+            recovery_signature,
+        )
+
+        diagnosis = diagnose_verification_failure(
+            verifier=vresult.verifier,
+            summary=vresult.summary,
+            detail=detail,
+            spec=spec,
+        )
+        recoveries = int((task.metadata_json or {}).get("verification_recoveries") or 0)
+        plan = plan_recovery(
+            diagnosis,
+            attempt_count=recoveries,
+            max_recoveries=self._settings.verification_max_recoveries,
+        )
+        plan["signature"] = recovery_signature(diagnosis, detail)
+        plan["recoveries"] = recoveries
+        task.metadata_json = {**(task.metadata_json or {}), "verification_recoveries": recoveries + 1}
+        emit(
+            "verification.recovery_planned",
+            {"cause": plan.get("cause"), "action": plan.get("action"), "retry": plan.get("retry", False)},
+            task_id=task.id,
+            commit=True,
+        )
+        return plan
+
     def _run_as_leaf(self, run: ExecutionRunModel, task: TaskModel, *, note: str) -> dict[str, Any]:
         meta = dict(task.metadata_json or {})
         if not meta.get("tool") and not meta.get("verification") and not meta.get("final_answer"):
@@ -713,6 +772,15 @@ class RunOrchestrator:
             if task.id == run.root_task_id:
                 ensure_canonical_memory_for_objective(self._session, project.id, task)
                 ensure_requirements(self._session, task)
+                from agent.orchestrator.strategy import ProfessionalStrategist
+
+                strat = ProfessionalStrategist().analyze(task.objective)
+                task.metadata_json = {
+                    **(task.metadata_json or {}),
+                    "professional_strategy": strat.as_dict(),
+                    "lead_specialty": strat.lead_specialty,
+                }
+                emit("strategy.formulated", strat.as_dict(), task_id=task.id, commit=True)
             return {"action": "started_planning", "task_id": str(task.id)}
 
         if status == TaskStatus.PLANNING:
@@ -740,7 +808,8 @@ class RunOrchestrator:
                 )
             if not kids:
                 attempts = self._attempts.count_attempts(task.id)
-                emit("plan.started", {"title": task.title, "depth": self._depth(task)})
+                depth = self._depth(task)
+                emit("plan.started", {"title": task.title, "depth": depth})
                 if meta.get("atomize") or (
                     attempts >= 2
                     and should_decompose_further(
@@ -749,10 +818,21 @@ class RunOrchestrator:
                         kind=task.kind,
                         attempt_count=attempts,
                         has_children=False,
+                        depth=depth,
+                        max_depth=self._settings.max_tree_depth,
                     )
                 ):
-                    plan = micro_decompose_operation(task.objective)
-                    source = "atomizer-micro"
+                    from agent.orchestrator.atomizer import adaptive_decompose_operation
+                    strat_meta = meta.get("professional_strategy") or {}
+                    lead_spec = strat_meta.get("lead_specialty") or meta.get("lead_specialty")
+                    plan = adaptive_decompose_operation(
+                        task.objective,
+                        metadata=meta,
+                        lead_specialty=lead_spec,
+                        depth=depth,
+                        max_depth=self._settings.max_tree_depth,
+                    )
+                    source = "atomizer-adaptive"
                 else:
                     self._note_thought(run, task, f"Pensando em como dividir «{task.title}».")
                     plan, source = await resolve_decomposition_plan(
@@ -782,6 +862,8 @@ class RunOrchestrator:
                     )
                 plan, spec_issues = sanitize_spec(plan)
                 apply_decomposition(self._session, project.id, task.id, plan)
+                depth = self._depth(task)
+                self._propagate_strategy(task, plan)
                 emit(
                     "plan.updated",
                     {
@@ -792,6 +874,18 @@ class RunOrchestrator:
                             if k.status == TaskStatus.PENDING.value
                         ],
                     },
+                )
+                emit(
+                    "decomposition.recursive",
+                    {
+                        "depth": depth,
+                        "source": source,
+                        "count": len(plan.subtasks),
+                        "titles": [spec.title for spec in plan.subtasks],
+                        "parent": task.title,
+                    },
+                    task_id=task.id,
+                    commit=True,
                 )
                 validation = self._validate_plan(run, task, config, work_root, spec_issues)
                 if not validation.runnable:
@@ -1006,6 +1100,11 @@ class RunOrchestrator:
                 except ContextBudgetError as exc:
                     return self._context_overflow(run, project, task, provider.name, profile, exc)
                 self._note_thought(run, task, "O contexto não cabia; segui com a versão compactada, sem cortar conteúdo.")
+            for note in budget.strategy_notes:
+                if note.startswith("skills: "):
+                    skills_list = [s.strip() for s in note.replace("skills: ", "").split(",") if s.strip()]
+                    emit("skill.selected", {"skills": skills_list, "task_id": str(task.id)}, task_id=task.id, commit=True)
+                    break
             self._note_thought(run, task, f"Pensando na alteração «{task.title}» com {profile.model_id}.")
             # Fragmentos só quando o provedor transmite de verdade; `stream: false` (etapa ou run) desliga.
             stream_allowed = meta.get("stream", config.get("stream", True)) is not False
@@ -1419,9 +1518,34 @@ class RunOrchestrator:
                     TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="a mesma verificação falhou de novo"),
                 )
                 return {"action": "blocked_loop", "task_id": str(task.id), "failure": noted}
+            recovery = self._plan_verification_recovery(task, vresult, detail, spec)
             noted = self._remember_failure(task, failure)
-            self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-            return {"action": "verify_failed", "task_id": str(task.id), "failure": noted}
+            if recovery.get("retry"):
+                task.metadata_json = {
+                    **(task.metadata_json or {}),
+                    "verification_recovery": recovery,
+                    "recovery_guidance": recovery.get("guidance", ""),
+                }
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
+                return {
+                    "action": "verify_failed",
+                    "task_id": str(task.id),
+                    "failure": noted,
+                    "recovery": recovery,
+                }
+            self._tasks.update_status(
+                task.id,
+                TaskStatusUpdate(
+                    status=TaskStatus.BLOCKED,
+                    reason=f"verificação reprovou e a recuperação exige intervenção: {str(recovery.get('guidance'))[:200]}",
+                ),
+            )
+            return {
+                "action": "verify_blocked",
+                "task_id": str(task.id),
+                "failure": noted,
+                "recovery": recovery,
+            }
 
         noted = self._remember_failure(task, failure)
         self._tasks.update_status(

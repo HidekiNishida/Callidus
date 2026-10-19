@@ -158,8 +158,12 @@ class TaskService:
         deps = list(self._session.scalars(stmt).all())
         for d in deps:
             other = self.get_task(d.depends_on_task_id)
-            if other.status != TaskStatus.COMPLETED.value:
-                return False
+            if other.status == TaskStatus.COMPLETED.value:
+                continue
+            is_opt = bool((other.metadata_json or {}).get("optional") or (other.metadata_json or {}).get("severity") == "optional")
+            if is_opt and other.status in {TaskStatus.FAILED.value, TaskStatus.CANCELLED.value}:
+                continue
+            return False
         return True
 
     def promote_ready_if_dependencies_met(self, task_id: uuid.UUID) -> TaskModel | None:

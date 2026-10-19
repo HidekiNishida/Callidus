@@ -16,7 +16,7 @@ from agent.context.budget import ContextComponent, assemble_messages
 from agent.providers.base import ChatCompletionRequest
 from agent.providers.llamacpp import LlamaCppProvider
 from agent.providers.ollama import OllamaProvider
-from agent.services.task_service import TaskService
+from agent.services.task_service import DependencyError, TaskService
 from agent.guides.discover import capability_line, guide_digest
 from agent.i18n.locale import detect_language, language_instruction
 from agent.tools.builtins import TOOL_CATALOG
@@ -326,8 +326,10 @@ def profile_from_run_config(run_config: dict[str, Any], settings: Settings) -> M
 
 
 def executable_leaf(metadata: dict | None) -> bool:
-    """Ferramenta, verificação ou alteração do modelo já é o passo. Não divide de novo."""
+    """Ferramenta, verificação ou alteração do modelo já é o passo. Não divide de novo se for atômico."""
     meta = metadata or {}
+    if meta.get("atomize") or meta.get("decompose"):
+        return False
     return bool(
         meta.get("tool")
         or meta.get("verification")
@@ -401,11 +403,17 @@ def apply_decomposition(
 
     for idx, spec in enumerate(plan.subtasks):
         for dep_idx in spec.depends_on_indices:
-            if 0 <= dep_idx < len(created_ids):
+            # Dependência inválida (fora do plano ou de si mesma) é ignorada: o plano
+            # nunca pode criar auto-ciclo nem quebrar a criação das subtarefas.
+            if not (0 <= dep_idx < len(created_ids)) or dep_idx == idx:
+                continue
+            try:
                 ts.add_dependency(
                     created_ids[idx],
                     TaskDependencyCreate(depends_on_task_id=created_ids[dep_idx]),
                 )
+            except DependencyError:
+                continue
 
     return created_ids
 

@@ -37,11 +37,17 @@ def superseded(task: TaskModel) -> bool:
     return bool((task.metadata_json or {}).get("superseded_by_replan"))
 
 
+def is_optional(task: TaskModel) -> bool:
+    """Subtarefa opcional: se falhar, não impede o avanço do pai (gera conclusão com ressalvas)."""
+    meta = task.metadata_json or {}
+    return bool(meta.get("optional") or meta.get("severity") == "optional")
+
+
 def settled(task: TaskModel) -> bool:
-    """Filho que não impede o pai de seguir: concluído, cancelado ou falho já substituído."""
+    """Filho que não impede o pai de seguir: concluído, cancelado ou falho já substituído/opcional."""
     status = TaskStatus(task.status)
     return status in {TaskStatus.COMPLETED, TaskStatus.CANCELLED} or (
-        status == TaskStatus.FAILED and superseded(task)
+        status == TaskStatus.FAILED and (superseded(task) or is_optional(task))
     )
 
 
@@ -65,7 +71,8 @@ def _walk(ts: TaskService, task_id: uuid.UUID, path: list[TaskStatus], reason: s
 
 def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any] | None:
     """Junta o resultado dos filhos no pai. O pai só conclui se todo filho não cancelado concluiu com
-    evidência (filho substituído por replanejamento não conta). Filho concluído sem evidência é reaberto e o pai volta a PLANNING. Filho que falhou deixa o
+    evidência (filho substituído por replanejamento não conta; filho opcional falho gera conclusão com ressalvas).
+    Filho concluído sem evidência é reaberto e o pai volta a PLANNING. Filho obrigatório que falhou deixa o
     pai como está, com `achieved=False` e a lista `pending`: replanejar ou parar é decisão do runner."""
     ts = TaskService(session)
     parent = ts.get_task(parent_id)
@@ -77,28 +84,40 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
 
     summaries = []
     gaps: list[TaskModel] = []
-    failed: list[TaskModel] = []
+    failed_critical: list[TaskModel] = []
+    failed_optional: list[TaskModel] = []
     for c in kids:
         ev_ok = verification_evidence_ok(session, c)
         if c.status == TaskStatus.COMPLETED.value and not ev_ok:
             gaps.append(c)
         elif c.status == TaskStatus.FAILED.value and not superseded(c):
-            failed.append(c)
+            if is_optional(c):
+                failed_optional.append(c)
+            else:
+                failed_critical.append(c)
         summaries.append(
             {
                 "task_id": str(c.id),
                 "title": c.title,
                 "evidence_ok": ev_ok,
+                "optional": is_optional(c),
                 "result": c.consolidated_result_json or {"status": c.status},
             }
         )
+    achieved = not gaps and not failed_critical
+    with_caveats = bool(failed_optional)
     report: dict[str, Any] = {
-        "achieved": not gaps and not failed,
+        "achieved": achieved,
+        "with_caveats": with_caveats,
+        "caveats": [
+            {"task_id": str(c.id), "title": c.title, "reason": "subtarefa opcional falhou"}
+            for c in failed_optional
+        ],
         "children": summaries,
         "evidences": collect_evidences(session, parent_id),
         "pending": [
             {"task_id": str(c.id), "title": c.title, "status": c.status, "reason": pending_reason(c)}
-            for c in [*gaps, *failed]
+            for c in [*gaps, *failed_critical]
         ],
     }
     for child in kids:
@@ -108,6 +127,8 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
             report["final_answer"] = result["markdown"]
             report["sources"] = result.get("sources") or []
     parent.consolidated_result_json = report
+    if with_caveats:
+        parent.metadata_json = {**(parent.metadata_json or {}), "completed_with_caveats": True}
     current = TaskStatus(parent.status)
     if current not in _TO_VERIFYING:
         return report

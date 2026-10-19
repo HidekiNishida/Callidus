@@ -79,6 +79,10 @@ EVENT_SPECS: dict[str, EventSpec] = {
         _spec("verification.passed", ("verifier",), description="verificação aprovada"),
         _spec("verification.failed", ("verifier",), description="verificação reprovada"),
         _spec("verification.inconclusive", ("verifier",), description="verificação sem veredito (nunca aprova)"),
+        _spec("strategy.formulated", description="abordagem profissional formulada"),
+        _spec("skill.selected", description="skills selecionadas para a tarefa"),
+        _spec("decomposition.recursive", ("depth", "source"), description="decomposição recursiva da etapa interna"),
+        _spec("verification.recovery_planned", ("cause", "action"), description="recuperação da verificação planejada"),
     )
 }
 
