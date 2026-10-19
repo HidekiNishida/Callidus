@@ -83,7 +83,16 @@ def redact_text(text: str) -> str:
 def truncate(text: str, limit: int) -> str:
     if limit <= 0 or len(text) <= limit:
         return text
-    return text[:limit]
+    est_marker = f"\n…[{len(text) - limit} caracteres omitidos]…\n"
+    if limit <= len(est_marker) + 4:
+        return text[:limit]
+    budget = limit - len(est_marker)
+    omitted = len(text) - budget
+    marker = f"\n…[{omitted} caracteres omitidos]…\n"
+    budget = limit - len(marker)
+    head = int(budget * 0.4)
+    tail = budget - head
+    return f"{text[:head]}{marker}{text[-tail:]}" if tail > 0 else f"{text[:head]}{marker}"
 
 
 def sanitize(value: Any, *, limit: int = 20_000, _depth: int = 0) -> Any:

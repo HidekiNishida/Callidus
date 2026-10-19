@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Protocol
@@ -93,6 +94,7 @@ async def sse_stream(
     factory: sessionmaker[Session],
     bus: EventBus,
     heartbeat: float = HEARTBEAT_SEC,
+    max_age: float | None = None,
 ) -> AsyncIterator[str]:
     """Assina antes de ler o banco (nada se perde entre as duas coisas), reenvia o persistido depois de `after`,
     manda as saídas em andamento (`live`) e segue com o que chega, sem repetir `seq`. Fila estourada vira
@@ -102,6 +104,7 @@ async def sse_stream(
     sent: set[int] = set()
     cursor = after
     ended = False
+    started_at = time.monotonic()
 
     async def replay(since: int) -> AsyncIterator[str]:
         nonlocal cursor, ended
@@ -122,10 +125,26 @@ async def sse_stream(
         yield "retry: 3000\n\n"
         async for chunk in replay(after):
             yield chunk
+        if ended or await asyncio.to_thread(_status, factory, run_id) in TERMINAL_RUN_STATUSES:
+            yield _sse({"run_id": rid, "last_seq": cursor}, event="end")
+            return
+        yield _sse(bus.live(rid), event="live")
         while True:
+            if max_age is not None and time.monotonic() - started_at >= max_age:
+                yield _sse({"run_id": rid, "last_seq": cursor}, event="rotate")
+                return
+            remaining_heartbeat = heartbeat
+            if max_age is not None:
+                remaining_heartbeat = min(remaining_heartbeat, max_age - (time.monotonic() - started_at))
+                if remaining_heartbeat <= 0:
+                    yield _sse({"run_id": rid, "last_seq": cursor}, event="rotate")
+                    return
             try:
-                env = await asyncio.wait_for(sub.queue.get(), timeout=heartbeat)
+                env = await asyncio.wait_for(sub.queue.get(), timeout=remaining_heartbeat)
             except asyncio.TimeoutError:
+                if max_age is not None and time.monotonic() - started_at >= max_age:
+                    yield _sse({"run_id": rid, "last_seq": cursor}, event="rotate")
+                    return
                 if await request.is_disconnected():
                     return
                 yield ": ping\n\n"
@@ -173,11 +192,11 @@ async def run_stream(
     factory = get_session_factory()
     with factory() as session:
         _run_or_404(session, run_id)
-    start = after
-    if start is None and last_event_id and last_event_id.strip().isdigit():
-        start = int(last_event_id.strip())
+    start = after or 0
+    if last_event_id and last_event_id.strip().isdigit():
+        start = max(start, int(last_event_id.strip()))
     return StreamingResponse(
-        sse_stream(run_id, request, start or 0, factory=factory, bus=get_bus()),
+        sse_stream(run_id, request, start, factory=factory, bus=get_bus()),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

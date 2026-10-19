@@ -126,7 +126,9 @@ def client(tmp_path: Path):
     deps._session_factory = None
 
 
-def test_api_conversations_folder_and_memory(client: TestClient, tmp_path: Path):
+def test_api_conversations_folder_and_memory(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    (tmp_path / "projetos").mkdir(exist_ok=True)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     home = client.get("/fs/browse")
     assert home.status_code == 200
     assert home.json()["entries"]
