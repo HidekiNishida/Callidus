@@ -13,8 +13,19 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_timeout_sec: float = 600.0
     llamacpp_base_url: str = "http://127.0.0.1:8080"
+    llamacpp_timeout_sec: float = 120.0
     default_provider: str = "ollama"
     default_model_id: str = "llama3.2"
+    # Provedores: arquivo declarativo (YAML/JSON) com os provedores nomeados. Cada entrada tem
+    # `type` (ollama, llamacpp, openai_compatible, openrouter, anthropic, gemini, mock) e as
+    # opções do provedor; chaves vêm do ambiente por `api_key_env`.
+    provider_config_path: Path | None = None
+    # Política comum dos provedores HTTP: tempo limite, nº de tentativas em falha transitória
+    # (só conexão recusada e 429), endereços privados permitidos (Ollama/llama.cpp locais) e TLS.
+    provider_timeout_sec: float = 120.0
+    provider_max_retries: int = 1
+    provider_allow_private_hosts: bool = True
+    provider_verify_tls: bool = True
     default_context_limit: int = 8192
     default_input_budget: int = 6000
     default_output_reserve: int = 1024

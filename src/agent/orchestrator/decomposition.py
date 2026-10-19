@@ -14,8 +14,7 @@ from agent.domain.schemas import TaskCreate, TaskDependencyCreate, TaskStatusUpd
 from agent.providers.base import LLMProvider, ModelProfile
 from agent.context.budget import ContextComponent, assemble_messages
 from agent.providers.base import ChatCompletionRequest
-from agent.providers.llamacpp import LlamaCppProvider
-from agent.providers.ollama import OllamaProvider
+from agent.providers.registry import build_provider_by_name
 from agent.services.task_service import DependencyError, TaskService
 from agent.guides.discover import capability_line, guide_digest
 from agent.i18n.locale import detect_language, language_instruction
@@ -260,7 +259,7 @@ async def resolve_decomposition_plan(
     provider: LLMProvider | None = None,
     requirements: list[dict[str, Any]] | None = None,
 ) -> tuple[DecompositionResult | None, str]:
-    """Ordem: builtin e2e → Ollama (padrão) → template genérico → mock (se permitido)."""
+    """Ordem: builtin e2e → modelo do provedor escolhido → template genérico → mock (se permitido)."""
     if builtin := builtin_plan_for_objective(objective):
         return builtin, "builtin-e2e"
     if direct := direct_answer_plan(objective):
@@ -268,31 +267,29 @@ async def resolve_decomposition_plan(
 
     from agent.orchestrator.closing import ensure_closing_stages
 
-    profile = profile_from_run_config(run_config, settings)
-    provider_name = run_config.get("provider") or settings.default_provider
-    if provider_name in {"ollama", "llamacpp"}:
-        if provider is not None:
-            model = provider
-        elif provider_name == "llamacpp":
-            model = LlamaCppProvider(settings.llamacpp_base_url)
-        else:
-            model = OllamaProvider(settings.ollama_base_url)
-        digest = guide_digest(project_root, objective)
-        language = str(run_config.get("locale") or detect_language(objective))
-        try:
-            plan = await plan_with_model(
-                model,
-                profile,
-                objective,
-                f"{project_root}\n\n{digest}",
-                language=language,
-                browser_mode=str(run_config.get("browser_mode") or "off"),
-                requirements=requirements,
-            )
-            if plan:
-                return ensure_closing_stages(align_verification(objective, plan)), provider_name
-        except Exception:
-            pass
+    provider_name = str(run_config.get("provider") or settings.default_provider)
+    profile = profile_from_run_config(run_config, settings, provider=provider)
+    if provider_name != "mock":
+        model = provider
+        if model is None:
+            model = build_provider_by_name(provider_name, settings)
+        if model is not None:
+            digest = guide_digest(project_root, objective)
+            language = str(run_config.get("locale") or detect_language(objective))
+            try:
+                plan = await plan_with_model(
+                    model,
+                    profile,
+                    objective,
+                    f"{project_root}\n\n{digest}",
+                    language=language,
+                    browser_mode=str(run_config.get("browser_mode") or "off"),
+                    requirements=requirements,
+                )
+                if plan:
+                    return ensure_closing_stages(align_verification(objective, plan)), provider_name
+            except Exception:
+                pass
 
     if run_config.get("use_generic_template", settings.use_generic_decomposition_template):
         plan, source = fallback_plan(objective)
@@ -309,8 +306,14 @@ async def resolve_decomposition_plan(
     return None, "none"
 
 
-def profile_from_run_config(run_config: dict[str, Any], settings: Settings) -> ModelProfile:
-    model_id = str(run_config.get("model_id") or settings.default_model_id)
+def profile_from_run_config(
+    run_config: dict[str, Any], settings: Settings, provider: LLMProvider | None = None
+) -> ModelProfile:
+    model_id = str(
+        run_config.get("model_id")
+        or getattr(provider, "default_model", None)
+        or settings.default_model_id
+    )
     low = model_id.lower()
     vision = any(token in low for token in ("-vl", "vl:", "vision", "llava", "moondream"))
     generation = dict(run_config.get("generation") or {})

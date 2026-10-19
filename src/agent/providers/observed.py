@@ -78,6 +78,7 @@ async def observed_chat(
         raise
     batcher.flush()
     content = response.content or ""
+    tool_calls = [call.model_dump() for call in (getattr(response, "tool_calls", None) or [])]
     emit(
         "agent.output.completed",
         {
@@ -88,6 +89,7 @@ async def observed_chat(
             "deltas": batcher.batches,
             "prompt_tokens": getattr(response, "prompt_tokens_estimate", None),
             "completion_tokens": getattr(response, "completion_tokens_estimate", None),
+            "tool_calls": tool_calls,
             "duration_ms": int((time.monotonic() - started) * 1000),
         },
     )

@@ -12,7 +12,7 @@ Núcleo do **Callidus**: orquestração explícita, persistência SQLite, modelo
 | [`services/`](services/README.md) | [README.md](services/README.md) | **Regras de negócio** — 11 services: Project, Conversation, Task, Run, Contract, Memory, KnowledgeGraph, Metrics, AutonomousWorker, Scheduler, Attempt |
 | [`orchestrator/`](orchestrator/README.md) | [README.md](orchestrator/README.md) | **Ciclo de execução** — runner (step, run_until_idle), planner, strategy (abordagem profissional), decomposition, atomizer, plan_validation, consolidation, global_verify, requirements, progress, stagnation, replan, closing, usage, resume |
 | [`tools/`](tools/README.md) | [README.md](tools/README.md) | **Ferramentas** — registry central, 17 builtins (arquivos, comandos, git, testes, browser, memória), browser (Playwright), diffing, aliases |
-| [`providers/`](providers/README.md) | [README.md](providers/README.md) | **Provedores de inferência** — Ollama, llama.cpp, mock + interface `LLMProvider` + `observed_chat` (streaming real) |
+| [`providers/`](providers/README.md) | [README.md](providers/README.md) | **Provedores de inferência** — Ollama, llama.cpp, OpenRouter, OpenAI-compatível, Anthropic, Gemini, mock + interface `LLMProvider`, registro declarativo e `observed_chat` (streaming real) |
 | [`context/`](context/README.md) | [README.md](context/README.md) | **Contexto do modelo** — orçamento de tokens (`ContextBudgetError`), montagem de componentes, compactação, builder por operação |
 | [`verification/`](verification/README.md) | [README.md](verification/README.md) | **Verificação independente** — runner (pytest, script, command, file_contains, syntax, file_exists, static_analysis), recovery (diagnóstico → correção → re-verificação), fingerprint (hash artefatos) |
 | [`observability/`](observability/README.md) | [README.md](observability/README.md) | **EventBus em memória** — ring buffer, assinantes SSE, operations live, emitter, batching (streaming), snapshot, sanitize, contratos |
@@ -60,7 +60,8 @@ flowchart LR
 
 | Variável | Padrão | Efeito |
 |----------|--------|--------|
-| `DEFAULT_PROVIDER` | `ollama` | Provedor usado quando run não especifica |
+| `DEFAULT_PROVIDER` | `ollama` | Provedor usado quando run não especifica (ou nome do arquivo de provedores) |
+| `PROVIDERS_CONFIG_PATH` | — | Arquivo YAML/JSON com os provedores nomeados (ver [provedores.md](../../docs/architecture/provedores.md)) |
 | `DEFAULT_MODEL_ID` | `llama3.2` | Modelo na decomposição e operações |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Endpoint HTTP Ollama |
 | `LLAMACPP_BASE_URL` | `http://127.0.0.1:8080` | llama.cpp server (OpenAI compat) |

@@ -12,6 +12,7 @@
 10. **Skills** — ativação lexical por palavra-chave; pedido muito indireto pode não ativar a skill ideal. O catálogo é relido do disco a cada `reload()`.
 11. **Estratégia** — classifica por domínios fixos (consulta, QA, bug, refatoração, documentação, engenharia); pedidos híbridos ficam no domínio mais próximo.
 12. **Recuperação da verificação** — reexecuta o mesmo verificador; não há estratégia de verificação alternativa nem leitura semântica da causa.
+13. **Provedores** — a compatibilidade com OpenAI cobre `chat/completions`, `models`, streaming SSE, `tools` e `response_format`; não há `embeddings`, `audio` nem API em lote. As chamadas de ferramenta chegam na resposta (`tool_calls`), mas o ciclo de ferramentas do agente continua sendo o atual (JSON de operação). Anthropic não tem JSON estruturado nativo. Detalhes: [provedores.md](/docs/architecture/provedores.md).
 
 Detalhes: [skills-estrategia.md](/docs/architecture/skills-estrategia.md).
 

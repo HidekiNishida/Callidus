@@ -1480,6 +1480,28 @@ function stopPolling() {
   state.pollTimer = null;
 }
 
+async function loadProviders() {
+  const sel = document.getElementById("sel-provider");
+  const current = sel.value;
+  try {
+    const data = await api("/providers");
+    const list = data.providers || [];
+    if (!list.length) return;
+    sel.innerHTML = "";
+    list.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.name;
+      opt.textContent = p.type && p.type !== p.name ? `${p.name} (${p.type})` : p.name;
+      sel.appendChild(opt);
+    });
+    const prefs = loadPrefs();
+    const wanted = prefs.provider || current;
+    if ([...sel.options].some((opt) => opt.value === wanted)) sel.value = wanted;
+  } catch {
+    /* servidor sem catálogo: mantém as opções do HTML */
+  }
+}
+
 async function loadModels() {
   const sel = document.getElementById("sel-model");
   const prefs = loadPrefs();
@@ -1489,8 +1511,8 @@ async function loadModels() {
     sel.innerHTML = `<option value="mock-model">mock-model</option>`;
     return;
   }
-  const endpoint = provider === "llamacpp" ? "/providers/llamacpp/models" : "/providers/ollama/models";
-  const offlineLabel = provider === "llamacpp" ? "llama.cpp offline" : "Ollama offline";
+  const endpoint = `/providers/${encodeURIComponent(provider)}/models`;
+  const offlineLabel = `${provider} offline`;
   try {
     const data = await api(endpoint);
     (data.models || []).forEach((m) => {
@@ -1680,6 +1702,7 @@ async function init() {
     if (chip) chip.textContent = sel.selectedOptions[0]?.textContent || sel.value || "modelo";
   };
 
+  await loadProviders();
   await loadModels();
   state.projects = await api("/projects");
   state.loose = await api("/conversations");

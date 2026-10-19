@@ -247,9 +247,15 @@ sequenceDiagram
 | **`src/agent/context/assembler.py`** | Monta componentes do prompt da operação | `OperationContextBuilder.build_for_task` | `ContextComponent[]` (required + optional) → `BudgetResult` (messages + tokens) |
 | **`src/agent/context/budget.py`** | Orçamento de tokens + compactação | `assemble_messages` + `compact_text` | `ModelProfile` + components → `messages` dentro de `input_budget` (erra `ContextBudgetError`) |
 | **`src/agent/context/operation_builder.py`** | Constrói contexto específico da task | `RunOrchestrator._execute_task` (model_operation) | `project_id, task, profile, run_id` → `BudgetResult` + `ContextSnapshotModel` |
-| **`src/agent/providers/base.py`** | Interface `LLMProvider` + `ModelProfile` | Factory `_select_provider` + `profile_from_run_config` | `ChatCompletionRequest` → `ChatCompletionResponse` (streaming opcional) |
-| **`src/agent/providers/ollama.py`** | Provider Ollama (`/api/chat`, streaming) | `default_provider=ollama` | HTTP `httpx` → Ollama local → tokens estimados (`prompt_eval_count`, `eval_count`) |
-| **`src/agent/providers/llamacpp.py`** | Provider llama.cpp (OpenAI-compat `/v1`) | `default_provider=llamacpp` | HTTP `httpx` → llama-server → tokens (`usage.prompt_tokens`, `usage.completion_tokens`) |
+| **`src/agent/providers/base.py`** | Interface `LLMProvider` + `ModelProfile` + `ProviderCapabilities` + erros tipados | Factory `_select_provider` + `profile_from_run_config` | `ChatCompletionRequest` → `ChatCompletionResponse` (streaming opcional, `tool_calls`, capacidades declaradas) |
+| **`src/agent/providers/http.py`** | Transporte HTTP comum (timeout, TLS, erros, redação, retry) | Todo provedor HTTP | `HttpClientConfig` → `httpx` → erros tipados (`timeout`, `conexão`, `401`, `429`, `5xx`) |
+| **`src/agent/providers/registry.py`** | Configuração declarativa + fábrica de provedores | `_select_provider` + API `/providers` | Arquivo YAML/JSON + `${VAR}` → `ProviderSpec` → instância do provedor |
+| **`src/agent/providers/ollama.py`** | Provider Ollama (`/api/chat`, streaming) | `default_provider=ollama` | HTTP `httpx` → Ollama local ou remoto → tokens estimados (`prompt_eval_count`, `eval_count`) |
+| **`src/agent/providers/llamacpp.py`** | Provider llama.cpp (OpenAI-compat `/v1`) | `default_provider=llamacpp` | HTTP `httpx` → llama-server local ou remoto → tokens (`usage.prompt_tokens`, `usage.completion_tokens`) |
+| **`src/agent/providers/openai_compatible.py`** | Adaptador reutilizável de API compatível com OpenAI | `type: openai_compatible` | HTTP `httpx` → gateway/provedor compatível → `chat/completions` (stream ou não) |
+| **`src/agent/providers/openrouter.py`** | Provider OpenRouter | `type: openrouter` | Herda o compatível com OpenAI + `X-Title`/`HTTP-Referer` → catálogo de modelos da API |
+| **`src/agent/providers/anthropic.py`** | Provider Anthropic (Messages API nativa) | `type: anthropic` | HTTP `httpx` → `api.anthropic.com/v1/messages` → blocos de conteúdo e `usage` |
+| **`src/agent/providers/gemini.py`** | Provider Gemini (`generateContent` nativo) | `type: gemini` | HTTP `httpx` → `generativelanguage.../generateContent` → `contents`/`parts` e `usageMetadata` |
 | **`src/agent/providers/mock.py`** | Provider mock (keyword_map) | Testes / `ALLOW_MOCK_FALLBACK` | `keyword_map` → resposta canned |
 | **`src/agent/providers/observed.py`** | Wrapper `observed_chat` (emite eventos de streaming) | Toda chamada a provider no Orchestrator | `provider.chat/stream` → EventBus (`agent.started`, `agent.output.delta`, `agent.output.completed`) |
 | **`src/agent/tools/registry.py`** | Registro central + execução + aliases | `build_default_registry()` + `RunOrchestrator._tools.execute` | `ToolSpec` + `ToolHandler` → `canonical_tool_id` → execução + eventos (`tool.started/completed/failed`) |
@@ -302,7 +308,13 @@ sequenceDiagram
 | `OLLAMA_BASE_URL` | Endpoint HTTP do Ollama | `http://127.0.0.1:11434` | Não |
 | `OLLAMA_TIMEOUT_SEC` | Timeout de inferência (seg) | `600` | Não |
 | `LLAMACPP_BASE_URL` | Endpoint llama.cpp (OpenAI compat) | `http://127.0.0.1:8080` | Não |
-| `DEFAULT_PROVIDER` | Provedor padrão (`ollama` \| `llamacpp` \| `mock`) | `ollama` | Não |
+| `LLAMACPP_TIMEOUT_SEC` | Timeout de inferência llama.cpp (seg) | `120` | Não |
+| `PROVIDERS_CONFIG_PATH` | Arquivo de provedores (YAML/JSON) | — | Não |
+| `PROVIDER_TIMEOUT_SEC` | Timeout padrão dos provedores do arquivo (seg) | `120` | Não |
+| `PROVIDER_MAX_RETRIES` | Tentativas extras em falha transitória | `1` | Não |
+| `PROVIDER_ALLOW_PRIVATE_HOSTS` | Permitir host que resolve para endereço interno | `true` | Não |
+| `PROVIDER_VERIFY_TLS` | Verificação de TLS (manter ligado) | `true` | Não |
+| `DEFAULT_PROVIDER` | Provedor padrão (`ollama` \| `llamacpp` \| `mock` \| nome do arquivo) | `ollama` | Não |
 | `DEFAULT_MODEL_ID` | Modelo padrão na decomposição | `llama3.2` | Não |
 | `DEFAULT_CONTEXT_LIMIT` | Limite de contexto do modelo | `8192` | Não |
 | `DEFAULT_INPUT_BUDGET` | Orçamento de entrada (tokens) | `6000` | Não |
@@ -359,6 +371,72 @@ python scripts/fix-python314-editable.py
 ```
 
 O Python 3.14 ignora `.pth` com nome iniciado em `_` e também `.pth` ocultos (`UF_HIDDEN`, comum no macOS). O script grava `callidus-src.pth` e cria o link `site-packages/agent` → `src/agent`, que o importador sempre lê.
+
+---
+
+## 🔌 Provedores de Inferência
+
+O Callidus fala com modelos por **provedores** configuráveis. O provedor e o modelo são escolhidos
+por configuração (ambiente ou arquivo de provedores) — o núcleo do agente não muda.
+
+| Provedor | `type` | URL padrão | Autenticação | Streaming | Ferramentas | JSON estruturado |
+|----------|--------|------------|--------------|-----------|-----------|------------------|
+| Ollama (local/remoto) | `ollama` | `http://127.0.0.1:11434` | `Bearer` (opcional) | ✅ | ✅ | ✅ |
+| llama.cpp (local/remoto) | `llamacpp` | `http://127.0.0.1:8080` | `Bearer` ou arquivo | ✅ | ✅ | ✅ |
+| OpenRouter | `openrouter` | `https://openrouter.ai/api/v1` | `Bearer` | ✅ | ✅ | ✅ |
+| OpenAI-compatível | `openai_compatible` | (obrigatória) | `Bearer` | ✅ | ✅ | ✅ |
+| OpenAI | `openai` | `https://api.openai.com/v1` | `Bearer` | ✅ | ✅ | ✅ |
+| Anthropic | `anthropic` | `https://api.anthropic.com` | `x-api-key` | ✅ | ✅ | ❌ |
+| Gemini | `gemini` | `https://generativelanguage.googleapis.com/v1beta` | `x-goog-api-key` | ✅ | ✅ | ✅ |
+| Mock | `mock` | — | — | ❌ | ❌ | ❌ |
+
+### Configuração por arquivo (recomendado para vários provedores)
+
+```bash
+cp providers.example.yaml providers.yaml
+export PROVIDERS_CONFIG_PATH=./providers.yaml
+export OPENROUTER_API_KEY=...   # credenciais ficam no ambiente
+```
+
+```yaml
+default_provider: ollama_remote
+
+providers:
+  ollama_local:
+    type: ollama
+    base_url: http://localhost:11434
+    model: llama3.2
+
+  ollama_remote:
+    type: ollama
+    base_url: ${CALLIDUS_OLLAMA_URL}
+    model: qwen3:8b
+    api_key_env: CALLIDUS_OLLAMA_API_KEY
+
+  openrouter:
+    type: openrouter
+    base_url: https://openrouter.ai/api/v1
+    model: autor/modelo-disponivel
+    api_key_env: OPENROUTER_API_KEY
+```
+
+- `${VAR}` e `${VAR:-padrão}` são interpolados do ambiente; variável ausente sem padrão é erro de
+  configuração.
+- Segredos **nunca** vão para o arquivo versionado: use `api_key_env` (ou `api_key_file`).
+- Cada run pode escolher o provedor (`config["provider"]`) sem reiniciar nada.
+- Não há fallback automático entre provedores: a falha é visível. O mock só entra com
+  `ALLOW_MOCK_FALLBACK=true`.
+
+### Conferir conectividade
+
+```bash
+curl http://127.0.0.1:8765/providers                      # catálogo (sem segredos)
+curl http://127.0.0.1:8765/providers/ollama_remote/models  # modelos do servidor
+curl http://127.0.0.1:8765/providers/ollama_remote/health  # diagnóstico (sem inferência)
+```
+
+Detalhes (incluindo como registrar um novo adaptador): [docs/architecture/provedores.md](/docs/architecture/provedores.md) ·
+código: [src/agent/providers/README.md](/src/agent/providers/README.md).
 
 ---
 
@@ -547,7 +625,7 @@ Callidus/
 │       ├── services/     # 11 services (CRUD + worker + scheduler + metrics)
 │       ├── orchestrator/ # 13 módulos (runner, planner, decomposition, validation, etc.)
 │       ├── tools/        # Registry + 17 builtins + browser + diffing
-│       ├── providers/    # Ollama, llama.cpp, mock, observed, base
+│       ├── providers/    # Ollama, llama.cpp, OpenRouter, OpenAI-compatível, Anthropic, Gemini, mock + registry/http
 │       ├── context/      # Budget, assembler, operation_builder
 │       ├── verification/ # Runner + fingerprint
 │       ├── observability/# EventBus, emitter, batching, snapshot, sanitize, contracts
@@ -572,6 +650,7 @@ Callidus/
 │           └── brand/    # callidus-mark.svg, callidus-lockup.svg, favicon.svg (gerados por scripts/build_brand_assets.py)
 ├── .env                  # Config local (gitignored)
 ├── .env.example          # Template
+├── providers.example.yaml # Exemplo de configuração de provedores (sem credenciais)
 ├── pyproject.toml        # Projeto Python + script `callidus-api`
 ├── resume.md             # Resumo vivo do projeto (atualizado por hooks)
 ├── test_server.py        # Teste rápido da API

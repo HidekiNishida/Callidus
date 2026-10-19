@@ -1,0 +1,75 @@
+# Exemplo de configuração de provedores do Callidus.
+#
+# Copie para `providers.yaml` (ou aponte `PROVIDERS_CONFIG_PATH` para este arquivo) e ajuste.
+# Este arquivo NÃO deve conter credenciais: use `api_key_env` (variável de ambiente) ou
+# `api_key_file` (arquivo de chave). As variáveis abaixo são apenas exemplos de nome.
+
+default_provider: ollama_local
+
+providers:
+  # ── Ollama local (padrão do projeto) ───────────────────────────────────────
+  ollama_local:
+    type: ollama
+    base_url: http://127.0.0.1:11434
+    model: llama3.2
+
+  # ── Ollama remoto (VPS, GPU na rede) ───────────────────────────────────────
+  ollama_remote:
+    type: ollama
+    base_url: ${CALLIDUS_OLLAMA_URL}
+    model: qwen3:8b
+    api_key_env: CALLIDUS_OLLAMA_API_KEY
+    timeout: 120
+
+  # ── llama.cpp local e remoto ───────────────────────────────────────────────
+  llama_cpp_local:
+    type: llamacpp
+    base_url: http://127.0.0.1:8080
+    model: modelo-local
+
+  llama_cpp_remote:
+    type: llamacpp
+    base_url: ${CALLIDUS_LLAMA_CPP_URL}
+    model: modelo-servidor
+    api_key_env: CALLIDUS_LLAMA_CPP_KEY
+    # key_file: /caminho/chave.txt   # para servidores com --api-key-file
+
+  # ── OpenRouter ─────────────────────────────────────────────────────────────
+  openrouter:
+    type: openrouter
+    base_url: https://openrouter.ai/api/v1
+    model: autor/modelo-disponivel
+    api_key_env: OPENROUTER_API_KEY
+    referer: https://callidus.local
+    title: Callidus
+
+  # ── API compatível com OpenAI (gateway genérico) ──────────────────────────
+  gateway:
+    type: openai_compatible
+    base_url: https://meu-gateway.exemplo/v1
+    model: modelo-do-gateway
+    api_key_env: GATEWAY_API_KEY
+    timeout: 90
+    max_retries: 2
+    headers:
+      X-Ambiente: producao
+
+  # ── OpenAI, Anthropic e Gemini (API própria de cada serviço) ──────────────
+  openai:
+    type: openai
+    model: gpt-4o-mini
+    api_key_env: OPENAI_API_KEY
+
+  anthropic:
+    type: anthropic
+    model: claude-sonnet-4-5
+    api_key_env: ANTHROPIC_API_KEY
+
+  gemini:
+    type: gemini
+    model: gemini-2.0-flash
+    api_key_env: GEMINI_API_KEY
+
+  # ── Mock (testes e execução offline) ──────────────────────────────────────
+  mock:
+    type: mock

@@ -12,6 +12,7 @@ Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 | [modelo-dados.md](/docs/architecture/modelo-dados.md) | SQLite |
 | [maquina-estados.md](/docs/architecture/maquina-estados.md) | Tarefas |
 | [execucao-local.md](/docs/architecture/execucao-local.md) | Instalação, **Ollama padrão** |
+| [provedores.md](/docs/architecture/provedores.md) | **Provedores** — Ollama, llama.cpp, OpenRouter, OpenAI-compatível, Anthropic, Gemini, mock |
 | [ferramentas.md](/docs/architecture/ferramentas.md) | Tools |
 | [mcp.md](/docs/architecture/mcp.md) | MCP stdio |
 | [frontend.md](/docs/architecture/frontend.md) | UI |

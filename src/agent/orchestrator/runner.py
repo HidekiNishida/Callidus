@@ -80,11 +80,10 @@ from agent.persistence.models import (
     TaskModel,
 )
 from agent.services.inbox import effective_root
-from agent.providers.base import LLMProvider, ModelProfile, ProviderError
+from agent.providers.base import LLMProvider, ModelProfile, ProviderConfigError, ProviderError
 from agent.providers.mock import MockProvider
-from agent.providers.llamacpp import LlamaCppProvider
 from agent.providers.observed import observed_chat
-from agent.providers.ollama import OllamaProvider
+from agent.providers.registry import build_provider_by_name
 from agent.services.attempt_service import AttemptService
 from agent.services.project_service import ProjectService
 from agent.services.task_service import TaskService
@@ -101,21 +100,42 @@ _ACTION_KEYS = ("mcp_tool", "final_answer", "model_operation", "tool", "verifica
 
 
 def _select_provider(settings: Settings, run_config: dict) -> LLMProvider:
-    name = run_config.get("provider") or settings.default_provider
-    if name == "ollama":
-        return OllamaProvider(settings.ollama_base_url, timeout=settings.ollama_timeout_sec)
-    if name == "llamacpp":
-        return LlamaCppProvider(settings.llamacpp_base_url)
+    """Provedor do run: nome vem do run (`config["provider"]`) ou das settings.
+
+    Ordem: mock → catálogo de provedores configurado (`PROVIDERS_CONFIG_PATH`) → provedores
+    embutidos (Ollama, llama.cpp). Nome desconhecido é erro explícito: trocar de provedor
+    silenciosamente (por exemplo para o mock) mudaria custo, privacidade e resultado.
+    """
+    name = str(run_config.get("provider") or _default_provider_name(settings) or "ollama")
     if name == "mock":
         kw = run_config.get("mock_keyword_map") or {}
         return MockProvider(keyword_map=kw)
-    return MockProvider()
+    provider = build_provider_by_name(name, settings)
+    if provider is not None:
+        return provider
+    if settings.allow_mock_fallback:
+        return MockProvider()
+    raise ProviderConfigError(
+        f"provedor '{name}' desconhecido: use um nome definido no arquivo de provedores "
+        "(PROVIDERS_CONFIG_PATH) ou 'ollama', 'llamacpp' ou 'mock'"
+    )
 
 
-def _profile_from_config(run_config: dict, settings: Settings) -> ModelProfile:
+def _default_provider_name(settings: Settings) -> str:
+    """Provedor padrão: o do arquivo de provedores, se houver; senão o das settings."""
+    from agent.providers.registry import catalog_for_settings
+
+    try:
+        catalog = catalog_for_settings(settings)
+    except ProviderConfigError:
+        return settings.default_provider
+    return catalog.default_provider or settings.default_provider
+
+
+def _profile_from_config(run_config: dict, settings: Settings, provider: LLMProvider | None = None) -> ModelProfile:
     from agent.orchestrator.decomposition import profile_from_run_config
 
-    return profile_from_run_config(run_config, settings)
+    return profile_from_run_config(run_config, settings, provider=provider)
 
 
 _ENVIRONMENT = {FailureCategory.CONFIGURATION, FailureCategory.EXTERNAL_UNAVAILABLE}
@@ -704,7 +724,7 @@ class RunOrchestrator:
         )
         config = {**config, "locale": locale}
         provider = _select_provider(self._settings, config)
-        profile = _profile_from_config(config, self._settings)
+        profile = _profile_from_config(config, self._settings, provider)
 
         root = self._tasks.get_task(run.root_task_id)
         hit = limit_reached(self._session, run, limits_for(self._settings, config))
@@ -841,7 +861,7 @@ class RunOrchestrator:
                         objective=task.objective,
                         project_root=work_root,
                         provider=provider
-                        if (config.get("provider") or self._settings.default_provider) in {"ollama", "llamacpp"}
+                        if str(config.get("provider") or self._settings.default_provider) != "mock"
                         else None,
                         requirements=self._task_requirements(task),
                     )
@@ -1074,7 +1094,7 @@ class RunOrchestrator:
 
         if meta.get("model_operation"):
             provider = _select_provider(self._settings, config)
-            profile = _profile_from_config(config, self._settings)
+            profile = _profile_from_config(config, self._settings, provider)
             if meta.get("prompt_key") == "page":
                 generation = dict(profile.generation)
                 generation["num_predict"] = max(int(generation.get("num_predict") or 0), 4096)
@@ -1374,7 +1394,7 @@ class RunOrchestrator:
         parent = self._tasks.get_task(task.parent_id) if task.parent_id else task
         objective = parent.objective if parent else task.objective
         provider = _select_provider(self._settings, config)
-        profile = _profile_from_config(config, self._settings)
+        profile = _profile_from_config(config, self._settings, provider)
         prompt = (
             f"{language_instruction(str(config.get('locale') or 'pt'))}\n"
             f"{capability_line(profile.model_id)}\n"

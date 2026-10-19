@@ -165,6 +165,76 @@ async def llamacpp_models(settings: Settings = Depends(read_settings)) -> dict:
     return {"provider": "llamacpp", "models": models}
 
 
+@app.get("/providers")
+async def list_providers(settings: Settings = Depends(read_settings)) -> dict:
+    """Provedores disponíveis: os do arquivo de configuração mais os embutidos. Nenhuma
+    credencial é exposta — só a origem declarada da chave."""
+    from agent.providers.registry import catalog_for_settings
+
+    catalog = catalog_for_settings(settings)
+    entries: list[dict] = []
+    for name in catalog.names():
+        spec = catalog.get(name)
+        if spec is None:  # pragma: no cover - defensive
+            continue
+        entries.append(
+            {
+                "name": name,
+                "type": spec.kind,
+                "base_url": spec.base_url,
+                "model": spec.model,
+                "api_key_source": (
+                    "env"
+                    if spec.api_key_env
+                    else ("file" if spec.api_key_file else ("inline" if spec.api_key else None))
+                ),
+                "source": "config",
+            }
+        )
+    for name, kind, base_url in (
+        ("ollama", "ollama", settings.ollama_base_url),
+        ("llamacpp", "llamacpp", settings.llamacpp_base_url),
+        ("mock", "mock", None),
+    ):
+        if any(entry["name"] == name for entry in entries):
+            continue
+        entries.append({"name": name, "type": kind, "base_url": base_url, "model": None, "api_key_source": None, "source": "builtin"})
+    return {
+        "default_provider": catalog.default_provider or settings.default_provider,
+        "providers": entries,
+    }
+
+
+def _provider_by_name(name: str, settings: Settings):
+    from agent.providers.base import ProviderConfigError
+    from agent.providers.registry import build_provider_by_name
+
+    try:
+        provider = build_provider_by_name(name, settings)
+    except ProviderConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if provider is None:
+        raise HTTPException(status_code=404, detail=f"provedor '{name}' não encontrado")
+    return provider
+
+
+@app.get("/providers/{name}/models")
+async def provider_models(name: str, settings: Settings = Depends(read_settings)) -> dict:
+    provider = _provider_by_name(name, settings)
+    try:
+        models = await provider.list_models()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"provider": name, "models": models}
+
+
+@app.get("/providers/{name}/health")
+async def provider_health(name: str, settings: Settings = Depends(read_settings)) -> dict:
+    provider = _provider_by_name(name, settings)
+    health = await provider.health_check()
+    return health.model_dump()
+
+
 @app.get("/tools")
 def list_tools() -> dict:
     reg = build_default_registry()
