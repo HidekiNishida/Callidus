@@ -1,5 +1,7 @@
 /** Agente de IA Local — UI principal (módulo ES) */
 
+import { createObserver } from "./observe.js";
+
 const STORAGE_KEY = "agente-local-ui-v1";
 
 function loadPrefs() {
@@ -441,6 +443,7 @@ async function selectProject(p) {
   renderProjects(document.getElementById("project-search").value);
   await refreshAll();
   updateRunButtons();
+  await reopenObserver();
 }
 
 function selectConversation(conversation) {
@@ -454,7 +457,9 @@ function selectConversation(conversation) {
   savePrefs({ lastConversationId: conversation.id });
   paintWorkspace();
   renderProjects(document.getElementById("project-search").value);
-  refreshTasks().catch((err) => toast(err.message, "error"));
+  refreshTasks()
+    .then(() => reopenObserver())
+    .catch((err) => toast(err.message, "error"));
   refreshLive().catch((err) => console.warn(err));
 }
 
@@ -906,6 +911,54 @@ async function refreshLive() {
     stopPolling();
     updateRunButtons();
   }
+  syncObserver();
+}
+
+let observer = null;
+
+function observePanel() {
+  return document.getElementById("observe-panel");
+}
+
+async function latestRunId() {
+  if (state.currentRun?.id) return state.currentRun.id;
+  const workspace = workspaceId();
+  const root = currentRoot();
+  if (!workspace || !root) return null;
+  const runs = await api(`/projects/${workspace}/runs`);
+  return runs.find((run) => run.root_task_id === root.id)?.id || null;
+}
+
+function syncObserver() {
+  const panel = observePanel();
+  if (!observer || !panel || panel.hidden) return;
+  const id = state.currentRun?.id;
+  if (id && id !== observer.runId) observer.open(id).catch((err) => console.warn(err));
+}
+
+async function reopenObserver() {
+  const panel = observePanel();
+  if (!observer || !panel || panel.hidden) return;
+  const id = await latestRunId();
+  if (!id) {
+    observer.close();
+    panel.querySelector('[data-area="header"]').textContent = "Nenhuma execução nesta conversa ainda.";
+    return;
+  }
+  await observer.open(id);
+}
+
+async function toggleObserver() {
+  const panel = observePanel();
+  const button = document.getElementById("btn-observe");
+  panel.hidden = !panel.hidden;
+  button?.setAttribute("aria-pressed", String(!panel.hidden));
+  if (panel.hidden) {
+    observer?.close();
+    return;
+  }
+  if (!observer) observer = createObserver({ root: panel, fetchJson: api });
+  await reopenObserver();
 }
 
 function descendantIds(rootId) {
@@ -1803,6 +1856,8 @@ async function init() {
     const panel = document.getElementById("details-panel");
     panel.hidden = !panel.hidden;
   };
+  const observeButton = document.getElementById("btn-observe");
+  if (observeButton) observeButton.onclick = () => toggleObserver().catch((err) => toast(err.message, "error"));
 
   async function refreshConversationList() {
     if (state.selectedProject) {
@@ -1928,6 +1983,7 @@ async function init() {
     });
     onStarted?.();
     updateRunButtons();
+    syncObserver();
     await api(`/runs/${state.currentRun.id}/autonomous/enable`, { method: "POST" });
     const auto = document.getElementById("chk-autonomous");
     if (auto) auto.checked = true;

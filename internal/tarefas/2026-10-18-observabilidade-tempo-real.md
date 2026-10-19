@@ -65,13 +65,13 @@ Unidade 1: contrato de eventos, barramento, emissor e migração.
 ## Etapas
 
 - [x] Auditoria e diagnóstico
-- [ ] Unidade 1
-- [ ] Unidade 2
-- [ ] Unidade 3
-- [ ] Unidade 4
-- [ ] Unidade 5
-- [ ] Unidade 6
-- [ ] Verificação final e estado `concluída`
+- [x] Unidade 1
+- [x] Unidade 2
+- [x] Unidade 3
+- [x] Unidade 4
+- [x] Unidade 5
+- [x] Unidade 6
+- [x] Verificação final e estado `concluída`
 
 ## Bloqueios
 

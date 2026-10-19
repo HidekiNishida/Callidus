@@ -122,10 +122,6 @@ async def sse_stream(
         yield "retry: 3000\n\n"
         async for chunk in replay(after):
             yield chunk
-        if ended or await asyncio.to_thread(_status, factory, run_id) in TERMINAL_RUN_STATUSES:
-            yield _sse({"run_id": rid, "last_seq": cursor}, event="end")
-            return
-        yield _sse(bus.live(rid), event="live")
         while True:
             try:
                 env = await asyncio.wait_for(sub.queue.get(), timeout=heartbeat)
@@ -152,6 +148,13 @@ async def sse_stream(
             else:
                 yield _sse(env)
             if env["type"] in TERMINAL_EVENTS:
+                # Count this event's seq if it has one and not already counted
+                if "seq" in env and env["seq"] not in sent:
+                    sent.add(env["seq"])
+                    cursor = max(cursor, env["seq"])
+                # Replay any missed persisted events before ending
+                async for chunk in replay(max(after, cursor - _REORDER_WINDOW)):
+                    yield chunk
                 yield _sse({"run_id": rid, "last_seq": cursor}, event="end")
                 return
     finally:

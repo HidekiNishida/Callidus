@@ -1069,17 +1069,29 @@ async def debug_chat_ollama(
     return {"content": resp.content}
 
 
+_REVALIDATE = {"Cache-Control": "no-cache"}
+
+
+class _RevalidatedStatic(StaticFiles):
+    """Sem isso o navegador guarda a interface por heurística e mistura HTML antigo com módulos novos."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers.update(_REVALIDATE)
+        return response
+
+
 def _mount_web(settings: Settings) -> None:
     web = _web_dir(settings)
     if web is None:
         return
     assets = web / "assets"
     if assets.is_dir():
-        app.mount("/assets", StaticFiles(directory=assets), name="assets")
+        app.mount("/assets", _RevalidatedStatic(directory=assets), name="assets")
 
     @app.get("/", include_in_schema=False)
     def spa_index():
-        return FileResponse(web / "index.html")
+        return FileResponse(web / "index.html", headers=_REVALIDATE)
 
 
 def run() -> None:
@@ -1092,6 +1104,7 @@ def run() -> None:
         host=settings.api_host,
         port=settings.api_port,
         reload=False,
+        timeout_graceful_shutdown=settings.shutdown_grace_seconds,
     )
 
 

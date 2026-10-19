@@ -83,10 +83,7 @@ def redact_text(text: str) -> str:
 def truncate(text: str, limit: int) -> str:
     if limit <= 0 or len(text) <= limit:
         return text
-    head = int(limit * 0.4)
-    tail = limit - head
-    omitted = len(text) - limit
-    return f"{text[:head]}\n…[{omitted} caracteres omitidos]…\n{text[-tail:]}"
+    return text[:limit]
 
 
 def sanitize(value: Any, *, limit: int = 20_000, _depth: int = 0) -> Any:

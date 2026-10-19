@@ -36,6 +36,7 @@
           </div>
         </div>
         <button type="button" id="btn-new-chat" class="icon-btn" data-icon="chat" title="Nova conversa" aria-label="Nova conversa"></button>
+        <button type="button" id="btn-observe" class="icon-btn" data-icon="chart" title="Acompanhar execução" aria-label="Acompanhar execução" aria-pressed="false"></button>
         <div class="topbar-run" id="run-toolbar" hidden>
           <button type="button" id="btn-step" class="icon-btn" data-icon="play" disabled title="Um passo" aria-label="Um passo"></button>
           <button type="button" id="btn-pause" class="icon-btn" data-icon="pause" disabled title="Pausar" aria-label="Pausar"></button>
@@ -154,6 +155,8 @@
       </div>
       <ul id="activity-feed" class="activity-feed"></ul>
     </aside>
+
+    <aside class="observe-panel" id="observe-panel" aria-label="Acompanhamento da execução" hidden></aside>
   </div>
   <footer class="statusbar" id="statusbar">
     <span id="status-action" title="Parado"></span>

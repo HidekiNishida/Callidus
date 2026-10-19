@@ -3,6 +3,7 @@ import asyncio
 import json
 import shutil
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -111,11 +112,23 @@ def test_history_pages_filters_snapshot_and_stream_of_a_finished_run(client, tmp
     assert items[-1]["event"] == "end"
     ids = [int(i["id"]) for i in items if "id" in i]
     assert ids == db_seqs and total == len(ids)
+    # Relidos do SQLite (que perde o fuso), os carimbos ainda saem como UTC explícito.
+    def _utc(text: str) -> bool:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).utcoffset() == timedelta(0)
+
+    assert all(_utc(i["data"]["ts"]) for i in items if "id" in i)
+    assert _utc(snap["run"]["created_at"]) and all(_utc(t["started_at"]) for t in snap["tasks"] if t["started_at"])
 
     # Reconexão com Last-Event-ID: só o que veio depois, sem repetir.
     with client.stream("GET", f"/runs/{run.id}/stream", headers={"Last-Event-ID": str(db_seqs[-4])}) as resp:
         again = _parse_sse(resp.read().decode())
     assert [int(i["id"]) for i in again if "id" in i] == db_seqs[-3:]
+
+    # Reconexão automática reaproveita a URL com `after` antigo: vale o cursor mais adiantado.
+    stale = f"/runs/{run.id}/stream?after={db_seqs[0]}"
+    with client.stream("GET", stale, headers={"Last-Event-ID": str(db_seqs[-2])}) as resp:
+        resumed = _parse_sse(resp.read().decode())
+    assert [int(i["id"]) for i in resumed if "id" in i] == db_seqs[-1:]
 
     assert client.get(f"/runs/{uuid.uuid4()}/observe").status_code == 404
     assert client.get(f"/runs/{uuid.uuid4()}/stream").status_code == 404
@@ -185,6 +198,19 @@ async def test_live_stream_orders_dedupes_separates_runs_and_ends(tmp_path):
     seqs = [i["data"]["seq"] for i in got if i.get("event") is None]
     assert seqs == sorted(seqs)
     assert bus.subscriber_count(str(run.id)) == 0
+
+
+@pytest.mark.asyncio
+async def test_stream_rotates_after_max_age_so_server_shutdown_never_waits_forever(tmp_path):
+    factory, session, project, root, run = _active_run(tmp_path)
+    bus = get_bus()
+    got: list = []
+    gen = sse_stream(run.id, _Req(), 0, factory=factory, bus=bus, heartbeat=0.05, max_age=0.2)
+    await asyncio.wait_for(_collect(gen, got), 2)
+    assert got[-1]["event"] == "rotate"
+    assert got[-1]["data"]["last_seq"] == max(int(i["id"]) for i in got if "id" in i)
+    assert bus.subscriber_count(str(run.id)) == 0
+    session.close()
 
 
 @pytest.mark.asyncio

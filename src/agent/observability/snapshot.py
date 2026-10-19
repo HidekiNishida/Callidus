@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from agent.domain.enums import RunStatus, TaskStatus
 from agent.observability.bus import EventBus, get_bus
-from agent.observability.contracts import envelope_from_row
+from agent.observability.contracts import as_utc, envelope_from_row
 from agent.orchestrator.progress import progress_state, subtree
 from agent.persistence.models import EventLogModel, EvidenceModel, ExecutionRunModel, OperationAttemptModel, TaskModel
 
@@ -106,7 +106,7 @@ def open_operations(session: Session, run_id: uuid.UUID) -> list[dict[str, Any]]
                 "id": str(data.get(key)),
                 "task_id": None if r.task_id is None else str(r.task_id),
                 "seq": r.seq,
-                "ts": r.created_at.isoformat() if r.created_at else None,
+                "ts": _iso(r.created_at),
                 "tool": data.get("tool"),
                 "command": data.get("command"),
                 "provider": data.get("provider"),
@@ -119,11 +119,7 @@ def open_operations(session: Session, run_id: uuid.UUID) -> list[dict[str, Any]]
 
 
 def _iso(value: datetime | None) -> str | None:
-    return value.isoformat() if value else None
-
-
-def _aware(value: datetime) -> datetime:
-    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return as_utc(value).isoformat() if value else None
 
 
 def run_snapshot(session: Session, run_id: uuid.UUID, *, bus: EventBus | None = None, recent: int = 300) -> dict[str, Any]:
@@ -178,7 +174,7 @@ def run_snapshot(session: Session, run_id: uuid.UUID, *, bus: EventBus | None = 
     ).first()
     root = session.get(TaskModel, run.root_task_id)
     config = run.config_json or {}
-    end = _aware(run.updated_at) if run.status in TERMINAL_RUN_STATUSES and run.updated_at else datetime.now(timezone.utc)
+    end = as_utc(run.updated_at) if run.status in TERMINAL_RUN_STATUSES and run.updated_at else datetime.now(timezone.utc)
     current = next(
         (t for st in ("RUNNING", "VERIFYING", "READY", "RETRY_PENDING", "PLANNING") for t in tasks if t.status == st and t.id != run.root_task_id),
         None,
@@ -232,7 +228,7 @@ def run_snapshot(session: Session, run_id: uuid.UUID, *, bus: EventBus | None = 
             "title": root.title if root else None,
             "status": run.status,
             "mode": mode,
-            "elapsed_s": int((end - _aware(run.created_at)).total_seconds()) if run.created_at else None,
+            "elapsed_s": int((end - as_utc(run.created_at)).total_seconds()) if run.created_at else None,
             "progress": progress_state(session, run.root_task_id),
             "current_task": {"id": str(current.id), "title": current.title, "status": current.status} if current else None,
             "active_outputs": len(live["outputs"]),

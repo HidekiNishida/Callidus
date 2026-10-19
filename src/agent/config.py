@@ -38,13 +38,16 @@ class Settings(BaseSettings):
     max_replans_per_run: int = 80
     # Observabilidade: o texto de cada campo de evento é truncado neste limite (a resposta final do modelo
     # usa o limite maior); fragmentos são agrupados por intervalo/tamanho; a fila de cada assinante SSE
-    # que estoura vira um pedido de ressincronização.
+    # que estoura vira um pedido de ressincronização. Cada conexão SSE dura no máximo `stream_max_seconds`
+    # (o navegador reabre do último `seq`), senão o desligamento do servidor espera o stream para sempre.
     event_text_limit: int = 20_000
     event_output_limit: int = 200_000
     stream_delta_interval_ms: int = 120
     stream_delta_max_chars: int = 2_000
     stream_subscriber_queue: int = 1_000
     stream_ring_size: int = 3_000
+    stream_max_seconds: float = 60.0
+    shutdown_grace_seconds: float = 3.0
     static_web_dir: Path | None = None
     mcp_config_path: Path | None = None
     enable_background_worker: bool = True

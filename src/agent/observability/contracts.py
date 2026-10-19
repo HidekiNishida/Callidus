@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -140,6 +140,13 @@ def _s(value: Any) -> str | None:
     return None if value is None else str(value)
 
 
+def as_utc(value: datetime | None) -> datetime | None:
+    """O SQLite devolve datas sem fuso; elas foram gravadas em UTC."""
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=timezone.utc)
+
+
 def envelope_from_row(row: Any) -> dict[str, Any]:
     return EventEnvelope(
         id=str(row.id),
@@ -150,7 +157,7 @@ def envelope_from_row(row: Any) -> dict[str, Any]:
         agent=row.agent,
         type=row.event_type,
         seq=row.seq or 0,
-        ts=row.created_at,
+        ts=as_utc(row.created_at),
         data=row.payload_json or {},
         persisted=True,
         schema_version=row.schema_version or SCHEMA_VERSION,
