@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createStream } from "../../web/static/assets/observe.js";
+import { createStream } from "../../web/static/assets/app/live-stream.js";
 
 class FakeSource {
   static instances = [];

@@ -1,0 +1,245 @@
+// web/static/assets/app/components/chat.js
+import {
+  state,
+  roots,
+  childrenOf,
+  descendantIds,
+  sendMessage,
+  loadModels,
+  selectTask,
+  toast,
+} from "../store.js";
+import { icon, renderMarkdown, stamp, modelLabel, statusLabel, toolOf as toolOfTask, TOOL_ICON, BUSY_STATUSES } from "../ui.js";
+
+export const ChatView = {
+  name: "ChatView",
+  emits: ["new-project"],
+  setup() {
+    const messages = Vue.computed(() => {
+      return roots().map((root) => {
+        const kids = childrenOf(root.id);
+        const ids = descendantIds(root.id);
+        const answer = root.consolidated_result_json?.final_answer || null;
+        const reply = answer ? renderMarkdown(answer) : "";
+        const busy = BUSY_STATUSES.includes(root.status) || kids.some((task) => BUSY_STATUSES.includes(task.status));
+        const meta = root.metadata_json || {};
+        return {
+          id: root.id,
+          title: root.display_title || root.title,
+          objective: String(root.objective || "").split("\n\nAnexos do usuário:")[0],
+          attachments: meta.attachments || [],
+          createdAt: stamp(root.created_at),
+          model: modelLabel(root, state.live),
+          status: root.status,
+          statusText: statusLabel(root.status),
+          busy,
+          reply,
+          stages: kids.map((task) => ({
+            id: task.id,
+            title: task.display_title || task.title,
+            status: task.status,
+            statusText: statusLabel(task.status),
+            tool: toolOfTask(task),
+            glyph: TOOL_ICON[toolOfTask(task)] || "circle",
+            active: BUSY_STATUSES.includes(task.status),
+            selected: state.selectedTaskId === task.id,
+          })),
+          focusHere: !state.live?.focus || ids.has(state.live.focus.id),
+        };
+      });
+    });
+
+    const providerOptions = Vue.computed(() => state.providers);
+    const models = Vue.computed(() => state.providerModels[state.provider] || []);
+    const logRef = Vue.ref(null);
+
+    Vue.watch(
+      () => messages.value.map((message) => message.stages.length).join(","),
+      () => {
+        const element = logRef.value;
+        if (element) element.scrollTop = element.scrollHeight;
+      },
+    );
+    const thoughts = Vue.computed(() => {
+      const live = state.live;
+      if (!live) return [];
+      const noisy = /^(Planejando|Pronta para executar|Concluída sem teste|Liberada|Aguardando|Começando)/;
+      return (live.thoughts || []).filter((item) => !noisy.test(item.text || ""));
+    });
+
+    async function onProviderChange() {
+      state.modelId = "";
+      const found = await loadModels(state.provider);
+      if (found.length) state.modelId = found[0];
+    }
+
+    function onKeydown(event) {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+      }
+    }
+
+    async function onFiles(event) {
+      const files = Array.from(event.target.files || []);
+      event.target.value = "";
+      for (const file of files) {
+        if (state.attachments.length >= 6) {
+          toast("Máximo de 6 anexos por mensagem", "error");
+          break;
+        }
+        const base64 = await readAsBase64(file);
+        state.attachments.push({
+          kind: file.type.startsWith("image/") ? "image" : "file",
+          name: file.name,
+          mime: file.type || "application/octet-stream",
+          content_base64: base64,
+        });
+      }
+    }
+
+    function readAsBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function removeAttachment(index) {
+      state.attachments.splice(index, 1);
+    }
+
+    return {
+      state,
+      messages,
+      logRef,
+      providerOptions,
+      models,
+      thoughts,
+      onProviderChange,
+      onKeydown,
+      onFiles,
+      removeAttachment,
+      toast,
+      sendMessage,
+      selectTask,
+      icon,
+      stamp,
+    };
+  },
+  template: `
+    <section class="chat">
+      <div class="chat-log" ref="logRef" v-if="messages.length">
+        <article v-for="message in messages" :key="message.id" class="turn">
+          <div class="bubble user">
+            <div class="bubble-meta">
+              <span class="avatar avatar-user">Você</span>
+              <span class="muted">{{ message.createdAt }}</span>
+            </div>
+            <p class="bubble-text">{{ message.objective }}</p>
+            <div class="chips" v-if="message.attachments.length">
+              <span class="chip" v-for="item in message.attachments" :key="item.name">
+                <span v-html="icon('paperclip', 12)"></span>{{ item.name || item.path }}
+              </span>
+            </div>
+          </div>
+
+          <div class="bubble agent" :class="{ live: message.busy }">
+            <div class="bubble-meta">
+              <img class="avatar avatar-mark" src="/assets/brand/callidus-mark.svg" alt="" width="20" height="20" />
+              <span class="agent-name">Callidus</span>
+              <span class="muted" v-if="message.model">{{ message.model }}</span>
+              <span class="status-pill" :class="'status-' + message.status">{{ message.statusText }}</span>
+            </div>
+
+            <ul class="thoughts" v-if="thoughts.length && message.focusHere">
+              <li v-for="(thought, index) in thoughts" :key="index" :class="thought.phase">
+                <span class="thought-dot"></span>{{ thought.text }}
+              </li>
+            </ul>
+
+            <div class="stages" v-if="message.stages.length">
+              <button
+                type="button"
+                class="stage"
+                :class="{ active: stage.active, selected: stage.selected }"
+                v-for="stage in message.stages"
+                :key="stage.id"
+                @click="selectTask(stage.id)"
+              >
+                <span class="stage-ico" v-html="icon(stage.glyph, 14)"></span>
+                <span class="stage-title">{{ stage.title }}</span>
+                <span class="status-dot" :class="'status-' + stage.status"></span>
+              </button>
+            </div>
+
+            <div class="answer" v-if="message.reply" v-html="message.reply"></div>
+            <p class="muted thinking" v-else-if="message.busy">
+              <span class="spinner"></span> Trabalhando…
+            </p>
+          </div>
+        </article>
+      </div>
+
+      <div class="chat-empty" v-else>
+        <img class="brand-mark-img brand-mark-lg" src="/assets/brand/callidus-mark.svg" alt="" width="52" height="52" />
+        <h2>O que vamos construir?</h2>
+        <p>Escreva embaixo como no chat. O Callidus divide o trabalho, edita arquivos e mostra cada passo aqui.</p>
+      </div>
+
+      <form class="composer" @submit.prevent="sendMessage()">
+        <div class="chips" v-if="state.attachments.length">
+          <span class="chip" v-for="(item, index) in state.attachments" :key="item.name + index">
+            <span v-html="icon('paperclip', 12)"></span>{{ item.name }}
+            <button type="button" class="chip-remove" @click="removeAttachment(index)" aria-label="Remover anexo">×</button>
+          </span>
+        </div>
+        <textarea
+          v-model="state.objective"
+          rows="2"
+          placeholder="Pedir ao Callidus…  (Enter envia, Shift+Enter quebra linha)"
+          aria-label="Pedido"
+          @keydown="onKeydown"
+        ></textarea>
+        <div class="composer-bar">
+          <button type="button" class="icon-btn ghost" title="Anexar imagem ou documento" aria-label="Anexar" @click="$refs.fileInput.click()" v-html="icon('paperclip', 15)"></button>
+          <input ref="fileInput" type="file" multiple hidden accept="image/*,.pdf,.txt,.md,.py,.json,.csv,.js,.ts,.tsx,.html,.css,.xml,.yaml,.yml,.toml,.zip,.doc,.docx,.svg" @change="onFiles" />
+          <div class="composer-pickers">
+            <label class="picker">
+              <span class="picker-label">Provedor</span>
+              <select v-model="state.provider" @change="onProviderChange" aria-label="Provedor">
+                <option v-for="item in providerOptions" :key="item.name" :value="item.name">
+                  {{ item.name }}<template v-if="item.type && item.type !== item.name"> · {{ item.type }}</template>
+                </option>
+              </select>
+            </label>
+            <label class="picker">
+              <span class="picker-label">Modelo</span>
+              <select v-model="state.modelId" aria-label="Modelo">
+                <option v-if="!models.length" :value="state.modelId">{{ state.modelId || 'modelo' }}</option>
+                <option v-for="item in models" :key="item" :value="item">{{ item }}</option>
+              </select>
+            </label>
+            <label class="picker">
+              <span class="picker-label">Navegador</span>
+              <select v-model="state.browserMode" aria-label="Navegador">
+                <option value="off">Desligado</option>
+                <option value="headless">Invisível</option>
+                <option value="visible">Janela</option>
+              </select>
+            </label>
+            <label class="picker picker-check" title="Permitir comandos e scripts">
+              <input type="checkbox" v-model="state.approveTools" />
+              <span>Ferramentas</span>
+            </label>
+          </div>
+          <button type="submit" class="btn-primary send-btn" :disabled="state.sending || !state.objective.trim()">
+            <span v-html="icon('send', 15)"></span> Enviar
+          </button>
+        </div>
+      </form>
+    </section>
+  `,
+};

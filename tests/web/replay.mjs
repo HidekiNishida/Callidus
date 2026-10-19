@@ -8,7 +8,7 @@ import {
   markConnection,
   markResync,
   verificationList,
-} from "../../web/static/assets/observe-core.js";
+} from "../../web/static/assets/app/live-state.js";
 
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);

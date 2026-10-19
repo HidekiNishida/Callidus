@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from agent.api.deps import db_session, get_engine, read_settings
 from agent.api.observe_routes import router as observe_router
+from agent.api.provider_routes import router as provider_router
 from agent.brand import BRAND_NAME, BRAND_TAGLINE
 from agent.config import Settings
 from agent.domain.enums import MemoryKind, TaskStatus
@@ -138,6 +139,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(observe_router)
+app.include_router(provider_router)
 
 
 @app.get("/health")

@@ -197,12 +197,20 @@ def load_catalog(path: Path | str) -> ProviderCatalog:
 _CATALOG_CACHE: dict[tuple[str, float], ProviderCatalog] = {}
 
 
+def config_path_for_settings(settings: Settings) -> Path:
+    """Arquivo de provedores em uso: o configurado (`PROVIDERS_CONFIG_PATH`) ou o padrão da
+    pasta de dados (`data/providers.yaml`), que a interface web cria quando necessário."""
+    return settings.resolved_provider_config_path()
+
+
 def catalog_for_settings(settings: Settings) -> ProviderCatalog:
     """Catálogo da configuração apontada nas settings (cacheado por arquivo e mtime)."""
-    path = settings.provider_config_path
-    if not path:
+    file = config_path_for_settings(settings)
+    explicit = settings.provider_config_path is not None
+    if not file.is_file():
+        if explicit:
+            raise ProviderConfigError(f"arquivo de configuração de provedores não encontrado: {file}")
         return ProviderCatalog({})
-    file = Path(path)
     try:
         mtime = file.stat().st_mtime
     except OSError as exc:
@@ -338,8 +346,37 @@ def build_provider(name: str, spec: ProviderSpec, settings: Settings) -> Any:
     raise ProviderConfigError(f"provedor '{name}': tipo '{spec.type}' desconhecido")
 
 
-BUILTIN_TYPES = {"ollama", "llamacpp", "llama_cpp", "llama.cpp"}
+def catalog_to_mapping(catalog: ProviderCatalog) -> dict[str, Any]:
+    """Catálogo como mapa (o que vai para o arquivo de configuração)."""
+    return {
+        "default_provider": catalog.default_provider,
+        "providers": {
+            name: catalog.spec(name).model_dump(exclude_none=True) for name in catalog.names()
+        },
+    }
 
+
+def save_catalog(catalog: ProviderCatalog, path: Path) -> Path:
+    """Grava o catálogo no arquivo (YAML ou JSON conforme a extensão) e invalida o cache."""
+    file = Path(path)
+    file.parent.mkdir(parents=True, exist_ok=True)
+    data = catalog_to_mapping(catalog)
+    if file.suffix.lower() in {".yaml", ".yml"}:
+        try:
+            import yaml
+        except ImportError as exc:  # pragma: no cover - dependência declarada no pyproject
+            raise ProviderConfigError(
+                "gravação em YAML exige PyYAML; instale a dependência ou use um arquivo JSON"
+            ) from exc
+        text = yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
+    else:
+        text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    file.write_text(text, encoding="utf-8")
+    _CATALOG_CACHE.clear()
+    return file
+
+
+BUILTIN_TYPES = {"ollama", "llamacpp", "llama_cpp", "llama.cpp"}
 
 def build_builtin_provider(name: str, settings: Settings) -> Any:
     """Provedores históricos, configurados por variável de ambiente (sem arquivo de configuração)."""

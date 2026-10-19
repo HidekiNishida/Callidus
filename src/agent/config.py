@@ -2,11 +2,17 @@
 import os
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
 
     data_dir: Path = Path("data")
     database_url: str | None = None
@@ -19,7 +25,10 @@ class Settings(BaseSettings):
     # Provedores: arquivo declarativo (YAML/JSON) com os provedores nomeados. Cada entrada tem
     # `type` (ollama, llamacpp, openai_compatible, openrouter, anthropic, gemini, mock) e as
     # opções do provedor; chaves vêm do ambiente por `api_key_env`.
-    provider_config_path: Path | None = None
+    provider_config_path: Path | None = Field(
+        default=None,
+        validation_alias=AliasChoices("PROVIDERS_CONFIG_PATH", "PROVIDER_CONFIG_PATH"),
+    )
     # Política comum dos provedores HTTP: tempo limite, nº de tentativas em falha transitória
     # (só conexão recusada e 429), endereços privados permitidos (Ollama/llama.cpp locais) e TLS.
     provider_timeout_sec: float = 120.0
@@ -79,6 +88,16 @@ class Settings(BaseSettings):
         self.data_dir.mkdir(parents=True, exist_ok=True)
         db_path = self.data_dir / "agent.db"
         return f"sqlite:///{db_path.resolve()}"
+
+    def resolved_provider_config_path(self) -> Path:
+        """Arquivo de provedores em uso: o configurado ou, por padrão, `data/providers.yaml`."""
+        if self.provider_config_path:
+            return Path(self.provider_config_path)
+        return Path(self.data_dir) / "providers.yaml"
+
+    def resolved_secrets_dir(self) -> Path:
+        """Pasta das credenciais gravadas pela interface (fora do versionamento)."""
+        return Path(self.data_dir) / "secrets"
 
 
 def get_settings() -> Settings:

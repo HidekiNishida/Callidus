@@ -1,186 +1,19 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Callidus</title>
   <meta name="description" content="Callidus — agente de desenvolvimento otimizado para modelos locais pequenos." />
   <link rel="icon" href="/assets/brand/favicon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="/assets/brand/favicon.svg" />
-  <link rel="stylesheet" href="/assets/style.css" />
+  <link rel="apple-touch-icon" href="/assets/brand/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/assets/app/style.css" />
 </head>
 <body>
-  <div class="app-shell">
-    <aside class="sidebar" aria-label="Projetos">
-      <div class="sidebar-head">
-        <img class="brand-lockup" src="/assets/brand/callidus-lockup.svg" alt="Callidus" width="150" height="40" />
-        <button type="button" id="btn-toggle-project-form" class="icon-btn" data-icon="plus" title="Novo projeto" aria-label="Novo projeto"></button>
-      </div>
-      <input type="search" id="project-search" placeholder="Buscar projeto…" autocomplete="off" />
-      <div class="loose-head"><span>Conversas</span><button type="button" id="btn-loose-chat" class="icon-btn" data-icon="plus" title="Nova conversa sem projeto" aria-label="Nova conversa sem projeto"></button></div>
-      <ul id="loose-list" class="project-list"></ul>
-      <ul id="project-list" class="project-list"></ul>
-      <div class="sidebar-foot muted" id="health-indicator">—</div>
-    </aside>
-
-    <div class="main chat-main">
-      <header class="topbar">
-        <div class="topbar-left">
-          <div class="title-row">
-            <h1 id="workspace-title">Novo chat</h1>
-            <button type="button" id="btn-rename" class="icon-btn" data-icon="pencil" title="Renomear conversa" aria-label="Renomear conversa"></button>
-            <button type="button" id="btn-folder" class="icon-btn" data-icon="folder" title="Alterar pasta" aria-label="Alterar pasta"></button>
-          </div>
-          <p class="muted" id="workspace-subtitle">Sem pasta escolhida, vale a pasta do usuário.</p>
-          <div id="branch-switch" class="branch-switch" hidden>
-            <button type="button" id="branch-prev" aria-label="Ramo anterior">‹</button>
-            <span id="branch-label">1/1</span>
-            <button type="button" id="branch-next" aria-label="Próximo ramo">›</button>
-          </div>
-        </div>
-        <button type="button" id="btn-new-chat" class="icon-btn" data-icon="chat" title="Nova conversa" aria-label="Nova conversa"></button>
-        <button type="button" id="btn-observe" class="icon-btn" data-icon="chart" title="Acompanhar execução" aria-label="Acompanhar execução" aria-pressed="false"></button>
-        <div class="topbar-run" id="run-toolbar" hidden>
-          <button type="button" id="btn-step" class="icon-btn" data-icon="play" disabled title="Um passo" aria-label="Um passo"></button>
-          <button type="button" id="btn-pause" class="icon-btn" data-icon="pause" disabled title="Pausar" aria-label="Pausar"></button>
-          <button type="button" id="btn-resume" class="icon-btn" data-icon="file" hidden title="Resumo de onde parou" aria-label="Resumo"></button>
-          <button type="button" id="btn-cancel-run" class="icon-btn danger" data-icon="stop" disabled title="Parar" aria-label="Parar"></button>
-          <button type="button" id="btn-toggle-details" class="icon-btn" data-icon="panel" title="Plano" aria-label="Plano"></button>
-        </div>
-        <button type="button" id="btn-run" class="btn-primary" hidden>Iniciar</button>
-        <button type="button" id="btn-execute" class="btn-secondary" hidden>Auto</button>
-        <label class="chk" hidden><input type="checkbox" id="poll-active" checked /> Ao vivo</label>
-        <label class="chk" hidden><input type="checkbox" id="chk-autonomous" checked /> Autônomo</label>
-      </header>
-
-      <div class="stats-bar" id="stats-bar" hidden></div>
-
-      <section id="live-board" class="live-board" hidden>
-        <div class="live-dot" id="live-dot" aria-hidden="true"></div>
-        <div class="live-copy">
-          <p class="live-kicker" id="live-kicker"><img class="brand-mark-img" src="/assets/brand/callidus-mark.svg" alt="" width="14" height="14" /> Callidus</p>
-          <h2 id="live-title">Aguardando</h2>
-          <p id="live-how" class="muted"></p>
-        </div>
-        <div class="live-meta" id="live-meta"></div>
-      </section>
-
-      <div id="chat-log" class="chat-log" aria-live="polite">
-        <div class="chat-empty">
-          <img class="brand-mark-img brand-mark-lg" src="/assets/brand/callidus-mark.svg" alt="" width="44" height="44" />
-          <h2>O que vamos construir?</h2>
-          <p>Escreva embaixo como no chat do Cursor. O Callidus divide o trabalho, edita arquivos e mostra cada passo aqui.</p>
-        </div>
-      </div>
-
-      <form id="form-task" class="composer-dock">
-        <input name="title" class="visually-hidden" />
-        <div id="attach-row" class="attach-row" hidden></div>
-        <textarea name="objective" rows="2" placeholder="Pedir ao Callidus…  (Enter envia, Shift+Enter quebra linha)"></textarea>
-        <div class="composer-bar">
-          <button type="button" class="icon-btn" id="btn-attach" data-icon="paperclip" title="Anexar imagem ou documento" aria-label="Anexar"></button>
-          <input id="file-attach" type="file" multiple hidden accept="image/*,.pdf,.txt,.md,.py,.json,.csv,.js,.ts,.tsx,.html,.css,.xml,.yaml,.yml,.toml,.zip,.doc,.docx,.svg" />
-          <details class="composer-more" id="composer-more">
-            <summary id="model-chip">modelo</summary>
-            <div class="more-panel">
-              <select id="sel-provider" aria-label="Provedor">
-                <option value="ollama">Ollama</option>
-                <option value="llamacpp">llama.cpp</option>
-                <option value="mock">Mock</option>
-              </select>
-              <select id="sel-model" aria-label="Modelo"></select>
-              <select id="objective-template" aria-label="Template">
-                <option value="">Atalho…</option>
-                <option value="e2e">Demo E2E</option>
-              </select>
-            </div>
-          </details>
-          <details class="composer-more" id="browser-menu">
-            <summary id="browser-chip" data-icon="globe" title="Navegador desligado"><span>Desligado</span></summary>
-            <div class="more-panel">
-              <button type="button" data-browser="off">Desligado</button>
-              <button type="button" data-browser="headless">Invisível</button>
-              <button type="button" data-browser="visible">Janela</button>
-            </div>
-          </details>
-          <label class="icon-btn" id="lbl-tools" title="Permitir comandos e scripts">
-            <input type="checkbox" id="chk-approve-tools" checked class="visually-hidden" />
-            <span data-icon="wrench" aria-hidden="true"></span>
-            <span class="visually-hidden">Ferramentas</span>
-          </label>
-          <button type="submit" class="icon-btn primary" id="btn-send" data-icon="send" title="Enviar" aria-label="Enviar"></button>
-        </div>
-      </form>
-    </div>
-
-    <aside class="details" id="details-panel" hidden>
-      <div class="panel-head">
-        <h2>Plano</h2>
-        <select id="task-filter-status" aria-label="Filtrar status">
-          <option value="">Todos</option>
-          <option value="RUNNING">Executando</option>
-          <option value="BLOCKED">Bloqueados</option>
-          <option value="COMPLETED">Prontos</option>
-        </select>
-      </div>
-      <div id="task-tree" class="task-tree" role="tree"></div>
-      <div class="tabs" role="tablist">
-        <button type="button" class="tab active" data-tab="detail" data-icon="file" title="Detalhe" aria-label="Detalhe"></button>
-        <button type="button" class="tab" data-tab="attempts" data-icon="refresh" title="Tentativas" aria-label="Tentativas"></button>
-        <button type="button" class="tab" data-tab="evidence" data-icon="check" title="Testes" aria-label="Testes"></button>
-        <button type="button" class="tab" data-tab="diff" data-icon="diff" title="Diff" aria-label="Diff"></button>
-        <button type="button" class="tab" data-tab="context" data-icon="layers" title="Contexto" aria-label="Contexto"></button>
-        <button type="button" class="tab" data-tab="metrics" data-icon="chart" title="Métricas" aria-label="Métricas"></button>
-        <button type="button" class="tab" data-tab="graph" data-icon="share" title="Grafo" aria-label="Grafo"></button>
-        <button type="button" class="tab" data-tab="tools" data-icon="wrench" title="Ferramentas" aria-label="Ferramentas"></button>
-      </div>
-      <div id="tab-detail" class="tab-panel active"></div>
-      <div id="tab-attempts" class="tab-panel"><pre id="attempts-view"></pre></div>
-      <div id="tab-evidence" class="tab-panel"><pre id="evidence-view"></pre></div>
-      <div id="tab-diff" class="tab-panel">
-        <button type="button" id="btn-refresh-diff" class="btn-secondary">Atualizar diff</button>
-        <pre id="diff-view"></pre>
-      </div>
-      <div id="tab-tools" class="tab-panel"><pre id="tools-view"></pre></div>
-      <div id="tab-context" class="tab-panel"><pre id="context-view"></pre></div>
-      <div id="tab-metrics" class="tab-panel">
-        <button type="button" id="btn-refresh-metrics" class="btn-secondary">Métricas</button>
-        <pre id="metrics-view"></pre>
-      </div>
-      <div id="tab-graph" class="tab-panel">
-        <button type="button" id="btn-kg-reindex" class="btn-secondary">Reindexar</button>
-        <input type="search" id="kg-search" placeholder="Buscar símbolo…" />
-        <pre id="graph-view"></pre>
-      </div>
-      <div class="panel-head">
-        <h2>Linha do tempo</h2>
-        <button type="button" id="btn-mcp-discover" class="icon-btn" data-icon="plug" title="MCP" aria-label="MCP"></button>
-        <button type="button" id="btn-refresh-all" class="icon-btn" data-icon="refresh" title="Atualizar" aria-label="Atualizar"></button>
-      </div>
-      <ul id="activity-feed" class="activity-feed"></ul>
-    </aside>
-
-    <aside class="observe-panel" id="observe-panel" aria-label="Acompanhamento da execução" hidden></aside>
+  <div id="app">
+    <div class="boot"><span class="spinner"></span> Carregando o Callidus…</div>
   </div>
-  <footer class="statusbar" id="statusbar">
-    <span id="status-action" title="Parado"></span>
-    <span id="status-model" title="Modelo"></span>
-    <span id="status-tool" title="Ferramenta"></span>
-    <span id="health-indicator-bar" class="muted">local</span>
-  </footer>
-  <div id="folder-modal" class="modal" hidden>
-    <div class="modal-card" role="dialog" aria-label="Escolher pasta">
-      <div class="modal-bar">
-        <button type="button" id="folder-up" class="icon-btn" data-icon="up" title="Subir" aria-label="Subir"></button>
-        <strong id="folder-path"></strong>
-        <button type="button" id="folder-native" class="btn-ghost">Finder</button>
-        <button type="button" id="folder-use" class="btn-primary">Usar esta pasta</button>
-        <button type="button" id="folder-close" class="icon-btn" aria-label="Fechar">×</button>
-      </div>
-      <ul id="folder-entries" class="folder-list"></ul>
-    </div>
-  </div>
-  <div id="toast-root" aria-live="polite"></div>
-  <script type="module" src="/assets/app.js"></script>
+  <script src="/assets/vendor/vue.global.prod.js"></script>
+  <script type="module" src="/assets/app/main.js"></script>
 </body>
 </html>

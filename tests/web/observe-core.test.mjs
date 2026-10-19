@@ -13,8 +13,8 @@ import {
   parseTs,
   visibleEvents,
   verificationList,
-} from "../../web/static/assets/observe-core.js";
-import { esc, renderFiles, renderHeader, renderOutputs, renderTools, renderTree } from "../../web/static/assets/observe-view.js";
+} from "../../web/static/assets/app/live-state.js";
+import { esc, renderFiles, renderHeader, renderOutputs, renderTools, renderTree } from "../../web/static/assets/app/live-view.js";
 
 const RUN = "run-1";
 const ROOT = "t-root";

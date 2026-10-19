@@ -156,7 +156,8 @@ APIs com formato próprio ganharam adaptadores próprios (não é "OpenAI-compat
 
 ## Configuração
 
-O arquivo de provedores é YAML ou JSON, apontado por `PROVIDERS_CONFIG_PATH`:
+O arquivo de provedores é YAML ou JSON. Por padrão fica em `data/providers.yaml` (criado pela
+interface); com `PROVIDERS_CONFIG_PATH` você aponta para outro lugar:
 
 ```yaml
 default_provider: ollama_remote
@@ -184,11 +185,27 @@ Opções aceitas por provedor: `type`, `base_url`, `model`, `api_key_env`, `api_
 
 Exemplo completo: [`providers.example.yaml`](/providers.example.yaml).
 
+## Configurar pela interface web
+
+A aba **Provedores** da interface (Vue 3) resolve o mesmo arquivo pela tela:
+
+| Ação | O que acontece |
+|------|----------------|
+| **Adicionar provedor** | Grava a entrada no arquivo de provedores (valida tipo e URL antes) |
+| **Testar** | Lista os modelos do servidor — diagnóstico sem gastar inferência |
+| **Modelos** | Traz o catálogo do servidor e sugere o modelo do campo |
+| **Usar como padrão** | Marca o provedor como `default_provider` |
+| **Credencial** | A chave é gravada em `data/secrets/<nome>.key` com permissão `0600` e a configuração passa a apontar para esse arquivo — o valor nunca aparece na tela, no log ou no arquivo de configuração |
+| **Remover** | Tira o provedor do arquivo e apaga a credencial gravada |
+
+Detalhe das rotas: [frontend.md](/docs/architecture/frontend.md) e
+[`api/provider_routes.py`](/src/agent/api/provider_routes.py).
+
 ## Variáveis de ambiente
 
 | Variável | Padrão | Efeito |
 |----------|--------|--------|
-| `PROVIDERS_CONFIG_PATH` | — | Caminho do arquivo de provedores (YAML ou JSON) |
+| `PROVIDERS_CONFIG_PATH` | `data/providers.yaml` | Caminho do arquivo de provedores (YAML ou JSON). Sem a variável, usa o padrão na pasta de dados — que a interface cria |
 | `DEFAULT_PROVIDER` | `ollama` | Provedor padrão quando não há `default_provider` no arquivo |
 | `DEFAULT_MODEL_ID` | `llama3.2` | Modelo padrão quando o provedor não define `model` |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama embutido |

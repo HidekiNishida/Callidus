@@ -72,7 +72,7 @@ ausente não é simulado: o pedido incompatível falha com `ProviderNotSupported
 Duas formas, que podem conviver:
 
 1. **Variáveis de ambiente** (provedores embutidos): `OLLAMA_BASE_URL`, `LLAMACPP_BASE_URL`, `DEFAULT_PROVIDER`, `DEFAULT_MODEL_ID`.
-2. **Arquivo de provedores** (`PROVIDERS_CONFIG_PATH`): provedores nomeados, escolhidos por nome no run.
+2. **Arquivo de provedores** (`PROVIDERS_CONFIG_PATH`, padrão `data/providers.yaml`): provedores nomeados, escolhidos por nome no run — e configuráveis pela aba **Provedores** da interface.
 
 ```yaml
 default_provider: ollama_remote

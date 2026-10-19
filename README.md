@@ -427,6 +427,15 @@ providers:
 - Não há fallback automático entre provedores: a falha é visível. O mock só entra com
   `ALLOW_MOCK_FALLBACK=true`.
 
+### Configurar pela interface web
+
+A aba **Provedores** (`http://127.0.0.1:8765/`) cria, edita e testa provedores sem editar arquivo:
+
+- cria e remove provedores, define o padrão, lista os modelos do servidor e testa a conexão;
+- grava a credencial em `data/secrets/<provedor>.key` com permissão `0600` (fora do repositório) ou
+  deixa a chave vir do ambiente (`api_key_env`);
+- a configuração fica em `data/providers.yaml` (ou no arquivo de `PROVIDERS_CONFIG_PATH`).
+
 ### Conferir conectividade
 
 ```bash
@@ -644,9 +653,11 @@ Callidus/
 ├── skills/               # Catálogo editável de skills (fonte de verdade)
 ├── tests/                # 50+ arquivos pytest (unit + integração + E2E)
 ├── web/
-│   └── static/           # SPA servida pela API
-│       ├── index.html
-│       └── assets/       # app.js, style.css
+│   └── static/           # SPA Vue 3 servida pela API
+│       ├── index.html    # shell que monta o app
+│       └── assets/
+│           ├── app/      # código da interface (store, api, componentes, style.css)
+│           ├── vendor/   # vue.global.prod.js (versionado, funciona offline)
 │           └── brand/    # callidus-mark.svg, callidus-lockup.svg, favicon.svg (gerados por scripts/build_brand_assets.py)
 ├── .env                  # Config local (gitignored)
 ├── .env.example          # Template

@@ -1,0 +1,67 @@
+// web/static/assets/app/components/sidebar.js
+import { state, selectProject, selectConversation, toast } from "../store.js";
+import { icon, ago } from "../ui.js";
+
+export const Sidebar = {
+  name: "Sidebar",
+  setup() {
+    const filteredProjects = Vue.computed(() => {
+      const term = state.search.trim().toLowerCase();
+      if (!term) return state.projects;
+      return state.projects.filter((project) => project.name.toLowerCase().includes(term));
+    });
+    const filteredLoose = Vue.computed(() => {
+      const term = state.search.trim().toLowerCase();
+      if (!term) return state.loose;
+      return state.loose.filter((item) => (item.title || "").toLowerCase().includes(term));
+    });
+    return { state, filteredProjects, filteredLoose, selectProject, selectConversation, toast, ago, icon };
+  },
+  template: `
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <img class="brand-lockup" src="/assets/brand/callidus-lockup.svg" alt="Callidus" width="132" height="34" />
+        <button type="button" class="icon-btn" title="Novo projeto" aria-label="Novo projeto" @click="$emit('new-project')" v-html="icon('plus')"></button>
+      </div>
+
+      <div class="search-box">
+        <span class="search-ico" v-html="icon('search', 14)"></span>
+        <input type="search" v-model="state.search" placeholder="Buscar projeto…" aria-label="Buscar projeto" />
+      </div>
+
+      <div class="side-scroll">
+        <p class="side-label" v-if="filteredLoose.length">Conversas</p>
+        <ul class="side-list">
+          <li v-for="item in filteredLoose" :key="item.id">
+            <button type="button" class="side-item" :class="{ active: state.conversation && state.conversation.id === item.id }" @click="selectConversation(item)">
+              <span class="side-ico" v-html="icon('chat', 14)"></span>
+              <span class="side-name">{{ item.title || 'Conversa' }}</span>
+              <span class="side-meta">{{ ago(item.updated_at) }}</span>
+            </button>
+          </li>
+        </ul>
+
+        <p class="side-label" v-if="filteredProjects.length">Projetos</p>
+        <ul class="side-list">
+          <li v-for="project in filteredProjects" :key="project.id">
+            <button type="button" class="side-item" :class="{ active: state.selectedProject && state.selectedProject.id === project.id }" @click="selectProject(project)">
+              <span class="side-ico" v-html="icon('folder', 14)"></span>
+              <span class="side-name">{{ project.name }}</span>
+              <span class="side-meta">{{ ago(project.updated_at) }}</span>
+            </button>
+          </li>
+        </ul>
+
+        <p class="side-empty" v-if="!filteredProjects.length && !filteredLoose.length">
+          Nenhum projeto ainda. Crie o primeiro para o Callidus trabalhar em uma pasta.
+        </p>
+      </div>
+
+      <div class="sidebar-foot">
+        <span class="dot dot-ok"></span>
+        <span>API local</span>
+        <span class="side-foot-version">v0.5</span>
+      </div>
+    </aside>
+  `,
+};

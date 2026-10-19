@@ -42,6 +42,22 @@ Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) 
 | `GET` | `/projects/{id}/git-diff` | Diff git do projeto |
 | `POST` | `/debug/chat/ollama` | Chat direto Ollama (debug) |
 
+## Provedores (configuração)
+
+Rotas em [`provider_routes.py`](provider_routes.py):
+
+| Método | Rota | Função |
+|--------|------|--------|
+| `GET` | `/providers` | Catálogo (configurados + embutidos), sem credenciais |
+| `GET` | `/providers/{nome}/models` | Modelos do servidor |
+| `GET` | `/providers/{nome}/health` | Diagnóstico de conectividade |
+| `POST` | `/providers/{nome}/test` | Testa a conexão (mesmo que health, com POST) |
+| `GET` | `/providers/config` | Configuração em uso + caminho do arquivo + situação da credencial |
+| `PUT` | `/providers/config` | Valida e grava a configuração de provedores |
+| `DELETE` | `/providers/config/{nome}` | Remove um provedor (e a credencial gravada) |
+| `PUT` | `/providers/config/{nome}/secret` | Grava a credencial em arquivo `0600` e aponta a configuração |
+| `DELETE` | `/providers/config/{nome}/secret` | Apaga a credencial |
+
 ## Observabilidade (SSE + EventBus)
 
 - **`GET /events?run_id=...&after_seq=...`** — Stream de eventos (ring buffer + assinantes)
@@ -51,7 +67,8 @@ Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) 
 
 ## SPA Estática
 
-- Servida em `/` (index.html) + `/assets/*` (app.js, style.css)
+- Servida em `/` (index.html) + `/assets/*` — SPA **Vue 3** em [`web/static/assets/app/`](/web/static/assets/app/)
+  (vendor do Vue versionado em `/assets/vendor/`); detalhes em [frontend.md](/docs/architecture/frontend.md)
 - Headers `Cache-Control: no-cache` para evitar cache agressivo do navegador
 - Pasta configurável via `STATIC_WEB_DIR` ou `web/static` (padrão)
 

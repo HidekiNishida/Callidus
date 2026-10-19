@@ -17,7 +17,7 @@ import {
   toolList,
   verificationList,
   visibleEvents,
-} from "./observe-core.js";
+} from "./live-state.js";
 
 export function esc(value) {
   return String(value ?? "")
