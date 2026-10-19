@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     # Proteção contra recursão, não critério de decomposição: só para árvores que crescem sem fim.
     max_tree_depth: int = 16
     max_tasks_per_run: int = 400
+    # Skills: quantas competências entram no prompt da operação e quanto do orçamento de
+    # entrada elas podem ocupar (fração de `input_budget`).
+    skills_max_per_operation: int = 2
+    # Recuperação da verificação: quantas vezes uma verificação reprovada pode entrar no
+    # ciclo diagnóstico → correção → re-verificação antes de a tarefa ser bloqueada.
+    verification_max_recoveries: int = 2
     # Limites operacionais do run (0 desliga; `config.limits` sobrescreve por run). Atingido um deles, o run
     # pausa com diagnóstico e pode ser retomado; os contadores recomeçam na retomada.
     max_attempts_per_strategy: int = 3

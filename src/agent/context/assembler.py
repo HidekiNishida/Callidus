@@ -22,6 +22,7 @@ def build_operation_context(
     target_files: str = "",
     global_objective: str = "",
     dependency_results: str = "",
+    skills: str = "",
     compact: bool = False,
 ) -> BudgetResult:
     """Componentes do prompt da operação. Obrigatórios nunca são cortados: se não couberem, o orçamento
@@ -33,6 +34,7 @@ def build_operation_context(
         ContextComponent(name="critérios", text=acceptance, required=True, priority=98),
         ContextComponent(name="formato-saída", text=output_format, required=True, priority=97),
         ContextComponent(name="regras-projeto", text=project_rules, required=False, priority=80),
+        ContextComponent(name="skills", text=skills, required=False, priority=75),
         ContextComponent(name="contexto-técnico", text=technical, required=False, priority=70),
         ContextComponent(name="ferramentas", text=tools_summary, required=False, priority=60),
     ]

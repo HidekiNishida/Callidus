@@ -21,6 +21,8 @@ from agent.guides.discover import guide_digest
 from agent.memory.store import choose_memory_index, fragments_for_prompt, structure_memory
 from agent.persistence.models import BranchModel
 from agent.services.branches import memory_visible
+from agent.orchestrator.strategy import ProfessionalStrategy
+from agent.skills import SkillMatch, SkillSelector, get_skill_registry
 from agent.tools.builtins import TOOL_CATALOG
 from sqlalchemy import select
 
@@ -94,6 +96,8 @@ class OperationContextBuilder:
             )
         )
         rules = GLOBAL_RULES if not page else f"{GLOBAL_RULES} O arquivo pedido é o produto completo."
+        skills_rendered, matched_skills = self._skills_block(root_path, task, profile)
+        previous_failures = self._failures_block(task)
 
         try:
             budget = build_operation_context(
@@ -105,11 +109,12 @@ class OperationContextBuilder:
                 acceptance=acceptance,
                 tools_summary=tools_summary,
                 output_format=output_format,
-                previous_failures=describe_failures((task.metadata_json or {}).get("failures") or []),
+                previous_failures=previous_failures,
                 contract=contract,
                 target_files=target_files,
                 global_objective=global_objective,
                 dependency_results=dependency_results,
+                skills=skills_rendered,
                 compact=compact,
             )
         except ContextBudgetError as exc:
@@ -129,6 +134,8 @@ class OperationContextBuilder:
             self._session.flush()
             exc.snapshot_id = str(overflow.id)
             raise
+        if matched_skills:
+            budget.strategy_notes.append("skills: " + ", ".join(m.skill_id for m in matched_skills))
         if memory_note:
             budget.strategy_notes.append(memory_note)
         if included:
@@ -150,6 +157,48 @@ class OperationContextBuilder:
         if images and budget.messages:
             budget.messages[-1].images = images
         return budget, snap
+
+    def _skills_block(
+        self,
+        root_path: str,
+        task: TaskModel,
+        profile: ModelProfile,
+    ) -> tuple[str, list[SkillMatch]]:
+        """Seleciona as Skills relevantes e as renderiza dentro do orçamento do modelo.
+
+        A estratégia profissional da tarefa (quando existe) define a especialidade líder;
+        sem estratégia, a seleção parte das palavras-chave do objetivo. O bloco é limitado
+        por uma fração do orçamento de entrada para nunca estourar a janela do modelo.
+        """
+        selector = SkillSelector(get_skill_registry(root_path))
+        task_kind = task.kind.value if hasattr(task.kind, "value") else str(task.kind)
+        strategy = ProfessionalStrategy.from_dict((task.metadata_json or {}).get("professional_strategy"))
+        if strategy is not None:
+            matches = selector.select_for_strategy(strategy, task_kind=task_kind, max_skills=self._max_skills())
+        else:
+            matches = selector.select(task.objective, task_kind=task_kind, max_skills=self._max_skills())
+        # O bloco de skills nunca pode passar de ~12% do orçamento de entrada.
+        max_chars = max(400, min(2500, int(profile.input_budget * 0.12)))
+        return selector.render_selected_skills(matches, max_chars=max_chars), matches
+
+    def _max_skills(self) -> int:
+        try:
+            from agent.config import get_settings
+
+            return max(1, int(get_settings().skills_max_per_operation))
+        except Exception:  # pragma: no cover - configuração ausente não impede a execução
+            return 2
+
+    def _failures_block(self, task: TaskModel) -> str:
+        """Falhas anteriores + orientação de recuperação do ciclo diagnóstico → correção."""
+        meta = task.metadata_json or {}
+        base = describe_failures(meta.get("failures") or [])
+        guidance = str(meta.get("recovery_guidance") or "")
+        if not guidance:
+            return base
+        if base:
+            return f"{base}\n\n## Orientação de recuperação\n{guidance}"
+        return f"## Orientação de recuperação\n{guidance}"
 
     def _memory_block(self, project_id: uuid.UUID, task: TaskModel) -> tuple[str, str]:
         index = self._memory_index(project_id, task)
