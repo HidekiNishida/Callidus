@@ -4,7 +4,7 @@
 
 Voltar ao [Hub](/docs/regras/README.md) · Validações: [validacoes-testes.md](/docs/regras/validacoes-testes.md)
 
-**Regra:** toda mudança que o agente fizer deve ser **commitada automaticamente pelo agente**, com mensagem em **português**, clara e descritiva.
+**Regra:** toda mudança que o agente fizer deve ser **commitada automaticamente pelo agente**, com mensagem em **português**, clara e descritiva — e **publicada (`git push`) na branch atual** assim que as validações passarem.
 
 ![Alerta](/media/icons/alerta.svg){width=28} O repositório canônico está em `~/Documents/Projetos/Callidus/`. Se a sessão alterar **apenas** o Agent Store (Context), espelhe no repo e commit antes de encerrar. Sem `.git` acessível na árvore editada, registre no checklist e não invente repo ad hoc.
 
@@ -25,7 +25,7 @@ Voltar ao [Hub](/docs/regras/README.md) · Validações: [validacoes-testes.md](
 
 | Situação | Ação |
 |----------|------|
-| Há `.git` / remote e a tarefa altera arquivos do repo | Commit (e push se as regras do ambiente/Cloud Agent exigirem) após mudança coerente |
+| Há `.git` / remote e a tarefa altera arquivos do repo | Commit + **push** na branch atual após mudança coerente e validações verdes |
 | Só há Agent Store (Context), sem acesso ao repo local | Documentar + checklist; espelhar no repo na primeira oportunidade |
 | Usuário/coordenador dispensar commit naquela vez | Respeitar a dispensa e anotar no checklist |
 | Preferência do Project “Publicar ao concluir” | Commit (+ push conforme regra do Project) ao concluir |
@@ -50,7 +50,7 @@ flowchart TD
 3. Se houver git: `status`, `diff`, `log` recente → stage **somente** arquivos da tarefa.
 4. Commit com HEREDOC; mensagem em português.
 5. Não alterar `git config`; não usar `--force`, `--no-verify`, `--no-gpg-sign`; não amend de commit já enviado.
-6. Se política Cloud/Project exigir: `git push -u origin <branch>` (retry com backoff em falha de rede).
+6. `git push -u origin <branch>` (retry com backoff em falha de rede): o push é parte do ciclo, não um extra — só é dispensado se o usuário pedir ou se não houver remote configurado.
 
 Quando o trabalho for **só no store** e o Project ganhar repo depois, os mesmos artefatos devem ser versionados na primeira oportunidade sob a política do repo.
 
@@ -110,6 +110,7 @@ Exemplos:
 - [ ] Se sim: stage só do escopo + commit em português
 - [ ] Se não: documentei no store e no checklist de tarefa
 - [ ] Nenhum secret no commit
+- [ ] Push feito na branch atual (quando há remote)
 
 ---
 
