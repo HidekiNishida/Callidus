@@ -59,6 +59,16 @@ flowchart LR
 A interface é uma SPA **Vue 3** (`web/static/assets/app/`), sem etapa de build: o vendor do Vue é
 versionado localmente e a tela funciona offline. Detalhes: [frontend.md](/docs/architecture/frontend.md).
 
+## Atividade ao vivo no chat
+
+| Padrão adotado | Onde aparece |
+|----------------|--------------|
+| Fluxo de trabalho em tempo real (Cursor/Antigravity) | Bloco “Atividade do agente” dentro da bolha do agente |
+| Diff com linhas coloridas (Antigravity) | Edição de arquivo, aberta por padrão e recolhível |
+| Estado por item (running/ok/falha) | Ícone, cor e tempo de execução de cada linha |
+| Resumo do que foi feito | Cabeçalho com contagens e botão recolher/abrir detalhes |
+| Verbo em português | Tradução de todas as ferramentas e eventos |
+
 ## Regras de responsividade e movimento
 
 | Regra | Como aparece |

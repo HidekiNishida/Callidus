@@ -148,6 +148,35 @@ def test_atividade_do_chat_e_traduzida_para_portugues():
     assert "resumeRun" in store
 
 
+def test_chat_mostra_diffs_e_detalhes_recolhiveis():
+    """Edições aparecem em tempo real, com animação e opção de recolher/abrir."""
+    ui = (APP_DIR / "ui.js").read_text(encoding="utf-8")
+    chat = (APP_DIR / "components" / "chat.js").read_text(encoding="utf-8")
+    css = (APP_DIR / "style.css").read_text(encoding="utf-8")
+    # o tradutor sabe extrair o diff do evento de arquivo
+    assert "diff:" in ui and "diffLines" in ui and "summarizeActivity" in ui
+    # a tela do chat tem o diff, o botão de recolher e a transição de abertura
+    assert "activity-diff" in chat
+    assert "activity-collapse" in chat
+    assert "abrir detalhes" in chat and "recolher" in chat
+    assert 'name="expand"' in chat
+    assert "TransitionGroup" in chat
+    # estilo das linhas de diff e da animação
+    assert ".activity-diff .diff-add" in css
+    assert ".activity-diff .diff-del" in css
+    assert ".expand-enter-active" in css
+
+
+def test_execucao_automatica_continua_o_run():
+    """O modo automático faz o servidor conduzir os passos (a execução não para no 1º passo)."""
+    store = (APP_DIR / "store.js").read_text(encoding="utf-8")
+    topbar = (APP_DIR / "components" / "topbar.js").read_text(encoding="utf-8")
+    assert "autoMode" in store
+    assert "if (state.autoMode)" in store
+    assert "void autoRun();" in store
+    assert "setAutoMode" in topbar
+
+
 def test_interface_tem_seletor_de_pasta_com_criacao():
     main = (APP_DIR / "main.js").read_text(encoding="utf-8")
     assert "pickFolderForProject" in main

@@ -540,4 +540,9 @@ const App = {
   `,
 };
 
-createApp(App).mount("#app");
+const app = createApp(App);
+app.mount("#app");
+
+// Alça de depuração: permite inspecionar o estado da interface pelo console do navegador
+// (e automatizar verificações visuais sem depender do modelo).
+window.__callidus = { state };

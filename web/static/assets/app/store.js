@@ -34,6 +34,7 @@ export const state = reactive({
   providerBusy: {},
 
   sending: false,
+  running: false,
   toasts: [],
   live: null,
   outputs: [],
@@ -44,6 +45,7 @@ export const state = reactive({
   modelId: "",
   browserMode: "off",
   approveTools: true,
+  autoMode: localStorage.getItem("callidus-auto") !== "off",
   objective: "",
   attachments: [],
 
@@ -404,6 +406,10 @@ export async function startRun() {
   await connectStream(state.currentRun.id);
   await api(`/runs/${state.currentRun.id}/step`, { method: "POST" }).catch((err) => toast(err.message, "error"));
   await refreshTasks();
+  if (state.autoMode) {
+    // Sem isto a execução parava no primeiro passo e parecia travada.
+    void autoRun();
+  }
 }
 
 export async function stepRun() {
@@ -415,8 +421,23 @@ export async function stepRun() {
 
 export async function autoRun() {
   if (!state.currentRun) return;
-  await api(`/runs/${state.currentRun.id}/execute?max_steps=80`, { method: "POST" }).catch((err) => toast(err.message, "error"));
-  await refreshTasks();
+  const runId = state.currentRun.id;
+  state.running = true;
+  try {
+    // O servidor conduz os passos até o fim; a interface acompanha pelo stream.
+    await api(`/runs/${runId}/execute?max_steps=80`, { method: "POST" });
+  } catch (err) {
+    toast(err.message || "Falha na execução automática", "error");
+  } finally {
+    state.running = false;
+    await refreshTasks();
+    await refreshRun();
+  }
+}
+
+export function setAutoMode(value) {
+  state.autoMode = Boolean(value);
+  localStorage.setItem("callidus-auto", state.autoMode ? "on" : "off");
 }
 
 export async function pauseRun() {

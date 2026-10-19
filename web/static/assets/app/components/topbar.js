@@ -1,5 +1,16 @@
 // web/static/assets/app/components/topbar.js
-import { state, setTheme, cancelRun, pauseRun, stepRun, autoRun, refreshTasks, toast, openView } from "../store.js";
+import {
+  state,
+  setTheme,
+  cancelRun,
+  pauseRun,
+  stepRun,
+  autoRun,
+  setAutoMode,
+  refreshTasks,
+  toast,
+  openView,
+} from "../store.js";
 import { icon } from "../ui.js";
 import { api } from "../api.js";
 
@@ -33,6 +44,7 @@ export const TopBar = {
       pauseRun,
       stepRun,
       autoRun,
+      setAutoMode,
       refreshTasks,
       openView,
       icon,
@@ -105,7 +117,16 @@ export const TopBar = {
           <button type="button" class="icon-btn" title="Um passo" aria-label="Um passo" :disabled="!busy" @click="stepRun()" v-html="icon('play', 15)"></button>
           <button type="button" class="icon-btn" title="Pausar" aria-label="Pausar" :disabled="!busy" @click="pauseRun()" v-html="icon('pause', 15)"></button>
           <button type="button" class="icon-btn danger" title="Parar" aria-label="Parar" :disabled="!busy" @click="cancelRun()" v-html="icon('stop', 15)"></button>
-          <button type="button" class="btn-ghost small" :disabled="!busy" @click="autoRun()">Auto</button>
+          <button
+            type="button"
+            class="btn-ghost small"
+            :class="{ active: state.autoMode }"
+            :disabled="!busy"
+            title="O agente segue sozinho até o fim"
+            @click="setAutoMode(!state.autoMode)"
+          >
+            Auto
+          </button>
         </div>
 
         <button

@@ -14,7 +14,18 @@ import {
   cancelRun,
   resumeRun,
 } from "../store.js";
-import { icon, renderMarkdown, stamp, modelLabel, statusLabel, toolOf as toolOfTask, TOOL_ICON, BUSY_STATUSES } from "../ui.js";
+import {
+  icon,
+  renderMarkdown,
+  stamp,
+  modelLabel,
+  statusLabel,
+  toolOf as toolOfTask,
+  TOOL_ICON,
+  BUSY_STATUSES,
+  summarizeActivity,
+  diffLines,
+} from "../ui.js";
 import { filesList, currentTask } from "../live-state.js";
 
 export const ChatView = {
@@ -36,6 +47,7 @@ export const ChatView = {
           title: root.display_title || root.title,
           pause,
           activity: isLast ? state.feed : [],
+          summary: isLast ? summarizeActivity(state.feed) : null,
           objective: String(root.objective || "").split("\n\nAnexos do usuário:")[0],
           attachments: meta.attachments || [],
           createdAt: stamp(root.created_at),
@@ -91,6 +103,35 @@ export const ChatView = {
     });
 
     const atBottom = Vue.ref(true);
+    // Entradas abertas e fechadas pelo usuário (o que tem diff abre sozinho).
+    const openIds = Vue.reactive(new Set());
+    const closedIds = Vue.reactive(new Set());
+    const collapsedTurns = Vue.reactive(new Set());
+
+    function isOpen(entry) {
+      if (closedIds.has(entry.id)) return false;
+      if (openIds.has(entry.id)) return true;
+      return Boolean(entry.diff);
+    }
+
+    function toggleEntry(entry) {
+      if (isOpen(entry)) {
+        closedIds.add(entry.id);
+        openIds.delete(entry.id);
+      } else {
+        openIds.add(entry.id);
+        closedIds.delete(entry.id);
+      }
+    }
+
+    function isTurnCollapsed(message) {
+      return collapsedTurns.has(message.id);
+    }
+
+    function toggleTurn(message) {
+      if (isTurnCollapsed(message)) collapsedTurns.delete(message.id);
+      else collapsedTurns.add(message.id);
+    }
 
     function onScroll() {
       const element = logRef.value;
@@ -156,6 +197,11 @@ export const ChatView = {
       atBottom,
       onScroll,
       scrollToBottom,
+      isOpen,
+      toggleEntry,
+      isTurnCollapsed,
+      toggleTurn,
+      diffLines,
       providerOptions,
       models,
       thoughts,
@@ -196,23 +242,61 @@ export const ChatView = {
             </div>
 
             <div class="activity" v-if="message.activity.length">
-              <TransitionGroup name="activity">
+              <div class="activity-head">
+                <span class="activity-head-title">
+                  <span class="activity-ico" v-html="icon('spark', 13)"></span>
+                  Atividade do agente
+                </span>
+                <span class="activity-counts" v-if="message.summary">
+                  <span class="tag" v-if="message.summary.escritas">{{ message.summary.escritas }} escrita(s)</span>
+                  <span class="tag" v-if="message.summary.leituras">{{ message.summary.leituras }} leitura(s)</span>
+                  <span class="tag" v-if="message.summary.comandos">{{ message.summary.comandos }} comando(s)</span>
+                  <span class="tag" v-if="message.summary.testes">{{ message.summary.testes }} teste(s)</span>
+                </span>
+                <button
+                  type="button"
+                  class="activity-collapse"
+                  @click="toggleTurn(message)"
+                >
+                  {{ isTurnCollapsed(message) ? 'abrir detalhes' : 'recolher' }}
+                </button>
+              </div>
+
+              <TransitionGroup v-if="!isTurnCollapsed(message)" name="activity" tag="div" class="activity-items">
                 <div
                   v-for="entry in message.activity"
                   :key="entry.id"
                   class="activity-row"
                   :class="['activity-' + entry.kind, 'state-' + entry.status]"
                 >
-                  <span class="activity-ico" v-html="icon(entry.icon, 13)"></span>
-                  <span class="activity-body">
-                    <span class="activity-title">{{ entry.title }}</span>
-                    <span class="activity-detail" v-if="entry.detail">{{ entry.detail }}</span>
-                    <pre class="activity-output" v-if="entry.output">{{ entry.output }}</pre>
-                  </span>
-                  <span class="activity-state">
-                    <span class="spinner" v-if="entry.status === 'running'"></span>
-                    <span class="activity-ms" v-else-if="entry.duration != null">{{ entry.duration }} ms</span>
-                  </span>
+                  <button type="button" class="activity-toggle" @click="toggleEntry(entry)">
+                    <span class="activity-ico" v-html="icon(entry.icon, 13)"></span>
+                    <span class="activity-body">
+                      <span class="activity-title">{{ entry.title }}</span>
+                      <span class="activity-detail" v-if="entry.detail && !isOpen(entry)">{{ entry.detail }}</span>
+                    </span>
+                    <span class="activity-state">
+                      <span class="spinner" v-if="entry.status === 'running'"></span>
+                      <span class="activity-ms" v-else-if="entry.duration != null">{{ entry.duration }} ms</span>
+                    </span>
+                    <span class="activity-chevron" :class="{ open: isOpen(entry) }" v-html="icon('down', 13)"></span>
+                  </button>
+
+                  <Transition name="expand">
+                    <div class="activity-details" v-if="isOpen(entry)">
+                      <p class="activity-explanation" v-if="entry.explanation">{{ entry.explanation }}</p>
+                      <p class="activity-stats muted small" v-if="entry.stats">{{ entry.stats }}</p>
+                      <pre class="activity-output" v-if="entry.output">{{ entry.output }}</pre>
+                      <pre class="activity-diff" v-if="entry.diff">
+                        <span
+                          v-for="(line, index) in diffLines(entry.diff.text)"
+                          :key="index"
+                          :class="'diff-' + line.type"
+                        >{{ line.text }}</span>
+                      </pre>
+                      <p class="muted small" v-if="entry.sensitive">Arquivo sensível: conteúdo não transmitido.</p>
+                    </div>
+                  </Transition>
                 </div>
               </TransitionGroup>
             </div>
@@ -291,6 +375,10 @@ export const ChatView = {
         </span>
       </div>
 
+      <p class="composer-hint" v-if="state.running || state.currentRun?.status === 'ACTIVE'">
+        <span class="spinner"></span> Execução em andamento — o agente segue sozinho até o fim.
+      </p>
+
       <form class="composer" @submit.prevent="sendMessage()">
         <div class="chips" v-if="state.attachments.length">
           <span class="chip" v-for="(item, index) in state.attachments" :key="item.name + index">
@@ -338,7 +426,12 @@ export const ChatView = {
                 <span>Ferramentas</span>
               </label>
             </div>
-            <button type="submit" class="btn-primary send-btn" :disabled="state.sending || !state.objective.trim()">
+            <button
+              type="submit"
+              class="btn-primary send-btn"
+              :disabled="state.sending || state.running || !state.objective.trim()"
+              :title="state.running ? 'Há uma execução em andamento' : 'Enviar'"
+            >
               <span v-html="icon('send', 15)"></span> Enviar
             </button>
           </div>
