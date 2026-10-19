@@ -133,6 +133,42 @@ def test_stylesheet_declares_responsive_and_motion_rules():
     assert "--dur-" in css
 
 
+def test_atividade_do_chat_e_traduzida_para_portugues():
+    """O feed ao vivo mostra ferramentas, comandos e arquivos em português."""
+    ui = (APP_DIR / "ui.js").read_text(encoding="utf-8")
+    for label in ("Leitura de arquivo", "Escrita de arquivo", "Comando", "Testes", "Listagem de pasta"):
+        assert label in ui, label
+    assert "describeActivity" in ui
+    chat = (APP_DIR / "components" / "chat.js").read_text(encoding="utf-8")
+    assert "activity" in chat
+    assert "pause-banner" in chat
+    assert "resumeRun" in chat
+    store = (APP_DIR / "store.js").read_text(encoding="utf-8")
+    assert "pushActivity" in store
+    assert "resumeRun" in store
+
+
+def test_interface_tem_seletor_de_pasta_com_criacao():
+    main = (APP_DIR / "main.js").read_text(encoding="utf-8")
+    assert "pickFolderForProject" in main
+    assert "createFolder" in main
+    assert "/fs/mkdir" in main
+
+
+def test_interface_tem_configuracao_de_computador_remoto():
+    main = (APP_DIR / "main.js").read_text(encoding="utf-8")
+    store = (APP_DIR / "store.js").read_text(encoding="utf-8")
+    settings = (APP_DIR / "components" / "settings.js").read_text(encoding="utf-8")
+    assert "/remote" in store
+    assert "saveRemote" in store and "testRemote" in store and "clearRemote" in store
+    assert "Computador remoto" in settings
+    assert 'v-model="modal.remote.shell"' in main
+    routes = _all_paths(app)
+    assert "/projects/{project_id}/remote" in routes
+    assert "/projects/{project_id}/remote/test" in routes
+    assert "/fs/mkdir" in routes
+
+
 def test_providers_view_uses_the_configuration_endpoints():
     text = (APP_DIR / "store.js").read_text(encoding="utf-8")
     assert "/providers/config" in text

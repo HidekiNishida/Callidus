@@ -35,6 +35,20 @@ class ProjectModel(Base):
     tasks: Mapped[list[TaskModel]] = relationship(back_populates="project")
 
 
+class ProjectRemoteModel(Base):
+    """Computador remoto do projeto: quando existe, as ações do projeto rodam lá por SSH."""
+
+    __tablename__ = "project_remotes"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    config_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class ConversationModel(Base):
     __tablename__ = "conversations"
 

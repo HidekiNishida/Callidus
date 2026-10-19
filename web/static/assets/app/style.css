@@ -1579,3 +1579,136 @@ pre,
   :root { --border: #3b465c; --border-soft: #333d50; }
   .bubble, .provider-card, .card { border-width: 2px; }
 }
+
+/* ── Atividade em tempo real no chat ────────────────────────────────────── */
+
+.activity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 6px 0 10px;
+  padding: 8px 4px 6px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+}
+
+.activity-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+  border-radius: 6px;
+  transition: background var(--dur-2) var(--ease), color var(--dur-2) var(--ease);
+}
+
+.activity-row:hover { background: var(--surface-3); color: var(--text); }
+
+.activity-ico {
+  display: inline-flex;
+  margin-top: 2px;
+  color: var(--faint);
+  transition: color var(--dur-2) var(--ease);
+}
+
+.activity-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.activity-title { color: var(--text); font-weight: 500; }
+.activity-detail {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.activity-output {
+  margin: 4px 0 2px;
+  padding: 6px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--muted);
+}
+
+.activity-state { display: inline-flex; align-items: center; margin-top: 2px; }
+.activity-ms { font-size: 10.5px; color: var(--faint); }
+
+.activity-thought .activity-ico { color: var(--accent-2); }
+.activity-model .activity-ico { color: var(--accent); }
+.activity-tool.state-running .activity-ico,
+.activity-command.state-running .activity-ico { color: var(--accent); }
+.activity-tool.state-error .activity-ico,
+.activity-command.state-error .activity-ico,
+.activity-verify.state-error .activity-ico { color: var(--danger); }
+.activity-file .activity-ico { color: var(--ok); }
+.activity-verify .activity-ico { color: var(--warn); }
+
+.activity-enter-active { transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out); }
+.activity-leave-active { transition: opacity var(--dur-2) var(--ease), transform var(--dur-2) var(--ease); position: absolute; }
+.activity-enter-from { opacity: 0; transform: translateX(-8px); }
+.activity-leave-to { opacity: 0; transform: translateX(8px); }
+.activity-move { transition: transform var(--dur-3) var(--ease); }
+
+/* Aviso de execução pausada */
+.pause-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  animation: turn-in var(--dur-4) var(--ease-out) both;
+}
+
+.pause-ico { display: inline-flex; color: var(--warn); }
+.pause-body { flex: 1; display: flex; flex-direction: column; gap: 1px; font-size: 12.5px; }
+.pause-body strong { color: var(--text); }
+
+.path-row { display: flex; gap: 6px; }
+.path-row input { flex: 1; }
+
+.mkdir-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.mkdir-row input {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  outline: none;
+  font-size: 13px;
+}
+
+.mkdir-row input:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  cursor: pointer;
+  font-weight: 500;
+  transition: background var(--dur-2) var(--ease), transform var(--dur-1) var(--spring);
+}
+
+.btn-danger:hover { background: color-mix(in srgb, var(--danger) 24%, transparent); }
+.btn-danger:active { transform: scale(0.98); }

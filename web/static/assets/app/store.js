@@ -1,5 +1,6 @@
 // web/static/assets/app/store.js — estado reativo e ações da interface
 import { api } from "./api.js";
+import { describeActivity } from "./ui.js";
 import { applyEvent, applyLive, createState, markConnection, markResync } from "./live-state.js";
 import { createStream } from "./live-stream.js";
 
@@ -37,6 +38,7 @@ export const state = reactive({
   live: null,
   outputs: [],
   streamEvents: [],
+  feed: [],
 
   provider: "ollama",
   modelId: "",
@@ -153,6 +155,33 @@ export async function bootstrap() {
     if (!current) state.provider = state.providers[0].name;
   }
   void health;
+}
+
+export async function loadRemote(project) {
+  const data = await api(`/projects/${project.id}/remote`).catch(() => ({ remote: null }));
+  return data.remote || null;
+}
+
+export async function saveRemote(project, config) {
+  const data = await api(`/projects/${project.id}/remote`, {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+  toast("Computador remoto configurado", "ok");
+  return data.remote;
+}
+
+export async function clearRemote(project) {
+  await api(`/projects/${project.id}/remote`, { method: "DELETE" });
+  toast("Projeto voltou para a máquina local", "ok");
+}
+
+export async function testRemote(project) {
+  const data = await api(`/projects/${project.id}/remote/test`, { method: "POST" }).catch((err) => ({
+    ok: false,
+    detail: err.message,
+  }));
+  return data;
 }
 
 export async function renameProject(project, name) {
@@ -396,6 +425,19 @@ export async function pauseRun() {
   await refreshTasks();
 }
 
+export async function resumeRun() {
+  if (!state.currentRun) return;
+  try {
+    await api(`/runs/${state.currentRun.id}/resume`, { method: "POST" });
+    state.currentRun = { ...state.currentRun, status: "ACTIVE" };
+    await connectStream(state.currentRun.id);
+    await refreshTasks();
+    toast("Execução retomada", "ok");
+  } catch (err) {
+    toast(err.message || "Falha ao retomar a execução", "error");
+  }
+}
+
 export async function cancelRun() {
   if (!state.currentRun) return;
   await api(`/runs/${state.currentRun.id}/cancel`, { method: "POST" }).catch((err) => toast(err.message, "error"));
@@ -420,6 +462,7 @@ export async function connectStream(runId) {
       applyEvent(reducer, envelope);
       state.streamEvents.push(envelope);
       if (state.streamEvents.length > 400) state.streamEvents.splice(0, 100);
+      pushActivity(envelope);
       state.liveState.version += 1;
     },
     onLive: (snapshot) => {
@@ -502,6 +545,30 @@ export async function loadTools() {
 export async function discoverMcp() {
   const result = await api("/mcp/discover", { method: "POST" }).catch((err) => ({ error: err.message }));
   state.mcpText = JSON.stringify(result, null, 2);
+}
+
+/** Entradas de atividade do chat: pensamento, ferramentas, comandos, leituras e escritas. */
+function pushActivity(envelope) {
+  const entry = describeActivity(envelope);
+  if (!entry) return;
+  const feed = state.feed;
+  if (entry.callId) {
+    // Atualiza a entrada em andamento (mesma chamada de ferramenta/comando).
+    const index = feed.findIndex((item) => item.callId === entry.callId && item.kind === entry.kind);
+    if (index >= 0 && entry.kind !== "command-output") {
+      feed.splice(index, 1, { ...feed[index], ...entry });
+      return;
+    }
+    if (entry.kind === "command-output") {
+      const target = feed.find((item) => item.callId === entry.callId && item.kind === "command");
+      if (target) {
+        target.output = `${target.output || ""}${entry.detail || ""}`;
+        return;
+      }
+    }
+  }
+  feed.push(entry);
+  if (feed.length > 120) feed.splice(0, feed.length - 120);
 }
 
 export async function loadModels(providerName) {

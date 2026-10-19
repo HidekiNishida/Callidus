@@ -38,6 +38,27 @@ O redutor (`live-state.js`) e os renderizadores (`live-view.js`) são os mesmos 
 | **Ajustes** | Aba “Ajustes” / barra inferior | Aparência (tema, densidade), padrões de execução, **gerência de projetos** (renomear, trocar pasta, remover) e atalhos |
 | **Paleta de comandos** | `⌘K` / `Ctrl+K` | Busca de comandos: navegar, executar, alternar tema, renomear/apagar conversa, remover projeto |
 
+### Atividade em tempo real no chat
+
+Dentro da bolha do agente, o que o agente está fazendo aparece em tempo real, em português:
+
+| Evento | O que aparece |
+|--------|---------------|
+| Pensamento do agente | “Pensando na alteração «X»…” |
+| Chamada de modelo | “Chamando o modelo llama3.2” + se a resposta vem em fragmentos |
+| Ferramenta | “Leitura de arquivo”, “Escrita de arquivo”, “Listagem de pasta”… com o caminho |
+| Comando | “Comando” + o comando e a **saída em tempo real** |
+| Testes | “Testes” + contagem de aprovados/falhos |
+| Arquivos | “Leu arquivo”, “Alterou arquivo”, “Removeu arquivo” |
+
+Cada linha entra com animação, o ícone mostra o estado (em andamento, concluído, falhou) e o tempo
+de execução quando existe. A tradução está em [`ui.js`](/web/static/assets/app/ui.js)
+(`TOOL_LABEL` e `describeActivity`).
+
+Quando a execução **pausa** (limite operacional), o chat mostra o aviso com o motivo, o próximo
+passo sugerido e o botão **Retomar** — o run continua de onde parou, sem refazer o que já foi
+comprovado.
+
 ## Layout responsivo
 
 A interface se adapta em três faixas, sem esconder função essencial:
@@ -124,11 +145,15 @@ A interface permite configurar tudo o que é ajustável sem editar arquivo:
 
 - **Projetos** (Ajustes → Projetos, ou o botão de lixeira na barra lateral): renomear, trocar a
   pasta (pelo seletor de pastas, com queda para a pasta do usuário quando o caminho está fora do
-  alcance da navegação) e **remover**. A remoção apaga conversas, tarefas, execuções, memória e o
+  alcance da navegação), **criar pasta** (botão no seletor, `POST /fs/mkdir`) e **remover**. A remoção apaga conversas, tarefas, execuções, memória e o
   grafo do projeto pela API (`DELETE /projects/{id}`) — **os arquivos da pasta não são apagados**,
   e a confirmação deixa isso explícito.
 - **Provedores** (aba Provedores): provedores nomeados, credencial, timeout, cabeçalhos e padrão.
 - **Execução** (Ajustes → Execução): provedor, modelo, navegador e permissão de ferramentas.
+- **Computador remoto** (Ajustes → Projetos → ícone de servidor): host, porta, usuário, chave
+  SSH, pasta do projeto no servidor e sistema (Linux/macOS ou Windows/PowerShell). Com isso, os
+  comandos, leituras, escritas e listagens do projeto passam a rodar no servidor por SSH
+  (`src/agent/remote/`). O botão **Testar conexão** confirma o acesso antes de salvar.
 - **Aparência** (Ajustes → Geral): tema claro/escuro e densidade.
 
 ## Preferências

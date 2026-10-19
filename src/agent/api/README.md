@@ -39,7 +39,10 @@ Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) 
 | `GET` | `/projects/{id}/metrics\|events` | Métricas + timeline de eventos |
 | `GET` | `/config/ui-defaults` | Defaults para UI (provider, model, approve_tools) |
 | `GET` | `/fs/browse`, `/fs/pick-folder` | Navegação de pastas |
+| `POST` | `/fs/mkdir` | Cria uma pasta dentro do alcance permitido (seletor de pastas) |
 | `GET` | `/projects/{id}/git-diff` | Diff git do projeto |
+| `GET`/`PUT`/`DELETE` | `/projects/{id}/remote` | Computador remoto do projeto (SSH): ler, configurar ou voltar para a máquina local |
+| `POST` | `/projects/{id}/remote/test` | Testa a conexão com o computador remoto |
 | `DELETE` | `/projects/{id}` | Remove o projeto e o que pertence a ele (conversas, tarefas, execuções, memória, grafo). **Os arquivos da pasta não são apagados** |
 | `POST` | `/debug/chat/ollama` | Chat direto Ollama (debug) |
 

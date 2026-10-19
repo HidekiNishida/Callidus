@@ -168,12 +168,28 @@ def looks_truncated(content: str) -> bool:
     return start >= 0 and text.count("{", start) > text.count("}", start)
 
 
-def classify_model_output(content: str, parse_error: str | None, missing: list[str] | None = None) -> Failure | None:
-    """Resposta do modelo que deveria ser JSON → falha, distinguindo corte de saída de JSON malformado."""
+def classify_model_output(
+    content: str,
+    parse_error: str | None,
+    missing: list[str] | None = None,
+    *,
+    budget: int | None = None,
+    used_tokens: int | None = None,
+) -> Failure | None:
+    """Resposta do modelo que deveria ser JSON → falha, distinguindo corte de saída de JSON malformado.
+
+    `budget`/`used_tokens` revelam o corte mesmo quando o texto chegou vazio (o modelo gastou
+    todo o orçamento de saída pensando e não devolveu nada): nesse caso a saída foi truncada,
+    não inválida — repetir o mesmo pedido não resolve, ampliar o orçamento resolve.
+    """
     if not parse_error and not missing:
         return None
-    if looks_truncated(content):
-        return Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.TRUNCATED_OUTPUT, parse_error or "resposta cortada")
+    exhausted = bool(budget and used_tokens is not None and used_tokens >= budget)
+    if exhausted or looks_truncated(content):
+        detail = parse_error or "resposta cortada"
+        if exhausted and not content.strip():
+            detail = f"resposta vazia: o modelo usou todo o orçamento de {budget} tokens"
+        return Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.TRUNCATED_OUTPUT, detail)
     detail = parse_error or f"faltam campos: {', '.join(missing or [])}"
     return Failure(FailureCategory.RECOVERABLE, FailureCause.INVALID_OUTPUT, detail)
 

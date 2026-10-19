@@ -27,6 +27,8 @@ class ToolContext:
     task_id: str | None = None
     memory_saver: Callable[[dict[str, Any]], dict[str, Any]] | None = None
     browser_mode: str = "off"
+    # Configuração do computador remoto (quando o projeto roda em outro servidor).
+    remote: Any = None
 
 
 ToolHandler = Callable[[ToolContext, dict[str, Any]], Awaitable[dict[str, Any]]]

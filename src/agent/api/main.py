@@ -66,7 +66,7 @@ from agent.i18n.locale import detect_language, translate
 from agent.memory.store import extract_memory_request
 from agent.services.conversation_service import ConversationService, locale_for_task
 from agent.services.inbox import effective_root, is_inbox_project
-from agent.services.fs_browse import browse_directories, pick_folder_native
+from agent.services.fs_browse import browse_directories, create_directory, pick_folder_native
 from agent.services.project_service import ProjectService
 from agent.services.run_service import RunService
 from agent.services.task_service import DependencyError, TaskNotFoundError, TaskService
@@ -459,6 +459,68 @@ def activate_branch(
     return _present_conversation(session, item)
 
 
+class RemoteIn(BaseModel):
+    host: str
+    port: int = 22
+    user: str | None = None
+    key_path: str | None = None
+    root: str = "."
+    shell: str = "posix"
+    timeout: float = 120.0
+
+
+@app.get("/projects/{project_id}/remote")
+def get_project_remote(project_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    """Computador remoto configurado para o projeto (vazio quando o projeto é local)."""
+    try:
+        ProjectService(session).get_project(project_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"remote": ProjectService(session).get_remote(project_id)}
+
+
+@app.put("/projects/{project_id}/remote")
+def set_project_remote(project_id: uuid.UUID, body: RemoteIn, session: Session = Depends(db_session)) -> dict:
+    """Aponta o projeto para um computador remoto (Linux, macOS ou Windows) via SSH."""
+    from agent.remote.ssh import RemoteConfig
+
+    try:
+        config = RemoteConfig(**body.model_dump())
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"configuração remota inválida: {exc}") from exc
+    try:
+        ProjectService(session).get_project(project_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    saved = ProjectService(session).set_remote(project_id, config.model_dump())
+    return {"remote": saved}
+
+
+@app.delete("/projects/{project_id}/remote")
+def clear_project_remote(project_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    """Volta o projeto para a máquina local."""
+    removed = ProjectService(session).clear_remote(project_id)
+    return {"remote": None, "removed": removed}
+
+
+@app.post("/projects/{project_id}/remote/test")
+async def test_project_remote(project_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    """Testa a conexão com o computador remoto configurado."""
+    from agent.remote.ssh import RemoteConfig, RemoteError, SshTransport
+
+    config = ProjectService(session).get_remote(project_id)
+    if not config:
+        raise HTTPException(status_code=400, detail="o projeto não tem computador remoto configurado")
+    try:
+        transport = SshTransport(RemoteConfig(**config))
+        result = await transport.check()
+    except RemoteError as exc:
+        return {"ok": False, "detail": str(exc)}
+    except Exception as exc:  # pragma: no cover - falha inesperada
+        return {"ok": False, "detail": str(exc)}
+    return {"ok": bool(result.get("ok")), "detail": result.get("system", ""), "exit_code": result.get("exit_code")}
+
+
 @app.get("/projects/{project_id}/conversations", response_model=list[ConversationRead])
 def list_conversations(project_id: uuid.UUID, session: Session = Depends(db_session)) -> list[ConversationRead]:
     try:
@@ -481,10 +543,24 @@ def create_conversation(
     return _present_conversation(session, item)
 
 
+class FsMkdirIn(BaseModel):
+    path: str | None = None
+    name: str
+
+
 @app.get("/fs/browse")
 def fs_browse(path: str | None = None) -> dict:
     try:
         return browse_directories(path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/fs/mkdir")
+def fs_mkdir(body: FsMkdirIn) -> dict:
+    """Cria uma pasta dentro do alcance permitido (para o seletor de pasta do projeto)."""
+    try:
+        return create_directory(body.path, body.name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

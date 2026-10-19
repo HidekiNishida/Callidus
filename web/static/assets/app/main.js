@@ -15,6 +15,9 @@ import {
   openView,
   watchViewport,
   moveProject,
+  saveRemote,
+  clearRemote,
+  testRemote,
 } from "./store.js";
 import { icon } from "./ui.js";
 import { Sidebar } from "./components/sidebar.js";
@@ -47,7 +50,27 @@ const App = {
     CommandPalette,
   },
   setup() {
-    const modal = reactive({ kind: null, name: "", rootPath: "", path: "", entries: [] });
+    const modal = reactive({
+      kind: null,
+      purpose: null,
+      name: "",
+      rootPath: "",
+      path: "",
+      entries: [],
+      newFolder: "",
+      remote: {
+        host: "",
+        port: 22,
+        user: "",
+        key_path: "",
+        root: ".",
+        shell: "posix",
+        timeout: 120,
+      },
+      remoteProject: null,
+      remoteResult: null,
+      remoteBusy: false,
+    });
     const booting = ref(true);
     const bootError = ref("");
 
@@ -135,8 +158,91 @@ const App = {
 
     async function openFolder() {
       modal.kind = "folder";
+      modal.purpose = "project-folder";
       modal.path = state.selectedProject?.root_path || "";
       await browse(modal.path);
+    }
+
+    async function pickFolderForProject() {
+      modal.kind = "folder";
+      modal.purpose = "new-project";
+      modal.path = modal.rootPath || state.selectedProject?.root_path || "";
+      await browse(modal.path);
+    }
+
+    async function openRemote(payload) {
+      modal.kind = "remote";
+      modal.remoteProject = payload.project;
+      modal.remote = { ...payload.config };
+      modal.remoteResult = null;
+    }
+
+    async function saveRemoteConfig() {
+      const project = modal.remoteProject;
+      if (!project) return;
+      const config = {
+        host: String(modal.remote.host || "").trim(),
+        port: Number(modal.remote.port || 22),
+        user: String(modal.remote.user || "").trim() || null,
+        key_path: String(modal.remote.key_path || "").trim() || null,
+        root: String(modal.remote.root || ".").trim() || ".",
+        shell: modal.remote.shell || "posix",
+        timeout: Number(modal.remote.timeout || 120),
+      };
+      if (!config.host) {
+        toast("Informe o host do computador remoto", "error");
+        return;
+      }
+      modal.remoteBusy = true;
+      try {
+        await saveRemote(project, config);
+        modal.kind = null;
+      } catch (err) {
+        toast(err.message || "Falha ao salvar o computador remoto", "error");
+      } finally {
+        modal.remoteBusy = false;
+      }
+    }
+
+    async function checkRemote() {
+      const project = modal.remoteProject;
+      if (!project) return;
+      modal.remoteBusy = true;
+      modal.remoteResult = null;
+      try {
+        const result = await testRemote(project);
+        modal.remoteResult = result;
+      } finally {
+        modal.remoteBusy = false;
+      }
+    }
+
+    async function removeRemote() {
+      const project = modal.remoteProject;
+      if (!project) return;
+      try {
+        await clearRemote(project);
+        modal.kind = null;
+      } catch (err) {
+        toast(err.message || "Falha ao remover o computador remoto", "error");
+      }
+    }
+
+    async function createFolder() {
+      const name = (modal.newFolder || "").trim();
+      if (!name) return;
+      try {
+        const data = await api("/fs/mkdir", {
+          method: "POST",
+          body: JSON.stringify({ path: modal.path, name }),
+        });
+        modal.path = data.path || modal.path;
+        modal.entries = data.entries || [];
+        modal.newFolder = "";
+        toast(`Pasta “${name}” criada`, "ok");
+      } catch (err) {
+        toast(err.message || "Falha ao criar a pasta", "error");
+      }
     }
 
     async function browse(path) {
@@ -162,6 +268,12 @@ const App = {
         await moveProject(project, modal.path);
         return;
       }
+      if (modal.purpose === "new-project") {
+        modal.rootPath = modal.path;
+        modal.kind = "project";
+        modal.purpose = null;
+        return;
+      }
       if (!state.selectedProject) {
         toast("Crie ou selecione um projeto antes", "error");
         return;
@@ -181,6 +293,7 @@ const App = {
 
     async function moveFolderTo(project) {
       modal.kind = "move-folder";
+      modal.purpose = "move-folder";
       modal.project = project;
       modal.path = project.root_path || "";
       await browse(modal.path);
@@ -213,6 +326,12 @@ const App = {
       newProject,
       createProject,
       openFolder,
+      openRemote,
+      saveRemoteConfig,
+      checkRemote,
+      removeRemote,
+      pickFolderForProject,
+      createFolder,
       browse,
       useFolder,
       renameConversation,
@@ -266,6 +385,7 @@ const App = {
               key="settings"
               @new-project="newProject()"
               @move-folder="moveFolderTo($event)"
+              @remote="openRemote($event)"
             />
           </Transition>
         </main>
@@ -313,9 +433,12 @@ const App = {
               <input v-model="modal.name" type="text" placeholder="ex.: meu-site" @keyup.enter="createProject()" />
             </label>
             <label class="field">
-              <span>Pasta (opcional)</span>
-              <input v-model="modal.rootPath" type="text" placeholder="/Users/.../meu-site" />
-              <small class="muted">Sem pasta, o Callidus trabalha na pasta do usuário.</small>
+              <span>Pasta do projeto</span>
+              <div class="path-row">
+                <input v-model="modal.rootPath" type="text" placeholder="sem pasta (usa a pasta do usuário)" />
+                <button type="button" class="btn-ghost small" @click="pickFolderForProject()">Escolher…</button>
+              </div>
+              <small class="muted">Use o seletor para navegar e criar pastas.</small>
             </label>
             <div class="form-actions">
               <button type="button" class="btn-primary" @click="createProject()">Criar</button>
@@ -326,13 +449,78 @@ const App = {
       </Transition>
 
       <Transition name="fade">
+        <div class="modal" v-if="modal.kind === 'remote'" @click.self="modal.kind = null">
+          <div class="modal-card">
+            <header class="modal-head">
+              <h3>Computador remoto — {{ modal.remoteProject?.name }}</h3>
+              <button type="button" class="icon-btn ghost" @click="modal.kind = null" aria-label="Fechar">×</button>
+            </header>
+            <p class="muted small">
+              As ações do projeto (comandos, leitura, escrita e listagem) passam a rodar neste
+              computador por SSH. Serve para servidores Linux/macOS e Windows (PowerShell).
+            </p>
+            <div class="grid-2">
+              <label class="field">
+                <span>Host</span>
+                <input v-model="modal.remote.host" type="text" placeholder="servidor.exemplo" />
+              </label>
+              <label class="field">
+                <span>Porta</span>
+                <input v-model="modal.remote.port" type="number" min="1" max="65535" />
+              </label>
+              <label class="field">
+                <span>Usuário</span>
+                <input v-model="modal.remote.user" type="text" placeholder="deploy" />
+              </label>
+              <label class="field">
+                <span>Chave SSH</span>
+                <input v-model="modal.remote.key_path" type="text" placeholder="~/.ssh/id_ed25519" />
+              </label>
+              <label class="field">
+                <span>Pasta do projeto no servidor</span>
+                <input v-model="modal.remote.root" type="text" placeholder="/srv/app" />
+              </label>
+              <label class="field">
+                <span>Sistema</span>
+                <select v-model="modal.remote.shell">
+                  <option value="posix">Linux / macOS</option>
+                  <option value="powershell">Windows (PowerShell)</option>
+                </select>
+              </label>
+            </div>
+            <p class="muted small" v-if="modal.remoteResult">
+              <span class="dot" :class="modal.remoteResult.ok ? 'dot-ok' : 'dot-err'"></span>
+              {{ modal.remoteResult.ok ? 'conexão ok' : 'falhou' }} — {{ modal.remoteResult.detail || '' }}
+            </p>
+            <div class="form-actions">
+              <button type="button" class="btn-primary" :disabled="modal.remoteBusy" @click="saveRemoteConfig()">Salvar</button>
+              <button type="button" class="btn-ghost" :disabled="modal.remoteBusy" @click="checkRemote()">Testar conexão</button>
+              <button type="button" class="btn-danger" @click="removeRemote()">Usar máquina local</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <Transition name="fade">
         <div class="modal" v-if="modal.kind === 'folder' || modal.kind === 'move-folder'" @click.self="modal.kind = null">
           <div class="modal-card">
             <header class="modal-head">
-              <h3>{{ modal.kind === 'move-folder' ? 'Mover projeto' : 'Escolher pasta' }}</h3>
+              <h3>
+                {{ modal.purpose === 'move-folder' ? 'Mover projeto' : (modal.purpose === 'new-project' ? 'Escolher a pasta do projeto' : 'Escolher pasta') }}
+              </h3>
               <button type="button" class="icon-btn ghost" @click="modal.kind = null" aria-label="Fechar">×</button>
             </header>
             <p class="muted small path">{{ modal.path || '—' }}</p>
+            <div class="mkdir-row">
+              <input
+                v-model="modal.newFolder"
+                type="text"
+                placeholder="nome da nova pasta"
+                @keyup.enter="createFolder()"
+                aria-label="Nome da nova pasta"
+              />
+              <button type="button" class="btn-ghost small" @click="createFolder()">Criar pasta</button>
+            </div>
             <ul class="folder-list">
               <li v-for="entry in modal.entries" :key="entry.path">
                 <button type="button" class="folder-item" @click="browse(entry.path)">

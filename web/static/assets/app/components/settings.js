@@ -7,6 +7,7 @@ import {
   renameProject,
   moveProject,
   deleteProject,
+  loadRemote,
   toast,
 } from "../store.js";
 import { api } from "../api.js";
@@ -37,6 +38,7 @@ export const SettingsView = {
     const renaming = Vue.ref(null);
     const renameValue = Vue.ref("");
     const moving = Vue.ref(null);
+    const remotes = Vue.reactive({});
 
     const models = Vue.computed(() => state.providerModels[state.provider] || []);
 
@@ -61,6 +63,20 @@ export const SettingsView = {
       if (name && name !== project.name) await renameProject(project, name);
     }
 
+    async function showRemote(project) {
+      const saved = await loadRemote(project);
+      remotes[project.id] = saved || {
+        host: "",
+        port: 22,
+        user: "",
+        key_path: "",
+        root: ".",
+        shell: "posix",
+        timeout: 120,
+      };
+      emit("remote", { project, config: remotes[project.id] });
+    }
+
     function pickFolder(project) {
       moving.value = project.id;
       emit("move-folder", project);
@@ -82,6 +98,8 @@ export const SettingsView = {
       startRename,
       confirmRename,
       pickFolder,
+      showRemote,
+      remotes,
       toast,
       icon,
       emit,
@@ -199,6 +217,7 @@ export const SettingsView = {
           </div>
           <button type="button" class="icon-btn ghost" title="Renomear" aria-label="Renomear" @click="startRename(project)" v-html="icon('pencil', 15)"></button>
           <button type="button" class="icon-btn ghost" title="Trocar pasta" aria-label="Trocar pasta" :disabled="moving === project.id" @click="pickFolder(project)" v-html="icon('folder', 15)"></button>
+          <button type="button" class="icon-btn ghost" title="Computador remoto" aria-label="Computador remoto" @click="showRemote(project)" v-html="icon('server', 15)"></button>
           <button type="button" class="icon-btn ghost danger" title="Remover projeto" aria-label="Remover projeto" @click="deleteProject(project)" v-html="icon('trash', 15)"></button>
         </div>
         <p class="muted" v-if="!state.projects.length">Nenhum projeto ainda.</p>

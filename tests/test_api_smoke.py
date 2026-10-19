@@ -179,6 +179,68 @@ def test_invalid_payloads_return_4xx_not_500(client: TestClient):
         assert 400 <= response.status_code < 500, f"{method} {path} → {response.status_code}"
 
 
+def test_criar_pasta_dentro_do_alcance(client: TestClient, tmp_path: Path):
+    """A interface cria pastas pelo seletor (POST /fs/mkdir) — dentro da pasta do usuário."""
+    import shutil
+
+    base = Path.home() / ".callidus-teste-pastas"
+    base.mkdir(parents=True, exist_ok=True)
+    try:
+        response = client.post("/fs/mkdir", json={"path": str(base), "name": "pasta-nova"})
+        assert response.status_code == 200, response.text
+        assert (base / "pasta-nova").is_dir()
+        assert response.json()["created"].endswith("pasta-nova")
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_criar_pasta_com_nome_invalido(client: TestClient, tmp_path: Path):
+    for name in ("", "  ", "a/b", ".."):
+        response = client.post("/fs/mkdir", json={"path": str(tmp_path), "name": name})
+        assert response.status_code == 400, f"{name!r} → {response.status_code}"
+
+
+def test_criar_pasta_fora_do_alcance(client: TestClient):
+    response = client.post("/fs/mkdir", json={"path": "/etc", "name": "x"})
+    assert response.status_code == 400
+
+
+def test_run_pausado_pode_ser_retomado(client: TestClient, tmp_path: Path):
+    """O caminho de retomada (usado pelo botão “Retomar” do chat) responde."""
+    project = client.post("/projects", json={"name": "p", "root_path": str(tmp_path)}).json()
+    conversation = client.post(f"/projects/{project['id']}/conversations", json={"title": "c"}).json()
+    task = client.post(
+        f"/projects/{project['id']}/tasks",
+        json={"title": "t", "objective": "o", "conversation_id": conversation["id"]},
+    ).json()
+    run = client.post(
+        f"/projects/{project['id']}/runs",
+        json={"root_task_id": task["id"], "config": {"provider": "mock"}},
+    ).json()
+    paused = client.post(f"/runs/{run['id']}/pause")
+    assert paused.status_code < 500
+    resumed = client.post(f"/runs/{run['id']}/resume")
+    assert resumed.status_code < 500, resumed.text
+
+
+def test_remote_do_projeto_e_configuravel(client: TestClient, tmp_path: Path):
+    project = client.post("/projects", json={"name": "p", "root_path": str(tmp_path)}).json()
+    saved = client.put(
+        f"/projects/{project['id']}/remote",
+        json={"host": "servidor.exemplo", "port": 2222, "user": "deploy", "root": "/srv/app"},
+    )
+    assert saved.status_code == 200, saved.text
+    assert client.get(f"/projects/{project['id']}/remote").json()["remote"]["host"] == "servidor.exemplo"
+    assert client.delete(f"/projects/{project['id']}/remote").status_code == 200
+    assert client.get(f"/projects/{project['id']}/remote").json()["remote"] is None
+
+
+def test_remote_sem_host_e_recusado(client: TestClient, tmp_path: Path):
+    project = client.post("/projects", json={"name": "p", "root_path": str(tmp_path)}).json()
+    response = client.put(f"/projects/{project['id']}/remote", json={"host": ""})
+    assert response.status_code == 400
+
+
 def test_unknown_ids_return_404(client: TestClient):
     missing = "00000000-0000-0000-0000-000000000000"
     assert client.get(f"/projects/{missing}").status_code == 404

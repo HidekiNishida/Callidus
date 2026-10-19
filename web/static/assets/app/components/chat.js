@@ -12,6 +12,7 @@ import {
   autoRun,
   pauseRun,
   cancelRun,
+  resumeRun,
 } from "../store.js";
 import { icon, renderMarkdown, stamp, modelLabel, statusLabel, toolOf as toolOfTask, TOOL_ICON, BUSY_STATUSES } from "../ui.js";
 import { filesList, currentTask } from "../live-state.js";
@@ -28,9 +29,13 @@ export const ChatView = {
         const reply = answer ? renderMarkdown(answer) : "";
         const busy = BUSY_STATUSES.includes(root.status) || kids.some((task) => BUSY_STATUSES.includes(task.status));
         const meta = root.metadata_json || {};
+        const pause = (root.metadata_json || {}).pause || null;
+        const isLast = roots().length > 0 && root.id === roots()[roots().length - 1].id;
         return {
           id: root.id,
           title: root.display_title || root.title,
+          pause,
+          activity: isLast ? state.feed : [],
           objective: String(root.objective || "").split("\n\nAnexos do usuário:")[0],
           attachments: meta.attachments || [],
           createdAt: stamp(root.created_at),
@@ -190,6 +195,28 @@ export const ChatView = {
               <span class="status-pill" :class="'status-' + message.status">{{ message.statusText }}</span>
             </div>
 
+            <div class="activity" v-if="message.activity.length">
+              <TransitionGroup name="activity">
+                <div
+                  v-for="entry in message.activity"
+                  :key="entry.id"
+                  class="activity-row"
+                  :class="['activity-' + entry.kind, 'state-' + entry.status]"
+                >
+                  <span class="activity-ico" v-html="icon(entry.icon, 13)"></span>
+                  <span class="activity-body">
+                    <span class="activity-title">{{ entry.title }}</span>
+                    <span class="activity-detail" v-if="entry.detail">{{ entry.detail }}</span>
+                    <pre class="activity-output" v-if="entry.output">{{ entry.output }}</pre>
+                  </span>
+                  <span class="activity-state">
+                    <span class="spinner" v-if="entry.status === 'running'"></span>
+                    <span class="activity-ms" v-else-if="entry.duration != null">{{ entry.duration }} ms</span>
+                  </span>
+                </div>
+              </TransitionGroup>
+            </div>
+
             <ul class="thoughts" v-if="thoughts.length && message.focusHere">
               <li v-for="(thought, index) in thoughts" :key="index" :class="thought.phase">
                 <span class="thought-dot"></span>{{ thought.text }}
@@ -209,6 +236,16 @@ export const ChatView = {
                 <span class="stage-title">{{ stage.title }}</span>
                 <span class="status-dot" :class="'status-' + stage.status"></span>
               </button>
+            </div>
+
+            <div class="pause-banner" v-if="message.pause">
+              <span class="pause-ico" v-html="icon('pause', 15)"></span>
+              <div class="pause-body">
+                <strong>Execução pausada</strong>
+                <span>{{ message.pause.reason || 'limite operacional atingido' }}</span>
+                <span class="muted small" v-if="message.pause.next_action">Próximo passo: {{ message.pause.next_action }}</span>
+              </div>
+              <button type="button" class="btn-ghost small" @click="resumeRun()">Retomar</button>
             </div>
 
             <div class="answer" v-if="message.reply" v-html="message.reply"></div>

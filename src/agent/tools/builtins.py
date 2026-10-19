@@ -120,6 +120,10 @@ async def _remember(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _read_file(ctx: ToolContext, args: dict) -> dict:
+    if getattr(ctx, "remote", None):
+        from agent.remote import tools as remote_tools
+
+        return await remote_tools.read_file(ctx, args)
     path = args.get("path", "")
     try:
         full = resolve_under_root(ctx.project_root, path)
@@ -162,6 +166,10 @@ async def _read_file(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _write_file(ctx: ToolContext, args: dict) -> dict:
+    if getattr(ctx, "remote", None):
+        from agent.remote import tools as remote_tools
+
+        return await remote_tools.write_file(ctx, args)
     path = args.get("path", "")
     content = args.get("content", "")
     try:
@@ -181,6 +189,10 @@ async def _write_file(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _search_grep(ctx: ToolContext, args: dict) -> dict:
+    if getattr(ctx, "remote", None):
+        from agent.remote import tools as remote_tools
+
+        return await remote_tools.search_grep(ctx, args)
     pattern = args.get("pattern") or args.get("query") or ""
     if not pattern:
         return {"success": False, "error": "pattern obrigatório"}
@@ -252,6 +264,8 @@ def _test_counts(stdout: str) -> dict[str, int]:
 async def _run_command(ctx: ToolContext, args: dict, *, kind: str = "command") -> dict:
     """Saída lida aos poucos: cada trecho vai para `command.output` (ou `test.output`) enquanto o processo roda;
     o resultado devolvido é o mesmo de antes (finais de stdout/stderr, código de saída)."""
+    if getattr(ctx, "remote", None):
+        return await _run_command_remote(ctx, args, kind=kind)
     command = _argv(args.get("command"))
     if not command:
         return {"success": False, "error": "command deve ser lista ou string"}
@@ -323,6 +337,59 @@ async def _run_command(ctx: ToolContext, args: dict, *, kind: str = "command") -
     }
 
 
+async def _run_command_remote(ctx: ToolContext, args: dict, *, kind: str = "command") -> dict:
+    """Comando executado no computador remoto do projeto (SSH), com saída em tempo real."""
+    from agent.remote.ssh import RemoteError, SshTransport
+
+    command = _argv(args.get("command"))
+    if not command:
+        return {"success": False, "error": "command deve ser lista ou string"}
+    cwd = args.get("cwd") or "."
+    if str(cwd).startswith("/") or ".." in str(cwd).replace("\\", "/").split("/"):
+        return {"success": False, "error": "cwd fora do projeto"}
+    timeout = float(args.get("timeout", 120))
+    call_id = current_call_id() or uuid.uuid4().hex[:12]
+    shown = " ".join(command)
+    started = time.monotonic()
+    emit(
+        f"{kind}.started",
+        {"call_id": call_id, "command": shown, "cwd": str(cwd), "remote": True},
+        commit=True,
+    )
+    ssh = SshTransport(ctx.remote)
+
+    def _out(text: str) -> None:
+        emit(f"{kind}.output", {"call_id": call_id, "stream": "stdout", "text": text})
+
+    try:
+        result = await ssh.run(command, cwd=cwd, timeout=timeout, on_output=_out)
+    except RemoteError as exc:
+        emit(f"{kind}.failed", {"call_id": call_id, "error": str(exc), "exit_code": None})
+        return {"success": False, "error": str(exc), "command": command}
+    finished = {
+        "call_id": call_id,
+        "exit_code": result.exit_code,
+        "duration_ms": int((time.monotonic() - started) * 1000),
+        "stdout_tail": result.stdout[-2000:],
+        "stderr_tail": result.stderr[-2000:],
+        "remote": True,
+    }
+    if kind == "test":
+        finished["counts"] = _test_counts(result.stdout)
+    if result.exit_code == 0:
+        emit(f"{kind}.completed", finished)
+    else:
+        emit(f"{kind}.failed", {**finished, "error": f"código de saída {result.exit_code}"})
+    return {
+        "success": result.exit_code == 0,
+        "exit_code": result.exit_code,
+        "stdout": result.stdout[-8000:],
+        "stderr": result.stderr[-8000:],
+        "command": command,
+        "remote": True,
+    }
+
+
 async def _git_diff(ctx: ToolContext, args: dict) -> dict:
     root = str(_root(ctx))
     cmd = ["git", "-C", root, "diff"]
@@ -358,6 +425,10 @@ async def _git_status(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _list_dir(ctx: ToolContext, args: dict) -> dict:
+    if getattr(ctx, "remote", None):
+        from agent.remote import tools as remote_tools
+
+        return await remote_tools.list_dir(ctx, args)
     full, err = _resolve(ctx, str(args.get("path") or "."))
     if err:
         return err
@@ -378,6 +449,10 @@ async def _list_dir(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _glob_files(ctx: ToolContext, args: dict) -> dict:
+    if getattr(ctx, "remote", None):
+        from agent.remote import tools as remote_tools
+
+        return await remote_tools.glob_files(ctx, args)
     pattern = args.get("pattern") or args.get("glob") or ""
     if not isinstance(pattern, str) or not pattern:
         return {"success": False, "error": "pattern obrigatório"}
@@ -396,6 +471,10 @@ async def _glob_files(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _edit_file(ctx: ToolContext, args: dict) -> dict:
+    if getattr(ctx, "remote", None):
+        from agent.remote import tools as remote_tools
+
+        return await remote_tools.edit_file(ctx, args)
     raw = args.get("path", "")
     old = args.get("old_string", args.get("old", args.get("search", args.get("find"))))
     if "new_string" in args:
@@ -436,6 +515,10 @@ async def _edit_file(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _delete_file(ctx: ToolContext, args: dict) -> dict:
+    if getattr(ctx, "remote", None):
+        from agent.remote import tools as remote_tools
+
+        return await remote_tools.delete_file(ctx, args)
     full, err = _resolve(ctx, str(args.get("path") or ""))
     if err:
         return err
@@ -447,6 +530,10 @@ async def _delete_file(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _make_dir(ctx: ToolContext, args: dict) -> dict:
+    if getattr(ctx, "remote", None):
+        from agent.remote import tools as remote_tools
+
+        return await remote_tools.make_dir(ctx, args)
     full, err = _resolve(ctx, str(args.get("path") or ""))
     if err:
         return err
@@ -459,6 +546,10 @@ async def _make_dir(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _move_file(ctx: ToolContext, args: dict) -> dict:
+    if getattr(ctx, "remote", None):
+        from agent.remote import tools as remote_tools
+
+        return await remote_tools.move_file(ctx, args)
     src_raw = args.get("from") or args.get("source") or args.get("path")
     dst_raw = args.get("to") or args.get("dest") or args.get("destination")
     if not isinstance(src_raw, str) or not isinstance(dst_raw, str):

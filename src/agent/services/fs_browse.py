@@ -58,6 +58,33 @@ def browse_directories(path: str | None = None) -> dict:
     }
 
 
+def create_directory(path: str, name: str) -> dict:
+    """Cria uma pasta dentro de `path` (que precisa estar no alcance permitido).
+
+    Devolve a pasta criada e a listagem atualizada, para o seletor seguir sem recarregar.
+    """
+    base = Path(path).expanduser() if path else Path.home()
+    try:
+        base = base.resolve()
+    except OSError as exc:
+        raise ValueError("pasta inválida") from exc
+    if not _allowed(base) or not base.is_dir():
+        raise ValueError("pasta fora do alcance permitido")
+    clean = (name or "").strip()
+    if not clean or "/" in clean or clean in {".", ".."}:
+        raise ValueError("nome de pasta inválido")
+    target = base / clean
+    try:
+        target.mkdir(parents=False, exist_ok=True)
+    except FileExistsError as exc:
+        raise ValueError("a pasta já existe") from exc
+    except OSError as exc:
+        raise ValueError(f"não foi possível criar a pasta: {exc.strerror or exc}") from exc
+    listing = browse_directories(str(base))
+    listing["created"] = str(target.resolve())
+    return listing
+
+
 def pick_folder_native() -> str:
     if sys.platform != "darwin":
         raise ValueError("o seletor nativo só está disponível no macOS")

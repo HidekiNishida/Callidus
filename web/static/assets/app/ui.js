@@ -186,3 +186,123 @@ export function modelLabel(task, live) {
 export function plural(n, one, many) {
   return `${n} ${n === 1 ? one : many}`;
 }
+
+// ── Atividade em tempo real (traduzida para português) ─────────────────────
+
+/** Ferramenta → rótulo que o usuário lê. */
+export const TOOL_LABEL = {
+  read_file: "Leitura de arquivo",
+  write_file: "Escrita de arquivo",
+  edit_file: "Edição de arquivo",
+  delete_file: "Remoção de arquivo",
+  move_file: "Movimentação de arquivo",
+  make_dir: "Criação de pasta",
+  list_dir: "Listagem de pasta",
+  glob_files: "Busca de arquivos",
+  search_grep: "Busca no código",
+  run_command: "Comando",
+  run_script: "Script",
+  run_tests: "Testes",
+  run_pytest: "Testes",
+  browser: "Navegador",
+  remember: "Memória",
+  mcp_tool: "Ferramenta MCP",
+  verification: "Verificação",
+  modelo: "Modelo",
+};
+
+export const TOOL_ICON_PT = {
+  read_file: "file",
+  write_file: "pencil",
+  edit_file: "pencil",
+  delete_file: "trash",
+  move_file: "folder",
+  make_dir: "folder",
+  list_dir: "folder",
+  glob_files: "search",
+  search_grep: "search",
+  run_command: "terminal",
+  run_script: "terminal",
+  run_tests: "check",
+  run_pytest: "check",
+  browser: "globe",
+  remember: "layers",
+  mcp_tool: "plug",
+  verification: "check",
+};
+
+/** Resumo curto dos argumentos de uma ferramenta, em português. */
+export function toolArgsSummary(tool, args) {
+  if (!args || typeof args !== "object") return "";
+  if (tool === "run_command" || tool === "run_script" || tool === "run_tests") {
+    const cmd = args.command;
+    const text = Array.isArray(cmd) ? cmd.join(" ") : String(cmd || "");
+    return text.length > 140 ? `${text.slice(0, 140)}…` : text;
+  }
+  if (args.path) return String(args.path);
+  if (args.pattern) return String(args.pattern);
+  return "";
+}
+
+/** Converte um evento do stream em uma entrada de atividade (título, detalhe, estado). */
+export function describeActivity(event) {
+  const data = event?.data || {};
+  const type = event?.type || "";
+  const base = { id: `${type}-${data.call_id || data.output_id || Math.random().toString(36).slice(2)}`, status: "ok" };
+  switch (type) {
+    case "agent.thought":
+      return { ...base, kind: "thought", icon: "spark", title: data.text || data.thought || "Pensando" };
+    case "agent.started":
+      return {
+        ...base,
+        kind: "model",
+        icon: "spark",
+        title: `Chamando o modelo ${data.model || ""}`.trim(),
+        detail: data.streaming ? "resposta em tempo real" : "resposta completa",
+      };
+    case "tool.started":
+      return {
+        ...base,
+        kind: "tool",
+        icon: TOOL_ICON_PT[data.tool] || "wrench",
+        title: TOOL_LABEL[data.tool] || data.tool || "Ferramenta",
+        detail: toolArgsSummary(data.tool, data.args),
+        callId: data.call_id,
+        status: "running",
+      };
+    case "tool.completed":
+      return { ...base, kind: "tool", icon: "check", title: `${TOOL_LABEL[data.tool] || data.tool || "Ferramenta"} concluída`, callId: data.call_id, duration: data.duration_ms };
+    case "tool.failed":
+      return { ...base, kind: "tool", icon: "alert", title: `${TOOL_LABEL[data.tool] || data.tool || "Ferramenta"} falhou`, detail: data.error, callId: data.call_id, status: "error" };
+    case "command.started":
+      return { ...base, kind: "command", icon: "terminal", title: "Comando", detail: data.command, callId: data.call_id, status: "running" };
+    case "command.output":
+      return { ...base, kind: "command-output", icon: "terminal", title: "Saída do comando", detail: data.text, callId: data.call_id, status: "running" };
+    case "command.completed":
+      return { ...base, kind: "command", icon: "check", title: "Comando concluído", callId: data.call_id, duration: data.duration_ms };
+    case "command.failed":
+      return { ...base, kind: "command", icon: "alert", title: "Comando falhou", detail: data.error, callId: data.call_id, status: "error" };
+    case "test.started":
+      return { ...base, kind: "command", icon: "check", title: "Testes", detail: data.command, callId: data.call_id, status: "running" };
+    case "test.completed":
+      return { ...base, kind: "command", icon: "check", title: "Testes concluídos", callId: data.call_id, duration: data.duration_ms };
+    case "test.failed":
+      return { ...base, kind: "command", icon: "alert", title: "Testes falharam", detail: data.error, callId: data.call_id, status: "error" };
+    case "file.read":
+      return { ...base, kind: "file", icon: "file", title: "Leu arquivo", detail: data.path };
+    case "file.created":
+      return { ...base, kind: "file", icon: "pencil", title: "Criou arquivo", detail: data.path };
+    case "file.changed":
+      return { ...base, kind: "file", icon: "pencil", title: "Alterou arquivo", detail: data.path };
+    case "file.deleted":
+      return { ...base, kind: "file", icon: "trash", title: "Removeu arquivo", detail: data.path };
+    case "verification.started":
+      return { ...base, kind: "verify", icon: "refresh", title: `Verificação ${data.verifier || ""}`.trim(), status: "running" };
+    case "verification.passed":
+      return { ...base, kind: "verify", icon: "check", title: `Verificação ${data.verifier || ""} aprovada` };
+    case "verification.failed":
+      return { ...base, kind: "verify", icon: "alert", title: `Verificação ${data.verifier || ""} reprovada`, detail: data.summary, status: "error" };
+    default:
+      return null;
+  }
+}

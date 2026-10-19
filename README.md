@@ -427,6 +427,20 @@ providers:
 - Não há fallback automático entre provedores: a falha é visível. O mock só entra com
   `ALLOW_MOCK_FALLBACK=true`.
 
+### Feed da execução em tempo real
+
+No chat, o que o agente está fazendo aparece em tempo real e em português: pensamento, chamadas
+ao modelo, ferramentas (leitura, escrita, listagem), comandos com a saída em tempo real, testes e
+arquivos alterados. Quando a execução pausa por um limite, o chat mostra o motivo e o botão
+**Retomar**.
+
+### Projetos em computador remoto
+
+Um projeto pode rodar em outro computador por SSH (servidor Linux/macOS ou Windows com
+PowerShell): em **Ajustes → Projetos → ícone de servidor** configure host, porta, usuário, chave
+SSH, a pasta do projeto no servidor e o sistema. A partir daí, comandos, leituras, escritas e
+listagens do projeto são executados no servidor.
+
 ### Configurar pela interface web
 
 A aba **Provedores** (`http://127.0.0.1:8765/`) cria, edita e testa provedores sem editar arquivo:

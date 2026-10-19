@@ -10,7 +10,13 @@ from sqlalchemy.orm import Session
 from agent.domain.enums import MemoryKind
 from agent.domain.schemas import MemoryCreate, ProjectCreate
 from agent.memory.store import structure_memory
-from agent.persistence.models import ConversationModel, EventLogModel, MemoryRecordModel, ProjectModel
+from agent.persistence.models import (
+    ConversationModel,
+    EventLogModel,
+    MemoryRecordModel,
+    ProjectModel,
+    ProjectRemoteModel,
+)
 from agent.services.cascade import delete_cascade
 from agent.services.inbox import is_inbox_path, is_inbox_project, user_home
 
@@ -71,6 +77,32 @@ class ProjectService:
                 project.path_origin = "chosen"
         self._session.flush()
         return project
+
+    def get_remote(self, project_id: uuid.UUID) -> dict | None:
+        """Configuração do computador remoto do projeto (None quando o projeto é local)."""
+        row = self._session.get(ProjectRemoteModel, project_id)
+        if row is None:
+            return None
+        return dict(row.config_json or {})
+
+    def set_remote(self, project_id: uuid.UUID, config: dict) -> dict:
+        self.get_project(project_id)
+        row = self._session.get(ProjectRemoteModel, project_id)
+        if row is None:
+            row = ProjectRemoteModel(project_id=project_id, config_json=dict(config))
+            self._session.add(row)
+        else:
+            row.config_json = dict(config)
+        self._session.flush()
+        return dict(config)
+
+    def clear_remote(self, project_id: uuid.UUID) -> bool:
+        row = self._session.get(ProjectRemoteModel, project_id)
+        if row is None:
+            return False
+        self._session.delete(row)
+        self._session.flush()
+        return True
 
     def list_projects(self) -> list[ProjectModel]:
         rows = list(self._session.scalars(select(ProjectModel).order_by(ProjectModel.created_at)).all())

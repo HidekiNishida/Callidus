@@ -406,6 +406,36 @@ class RunOrchestrator:
             return None
         last = failures[-1]
         diag = diagnose(last, count)
+        # Corte de saída: o plano serve, faltou orçamento. Ampliar e seguir — sem replanejar e
+        # sem pausar, para o run seguir sozinho.
+        if last.get("cause") == FailureCause.TRUNCATED_OUTPUT.value:
+            budget = self._widen_output_budget(task)
+            self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.READY))
+            self._note_thought(
+                run,
+                task,
+                f"«{task.title}» esbarrou no limite de resposta; ampliei para {budget} tokens e vou tentar de novo.",
+            )
+            self._session.add(
+                EventLogModel(
+                    project_id=run.project_id,
+                    run_id=run.id,
+                    task_id=task.id,
+                    event_type="run.budget_widened",
+                    payload_json={
+                        "task": task.title,
+                        "output_budget": budget,
+                        "count": count,
+                        "cause": last.get("cause"),
+                    },
+                )
+            )
+            return {
+                "action": "budget_widened",
+                "task_id": raw,
+                "output_budget": budget,
+                "failure": last,
+            }
         record = {
             "previous_status": task.status,
             "signature": last.get("signature"),
@@ -567,6 +597,25 @@ class RunOrchestrator:
         meta["last_failure"] = noted
         task.metadata_json = meta
         return noted
+
+    def _widen_output_budget(self, task: TaskModel, *, factor: int = 2) -> int:
+        """Aumenta o orçamento de resposta da etapa (o modelo gastou tudo e devolveu nada).
+
+        O plano continua válido: o que falhou foi o tamanho da resposta, não a estratégia.
+        """
+        meta = dict(task.metadata_json or {})
+        current = int(meta.get("output_budget") or 0)
+        budget = min(32768, max(current, 1024) * factor)
+        meta["output_budget"] = budget
+        # Zera a contagem dessa assinatura: a tentativa widened conta como nova estratégia.
+        history = [
+            item
+            for item in (meta.get("failures") or [])
+            if item.get("cause") != FailureCause.TRUNCATED_OUTPUT.value
+        ]
+        meta["failures"] = history
+        task.metadata_json = meta
+        return budget
 
     _TO_BLOCKED: dict[TaskStatus, tuple[TaskStatus, ...]] = {
         TaskStatus.PENDING: (TaskStatus.PLANNING, TaskStatus.BLOCKED),
@@ -1048,6 +1097,18 @@ class RunOrchestrator:
             return {"action": "blocked_attempts", "task_id": str(task.id), "failure": failure}
 
         meta = task.metadata_json or {}
+        remote = None
+        if project is not None:
+            from agent.services.project_service import ProjectService
+
+            remote_config = ProjectService(self._session).get_remote(project.id)
+            if remote_config:
+                from agent.remote.ssh import RemoteConfig
+
+                try:
+                    remote = RemoteConfig(**remote_config)
+                except Exception:  # configuração inválida: o projeto segue local
+                    remote = None
         ctx = ToolContext(
             project_root=root_path,
             run_id=str(run.id),
@@ -1056,6 +1117,7 @@ class RunOrchestrator:
                 project, task, args
             ),
             browser_mode=str(config.get("browser_mode") or "off"),
+            remote=remote,
         )
         approved = bool(config.get("approve_risky_tools") or meta.get("approved"))
 
@@ -1103,10 +1165,28 @@ class RunOrchestrator:
                 1 for item in meta.get("failures") or [] if item.get("cause") == FailureCause.TRUNCATED_OUTPUT.value
             )
             if truncations:
+                # O modelo consumiu todo o orçamento de saída e devolveu nada: ampliar a
+                # resposta (num_predict e output_reserve) para a próxima tentativa.
                 generation = dict(profile.generation)
                 base = max(int(generation.get("num_predict") or 0), 2048)
                 generation["num_predict"] = min(16384, base * 2**truncations)
-                profile = profile.model_copy(update={"generation": generation})
+                profile = profile.model_copy(
+                    update={
+                        "generation": generation,
+                        "output_reserve": min(16384, max(profile.output_reserve, 1024) * 2**truncations),
+                    }
+                )
+            explicit_budget = int(meta.get("output_budget") or 0)
+            if explicit_budget:
+                # Orçamento ampliado na estagnação por corte: vale para esta tentativa.
+                generation = dict(profile.generation)
+                generation["num_predict"] = max(int(generation.get("num_predict") or 0), explicit_budget)
+                profile = profile.model_copy(
+                    update={
+                        "generation": generation,
+                        "output_reserve": max(profile.output_reserve, explicit_budget),
+                    }
+                )
             from agent.providers.base import ChatCompletionRequest
             from agent.util.json_parse import parse_json_object
 
@@ -1129,7 +1209,9 @@ class RunOrchestrator:
             # Fragmentos só quando o provedor transmite de verdade; `stream: false` (etapa ou run) desliga.
             stream_allowed = meta.get("stream", config.get("stream", True)) is not False
             prompt_fp = AttemptService.fingerprint(
-                "\n".join(m.content for m in budget.messages) + repr(sorted(profile.generation.items()))
+                "\n".join(m.content for m in budget.messages)
+                + repr(sorted(profile.generation.items()))
+                + f"|orçamento:{profile.output_reserve}"
             )
             attempt_request = {
                 "context_snapshot_id": str(snap.id),
@@ -1191,7 +1273,26 @@ class RunOrchestrator:
             self._apply_provider_usage(task, provider)
             data, err = parse_json_object(content)
             missing = ["path"] if data is not None and "path" not in data else None
-            failure = classify_model_output(content, err, missing)
+            # O orçamento efetivo de saída: o que o provedor pode gerar nesta chamada.
+            generation_now = dict(profile.generation or {})
+            output_budget = int(
+                generation_now.get("num_predict") or generation_now.get("max_tokens") or profile.output_reserve
+            )
+            failure = classify_model_output(
+                content,
+                err,
+                missing,
+                budget=output_budget,
+                used_tokens=getattr(resp, "completion_tokens_estimate", None),
+            )
+            if failure is not None and failure.cause == FailureCause.TRUNCATED_OUTPUT:
+                self._note_thought(
+                    run,
+                    task,
+                    f"O modelo usou todo o orçamento de {output_budget} tokens e devolveu "
+                    f"{'nada' if not content.strip() else 'uma resposta incompleta'}; "
+                    "vou ampliar a resposta e tentar de novo.",
+                )
             self._attempts.record(
                 run_id=run.id,
                 task_id=task.id,
