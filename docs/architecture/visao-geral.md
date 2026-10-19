@@ -30,6 +30,7 @@ flowchart TB
   PROV["providers/ — Ollama e llama.cpp"]
   TOOLS["tools/ — registro e execução (Fase 3)"]
   VER["verification/ — checks determinísticos (Fase 5)"]
+  SKILL["skills/ — competências sob demanda"]
   API --> ORCH
   ORCH --> DOM
   ORCH --> PERS
@@ -37,6 +38,8 @@ flowchart TB
   ORCH --> PROV
   ORCH --> TOOLS
   ORCH --> VER
+  ORCH --> SKILL
+  SKILL --> CTX
 ```
 
 ## Fases de implementação
@@ -52,6 +55,7 @@ flowchart TB
 | 6 | UI web estática funcional | Concluída |
 | 7 | MCP stdio + visão (refs) | Concluída — ver [mcp.md](/docs/architecture/mcp.md) |
 | 8 | E2E pytest | Concluída |
+| 9 | Skills sob demanda, estratégia profissional, decomposição recursiva e recuperação da verificação | Concluída — ver [skills-estrategia.md](/docs/architecture/skills-estrategia.md) |
 
 ## Decisões (ADR resumido)
 
@@ -59,6 +63,7 @@ flowchart TB
 2. **Estado canônico no SQLite** — conversa com o modelo não é fonte da verdade.
 3. **Uma operação por vez por padrão** — concorrência limitada só para subtarefas independentes (fase posterior).
 4. **Provedores via interface comum** — chat-completions compatível onde possível; capacidades via perfil de modelo.
+5. **Complexidade na arquitetura, não no prompt** — estratégia, skills e decomposição recursiva vivem em código e no SQLite; o modelo é uma peça substituível ([skills-estrategia.md](/docs/architecture/skills-estrategia.md)).
 
 ## Documentos relacionados
 

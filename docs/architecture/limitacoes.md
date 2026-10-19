@@ -9,6 +9,11 @@
 7. **Grafo** — indexação Python-first; relações `imports`/`calls` ainda heurísticas.
 8. **Atomização** — micro-plano determinístico; decomposição LLM profunda ainda limitada.
 9. **Contratos** — validação manual via `requires_contract`; propagação de impacto incompleta.
+10. **Skills** — ativação lexical por palavra-chave; pedido muito indireto pode não ativar a skill ideal. O catálogo é relido do disco a cada `reload()`.
+11. **Estratégia** — classifica por domínios fixos (consulta, QA, bug, refatoração, documentação, engenharia); pedidos híbridos ficam no domínio mais próximo.
+12. **Recuperação da verificação** — reexecuta o mesmo verificador; não há estratégia de verificação alternativa nem leitura semântica da causa.
+
+Detalhes: [skills-estrategia.md](/docs/architecture/skills-estrategia.md).
 
 Testes: `pytest` (41+ casos) · E2E mock: `tests/test_e2e_orchestrator.py` · recuperação: `tests/test_orchestrator_recovery.py`.
 
