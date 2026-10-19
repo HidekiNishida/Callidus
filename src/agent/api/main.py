@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -232,6 +233,7 @@ async def provider_models(name: str, settings: Settings = Depends(read_settings)
 
 @app.get("/providers/{name}/health")
 async def provider_health(name: str, settings: Settings = Depends(read_settings)) -> dict:
+    """Diagnóstico de conectividade: sempre 200 com o resultado (ok true/false)."""
     provider = _provider_by_name(name, settings)
     health = await provider.health_check()
     return health.model_dump()
@@ -324,6 +326,13 @@ def delete_project(project_id: uuid.UUID, session: Session = Depends(db_session)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        # Nada pendurado deve sobrar; se sobrar, a resposta explica em vez de virar 500.
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"não foi possível remover o projeto: {exc.orig}",
+        ) from exc
     return result
 
 
@@ -380,6 +389,12 @@ def delete_conversation(conversation_id: uuid.UUID, session: Session = Depends(d
         ConversationService(session).delete_conversation(conversation_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"não foi possível remover a conversa: {exc.orig}",
+        ) from exc
     return {"deleted": True}
 
 

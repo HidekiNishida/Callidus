@@ -21,3 +21,10 @@ Testes: `pytest` (41+ casos) · E2E mock: `tests/test_e2e_orchestrator.py` · re
 Backup: [scripts/backup-data.sh](/scripts/backup-data.sh).
 
 Voltar: [architecture/README.md](/docs/architecture/README.md)
+
+14. **Diagnóstico de provedor** — `GET /providers/{nome}/health` e `POST /providers/{nome}/test`
+    respondem sempre com `ok: true/false` e o motivo; nunca estouram erro 500. A lista de modelos
+    (`GET /providers/{nome}/models`) devolve 503 quando o servidor não responde.
+15. **Remoção em cascata** — a remoção de projeto e de conversa segue o grafo de chaves estrangeiras
+    do modelo (`src/agent/services/cascade.py`); se alguma linha pendurada escapar, a API responde
+    409 com o motivo em vez de 500.

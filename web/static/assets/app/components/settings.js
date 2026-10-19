@@ -32,7 +32,8 @@ const SHORTCUTS = [
 
 export const SettingsView = {
   name: "SettingsView",
-  setup() {
+  emits: ["new-project", "move-folder"],
+  setup(props, { emit }) {
     const renaming = Vue.ref(null);
     const renameValue = Vue.ref("");
     const moving = Vue.ref(null);
@@ -60,19 +61,9 @@ export const SettingsView = {
       if (name && name !== project.name) await renameProject(project, name);
     }
 
-    async function pickFolder(project) {
-      const folder = await window.prompt("Nova pasta do projeto (caminho absoluto)", project.root_path || "");
-      if (folder === null) return;
+    function pickFolder(project) {
       moving.value = project.id;
-      try {
-        if (!folder.trim()) {
-          toast("A pasta não pode ficar vazia", "error");
-        } else {
-          await moveProject(project, folder.trim());
-        }
-      } finally {
-        moving.value = null;
-      }
+      emit("move-folder", project);
     }
 
     return {
@@ -93,6 +84,7 @@ export const SettingsView = {
       pickFolder,
       toast,
       icon,
+      emit,
     };
   },
   template: `

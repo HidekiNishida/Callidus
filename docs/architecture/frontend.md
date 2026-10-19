@@ -123,9 +123,10 @@ Claro e escuro, com o tema guardado em `localStorage` (`callidus-theme`) e aplic
 A interface permite configurar tudo o que é ajustável sem editar arquivo:
 
 - **Projetos** (Ajustes → Projetos, ou o botão de lixeira na barra lateral): renomear, trocar a
-  pasta e **remover**. A remoção apaga conversas, tarefas, execuções, memória e o grafo do projeto
-  pela API (`DELETE /projects/{id}`) — **os arquivos da pasta não são apagados**, e a confirmação
-  deixa isso explícito.
+  pasta (pelo seletor de pastas, com queda para a pasta do usuário quando o caminho está fora do
+  alcance da navegação) e **remover**. A remoção apaga conversas, tarefas, execuções, memória e o
+  grafo do projeto pela API (`DELETE /projects/{id}`) — **os arquivos da pasta não são apagados**,
+  e a confirmação deixa isso explícito.
 - **Provedores** (aba Provedores): provedores nomeados, credencial, timeout, cabeçalhos e padrão.
 - **Execução** (Ajustes → Execução): provedor, modelo, navegador e permissão de ferramentas.
 - **Aparência** (Ajustes → Geral): tema claro/escuro e densidade.

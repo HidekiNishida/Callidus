@@ -165,16 +165,6 @@ class GeminiProvider(LLMProvider):
         self._models_cached_at = time.monotonic()
         return models
 
-    async def health_check(self) -> ProviderHealth:
-        started = time.monotonic()
-        models = await self.list_models()
-        return ProviderHealth(
-            provider=self.name,
-            ok=True,
-            detail="ok",
-            models=models,
-            latency_ms=int((time.monotonic() - started) * 1000),
-        )
 
     def _body(self, request: ChatCompletionRequest) -> dict:
         system, contents = gemini_contents(request.messages)

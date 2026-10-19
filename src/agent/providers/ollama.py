@@ -141,18 +141,6 @@ class OllamaProvider(LLMProvider):
         models = (data or {}).get("models") or []
         return [m.get("name", "") for m in models if m.get("name")]
 
-    async def health_check(self) -> ProviderHealth:
-        import time
-
-        started = time.monotonic()
-        models = await self.list_models()
-        return ProviderHealth(
-            provider=self.name,
-            ok=True,
-            detail="ok",
-            models=models,
-            latency_ms=int((time.monotonic() - started) * 1000),
-        )
 
     async def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         url = f"{self._base_url}/api/chat"

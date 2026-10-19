@@ -51,7 +51,7 @@ Rotas em [`provider_routes.py`](provider_routes.py):
 |--------|------|--------|
 | `GET` | `/providers` | Catálogo (configurados + embutidos), sem credenciais |
 | `GET` | `/providers/{nome}/models` | Modelos do servidor |
-| `GET` | `/providers/{nome}/health` | Diagnóstico de conectividade |
+| `GET` | `/providers/{nome}/health` | Diagnóstico de conectividade (sempre 200, com `ok` true/false) |
 | `POST` | `/providers/{nome}/test` | Testa a conexão (mesmo que health, com POST) |
 | `GET` | `/providers/config` | Configuração em uso + caminho do arquivo + situação da credencial |
 | `PUT` | `/providers/config` | Valida e grava a configuração de provedores |

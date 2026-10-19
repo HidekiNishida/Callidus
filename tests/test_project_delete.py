@@ -12,9 +12,12 @@ from agent.domain.schemas import ConversationCreate, ExecutionRunCreate, Project
 from agent.persistence.database import build_session_factory, init_db
 from agent.persistence.models import (
     ConversationModel,
+    EvidenceModel,
     EventLogModel,
+    ExecutionRunModel,
     KgNodeModel,
     MemoryRecordModel,
+    OperationAttemptModel,
     ProjectModel,
     TaskModel,
 )
@@ -60,6 +63,33 @@ def test_delete_project_removes_everything_owned_by_it(env):
     assert session.query(MemoryRecordModel).filter(MemoryRecordModel.project_id == project.id).count() == 0
     assert session.query(KgNodeModel).filter(KgNodeModel.project_id == project.id).count() == 0
     assert session.query(EventLogModel).filter(EventLogModel.project_id == project.id).count() == 0
+
+
+def test_delete_project_with_attempts_and_evidence_does_not_break_foreign_keys(env):
+    """Regressão: `evidences` aponta para `operation_attempts`; apagar a tentativa antes da
+    evidência viola a FOREIGN KEY e a remoção do projeto falhava com 500."""
+    session, project, _conversation, child = env
+    run = session.query(ExecutionRunModel).filter(ExecutionRunModel.project_id == project.id).one()
+    attempt = OperationAttemptModel(run_id=run.id, task_id=child.id, kind="tool_call", success=True)
+    session.add(attempt)
+    session.flush()
+    session.add(
+        EvidenceModel(
+            task_id=child.id,
+            attempt_id=attempt.id,
+            verifier="run_tests",
+            passed=True,
+            summary="ok",
+        )
+    )
+    session.commit()
+
+    ProjectService(session).delete_project(project.id)
+    session.commit()
+
+    assert session.query(EvidenceModel).filter(EvidenceModel.task_id == child.id).count() == 0
+    assert session.query(OperationAttemptModel).filter(OperationAttemptModel.task_id == child.id).count() == 0
+    assert session.get(ProjectModel, project.id) is None
 
 
 def test_delete_project_keeps_the_files_on_disk(env, tmp_path: Path):

@@ -188,7 +188,10 @@ async def clear_provider_secret(name: str, settings: Settings = Depends(read_set
 
 @router.post("/providers/{name}/test")
 async def test_provider(name: str, settings: Settings = Depends(read_settings)) -> dict:
-    """Testa a conexão com o provedor: lista os modelos, sem gastar inferência."""
+    """Testa a conexão com o provedor: lista os modelos, sem gastar inferência.
+
+    Falha de conexão vira `ok: false` com o motivo — não um 500 com traceback.
+    """
     try:
         provider = build_provider_by_name(name, settings)
     except ProviderConfigError as exc:

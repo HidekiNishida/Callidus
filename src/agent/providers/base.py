@@ -132,14 +132,37 @@ class LLMProvider(ABC):
         raise ProviderNotSupportedError(f"O provedor '{self.name}' não transmite a resposta em fragmentos.")
 
     async def health_check(self) -> ProviderHealth:
-        """Verificação de conectividade barata: lista os modelos do servidor, sem inferência."""
+        """Verificação de conectividade barata: lista os modelos do servidor, sem inferência.
+
+        Nunca levanta: servidor fora do ar, credencial inválida ou timeout viram
+        `ok=False` com o motivo — o diagnóstico não pode virar erro 500.
+        """
+        import time
+
+        started = time.monotonic()
         try:
             models = await self.list_models()
         except ProviderError as exc:
-            return ProviderHealth(provider=self.name, ok=False, detail=str(exc))
+            return ProviderHealth(
+                provider=self.name,
+                ok=False,
+                detail=str(exc),
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
         except Exception as exc:  # pragma: no cover - rede inesperada
-            return ProviderHealth(provider=self.name, ok=False, detail=str(exc) or type(exc).__name__)
-        return ProviderHealth(provider=self.name, ok=True, detail="ok", models=models)
+            return ProviderHealth(
+                provider=self.name,
+                ok=False,
+                detail=str(exc) or type(exc).__name__,
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
+        return ProviderHealth(
+            provider=self.name,
+            ok=True,
+            detail="ok",
+            models=models,
+            latency_ms=int((time.monotonic() - started) * 1000),
+        )
 
     async def close(self) -> None:
         """Libera recursos do provedor (nenhum por padrão)."""

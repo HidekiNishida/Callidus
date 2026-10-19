@@ -130,18 +130,6 @@ class LlamaCppProvider(LLMProvider):
         items = (data or {}).get("data") or []
         return [item.get("id", "") for item in items if item.get("id")]
 
-    async def health_check(self) -> ProviderHealth:
-        import time
-
-        started = time.monotonic()
-        models = await self.list_models()
-        return ProviderHealth(
-            provider=self.name,
-            ok=True,
-            detail="ok",
-            models=models,
-            latency_ms=int((time.monotonic() - started) * 1000),
-        )
 
     def _body(self, request: ChatCompletionRequest) -> dict:
         body = {

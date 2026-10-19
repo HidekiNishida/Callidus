@@ -27,6 +27,7 @@ from agent.persistence.models import (
     utcnow,
 )
 from agent.services.branches import visible_tasks
+from agent.services.cascade import delete_cascade
 from agent.services.inbox import INBOX_ROOT, is_inbox_project, user_home
 from agent.services.project_service import ProjectService
 from agent.services.task_service import TaskService
@@ -102,13 +103,11 @@ class ConversationService:
         return conversation
 
     def delete_conversation(self, conversation_id: uuid.UUID) -> None:
+        """Remove a conversa e tudo que depende dela (tarefas, execuções, tentativas, evidências,
+        eventos, memória e ramos). A ordem vem do grafo de chaves estrangeiras, então nenhuma
+        FOREIGN KEY é violada."""
         conversation = self.get_conversation(conversation_id)
-        tasks = list(
-            self._session.scalars(
-                select(TaskModel).where(TaskModel.conversation_id == conversation.id)
-            ).all()
-        )
-        task_ids = [task.id for task in tasks]
+        # Ramos apontam para a conversa e para tarefas: solta antes de remover.
         branches = list(
             self._session.scalars(
                 select(BranchModel).where(BranchModel.conversation_id == conversation.id)
@@ -119,66 +118,7 @@ class ConversationService:
             branch.fork_task_id = None
         if branches:
             self._session.flush()
-        if task_ids:
-            run_ids = list(
-                self._session.scalars(
-                    select(ExecutionRunModel.id).where(ExecutionRunModel.root_task_id.in_(task_ids))
-                ).all()
-            )
-            self._session.execute(delete(EvidenceModel).where(EvidenceModel.task_id.in_(task_ids)))
-            self._session.execute(
-                delete(OperationAttemptModel).where(OperationAttemptModel.task_id.in_(task_ids))
-            )
-            if run_ids:
-                self._session.execute(
-                    delete(OperationAttemptModel).where(OperationAttemptModel.run_id.in_(run_ids))
-                )
-                self._session.execute(delete(EventLogModel).where(EventLogModel.run_id.in_(run_ids)))
-                self._session.execute(
-                    delete(ContextSnapshotModel).where(ContextSnapshotModel.run_id.in_(run_ids))
-                )
-                self._session.execute(delete(ExecutionRunModel).where(ExecutionRunModel.id.in_(run_ids)))
-            self._session.execute(delete(EventLogModel).where(EventLogModel.task_id.in_(task_ids)))
-            self._session.execute(
-                delete(ContextSnapshotModel).where(ContextSnapshotModel.task_id.in_(task_ids))
-            )
-            self._session.execute(delete(TaskContractModel).where(TaskContractModel.task_id.in_(task_ids)))
-            self._session.execute(
-                delete(TaskDependencyModel).where(
-                    or_(
-                        TaskDependencyModel.task_id.in_(task_ids),
-                        TaskDependencyModel.depends_on_task_id.in_(task_ids),
-                    )
-                )
-            )
-            self._session.execute(
-                delete(MemoryRecordModel).where(
-                    or_(
-                        MemoryRecordModel.conversation_id == conversation.id,
-                        MemoryRecordModel.task_id.in_(task_ids),
-                    )
-                )
-            )
-            remaining = set(task_ids)
-            parent_by_id = {task.id: task.parent_id for task in tasks}
-            while remaining:
-                # Folha = tarefa que não é pai de nenhuma outra dentro do conjunto restante.
-                # Remover pela raiz antes dos filhos viola a chave estrangeira.
-                referenced = {
-                    parent_by_id[item] for item in remaining if parent_by_id.get(item) in remaining
-                }
-                leaves = {item for item in remaining if item not in referenced}
-                if not leaves:
-                    leaves = set(remaining)
-                self._session.execute(delete(TaskModel).where(TaskModel.id.in_(leaves)))
-                remaining -= leaves
-        else:
-            self._session.execute(
-                delete(MemoryRecordModel).where(MemoryRecordModel.conversation_id == conversation.id)
-            )
-        if branches:
-            self._session.execute(delete(BranchModel).where(BranchModel.conversation_id == conversation.id))
-        self._session.delete(conversation)
+        delete_cascade(self._session, "conversations", conversation.id)
         self._session.flush()
 
     def create_conversation(self, project_id: uuid.UUID, data: ConversationCreate) -> ConversationModel:

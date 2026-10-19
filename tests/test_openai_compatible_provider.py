@@ -237,6 +237,21 @@ async def test_timeout_is_reported(mock_http):
 
 
 @pytest.mark.asyncio
+async def test_health_check_reports_failure_instead_of_raising(mock_http):
+    """Servidor fora do ar: o diagnóstico vira `ok=False`, nunca exceção (evita 500 na API)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("recusado")
+
+    mock_http("openai_compatible", handler)
+    provider = OpenAICompatibleProvider("http://gateway.local/v1")
+    health = await provider.health_check()
+    assert health.ok is False
+    assert "indisponível" in health.detail
+    assert health.latency_ms is not None
+
+
+@pytest.mark.asyncio
 async def test_health_check_lists_models(mock_http):
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": [{"id": "modelo-a"}]})

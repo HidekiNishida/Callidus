@@ -4,27 +4,14 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from agent.domain.enums import MemoryKind
 from agent.domain.schemas import MemoryCreate, ProjectCreate
 from agent.memory.store import structure_memory
-from agent.persistence.models import (
-    ContextSnapshotModel,
-    ConversationModel,
-    EventLogModel,
-    ExecutionRunModel,
-    KgEdgeModel,
-    KgNodeModel,
-    MemoryRecordModel,
-    OperationAttemptModel,
-    ProjectModel,
-    ScheduledRunModel,
-    TaskContractModel,
-    TaskDependencyModel,
-    TaskModel,
-)
+from agent.persistence.models import ConversationModel, EventLogModel, MemoryRecordModel, ProjectModel
+from agent.services.cascade import delete_cascade
 from agent.services.inbox import is_inbox_path, is_inbox_project, user_home
 
 
@@ -91,64 +78,31 @@ class ProjectService:
 
     def delete_project(self, project_id: uuid.UUID) -> dict:
         """Remove o projeto e tudo que pertence a ele: conversas, tarefas, execuções, eventos,
-        memória e o grafo de conhecimento. Os arquivos da pasta do projeto **não** são apagados —
-        a interface deixa isso explícito."""
+        memória e o grafo de conhecimento. A remoção em cascata segue o grafo de chaves
+        estrangeiras, então nada fica pendurado. Os arquivos da pasta do projeto **não** são
+        apagados — a interface deixa isso explícito."""
         project = self.get_project(project_id)
         if is_inbox_project(project):
             raise ValueError("a pasta das conversas soltas não se remove por aqui")
 
-        from agent.services.conversation_service import ConversationService
-
-        conversation_service = ConversationService(self._session)
         conversations = list(
             self._session.scalars(
                 select(ConversationModel).where(ConversationModel.project_id == project.id)
             ).all()
         )
-        removed_conversations = 0
-        for conversation in conversations:
-            conversation_service.delete_conversation(conversation.id)
-            removed_conversations += 1
-
-        task_ids = list(
-            self._session.scalars(select(TaskModel.id).where(TaskModel.project_id == project.id)).all()
-        )
-        run_ids = list(
-            self._session.scalars(
-                select(ExecutionRunModel.id).where(ExecutionRunModel.project_id == project.id)
-            ).all()
-        )
-        for model, column, values in (
-            (EventLogModel, EventLogModel.run_id, run_ids),
-            (OperationAttemptModel, OperationAttemptModel.run_id, run_ids),
-            (ContextSnapshotModel, ContextSnapshotModel.run_id, run_ids),
-            (EventLogModel, EventLogModel.task_id, task_ids),
-            (ContextSnapshotModel, ContextSnapshotModel.task_id, task_ids),
-            (TaskContractModel, TaskContractModel.task_id, task_ids),
-            (TaskDependencyModel, TaskDependencyModel.task_id, task_ids),
-            (TaskDependencyModel, TaskDependencyModel.depends_on_task_id, task_ids),
-        ):
-            if values:
-                self._session.execute(delete(model).where(column.in_(values)))
-        self._session.execute(
-            delete(ExecutionRunModel).where(ExecutionRunModel.project_id == project.id)
-        )
-        self._session.execute(delete(ScheduledRunModel).where(ScheduledRunModel.project_id == project.id))
-        self._session.execute(delete(TaskModel).where(TaskModel.project_id == project.id))
-        self._session.execute(delete(MemoryRecordModel).where(MemoryRecordModel.project_id == project.id))
-        self._session.execute(delete(KgEdgeModel).where(KgEdgeModel.project_id == project.id))
-        self._session.execute(delete(KgNodeModel).where(KgNodeModel.project_id == project.id))
-        self._session.execute(
-            delete(EventLogModel).where(EventLogModel.project_id == project.id)
-        )
-        self._session.delete(project)
+        # Valores lidos antes da remoção: depois do cascade o objeto sai da sessão.
+        project_id = str(project.id)
+        name = project.name
+        root_path = project.root_path
+        removed = delete_cascade(self._session, "projects", project.id)
         self._session.flush()
         return {
             "deleted": True,
-            "project_id": str(project.id),
-            "name": project.name,
-            "conversations": removed_conversations,
-            "root_path": project.root_path,
+            "project_id": project_id,
+            "name": name,
+            "conversations": len(conversations),
+            "root_path": root_path,
+            "rows": removed,
         }
 
     def get_project(self, project_id: uuid.UUID) -> ProjectModel:

@@ -14,6 +14,7 @@ import {
   cancelRun,
   openView,
   watchViewport,
+  moveProject,
 } from "./store.js";
 import { icon } from "./ui.js";
 import { Sidebar } from "./components/sidebar.js";
@@ -144,11 +145,23 @@ const App = {
         modal.path = data.path || "";
         modal.entries = data.entries || [];
       } catch (err) {
+        // Pasta fora do alcance da navegação (ex.: /tmp): mostra a pasta do usuário.
+        if (path) {
+          await browse("");
+          toast("Pasta fora do alcance da navegação — mostrando a pasta do usuário", "info");
+          return;
+        }
         toast(err.message || "Falha ao listar a pasta", "error");
       }
     }
 
     async function useFolder() {
+      if (modal.kind === "move-folder" && modal.project) {
+        const project = modal.project;
+        modal.kind = null;
+        await moveProject(project, modal.path);
+        return;
+      }
       if (!state.selectedProject) {
         toast("Crie ou selecione um projeto antes", "error");
         return;
@@ -164,6 +177,13 @@ const App = {
       } catch (err) {
         toast(err.message || "Falha ao trocar a pasta", "error");
       }
+    }
+
+    async function moveFolderTo(project) {
+      modal.kind = "move-folder";
+      modal.project = project;
+      modal.path = project.root_path || "";
+      await browse(modal.path);
     }
 
     async function renameConversation() {
@@ -196,6 +216,7 @@ const App = {
       browse,
       useFolder,
       renameConversation,
+      moveFolderTo,
       selectProject,
       selectConversation,
       disconnectStream,
@@ -240,7 +261,12 @@ const App = {
             <ChatView v-if="state.view === 'chat'" key="chat" />
             <LivePanel v-else-if="state.view === 'live'" key="live" />
             <ProvidersView v-else-if="state.view === 'providers'" key="providers" />
-            <SettingsView v-else key="settings" @new-project="newProject()" />
+            <SettingsView
+              v-else
+              key="settings"
+              @new-project="newProject()"
+              @move-folder="moveFolderTo($event)"
+            />
           </Transition>
         </main>
 
@@ -300,10 +326,10 @@ const App = {
       </Transition>
 
       <Transition name="fade">
-        <div class="modal" v-if="modal.kind === 'folder'" @click.self="modal.kind = null">
+        <div class="modal" v-if="modal.kind === 'folder' || modal.kind === 'move-folder'" @click.self="modal.kind = null">
           <div class="modal-card">
             <header class="modal-head">
-              <h3>Escolher pasta</h3>
+              <h3>{{ modal.kind === 'move-folder' ? 'Mover projeto' : 'Escolher pasta' }}</h3>
               <button type="button" class="icon-btn ghost" @click="modal.kind = null" aria-label="Fechar">×</button>
             </header>
             <p class="muted small path">{{ modal.path || '—' }}</p>
