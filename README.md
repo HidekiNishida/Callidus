@@ -431,8 +431,9 @@ providers:
 
 No chat, o que o agente está fazendo aparece em tempo real e em português: pensamento, chamadas
 ao modelo, ferramentas (leitura, escrita, listagem), comandos com a saída em tempo real, testes e
-arquivos alterados. Quando a execução pausa por um limite, o chat mostra o motivo e o botão
-**Retomar**.
+arquivos alterados — com diff das edições e opção de recolher/abrir os detalhes. Cada mensagem tem
+a sua própria atividade. Quando a execução pausa por um limite, o chat mostra o motivo e o botão
+**Retomar**; mensagem enviada durante a execução fica agendada e entra assim que ela terminar.
 
 ### Projetos em computador remoto
 

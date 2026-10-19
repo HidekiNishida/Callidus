@@ -845,9 +845,10 @@ def get_context_snapshot(snapshot_id: uuid.UUID, session: Session = Depends(db_s
 
 @app.get("/tasks/{task_id}/contract")
 def get_task_contract(task_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    """Contrato da tarefa. Sem contrato, devolve os campos vazios (estado normal, não erro)."""
     row = ContractService(session).get(task_id)
     if row is None:
-        raise HTTPException(status_code=404, detail="contrato não definido")
+        return {"task_id": str(task_id), "inputs": None, "outputs": None, "invariants": None, "acceptance": None}
     return {
         "task_id": str(task_id),
         "inputs": row.inputs_json,

@@ -167,6 +167,37 @@ def test_chat_mostra_diffs_e_detalhes_recolhiveis():
     assert ".expand-enter-active" in css
 
 
+def test_stream_e_fechado_pela_api_correta():
+    """`createStream` expõe `stop`; a interface precisa usar esse nome (usar `close` derrubava a
+    conexão da mensagem seguinte e a segunda mensagem nunca era respondida)."""
+    store = (APP_DIR / "store.js").read_text(encoding="utf-8")
+    stream_mod = (APP_DIR / "live-stream.js").read_text(encoding="utf-8")
+    assert "return { stop, get source()" in stream_mod
+    assert "typeof stream.stop === \"function\"" in store
+    assert "stream?.close()" not in store
+
+
+def test_atividade_fica_por_mensagem_e_os_detalhes_seguem_a_selecao():
+    """Cada mensagem tem a sua atividade e o painel de detalhes acompanha a seleção."""
+    store = (APP_DIR / "store.js").read_text(encoding="utf-8")
+    chat = (APP_DIR / "components" / "chat.js").read_text(encoding="utf-8")
+    assert "state.feeds[root.id]" in chat
+    assert "rootIdOf" in store
+    assert "await selectTask(task.id)" in store
+    # resposta obsoleta do inspetor não sobrescreve a tarefa atual
+    assert "inspectorToken" in store
+
+
+def test_mensagem_enviada_durante_a_execucao_entra_na_fila():
+    """Enviar durante a execução agenda a mensagem (antes ela se perdia)."""
+    store = (APP_DIR / "store.js").read_text(encoding="utf-8")
+    chat = (APP_DIR / "components" / "chat.js").read_text(encoding="utf-8")
+    assert "state.queued" in store
+    assert "flushQueue" in store
+    assert "Mensagem agendada" in chat
+    assert "cancelQueued" in store
+
+
 def test_execucao_automatica_continua_o_run():
     """O modo automático faz o servidor conduzir os passos (a execução não para no 1º passo)."""
     store = (APP_DIR / "store.js").read_text(encoding="utf-8")

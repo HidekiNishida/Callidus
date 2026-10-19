@@ -35,11 +35,17 @@ export const state = reactive({
 
   sending: false,
   running: false,
+  // Mensagem enviada enquanto havia execução em andamento: entra assim que a run terminar.
+  queued: null,
   toasts: [],
   live: null,
   outputs: [],
   streamEvents: [],
   feed: [],
+  // Feed por mensagem: cada turno (tarefa raiz) tem a sua própria atividade.
+  feeds: {},
+  // Raiz (mensagem) da execução em curso: os eventos pertencem a ela.
+  currentRootId: null,
 
   provider: "ollama",
   modelId: "",
@@ -265,6 +271,10 @@ export async function loadProviders() {
 export async function selectProject(project) {
   state.selectedProject = project;
   state.conversation = null;
+  state.selectedTaskId = null;
+  state.inspector = null;
+  state.feeds = {};
+  state.currentRootId = null;
   state.conversations = project ? await api(`/projects/${project.id}/conversations`).catch(() => []) : [];
   state.tasks = [];
   state.currentRun = null;
@@ -273,6 +283,10 @@ export async function selectProject(project) {
 
 export async function selectConversation(conversation) {
   state.conversation = conversation;
+  state.selectedTaskId = null;
+  state.inspector = null;
+  state.feeds = {};
+  state.currentRootId = null;
   state.selectedProject = conversation.project_id
     ? state.projects.find((item) => item.id === conversation.project_id) || state.selectedProject
     : null;
@@ -318,11 +332,12 @@ export async function refreshTasks() {
   }
 }
 
-export async function refreshRun() {
+export async function refreshRun(runId) {
   const workspace = workspaceId();
   if (!workspace) return;
   const runs = await api(`/projects/${workspace}/runs`).catch(() => []);
-  const active = runs.find((run) => ["ACTIVE", "PAUSED"].includes(run.status)) || runs[0] || null;
+  const target = runId ? runs.find((run) => run.id === runId) : null;
+  const active = target || runs.find((run) => ["ACTIVE", "PAUSED"].includes(run.status)) || runs[0] || null;
   state.currentRun = active;
 }
 
@@ -339,6 +354,15 @@ export function runConfig() {
 export async function sendMessage() {
   const typed = state.objective.trim();
   if (!typed || state.sending) return;
+  if (state.running || state.currentRun?.status === "ACTIVE") {
+    // Mensagem agendada: o agente termina a execução atual e a seguir pega esta.
+    // (Antes o botão ficava bloqueado e a mensagem simplesmente se perdia.)
+    state.queued = { objective: typed, attachments: [...state.attachments] };
+    state.objective = "";
+    state.attachments = [];
+    toast("Mensagem agendada — entra assim que a execução atual terminar", "ok");
+    return;
+  }
   state.sending = true;
   const title = typed.slice(0, 80);
   const attachments = state.attachments.splice(0, state.attachments.length);
@@ -381,8 +405,10 @@ export async function sendMessage() {
       }),
     });
     state.objective = "";
-    state.selectedTaskId = task.id;
     await refreshTasks();
+    // Selecionar a tarefa nova (com carregar os detalhes) evita que o painel continue
+    // mostrando os detalhes da mensagem anterior.
+    await selectTask(task.id);
     await startRun();
   } catch (err) {
     toast(err.message || "Falha ao enviar", "error");
@@ -392,6 +418,10 @@ export async function sendMessage() {
 }
 
 export async function startRun() {
+  if (state.running || state.currentRun?.status === "ACTIVE") {
+    toast("Já existe uma execução em andamento", "error");
+    return;
+  }
   const workspace = workspaceId();
   const root = state.tasks.find((task) => task.id === state.selectedTaskId) || roots()[0];
   if (!workspace || !root) {
@@ -402,8 +432,13 @@ export async function startRun() {
     method: "POST",
     body: JSON.stringify({ root_task_id: root.id, config: runConfig() }),
   });
+  state.currentRootId = root.id;
   await api(`/runs/${state.currentRun.id}/autonomous/enable`, { method: "POST" }).catch(() => {});
-  await connectStream(state.currentRun.id);
+  try {
+    await connectStream(state.currentRun.id);
+  } catch (err) {
+    toast("Não foi possível acompanhar a execução em tempo real", "error");
+  }
   await api(`/runs/${state.currentRun.id}/step`, { method: "POST" }).catch((err) => toast(err.message, "error"));
   await refreshTasks();
   if (state.autoMode) {
@@ -431,8 +466,24 @@ export async function autoRun() {
   } finally {
     state.running = false;
     await refreshTasks();
-    await refreshRun();
+    await refreshRun(runId);
+    await flushQueue();
   }
+}
+
+/** Envia a mensagem que ficou na fila (a execução anterior acabou). */
+export async function flushQueue() {
+  if (!state.queued) return;
+  const pending = state.queued;
+  state.queued = null;
+  state.objective = pending.objective || "";
+  state.attachments = pending.attachments || [];
+  await sendMessage();
+}
+
+export function cancelQueued() {
+  state.queued = null;
+  toast("Mensagem agendada cancelada", "info");
 }
 
 export function setAutoMode(value) {
@@ -499,6 +550,8 @@ export async function connectStream(runId) {
       markConnection(reducer, "ended");
       state.liveState.version += 1;
       refreshTasks();
+      refreshRun(runId);
+      flushQueue();
     },
     onStatus: (status) => {
       reducer.connection = status;
@@ -508,7 +561,10 @@ export async function connectStream(runId) {
 }
 
 export function disconnectStream() {
-  stream?.close();
+  if (stream) {
+    if (typeof stream.stop === "function") stream.stop();
+    else if (typeof stream.close === "function") stream.close();
+  }
   stream = null;
   if (pollTimer) {
     clearInterval(pollTimer);
@@ -522,7 +578,11 @@ export async function selectTask(taskId) {
   await loadInspector(taskId);
 }
 
+// Token do inspetor: uma resposta lenta de uma tarefa antiga não pode sobrescrever a atual.
+let inspectorToken = 0;
+
 export async function loadInspector(taskId) {
+  const token = ++inspectorToken;
   if (!taskId) {
     state.inspector = null;
     return;
@@ -534,6 +594,7 @@ export async function loadInspector(taskId) {
     api(`/tasks/${taskId}/context-snapshots`).catch(() => []),
     api(`/tasks/${taskId}/contract`).catch(() => null),
   ]);
+  if (token !== inspectorToken) return; // resposta obsoleta
   state.inspector = { task, attempts, evidences, snapshots, contract };
 }
 
@@ -568,11 +629,29 @@ export async function discoverMcp() {
   state.mcpText = JSON.stringify(result, null, 2);
 }
 
+/** Raiz (tarefa de topo) de uma tarefa: a atividade pertence à mensagem, não à folha. */
+export function rootIdOf(taskId) {
+  if (!taskId) return null;
+  const byId = new Map(state.tasks.map((task) => [task.id, task]));
+  let current = byId.get(taskId);
+  const seen = new Set();
+  while (current && current.parent_id && !seen.has(current.id)) {
+    seen.add(current.id);
+    current = byId.get(current.parent_id);
+  }
+  return current?.id || taskId;
+}
+
 /** Entradas de atividade do chat: pensamento, ferramentas, comandos, leituras e escritas. */
 function pushActivity(envelope) {
   const entry = describeActivity(envelope);
   if (!entry) return;
-  const feed = state.feed;
+  // A atividade vai para a mensagem (tarefa raiz) a que pertence. A raiz da execução em
+  // curso é a fonte confiável: o evento chega antes de a lista de tarefas ser atualizada.
+  const rootId = state.currentRootId || rootIdOf(envelope.task_id) || envelope.task_id || "live";
+  if (!state.feeds[rootId]) state.feeds[rootId] = [];
+  const feed = state.feeds[rootId];
+  state.feed = feed;
   if (entry.callId) {
     // Atualiza a entrada em andamento (mesma chamada de ferramenta/comando).
     const index = feed.findIndex((item) => item.callId === entry.callId && item.kind === entry.kind);

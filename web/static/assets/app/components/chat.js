@@ -13,6 +13,7 @@ import {
   pauseRun,
   cancelRun,
   resumeRun,
+  cancelQueued,
 } from "../store.js";
 import {
   icon,
@@ -46,8 +47,8 @@ export const ChatView = {
           id: root.id,
           title: root.display_title || root.title,
           pause,
-          activity: isLast ? state.feed : [],
-          summary: isLast ? summarizeActivity(state.feed) : null,
+          activity: state.feeds[root.id] || [],
+          summary: summarizeActivity(state.feeds[root.id] || []),
           objective: String(root.objective || "").split("\n\nAnexos do usuário:")[0],
           attachments: meta.attachments || [],
           createdAt: stamp(root.created_at),
@@ -379,6 +380,12 @@ export const ChatView = {
         <span class="spinner"></span> Execução em andamento — o agente segue sozinho até o fim.
       </p>
 
+      <p class="composer-hint queued" v-if="state.queued">
+        <span class="side-ico" v-html="icon('clock', 13)"></span>
+        Mensagem agendada: «{{ state.queued.objective.slice(0, 60) }}{{ state.queued.objective.length > 60 ? '…' : '' }}»
+        <button type="button" class="link-btn" @click="cancelQueued()">cancelar</button>
+      </p>
+
       <form class="composer" @submit.prevent="sendMessage()">
         <div class="chips" v-if="state.attachments.length">
           <span class="chip" v-for="(item, index) in state.attachments" :key="item.name + index">
@@ -429,8 +436,8 @@ export const ChatView = {
             <button
               type="submit"
               class="btn-primary send-btn"
-              :disabled="state.sending || state.running || !state.objective.trim()"
-              :title="state.running ? 'Há uma execução em andamento' : 'Enviar'"
+              :disabled="state.sending || !state.objective.trim()"
+              :title="state.running ? 'A mensagem entra na fila e é enviada quando a execução atual terminar' : 'Enviar'"
             >
               <span v-html="icon('send', 15)"></span> Enviar
             </button>

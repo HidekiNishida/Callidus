@@ -153,7 +153,9 @@ export const DetailsPanel = {
             <div><dt>Criado</dt><dd>{{ stamp(detail.created_at) }}</dd></div>
             <div v-if="detail.metadata_json?.tool"><dt>Ferramenta</dt><dd>{{ detail.metadata_json.tool }}</dd></div>
             <div v-if="detail.metadata_json?.model_id"><dt>Modelo</dt><dd>{{ detail.metadata_json.model_id }}</dd></div>
-            <div v-if="contract"><dt>Contrato</dt><dd>{{ contract.status || 'definido' }}</dd></div>
+            <div v-if="contract && (contract.inputs || contract.outputs || contract.invariants || contract.acceptance)">
+              <dt>Contrato</dt><dd>definido</dd>
+            </div>
           </dl>
           <pre class="code" v-if="detail.consolidated_result_json">{{ JSON.stringify(detail.consolidated_result_json, null, 2) }}</pre>
         </div>

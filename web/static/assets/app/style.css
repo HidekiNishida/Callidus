@@ -1812,3 +1812,11 @@ pre,
   color: var(--muted);
   animation: turn-in var(--dur-3) var(--ease-out) both;
 }
+
+.composer-hint.queued {
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
