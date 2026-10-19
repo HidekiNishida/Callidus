@@ -10,7 +10,7 @@
 
 ## Objetivo
 
-Evoluir a arquitetura do Agente de IA Local de ponta a ponta: integrar sistema de Skills reutilizáveis sob demanda, camada de definição de abordagem profissional e estratégia executável, decomposição hierárquica recursiva e adaptativa com limites seguros, integridade rigorosa de estados/consolidação/conclusão com suporte a subtarefas opcionais e falhas parciais, verificação independente multicritério e controle fino de tokens e observabilidade.
+Evoluir a arquitetura do Callidus de ponta a ponta: integrar sistema de Skills reutilizáveis sob demanda, camada de definição de abordagem profissional e estratégia executável, decomposição hierárquica recursiva e adaptativa com limites seguros, integridade rigorosa de estados/consolidação/conclusão com suporte a subtarefas opcionais e falhas parciais, verificação independente multicritério e controle fino de tokens e observabilidade.
 
 ## Próxima ação
 

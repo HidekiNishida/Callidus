@@ -86,7 +86,7 @@ export function createStream({ runId, cursor, EventSourceImpl, onEnvelope, onLiv
 const AREAS = [
   ["tree", "Tarefas"],
   ["activity", "Atividade"],
-  ["outputs", "Respostas do agente"],
+  ["outputs", "Respostas do Callidus"],
   ["terminal", "Terminal"],
   ["files", "Arquivos"],
   ["verification", "Verificação"],

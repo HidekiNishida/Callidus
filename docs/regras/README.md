@@ -1,8 +1,8 @@
-# Regras do Agente — Hub de Entrada
+# Regras do Callidus — Hub de Entrada
 
 ![Hub](/media/icons/hub.svg){width=48}
 
-**Comece sempre aqui.** Este hub é o ponto de entrada obrigatório para humanos e agentes de IA que trabalham no Project **Agente de IA Local**.
+**Comece sempre aqui.** Este hub é o ponto de entrada obrigatório para humanos e agentes de IA que trabalham no Project **Callidus**.
 
 Leia este índice, escolha apenas os ramos necessários à tarefa e siga os links. Não carregue a árvore inteira por padrão — veja [Navegação para agentes](/docs/regras/navegacao-agentes.md).
 
@@ -30,6 +30,7 @@ Estas regras definem **como** o agente deve documentar e trabalhar:
 | Navegação seletiva | Agentes leem o hub e só os ramos necessários |
 | Estilo didático | Docs claros para humanos **e** IAs (exemplos, tabelas, checklists) |
 | Ativos visuais | Ícones, diagramas e tabelas aceleram compreensão; diagramas adaptam light/dark |
+| Marca | O projeto é **Callidus**: nome, símbolo e aliases legados seguem [marca.md](/docs/regras/marca.md) |
 | Continuidade MCP | MCP ausente/quebrado → obter/autenticar/reparar **antes** de seguir |
 | Organização hierárquica | Pastas/arquivos com responsabilidade única e nomes claros (eficiência de tokens) |
 | Validações e testes | Cobertura proporcional nas dimensões aplicáveis (segurança, limites, stress, etc.) |
@@ -53,6 +54,7 @@ Contexto estável do projeto: [project-context.md](/docs/project-context.md).
 | ![Ativos](/media/icons/ativos-visuais.svg){width=28} | [ativos-visuais.md](/docs/regras/ativos-visuais.md) | Ao adicionar ícones, imagens, diagramas ou tabelas visuais |
 | ![Organização](/media/icons/organizacao.svg){width=28} | [organizacao-arquivos.md](/docs/regras/organizacao-arquivos.md) | Ao criar pastas, nomear arquivos ou separar temas |
 | ![Organização](/media/icons/organizacao.svg){width=28} | [readmes-pastas.md](/docs/regras/readmes-pastas.md) | Ao criar pasta de código/docs — **README.md** índice |
+| ![Marca](/media/icons/organizacao.svg){width=28} | [marca.md](/docs/regras/marca.md) | Ao criar/alterar nome, símbolo, logo ou textos de marca na interface e nos docs |
 | ![Validações](/media/icons/validacoes.svg){width=28} | [validacoes-testes.md](/docs/regras/validacoes-testes.md) | Ao criar/alterar qualquer artefato que precise verificação |
 | ![Autoaperfeiçoamento](/media/icons/autoaperfeicoamento.svg){width=28} | [autoaperfeicoamento.md](/docs/regras/autoaperfeicoamento.md) | Quando a mudança influencia trabalho futuro / regras |
 | ![Commits](/media/icons/commits.svg){width=28} | [commits.md](/docs/regras/commits.md) | Ao fechar mudança em repo git (ou para saber o que fazer sem repo) |

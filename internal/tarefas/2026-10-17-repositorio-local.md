@@ -10,7 +10,7 @@
 
 ## Objetivo
 
-Criar em `~/Documents/Projetos/Agente de IA Local/` um repositório git espelhando docs/media/internal do Agent Store, reescrever links `/cursor/stores/self/…` e registrar README + estratégia git vs Context.
+Criar em `~/Documents/Projetos/Callidus/` um repositório git espelhando docs/media/internal do Agent Store, reescrever links `/cursor/stores/self/…` e registrar README + estratégia git vs Context.
 
 ## Próxima ação
 
@@ -41,7 +41,7 @@ Nenhuma — tarefa encerrada; opcional: configurar remote GitHub e script de syn
 | `/README.md` | Entrada humana + agentes |
 | `/docs/project-context.md` | Identidade, sync git/Context |
 | `/internal/tarefas/2026-10-17-repositorio-local.md` | Este checklist |
-| `~/Documents/Projetos/Agente de IA Local/` | Raiz do repositório git |
+| `~/Documents/Projetos/Callidus/` | Raiz do repositório git |
 
 ## Notas de retomada
 

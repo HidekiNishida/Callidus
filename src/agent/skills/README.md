@@ -1,4 +1,4 @@
-# `src/agent/skills/` — Skills do Agente
+# `src/agent/skills/` — Skills do Callidus
 
 Competências reutilizáveis injetadas sob demanda no contexto da operação.
 
@@ -10,4 +10,4 @@ Competências reutilizáveis injetadas sob demanda no contexto da operação.
 | [`discovery.py`](./discovery.py) | `SkillRegistry`: junta built-ins, catálogo do repositório e skills do projeto |
 | [`selector.py`](./selector.py) | `SkillSelector`: escolhe as skills relevantes dentro do orçamento de contexto |
 
-Voltar ao [README do agente](/src/agent/README.md) · Catálogo editável: [`/skills/`](/skills/README.md)
+Voltar ao [README do Callidus](/src/agent/README.md) · Catálogo editável: [`/skills/`](/skills/README.md)

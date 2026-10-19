@@ -3,21 +3,25 @@
 ## Instalação
 
 ```bash
-cd "~/Documents/Projetos/Agente de IA Local"
+cd "~/Documents/Projetos/Callidus"
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env   # opcional
 ```
 
-No **Python 3.14** o interpretador ignora `.pth` cujo nome começa com `_` (editable do setuptools/hatch). Depois do install:
+No **Python 3.14** o interpretador ignora `.pth` cujo nome começa com `_` (editable do setuptools/hatch) e também os `.pth` ocultos (`UF_HIDDEN`, comum no macOS). Depois do install:
 
 ```bash
 python scripts/fix-python314-editable.py
 python -c "import agent; print('OK')"
-agente-api
+callidus-api
 ```
 
-Atalho sem o script: `PYTHONPATH=src agente-api`
+O script grava `callidus-src.pth` e cria o link `site-packages/agent` → `src/agent`. O link é o que garante o import: o importador do Python ignora a flag de ocultação, ao contrário do leitor de `.pth`.
+
+Atalho sem o script: `PYTHONPATH=src callidus-api`
+
+O script `agente-api` continua disponível como alias do `callidus-api`.
 
 ## Padrões (documentação e runtime)
 
@@ -35,7 +39,7 @@ Ordem de decomposição: **builtin e2e** (objetivo contém `e2e`) → **provedor
 ## API e UI
 
 ```bash
-agente-api
+callidus-api
 # http://127.0.0.1:8765/  — UI
 # http://127.0.0.1:8765/docs
 ```

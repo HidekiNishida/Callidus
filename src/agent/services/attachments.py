@@ -5,6 +5,7 @@ import base64
 import re
 from pathlib import Path
 
+from agent.brand import ATTACHMENTS_DIR, LEGACY_ATTACHMENTS_DIR
 from agent.security.paths import PathSecurityError, resolve_under_root
 
 MAX_ATTACHMENTS = 8
@@ -21,13 +22,27 @@ def _safe_name(name: str, fallback: str) -> str:
     return base[:80]
 
 
+def _attachments_folder(project_root: str, task_id: str) -> str:
+    """Pasta de anexos da tarefa. Mantém a pasta legada quando ela já tem arquivos,
+    para não quebrar referências de anexos criados antes da mudança de marca."""
+    legacy = f"{LEGACY_ATTACHMENTS_DIR}/anexos/{task_id}"
+    current = f"{ATTACHMENTS_DIR}/anexos/{task_id}"
+    try:
+        legacy_abs = resolve_under_root(project_root, legacy)
+    except PathSecurityError:
+        return current
+    if legacy_abs.is_dir() and any(legacy_abs.iterdir()):
+        return legacy
+    return current
+
+
 def materialize_attachments(project_root: str, task_id: str, items: list) -> list[dict]:
-    """Grava os anexos em `.agente/anexos/` e devolve só referências, sem o conteúdo."""
+    """Grava os anexos em `.callidus/anexos/` e devolve só referências, sem o conteúdo."""
     if not isinstance(items, list) or not items:
         return []
     if len(items) > MAX_ATTACHMENTS:
         raise ValueError(f"no máximo {MAX_ATTACHMENTS} anexos")
-    folder_rel = f".agente/anexos/{task_id}"
+    folder_rel = _attachments_folder(project_root, task_id)
     try:
         folder = resolve_under_root(project_root, folder_rel)
     except PathSecurityError as exc:

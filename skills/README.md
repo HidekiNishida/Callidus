@@ -1,6 +1,6 @@
-# Catálogo de Skills do Agente de IA Local
+# Catálogo de Skills do Callidus
 
-Este diretório contém as **Skills** (competências reutilizáveis) do Agente. Cada arquivo define metadados, critérios de ativação, proibições, procedimentos práticos, ferramentas autorizadas, regras de validação, riscos e palavras-chave.
+Este diretório contém as **Skills** (competências reutilizáveis) do Callidus. Cada arquivo define metadados, critérios de ativação, proibições, procedimentos práticos, ferramentas autorizadas, regras de validação, riscos e palavras-chave.
 
 O catálogo é a **fonte de verdade** das competências: o runtime o lê em [`src/agent/skills/catalog/loader.py`](/src/agent/skills/catalog/loader.py) e o converte em `SkillSpec`. Uma skill do **projeto** (`<project_root>/skills/*.md`) sobrescreve a do repositório pelo mesmo `id`.
 

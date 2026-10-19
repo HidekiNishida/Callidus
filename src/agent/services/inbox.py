@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-INBOX_ROOT = "agente-inbox://local"
+from agent.brand import INBOX_ROOT, LEGACY_INBOX_ROOT
 
 
 def user_home() -> str:
@@ -11,7 +11,10 @@ def user_home() -> str:
 
 
 def is_inbox_path(root_path: str | None) -> bool:
-    return str(root_path or "").startswith("agente-inbox://")
+    value = str(root_path or "")
+    return value.startswith(INBOX_ROOT.split("://")[0]) or value.startswith(
+        LEGACY_INBOX_ROOT.split("://")[0]
+    )
 
 
 def is_inbox_project(project) -> bool:

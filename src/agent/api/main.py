@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from agent.api.deps import db_session, get_engine, read_settings
 from agent.api.observe_routes import router as observe_router
+from agent.brand import BRAND_NAME, BRAND_TAGLINE
 from agent.config import Settings
 from agent.domain.enums import MemoryKind, TaskStatus
 from agent.domain.schemas import (
@@ -130,7 +131,12 @@ async def lifespan(app: FastAPI):
             await stop_background_worker()
 
 
-app = FastAPI(title="Agente de IA Local", version="0.5.0", lifespan=lifespan)
+app = FastAPI(
+    title=BRAND_NAME,
+    description=BRAND_TAGLINE,
+    version="0.5.0",
+    lifespan=lifespan,
+)
 app.include_router(observe_router)
 
 

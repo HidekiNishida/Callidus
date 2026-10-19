@@ -3,7 +3,7 @@
 import sys
 import uuid
 
-sys.path.insert(0, "/Users/hidekinishida/Documents/Projetos/Agente de IA Local/src")
+sys.path.insert(0, "/Users/hidekinishida/Documents/Projetos/Callidus/src")
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

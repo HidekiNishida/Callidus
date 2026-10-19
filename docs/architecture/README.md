@@ -2,7 +2,7 @@
 
 ![Projeto](/media/icons/projeto.svg){width=48}
 
-Hub técnico do **Agente de IA Local** (código em [/src/agent/](/src/agent/README.md)).
+Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 
 ## Documentos
 

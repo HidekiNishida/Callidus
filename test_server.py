@@ -9,9 +9,9 @@ import requests
 
 def test_server():
     # Set up environment - explicitly unset DATABASE_URL to use .env
-    venv_python = "/Users/hidekinishida/Documents/Projetos/Agente de IA Local/.venv/bin/python"
-    project_dir = "/Users/hidekinishida/Documents/Projetos/Agente de IA Local"
-    src_dir = "/Users/hidekinishida/Documents/Projetos/Agente de IA Local/src"
+    venv_python = "/Users/hidekinishida/Documents/Projetos/Callidus/.venv/bin/python"
+    project_dir = "/Users/hidekinishida/Documents/Projetos/Callidus"
+    src_dir = "/Users/hidekinishida/Documents/Projetos/Callidus/src"
     env = os.environ.copy()
     env["PYTHONPATH"] = src_dir
     # Remove DATABASE_URL from env so .env file takes effect

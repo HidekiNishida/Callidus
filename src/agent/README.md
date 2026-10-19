@@ -1,6 +1,6 @@
-# Pacote `agent` — Runtime do Agente de IA Local
+# Pacote `agent` — Runtime do Callidus
 
-Núcleo do **Agente de IA Local**: orquestração explícita, persistência SQLite, modelos locais e ferramentas determinísticas.
+Núcleo do **Callidus**: orquestração explícita, persistência SQLite, modelos locais e ferramentas determinísticas.
 
 ## Módulos (Subpacotes)
 

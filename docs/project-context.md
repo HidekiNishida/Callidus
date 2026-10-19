@@ -1,4 +1,8 @@
-# Contexto do Projeto — Agente de IA Local
+# Contexto do Projeto — Callidus
+
+<p align="center">
+  <img src="/media/Callidus Name + Logo Horizontal.svg" alt="Callidus" width="360" />
+</p>
 
 ![Projeto](/media/icons/projeto.svg){width=48}
 
@@ -22,8 +26,11 @@ Este arquivo guarda o **contexto estável** do Project: metas, restrições e po
 
 | Campo | Valor |
 |-------|-------|
-| Nome do Project | Agente de IA Local |
-| Repositório git (cópia canônica versionada) | `~/Documents/Projetos/Agente de IA Local/` |
+| Nome do Project | Callidus |
+| Símbolo | [Callidus Logo.svg](/media/Callidus%20Logo.svg) — "C" hexagonal com estrela azul |
+| Wordmark | [Callidus Name + Logo Horizontal.svg](/media/Callidus%20Name%20%2B%20Logo%20Horizontal.svg) |
+| Assets web | [`web/static/assets/brand/`](/web/static/assets/brand/) — gerados por [`scripts/build_brand_assets.py`](/scripts/build_brand_assets.py) |
+| Repositório git (cópia canônica versionada) | `~/Documents/Projetos/Callidus/` |
 | Cursor Context (Agent Store) | Store cloud em `~/Library/Application Support/Cursor/AgentStores/cursor_agent_stores/bc-b167c6af-15fa-4620-8790-0ffcbfc4f326/files/`; em sessões do Project, paths `/cursor/stores/self/…` apontam para esse store |
 | Idioma da documentação | Português (Brasil); termos técnicos em inglês quando padrão |
 

@@ -1,12 +1,15 @@
-/** Agente de IA Local — UI principal (módulo ES) */
+/** Callidus — UI principal (módulo ES) */
 
 import { createObserver } from "./observe.js";
 
-const STORAGE_KEY = "agente-local-ui-v1";
+const BRAND_NAME = "Callidus";
+const STORAGE_KEY = "callidus-ui-v1";
+const LEGACY_STORAGE_KEY = "agente-local-ui-v1";
 
 function loadPrefs() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
+    return JSON.parse(raw || "{}");
   } catch {
     return {};
   }
@@ -15,6 +18,7 @@ function loadPrefs() {
 function savePrefs(partial) {
   const next = { ...loadPrefs(), ...partial };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  if (localStorage.getItem(LEGACY_STORAGE_KEY)) localStorage.removeItem(LEGACY_STORAGE_KEY);
 }
 
 function toast(message, type = "info") {
@@ -62,9 +66,9 @@ const state = {
 };
 
 const CHAT = {
-  pt: { you: "Você", agent: "Agente", thought: "Pensou", thinking: "Pensando", pending: "Pensando…", sending: "Enviando…", busy: "O agente ainda está trabalhando. Espere terminar ou pare a execução.", stop: "Parar o agente", send: "Enviar", planning: "Vou planejar e dividir isso em passos.", emptyTitle: "O que vamos construir?", emptyBody: "Escreva embaixo. Cada projeto guarda as conversas separadas." },
-  en: { you: "You", agent: "Agent", thought: "Thought", thinking: "Thinking", pending: "Thinking…", sending: "Sending…", busy: "The agent is still working. Wait for it to finish or stop the run.", stop: "Stop the agent", send: "Send", planning: "I'll plan this and break it into steps.", emptyTitle: "What should we build?", emptyBody: "Write below. Each project keeps its own chats." },
-  es: { you: "Tú", agent: "Agente", thought: "Pensó", thinking: "Pensando", pending: "Pensando…", sending: "Enviando…", busy: "El agente sigue trabajando. Espera a que termine o detén la ejecución.", stop: "Detener el agente", send: "Enviar", planning: "Voy a planear y dividir esto en pasos.", emptyTitle: "¿Qué vamos a construir?", emptyBody: "Escribe abajo. Cada proyecto guarda sus conversaciones." },
+  pt: { you: "Você", agent: BRAND_NAME, thought: "Pensou", thinking: "Pensando", pending: "Pensando…", sending: "Enviando…", busy: "O Callidus ainda está trabalhando. Espere terminar ou pare a execução.", stop: "Parar o Callidus", send: "Enviar", planning: "Vou planejar e dividir isso em passos.", emptyTitle: "O que vamos construir?", emptyBody: "Escreva embaixo. Cada projeto guarda as conversas separadas." },
+  en: { you: "You", agent: BRAND_NAME, thought: "Thought", thinking: "Thinking", pending: "Thinking…", sending: "Sending…", busy: "Callidus is still working. Wait for it to finish or stop the run.", stop: "Stop Callidus", send: "Send", planning: "I'll plan this and break it into steps.", emptyTitle: "What should we build?", emptyBody: "Write below. Each project keeps its own chats." },
+  es: { you: "Tú", agent: BRAND_NAME, thought: "Pensó", thinking: "Pensando", pending: "Pensando…", sending: "Enviando…", busy: "Callidus sigue trabajando. Espera a que termine o detén la ejecución.", stop: "Detener Callidus", send: "Enviar", planning: "Voy a planear y dividir esto en pasos.", emptyTitle: "¿Qué vamos a construir?", emptyBody: "Escribe abajo. Cada proyecto guarda sus conversaciones." },
 };
 
 function uiLocale() {
@@ -129,6 +133,15 @@ const ICONS = {
 function icon(name) {
   const body = ICONS[name] || ICONS.circle;
   return `<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+}
+
+const BRAND_MARK_PATHS = {
+  c: "M16654.66 15075.97c-392.69,-278.33 -982.62,-562.59 -1416.17,-800.89 -769.11,-422.75 -921.56,-259.39 -1583.07,140.92l-2072.96 1231.59c-315.92,187.44 -444.8,382.34 -783.93,197.36l-1368.61 -839.96c-756.34,-470.69 -3737.87,-2188.73 -4196.91,-2534.43l-15.46 -4661.4c65.43,-166.09 3554.2,-2099.15 4173.73,-2489.36 1834.82,-1155.72 1346.54,-1093 2796.7,-230.4 477.59,284.07 929.1,549.44 1426.65,837.37 682.04,394.7 801.29,618.72 1625.96,164.02 321.72,-177.38 1223.82,-633.68 1431.05,-820.29l-3841.32 -2294.31c-2203.29,-1264.29 -1576.72,-1258.55 -4109.37,202.6l-4850.68 2860.59c-360.55,203.13 -599.82,431.63 -692.52,905.69 -117.79,602.41 -30.75,2389.67 -30.51,3113.15 0.3,930.41 -70.39,2170.99 2.57,3062.93 74.26,908 876.8,1156.08 1568.63,1578.35 1310.1,799.57 2595.98,1550.01 3894.25,2347.99 541.43,332.78 1366.78,873.58 1927.78,1129.99 757.9,346.41 1687.98,-413.2 2221.87,-736.4l2918.09 -1733.53c212.31,-128.55 838.83,-469.18 974.23,-631.58z",
+  star: "M8023.8 10180.59c625.37,289.77 2294.16,428.39 2741.91,801.49 271.34,476.33 93.81,1744.12 356.25,2246.27 259.75,-507.96 607.94,-1015.81 927.19,-1521.34 388.68,-615.48 806.15,-688.37 1660.72,-843.42l4340.78 -683c-223.32,-130.85 -3672.27,-611.89 -4264.46,-704.71 -885.93,-138.85 -1294.48,-180.12 -1710.52,-786.01 -211.31,-307.71 -824.03,-1265.53 -940.41,-1583.17 -43.86,69.77 -17.71,-6.04 -59.87,142.58 -14.12,49.77 -23.7,100.07 -31.38,151.1l-189.52 1703.37c-51.14,331.48 -92.23,323.77 -394.59,403.74 -365.47,96.67 -2250.57,547.68 -2436.1,673.1z",
+};
+
+function brandMark(extraClass = "") {
+  return `<svg class="brand-mark${extraClass ? ` ${extraClass}` : ""}" viewBox="3116 2054 14935 16212" aria-hidden="true" focusable="false"><path d="${BRAND_MARK_PATHS.c}" fill="currentColor"/><path d="${BRAND_MARK_PATHS.star}" fill="#668DF7"/></svg>`;
 }
 
 function paintIcons(root = document) {
@@ -1338,7 +1351,7 @@ function renderChat() {
     const body = state.conversation && !state.selectedProject
       ? "Esta conversa usa a pasta do usuário. A pasta pode ser trocada quando quiser."
       : copy.emptyBody;
-    log.innerHTML = `<div class="chat-empty"><h2>${escapeHtml(copy.emptyTitle)}</h2><p>${escapeHtml(body)}</p></div>`;
+    log.innerHTML = `<div class="chat-empty">${brandMark("brand-mark-lg")}<h2>${escapeHtml(copy.emptyTitle)}</h2><p>${escapeHtml(body)}</p></div>`;
     return;
   }
   const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 120;
@@ -1384,7 +1397,7 @@ function renderChat() {
       const pendingLine = glowing && !reply ? `<p class="muted">${escapeHtml(copy.planning)}</p>` : "";
       const process = reply ? "" : `${thoughts}${cards}`;
       return `<div class="bubble user"><div class="who"><span>${copy.you}</span>${asked}${editBtn}</div>${message}${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
-        <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who"><span>${copy.agent}${model}</span>${answered}${runMeter(root)}</div>${process}${pendingLine}${resumeHtml(root)}${reply}</div></div>`;
+        <div class="bubble agent${glowing ? " live" : ""}"><div class="agent-body"><div class="who">${brandMark()}<span>${copy.agent}${model}</span>${answered}${runMeter(root)}</div>${process}${pendingLine}${resumeHtml(root)}${reply}</div></div>`;
     })
     .join("") + pending;
   if (stick || pending) log.scrollTop = log.scrollHeight;
@@ -1397,7 +1410,7 @@ function pendingBubble() {
   const copy = chatCopy();
   const chips = pending.attachments.map((name) => `<span class="chip">${escapeHtml(name)}</span>`).join("");
   return `<div class="bubble user sending"><div class="who"><span>${copy.you}</span>${stampTag(pending.createdAt)}</div><div>${escapeHtml(pending.objective)}</div>${chips ? `<div class="attach-row">${chips}</div>` : ""}</div>
-    <div class="bubble agent live"><div class="agent-body"><div class="who"><span>${copy.agent}</span></div><p class="muted"><i class="spin"></i> ${escapeHtml(copy.sending)}</p></div></div>`;
+    <div class="bubble agent live"><div class="agent-body"><div class="who">${brandMark()}<span>${copy.agent}</span></div><p class="muted"><i class="spin"></i> ${escapeHtml(copy.sending)}</p></div></div>`;
 }
 
 function agentBusy() {

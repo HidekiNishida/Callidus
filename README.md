@@ -1,4 +1,8 @@
-# 🤖 Agente de IA Local
+<p align="center">
+  <img src="web/static/assets/brand/callidus-lockup.svg" alt="Callidus" width="420" />
+</p>
+
+# Callidus
 
 > **Um agente de programação que roda na sua máquina** — você pede, ele planeja, divide em tarefas pequenas, chama um modelo local (Ollama/llama.cpp), executa ferramentas determinísticas, verifica o resultado e devolve a resposta final.
 
@@ -206,7 +210,7 @@ sequenceDiagram
 
 | Diretório/Arquivo | Propósito | Quando Executa | Conexões (Entrada → Saída) |
 |-------------------|-----------|----------------|----------------------------|
-| **`src/agent/api/main.py`** | API HTTP + SSE + SPA estática | Inicialização (`agente-api`) + cada request | HTTP JSON → Services/Orchestrator → DB + EventBus → HTTP JSON / SSE |
+| **`src/agent/api/main.py`** | API HTTP + SSE + SPA estática | Inicialização (`callidus-api`) + cada request | HTTP JSON → Services/Orchestrator → DB + EventBus → HTTP JSON / SSE |
 | **`src/agent/api/observe_routes.py`** | Rotas SSE, histórico, snapshot | Conexão SSE `/events`, `/live`, `/snapshot` | EventBus (memória) + DB (event_logs) → SSE stream |
 | **`src/agent/api/deps.py`** | Dependências FastAPI (DB, Settings) | Cada request | `.env` + `Settings` → `Session`, `ToolRegistry`, `McpManager` |
 | **`src/agent/config.py`** | Configuração central (pydantic-settings) | Startup + cada `get_settings()` | `.env` → `Settings` (data_dir, DB URL, Ollama, limites, observabilidade) |
@@ -319,7 +323,7 @@ sequenceDiagram
 
 ```bash
 # 1. Clone/entre no repositório
-cd "~/Documents/Projetos/Agente de IA Local"
+cd "~/Documents/Projetos/Callidus"
 
 # 2. Crie e ative venv
 python3 -m venv .venv && source .venv/bin/activate
@@ -327,27 +331,34 @@ python3 -m venv .venv && source .venv/bin/activate
 # 3. Instale em modo editável (inclui dev deps: pytest)
 pip install -e ".[dev]"
 
-# 4. (Opcional) Copie .env.example → .env e ajuste
+# 4. (Obrigatório no Python 3.14+) Aponte o .pth para src/
+python scripts/fix-python314-editable.py
+
+# 5. (Opcional) Copie .env.example → .env e ajuste
 cp .env.example .env
 
-# 5. Rode os testes para validar o ambiente
+# 6. Rode os testes para validar o ambiente
 pytest
 
-# 6. Suba a API (servidor + UI)
-agente-api
+# 7. Suba a API (servidor + UI)
+callidus-api
 # → http://127.0.0.1:8765/  (interface)
 # → http://127.0.0.1:8765/docs  (Swagger)
 
-# 7. (Opcional) Configure MCP
+# 8. (Opcional) Configure MCP
 cp data/mcp.example.json data/mcp.json
 curl -X POST http://127.0.0.1:8765/mcp/discover
 ```
 
+> O script `agente-api` continua disponível como alias do `callidus-api`.
+
 ### Python 3.14+ (editable install fix)
 ```bash
 python scripts/fix-python314-editable.py
-# ou atalho: PYTHONPATH=src agente-api
+# ou atalho: PYTHONPATH=src callidus-api
 ```
+
+O Python 3.14 ignora `.pth` com nome iniciado em `_` e também `.pth` ocultos (`UF_HIDDEN`, comum no macOS). O script grava `callidus-src.pth` e cria o link `site-packages/agent` → `src/agent`, que o importador sempre lê.
 
 ---
 
@@ -508,7 +519,7 @@ pytest tests/test_observability_*.py -v
 ## 📂 Estrutura do Repositório (Resumo)
 
 ```text
-Agente de IA Local/
+Callidus/
 ├── .cursor/              # Regras do Cursor (hooks, skills, memory)
 ├── .venv/                # Virtualenv local (gitignored)
 ├── backups/              # Backups manuais do SQLite
@@ -519,12 +530,17 @@ Agente de IA Local/
 │   ├── project-context.md
 │   └── README.md
 ├── internal/             # Trabalho interno (checklists, evidências)
-├── media/icons/          # SVGs usados nos docs (projeto.svg, organizacao.svg, etc.)
+├── media/                # Fonte de verdade da marca (SVGs do CorelDRAW)
+│   ├── Callidus Logo.svg                # Símbolo (C hexagonal + estrela)
+│   ├── Callidus Name.svg                # Wordmark
+│   ├── Callidus Name + Logo Horizontal.svg
+│   ├── Callidus Name + Logo Vertical.svg
+│   └── icons/           # SVGs usados nos docs (projeto.svg, organizacao.svg, etc.)
 ├── scripts/
 │   ├── backup-data.sh
 │   └── fix-python314-editable.py
 ├── src/
-│   └── agent/            # Pacote instalável `agente-local`
+│   └── agent/            # Pacote instalável `callidus`
 │       ├── api/          # FastAPI + SSE + SPA
 │       ├── domain/       # Enums, state_machine, schemas, failures
 │       ├── persistence/  # SQLAlchemy models + database
@@ -544,6 +560,7 @@ Agente de IA Local/
 │       ├── util/         # json_parse
 │       ├── i18n/         # locale (detect + instruction)
 │       ├── skills/       # Skills sob demanda (models, catalog, discovery, selector)
+│       ├── brand.py      # Identidade do produto (nome, símbolo, aliases legados)
 │       ├── config.py     # Settings (pydantic-settings)
 │       └── __init__.py   # __version__ = "0.1.0"
 ├── skills/               # Catálogo editável de skills (fonte de verdade)
@@ -552,9 +569,10 @@ Agente de IA Local/
 │   └── static/           # SPA servida pela API
 │       ├── index.html
 │       └── assets/       # app.js, style.css
+│           └── brand/    # callidus-mark.svg, callidus-lockup.svg, favicon.svg (gerados por scripts/build_brand_assets.py)
 ├── .env                  # Config local (gitignored)
 ├── .env.example          # Template
-├── pyproject.toml        # Projeto Python + script `agente-api`
+├── pyproject.toml        # Projeto Python + script `callidus-api`
 ├── resume.md             # Resumo vivo do projeto (atualizado por hooks)
 ├── test_server.py        # Teste rápido da API
 └── test_step.py          # Teste rápido do step do orquestrador

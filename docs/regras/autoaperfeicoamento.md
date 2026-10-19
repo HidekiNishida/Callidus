@@ -1,4 +1,4 @@
-# Autoaperfeiçoamento do Agente
+# Autoaperfeiçoamento do Callidus
 
 ![Autoaperfeiçoamento](/media/icons/autoaperfeicoamento.svg){width=48}
 

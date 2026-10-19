@@ -1,12 +1,12 @@
 # Código-fonte (`src/`)
 
-Pacote Python instalável **`agente-local`** (`pip install -e .`).
+Pacote Python instalável **`callidus`** (`pip install -e .`).
 
 ## Estrutura
 
 | Caminho | README | Responsabilidade |
 |---------|--------|------------------|
-| [`agent/`](agent/README.md) | [README.md](agent/README.md) | **Runtime completo do agente** (API, orquestrador, ferramentas, provedores, persistência, domínio, serviços, observabilidade, memória, conhecimento, verificação, MCP, visão, utilitários, i18n, security, context, guides) |
+| [`agent/`](agent/README.md) | [README.md](agent/README.md) | **Runtime completo do Callidus** (API, orquestrador, ferramentas, provedores, persistência, domínio, serviços, observabilidade, memória, conhecimento, verificação, MCP, visão, utilitários, i18n, security, context, guides) |
 | `agent/api/` | [README.md](agent/api/README.md) | FastAPI HTTP + SSE + SPA estática |
 | `agent/domain/` | [README.md](agent/domain/README.md) | Enums, máquina de estados, schemas Pydantic, classificação de falhas |
 | `agent/persistence/` | [README.md](agent/persistence/README.md) | SQLAlchemy 2 + SQLite (models, database, engine, session) |
@@ -40,7 +40,7 @@ Pacote Python instalável **`agente-local`** (`pip install -e .`).
 pip install -e ".[dev]"
 
 # API + UI
-agente-api  # http://127.0.0.1:8765/
+callidus-api  # http://127.0.0.1:8765/
 
 # Testes
 pytest

@@ -8,6 +8,8 @@ from urllib.parse import quote_plus
 
 import httpx
 
+from agent.brand import USER_AGENT
+
 _ALLOWED = ("http://", "https://")
 _LINK = re.compile(r'<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', re.I)
 _TAG = re.compile(r"<[^>]+>")
@@ -39,7 +41,7 @@ def search_web(query: str, limit: int = 5) -> dict:
         return {"success": False, "error": "consulta vazia"}
     url = f"https://html.duckduckgo.com/html/?q={quote_plus(text)}"
     try:
-        response = httpx.get(url, timeout=20, follow_redirects=True, headers={"User-Agent": "agente-local"})
+        response = httpx.get(url, timeout=20, follow_redirects=True, headers={"User-Agent": USER_AGENT})
         response.raise_for_status()
     except httpx.HTTPError as exc:
         return {"success": False, "error": f"pesquisa indisponível: {exc}"}

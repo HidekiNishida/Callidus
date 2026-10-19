@@ -1,7 +1,7 @@
 [project]
-name = "agente-local"
+name = "callidus"
 version = "0.1.0"
-description = "Agente de desenvolvimento otimizado para modelos locais pequenos"
+description = "Callidus — agente de desenvolvimento otimizado para modelos locais pequenos"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -24,6 +24,7 @@ dev = [
 ]
 
 [project.scripts]
+callidus-api = "agent.api.main:run"
 agente-api = "agent.api.main:run"
 
 [build-system]

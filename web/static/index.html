@@ -3,14 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Agente de IA Local</title>
+  <title>Callidus</title>
+  <meta name="description" content="Callidus — agente de desenvolvimento otimizado para modelos locais pequenos." />
+  <link rel="icon" href="/assets/brand/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/assets/brand/favicon.svg" />
   <link rel="stylesheet" href="/assets/style.css" />
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Projetos">
       <div class="sidebar-head">
-        <strong>Agente</strong>
+        <img class="brand-lockup" src="/assets/brand/callidus-lockup.svg" alt="Callidus" width="150" height="40" />
         <button type="button" id="btn-toggle-project-form" class="icon-btn" data-icon="plus" title="Novo projeto" aria-label="Novo projeto"></button>
       </div>
       <input type="search" id="project-search" placeholder="Buscar projeto…" autocomplete="off" />
@@ -55,7 +58,7 @@
       <section id="live-board" class="live-board" hidden>
         <div class="live-dot" id="live-dot" aria-hidden="true"></div>
         <div class="live-copy">
-          <p class="live-kicker" id="live-kicker">Agente</p>
+          <p class="live-kicker" id="live-kicker"><img class="brand-mark-img" src="/assets/brand/callidus-mark.svg" alt="" width="14" height="14" /> Callidus</p>
           <h2 id="live-title">Aguardando</h2>
           <p id="live-how" class="muted"></p>
         </div>
@@ -64,15 +67,16 @@
 
       <div id="chat-log" class="chat-log" aria-live="polite">
         <div class="chat-empty">
+          <img class="brand-mark-img brand-mark-lg" src="/assets/brand/callidus-mark.svg" alt="" width="44" height="44" />
           <h2>O que vamos construir?</h2>
-          <p>Escreva embaixo como no chat do Cursor. O agente divide o trabalho, edita arquivos e mostra cada passo aqui.</p>
+          <p>Escreva embaixo como no chat do Cursor. O Callidus divide o trabalho, edita arquivos e mostra cada passo aqui.</p>
         </div>
       </div>
 
       <form id="form-task" class="composer-dock">
         <input name="title" class="visually-hidden" />
         <div id="attach-row" class="attach-row" hidden></div>
-        <textarea name="objective" rows="2" placeholder="Pedir ao agente…  (Enter envia, Shift+Enter quebra linha)"></textarea>
+        <textarea name="objective" rows="2" placeholder="Pedir ao Callidus…  (Enter envia, Shift+Enter quebra linha)"></textarea>
         <div class="composer-bar">
           <button type="button" class="icon-btn" id="btn-attach" data-icon="paperclip" title="Anexar imagem ou documento" aria-label="Anexar"></button>
           <input id="file-attach" type="file" multiple hidden accept="image/*,.pdf,.txt,.md,.py,.json,.csv,.js,.ts,.tsx,.html,.css,.xml,.yaml,.yml,.toml,.zip,.doc,.docx,.svg" />
