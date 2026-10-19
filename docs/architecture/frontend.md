@@ -46,18 +46,32 @@ Dentro da bolha do agente, o que o agente está fazendo aparece em tempo real, e
 |--------|---------------|
 | Pensamento do agente | “Pensando na alteração «X»…” |
 | Chamada de modelo | “Chamando o modelo llama3.2” + se a resposta vem em fragmentos |
+| Resposta do modelo | “Resposta do modelo (312 caracteres)” + chamadas de ferramenta |
 | Ferramenta | “Leitura de arquivo”, “Escrita de arquivo”, “Listagem de pasta”… com o caminho |
 | Comando | “Comando” + o comando e a **saída em tempo real** |
 | Testes | “Testes” + contagem de aprovados/falhos |
-| Arquivos | “Leu arquivo”, “Alterou arquivo”, “Removeu arquivo” |
+| Arquivos | “Leu/Alterou/Removeu arquivo” + **diff** (linhas `+`/`−` coloridas) |
 
 Cada linha entra com animação, o ícone mostra o estado (em andamento, concluído, falhou) e o tempo
 de execução quando existe. A tradução está em [`ui.js`](/web/static/assets/app/ui.js)
-(`TOOL_LABEL` e `describeActivity`).
+(`TOOL_LABEL`, `describeActivity`, `summarizeActivity` e `diffLines`).
 
-Quando a execução **pausa** (limite operacional), o chat mostra o aviso com o motivo, o próximo
-passo sugerido e o botão **Retomar** — o run continua de onde parou, sem refazer o que já foi
-comprovado.
+**Recolher e abrir detalhes**: o cabeçalho do bloco resume o turno (“2 escrita(s) · 1 comando(s) ·
+1 teste(s)”) e tem o botão **recolher** (esconde tudo) / **abrir detalhes**. Cada linha tem uma
+chevron: clicar abre o que foi feito (caminho, comando, saída, diff, contagens) com animação de
+altura. Edições de arquivo já abrem com o diff visível.
+
+**Execução automática**: o botão **Auto** da topbar liga/desliga o modo em que o servidor conduz
+os passos até o fim (padrão: ligado). Sem ele, a execução parava no primeiro passo — a interface
+mostrava a tela “travada”.
+
+**Uma mensagem por vez, sem perder nada**: enviar durante uma execução não é bloqueado — a
+mensagem fica **agendada** (aparece o aviso “Mensagem agendada: …”, com opção de cancelar) e entra
+assim que a execução atual termina.
+
+**Atividade por mensagem**: cada mensagem guarda a sua própria atividade (o feed é separado por
+tarefa raiz), então a segunda mensagem não herda o que aconteceu na primeira. O painel de
+detalhes acompanha a tarefa selecionada e ignora respostas antigas que chegam fora de ordem.
 
 ## Layout responsivo
 
