@@ -100,9 +100,9 @@ flowchart LR
 
 ## Estado atual e próximos passos
 
-**Estado:** runtime **v0.2** — orquestrador, ferramentas, verificação, UI web, E2E mock, 19 testes pytest (2026-10-17). Limitações em [limitacoes.md](/docs/architecture/limitacoes.md).
+**Estado:** runtime **v0.5** — orquestrador, ferramentas, verificação independente, observabilidade em tempo real, skills sob demanda, estratégia profissional e decomposição recursiva; 255 testes pytest (2026-10-19). Arquitetura em [visao-geral.md](/docs/architecture/visao-geral.md); limitações em [limitacoes.md](/docs/architecture/limitacoes.md).
 
-**Próximo passo sugerido:** transporte MCP stdio real; decomposição via Ollama para objetivos genéricos; UI de aprovações.
+**Próximo passo sugerido:** cache do catálogo de skills por `mtime`; estratégias de verificação alternativa no ciclo de recuperação; UI de aprovações.
 
 ---
 
