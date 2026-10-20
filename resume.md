@@ -1,5 +1,9 @@
 # Resumo do projeto — Agente de IA Local
 
+![referencias](/media/icons/referencias.svg){width=48}
+
+O mapa vivo de módulos, funções e comportamentos do código.
+
 Resumo didático e completo do projeto inteiro: **propósito, por quê, quando e onde** de cada diretório, arquivo,
 classe e função, com **entradas e saídas**. Não descreve o passo a passo interno, só o necessário para entender
 o funcionamento e a arquitetura.
@@ -10,7 +14,7 @@ o funcionamento e a arquitetura.
 
 ---
 
-## Visão geral
+## 🎯 Visão geral
 
 
 
@@ -409,6 +413,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `main() -> None` — Entry point do script — remove arquivos `.pth` com prefixo `_` do site-packages, corrigindo a instalação editável do pacote em Python 3.14+. Executado manualmente quando o `pip install -e .` falha.
 
+
+- `_site_packages() → Path` — Devolve o caminho do site-packages do virtualenv em uso.
+- `_unhide(path) → None` — Remove a flag UF_HIDDEN (macOS) do arquivo, se houver.
+- `_write_pth(site_packages) → Path` — Grava o .pth com o caminho de src/ e devolve o arquivo criado.
+- `_write_symlink(site_packages) → Path` — Link simbólico `site-packages/agent` → `src/agent`.
 ### `scripts/resume.py`
 
 **Propósito:** Valida e carimba `resume.md`.
@@ -497,6 +506,16 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Subpasta: [src/agent/persistence/](/src/agent/persistence/)
 - Subpasta: [src/agent/providers/](/src/agent/providers/)
 - Subpasta: [src/agent/remote/](/src/agent/remote/)
+- Subpasta: [src/agent/automation/actions/](/src/agent/automation/actions/)
+- Subpasta: [src/agent/automation/service/](/src/agent/automation/service/)
+- Subpasta: [src/agent/automation/triggers/](/src/agent/automation/triggers/)
+- `lab/` — pasta do projeto (ver o README da pasta).
+- `src/agent/automation/` — pasta do projeto (ver o README da pasta).
+- `src/agent/automation/actions/` — pasta do projeto (ver o README da pasta).
+- `src/agent/automation/service/` — pasta do projeto (ver o README da pasta).
+- `src/agent/automation/triggers/` — pasta do projeto (ver o README da pasta).
+- `web/static/assets/app/` — pasta do projeto (ver o README da pasta).
+- `web/static/assets/app/components/` — pasta do projeto (ver o README da pasta).
 - Subpasta: [src/agent/security/](/src/agent/security/)
 - Subpasta: [src/agent/services/](/src/agent/services/)
 - Subpasta: [src/agent/skills/](/src/agent/skills/)
@@ -536,21 +555,96 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Registro das decisões de arquitetura (ADR) — ciclo × execução, API por assunto, verificação independente, SQLite como fonte da verdade e modelo substituível. **Quando/onde:** ao propor uma mudança estrutural.
 
+### `scripts/check_markdown.py`
+
+**Propósito:** conferir a integridade estrutural dos documentos Markdown (título, hierarquia de cabeçalhos, blocos de código, tabelas e diagramas Mermaid). **Quando/onde:** ao mexer em documentação.
+
+
+- `analyse(path) → list[str]` — Analisa um documento Markdown e devolve os problemas encontrados.
+- `main(argv) → int` — Analisa os documentos indicados e imprime o resultado.
+
+- `_targets(paths) → list[Path]` — Arquivos Markdown a verificar.
+- `_headings(lines) → list[tuple[int, str, int]]` — Cabeçalhos do documento, na ordem em que aparecem.
+- `_duplicate_siblings(headings) → list[tuple[str, int, int]]` — Títulos de seção repetidos entre irmãos.
+- `_mermaid_problems(rel, lines) → list[str]` — Problemas nos diagramas Mermaid do documento.
+### `scripts/check_references.py`
+
+**Propósito:** conferir que os documentos apontam para arquivos e símbolos que realmente existem no código. **Quando/onde:** ao mexer em documentação que cita caminhos, endpoints ou funções.
+
+
+- `main(argv) → int` — Verifica as referências da documentação contra o código.
+
+- `_modulos() → dict[str, set[str]]` — Índice de símbolos por módulo Python do projeto.
+- `_caminhos_documentados() → set[str]` — Caminhos de arquivo citados na documentação (para resolver relativos).
+- `_candidatos(texto) → list[tuple[str, str]]` — Extrai (tipo, valor) das referências de um trecho entre crases.
+- `_avaliar(tipo, valor, arquivo, rel, linha, modulos, caminhos, problemas) → None` — Confere uma referência e registra o problema, se houver.
 ### `scripts/check_imports.py`
 
 **Propósito:** Conferir que uma alteração não removeu importações nem definições de símbolos do código anterior. **Quando/onde:** depois de refatorações e movimentações de arquivo.
 
+
+- `symbols_of(source) → tuple[set[str], set[str]] | None` — Importações e definições de um código Python.
+- `compare() → list[str]` — Compara cada arquivo Python alterado com a versão no HEAD.
+- `main(argv) → int` — Executa a comparação e imprime o resultado.
+
+- `_imports(tree) → set[str]` — Módulos importados por uma árvore sintática.
+- `_defined(tree) → set[str]` — Nomes de nível superior definidos por uma árvore sintática.
+- `_head_source(path) → str | None` — Conteúdo da versão do arquivo no commit HEAD.
+- `_changed_files() → list[str]` — Arquivos Python alterados na árvore de trabalho (versionados ou novos).
+- `_defined_everywhere() → set[str]` — Nomes definidos em qualquer módulo Python do repositório.
 ### `scripts/check_code_drift.py`
 
 **Propósito:** Detectar se a edição de um arquivo Python alterou código além de comentários e docstrings. **Quando/onde:** auditoria final de uma mudança que só deveria ter mexido em documentação.
 
+
+- `stripped_tree(source) → str | None` — Árvore sintática sem docstrings, em forma textual comparável.
+- `compare() → list[str]` — Compara o código (sem docstrings) de cada arquivo alterado com a versão no HEAD.
+- `main(argv) → int` — Executa a comparação e imprime o resultado.
+
+- `_strip_docstrings(tree) → ast.AST` — Remove docstrings de um corpo de classe ou função.
+- `_head_source(path) → str | None` — Conteúdo da versão do arquivo no commit HEAD.
+- `_changed_files() → list[str]` — Arquivos Python alterados na árvore de trabalho.
 ### `scripts/check_docs.py`
 
 **Propósito:** Conferir que os links internos da documentação existem no repositório. **Quando/onde:** antes de publicar mudanças de documentação.
 
+
+- `main(argv) → int` — Verifica os links da documentação.
+
+- `_targets(paths) → list[Path]` — Arquivos Markdown a verificar.
+- `_resolve(source, target) → Path | None` — Resolve o destino de um link a partir do arquivo que o contém.
+- `_normalizar(texto) → str` — Forma comparável de um título ou de uma âncora.
+- `_ancoras_validas(arquivo) → list[str]` — Âncoras internas de um documento que não correspondem a nenhum título.
 ### `scripts/padronizar_cabecalhos.py`
 
 **Propósito:** Aplicar o cabeçalho padrão (campos `Arquivo`, `Nome`, `Propósito`, …) nos módulos Python, sem alterar o código. **Quando/onde:** ao padronizar uma pasta de módulos.
+
+
+- `header_for(path) → str` — Monta o cabeçalho padrão de um módulo.
+- `insert_header(path, header, narrative) → bool` — Insere (ou funde) o cabeçalho na primeira instrução do módulo.
+- `main(argv) → int` — Aplica o cabeçalho nos arquivos informados.
+
+- `_relative(path) → str` — Caminho do arquivo relativo à raiz do repositório.
+- `_layer(relative) → tuple[str, str]` — Camada arquitetural e nota de observância a partir do caminho.
+- `_purpose(relative, tree, lines) → str` — Propósito do módulo: narrativa existente, título do arquivo ou docstring atual.
+- `_components(tree) → str` — Símbolos públicos de nível superior do módulo.
+- `_dependencies(tree) → str` — Módulos importados pelo arquivo (internos primeiro).
+- `_sem_comentario_de_caminho(lines, path) → list[str]` — Remove a linha `# caminho — propósito` (ela duplica o cabeçalho).
+### `src/agent/automation/actions/README.md`
+
+**Propósito:** índice da pasta de ações de automação — o que cada ação faz e como criar uma nova. **Quando/onde:** ao mexer no que a automação executa.
+
+### `src/agent/automation/service/README.md`
+
+**Propósito:** índice dos adaptadores de serviço nativo (launchd, systemd, Windows). **Quando/onde:** ao mexer no arranque do supervisor sem interface.
+
+### `src/agent/automation/triggers/README.md`
+
+**Propósito:** índice dos gatilhos (temporal e evento interno) e do papel da idempotência do disparo. **Quando/onde:** ao mexer no *quando* a automação dispara.
+
+### `src/agent/skills/catalog/README.md`
+
+**Propósito:** índice do catálogo de skills — o carregador que lê e valida o catálogo disponível. **Quando/onde:** ao mexer na origem das skills.
 
 ### `src/agent/api/README.md`
 
@@ -577,6 +671,14 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `lifespan(app: FastAPI)` — Gerenciador de contexto assíncrono do FastAPI: inicializa o engine, liga o worker em background se habilitado e garante o desligamento dele no `finally`.
 - `run() -> None` — Entry point do console script `agente-api` — sobe o Uvicorn com a aplicação FastAPI no host/porta configurados.
 
+
+- `_RevalidatedStatic` — Sem isso o navegador guarda a interface por heurística e mistura HTML antigo com módulos novos.
+- `file_response(self, *args, **kwargs)` — Devolve o arquivo com o cabeçalho que proíbe o cache.
+- `spa_index()` — Devolve o `index.html` da interface.
+
+- `_mount_web(settings) → None` — Publica a interface estática e a página inicial da SPA.
+
+- `_RevalidatedStatic.file_response(self, *args, **kwargs)` — Devolve o arquivo com o cabeçalho que proíbe o cache.
 ### `src/agent/api/system_routes.py`
 
 **Propósito:** Rotas de sistema — saúde, provedores embutidos, ferramentas, MCP, preferências da interface e chat de debug. **Quando/onde:** a cada verificação de ambiente da interface ou de diagnóstico.
@@ -600,6 +702,12 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ui_defaults(settings: Settings=Depends(read_settings)) -> dict` — `GET /config/ui-defaults`: devolve os padrões de configuração da interface (provider, model_id, URLs de Ollama/llama.cpp, aprovação de tools e template genérico).
 - `_mcp_path(settings: Settings) -> Path` — Resolve o arquivo de configuração MCP: usa `settings.mcp_config_path` ou `data_dir/mcp.json`; se não existir, cai no `data/mcp.example.json` da raiz do repositório.
 
+
+- `list_providers(settings) → dict` — Provedores disponíveis: os do arquivo de configuração mais os embutidos. Nenhuma.
+- `provider_by_name(name, settings)` — Constrói o provedor pedido ou responde com o erro correspondente.
+- `provider_models(name, settings) → dict` — Lista os modelos de um provedor configurado.
+- `provider_health(name, settings) → dict` — Diagnóstico de conectividade: sempre 200 com o resultado (ok true/false).
+- `mcp_path(settings) → Path` — Resolve o caminho do arquivo de configuração do MCP.
 ### `src/agent/api/project_routes.py`
 
 **Propósito:** Rotas de projeto — CRUD do projeto, computador remoto, filesystem, grafo de conhecimento, métricas, visão ao vivo, eventos e memória. **Quando/onde:** a cada ação sobre um projeto.
@@ -622,6 +730,18 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `start_run(project_id: uuid.UUID, body: ExecutionRunCreate, session: Session=Depends(db_session)) -> ExecutionRunRead` — `POST /projects/{project_id}/runs`: inicia uma execução para o projeto a partir de `ExecutionRunCreate` e devolve `ExecutionRunRead`; 404 projeto inexistente.
 - `update_project(project_id: uuid.UUID, body: ProjectUpdate, session: Session=Depends(db_session)) -> ProjectRead` — `PATCH /projects/{project_id}`: atualiza nome e/ou `root_path` do projeto; 404 projeto inexistente, 400 valor inválido.
 
+
+- `delete_project(project_id, session) → dict` — Remove o projeto e o que pertence a ele (conversas, tarefas, execuções, memória, grafo).
+- `RemoteIn` — Configuração do computador remoto de um projeto.
+- `get_project_remote(project_id, session) → dict` — Computador remoto configurado para o projeto (vazio quando o projeto é local).
+- `set_project_remote(project_id, body, session) → dict` — Aponta o projeto para um computador remoto (Linux, macOS ou Windows) via SSH.
+- `clear_project_remote(project_id, session) → dict` — Volta o projeto para a máquina local.
+- `test_project_remote(project_id, session) → dict` — Testa a conexão com o computador remoto configurado.
+- `FsMkdirIn` — Pedido de criação de uma pasta no sistema de arquivos.
+- `fs_mkdir(body) → dict` — Cria uma pasta dentro do alcance permitido (para o seletor de pasta do projeto).
+- `project_live(project_id, session) → dict` — Devolve a visão ao vivo do projeto: o que está rodando e o que vem a seguir.
+- `project_overview(project_id, session) → dict` — Devolve o resumo do projeto: tarefas por estado, runs e raiz.
+- `list_events(project_id, session) → list[EventRead]` — Lista os eventos registrados do projeto, do mais recente para o mais antigo.
 ### `src/agent/api/conversation_routes.py`
 
 **Propósito:** Rotas de conversa — conversas soltas, mover, renomear, bifurcar, ativar ramo e as conversas de um projeto. **Quando/onde:** a cada ação sobre conversas.
@@ -653,6 +773,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `update_task_status(task_id: uuid.UUID, body: TaskStatusUpdate, session: Session=Depends(db_session)) -> TaskRead` — `PATCH /tasks/{task_id}/status`: aplica a mudança de status validando a máquina de estados; 404 tarefa inexistente, 409 transição inválida.
 - `upsert_task_contract(task_id: uuid.UUID, body: dict, session: Session=Depends(db_session)) -> dict` — `PUT /tasks/{task_id}/contract`: grava (cria ou atualiza) o contrato com inputs/outputs/invariantes/aceite e devolve o impacto da mudança; 404 tarefa inexistente.
 
+
+- `create_task(project_id, body, session) → TaskRead` — Cria uma tarefa no projeto, materializando anexos e memórias pedidas no objetivo.
+- `list_tasks(project_id, session) → list[TaskRead]` — Lista as tarefas de um projeto.
 ### `src/agent/api/run_routes.py`
 
 **Propósito:** Rotas de execução — iniciar, avançar, pausar, retomar, cancelar, modo autônomo e métricas do run. **Quando/onde:** a cada ação sobre uma execução.
@@ -664,6 +787,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `resume_run(run_id: uuid.UUID, retry_blocked: bool=False, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/resume`: retoma a run pausada, opcionalmente repetindo tarefas bloqueadas (`retry_blocked`); 404 run inexistente, 409 quando não pode retomar.
 - `run_metrics(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /runs/{run_id}/metrics`: devolve as métricas da execução (tokens, tempos) via `MetricsService.run_metrics` ou 404 se a run não existir.
 
+
+- `start_run(project_id, body, session) → ExecutionRunRead` — Inicia uma execução no projeto.
+- `list_runs(project_id, session) → list[ExecutionRunRead]` — Lista as execuções de um projeto.
+- `run_step(run_id, session, settings) → dict` — Executa um único passo do orquestrador sobre a run.
+- `run_execute(run_id, max_steps, session, settings) → dict` — Avança a run em vários passos até ela parar ou o orçamento acabar.
 ### `src/agent/api/presenters.py`
 
 **Propósito:** Montagem dos payloads de leitura (tarefa e conversa) devolvidos pela API. **Quando/onde:** em toda resposta de leitura de tarefa ou conversa.
@@ -684,6 +812,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `src/agent/api/observe_routes.py`
 
 **Propósito:** Expõe o histórico paginado de eventos, a foto do estado de uma run e a transmissão SSE em tempo real das execuções. **Quando/onde:** Router incluído em `main.py` (`app.include_router(observe_router)`), consumido pela interface web para acompanhar uma run ao vivo.
+
+- `replay(since) → AsyncIterator[str]` — Relê o histórico persistido a partir de um `seq` e emite o que falta.
 
 - `_Disconnectable(Protocol)` — Protocolo estrutural com `is_disconnected`, usado para tipar o objeto de requisição dentro do gerador SSE sem acoplar ao FastAPI.
 - `_Disconnectable.is_disconnected() -> bool` — Método do protocolo: indica de forma assíncrona se o cliente (navegador) já desconectou da conexão SSE.
@@ -706,6 +836,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [budget.py](/src/agent/context/budget.py)
 - Arquivo: [operation_builder.py](/src/agent/context/operation_builder.py)
 
+
+- `replay(since) → AsyncIterator[str]` — Relê o histórico persistido a partir de um `seq` e emite o que falta.
 ### `src/agent/context/README.md`
 
 **Propósito:** Índice da pasta `context/`.
@@ -735,6 +867,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `src/agent/context/operation_builder.py`
 
 **Propósito:** Monta o contexto operacional de uma tarefa (regras, memória, contrato, arquivos-alvo, guias, skills e falhas anteriores) dentro do orçamento do modelo e grava o snapshot do contexto. **Quando/onde:** Chamado pelo orquestrador antes de cada operação de modelo, por meio de `build_for_task`.
+
+- `OperationContextBuilder._requirements_block(self, task) → str` — Requisitos obrigatórios que esta etapa responde, com o critério de cada um.
+- `OperationContextBuilder._inspection_budget(self) → int` — Quantas leituras o modelo pode fazer antes de responder (o mesmo limite do ciclo).
+- `OperationContextBuilder._inspection_block(self, task) → str` — O que a tentativa anterior já leu: evita reler os mesmos arquivos do zero.
 
 - `OperationContextBuilder` — Classe que monta, para uma tarefa, os blocos de contexto consumidos pelo modelo (objetivo global, regras, memória, contrato, arquivos, guias, skills, falhas), respeitando o orçamento de tokens e persistindo um `ContextSnapshotModel` do resultado.
 - `OperationContextBuilder.__init__(session: Session) -> None` — Inicializa o construtor guardando a sessão SQLAlchemy e instanciando o `KnowledgeGraphService` usado para recuperar trechos técnicos do grafo de conhecimento.
@@ -766,6 +902,14 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [schemas.py](/src/agent/domain/schemas.py)
 - Arquivo: [state_machine.py](/src/agent/domain/state_machine.py)
 
+
+- `_requirements_block(self, task) → str` — Requisitos obrigatórios que esta etapa responde, com o critério de cada um.
+- `_inspection_budget(self) → int` — Quantas leituras o modelo pode fazer antes de responder (o mesmo limite do ciclo).
+- `_inspection_block(self, task) → str` — O que a tentativa anterior já leu: evita reler os mesmos arquivos do zero.
+
+- `OperationContextBuilder._requirements_block(self, task) → str` — Requisitos obrigatórios que esta etapa responde, com o critério de cada um.
+- `OperationContextBuilder._inspection_budget(self) → int` — Quantas leituras o modelo pode fazer antes de responder (o mesmo limite do ciclo).
+- `OperationContextBuilder._inspection_block(self, task) → str` — O que a tentativa anterior já leu: evita reler os mesmos arquivos do zero.
 ### `src/agent/domain/README.md`
 
 **Propósito:** Índice da pasta `domain/`.
@@ -826,6 +970,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `TaskRead(BaseModel)` — Modelo de leitura de tarefa com identificação, vínculos, título, objetivo, escopo, aceite, status, `kind`, ordem, metadados, resultado consolidado, timestamps e tokens de uso. `from_attributes` habilita a serialização a partir do ORM.
 - `TaskStatusUpdate(BaseModel)` — Payload de mudança de status de uma tarefa, com `status` e `reason` opcional. Usado para transições manuais via API.
 
+
+- `AgentRead` — Agente lógico: identidade, papel, estado e o que ele sabe.
+- `AgentAsk` — Consulta de um agente a outro.
+- `AgentDiscard` — Descarte do estado recuperável de um agente.
+- `AgentQueryRead` — Consulta e sua resposta (correlacionadas por identificador).
 ### `src/agent/domain/state_machine.py`
 
 **Propósito:** Define as transições válidas entre status de tarefa e o erro emitido quando uma transição é proibida. **Quando/onde:** Usado pelo orquestrador sempre que o status de uma `Task` muda de estado.
@@ -1183,6 +1332,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `usable_markdown(text: str) -> bool` — Indica se o texto tem formato Markdown aproveitável: exige tamanho mínimo de 40 caracteres, proíbe início com `{` ou `[` (JSON de ferramenta) e exige marcadores como `#`, item de lista, separador de tabela ou bloco de código. Entrada: texto bruto; saída: booleano.
 - `usable_reply(text: str) -> bool` — valida se resposta do modelo serve como final.
 
+
+- `verification_footer(session, root) → str` — Fatos verificados do trabalho, em texto determinístico.
 ### `src/agent/orchestrator/consolidation.py`
 
 **Propósito:** consolida bottom-up o resultado dos filhos no pai, checando evidências, pendências e casos opcionais/substituídos. **Quando/onde:** chamado pelo `RunOrchestrator` quando uma tarefa com filhos termina, e como fonte de estado (verificação, supersessão, opcionalidade) para o resto do orquestrador.
@@ -1198,6 +1349,13 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `verification_evidence_ok(session: Session, task: TaskModel) -> bool` — evidência válida e atual.
 - `verification_spec(task: TaskModel) -> dict | None` — Devolve a especificação de verificação declarada na tarefa ou, para escritas sem declaração, a verificação implícita que já rodou. Entrada: modelo da tarefa; saída: dicionário de spec ou `None`.
 
+
+- `latest_verification_failed(session, task) → bool` — A verificação mais recente desta etapa reprovou (não é ausência de evidência).
+- `inherits_read_only(session, task) → bool` — A tarefa (ou um de seus ancestrais) é de um pedido que proíbe alterar arquivos.
+- `inherits_flag(session, task, flag) → bool` — A tarefa (ou um de seus ancestrais) carrega a marca `flag`.
+- `cancelled_expected(task) → bool` — Cancelamento previsto: outra etapa assume o trabalho, o pai pode seguir.
+- `dependencies_of(session, task_id) → list[TaskModel]` — Tarefas das quais esta depende, pela aresta `task_dependencies`.
+- `stages_outcome(session, task) → tuple[bool | None, str, dict[str, Any]]` — Conferência das etapas anteriores: o verificador `stages` não é mais uma aprovação automática.
 ### `src/agent/orchestrator/decomposition.py`
 
 **Propósito:** define o modelo de dados do plano (subtarefas) e resolve a decomposição hierárquica do objetivo, via modelo ou templates de fallback. **Quando/onde:** usado pelo `RunOrchestrator` no estado PLANNING para gerar o plano de subetapas de uma tarefa.
@@ -1219,6 +1377,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `resolve_decomposition_plan(*, settings: Settings, run_config: dict[str, Any], objective: str, project_root: str, provider: LLMProvider | None=None, requirements: list[dict[str, Any]] | None=None) -> tuple[DecompositionResult | None, str]` — builtin e2e → modelo → template genérico → mock.
 - `seal_repeated_steps(parent_title: str, plan: DecompositionResult) -> DecompositionResult` — filho com mesmo título do pai vira model_operation.
 
+
+- `norm(items) → list[str]` — Normaliza uma lista de títulos para comparação.
+
+- `_supports_tool_loop(provider) → bool` — O provedor sabe manter a conversa de ferramentas? (mesma regra do orquestrador.).
 ### `src/agent/orchestrator/engine.py`
 
 **Propósito:** esqueleto explícito do ciclo de orquestração, capable de promover e iniciar tarefas. **Quando/onde:** usado como ciclo mínimo de coordenação de status (base para as fases seguintes), independente do `RunOrchestrator` completo.
@@ -1269,6 +1431,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `validate_and_repair(session: Session, parent: TaskModel, *, project_root: str, run_config: dict[str, Any] | None, max_tasks: int | None, run_id: uuid.UUID | None, extra_issues: list[Issue] | None=None) -> PlanValidation` — Valida o plano da tarefa contra as regras determinísticas e o repara quando possível (sanitiza dependências, cancela duplicatas, corrige cobertura); devolve a `PlanValidation` com veredito e correções.
 - `validate_children(session: Session, parent: TaskModel, *, project_root: str, run_config: dict[str, Any] | None=None, max_tasks: int | None=None, extra_issues: list[Issue] | None=None) -> PlanValidation` — Aplica todas as regras estruturais do plano: objetivo e critérios, cobertura de requisitos, ferramentas inexistentes ou bloqueadas, arquivos de entrada ausentes, duplicatas, dependências e orçamento de tarefas. Entrada: sessão, tarefa pai e parâmetros de execução; saída: `PlanValidation` com veredito, issues, cobertura, etapas bloqueadas e fingerprint do plano.
 
+
+- `repair_steps(session, parent, validation) → list[str]` — Correções locais de etapa: a etapa passa a fazer o que é possível fazer.
+
+- `_anchor_present(project_root, path, anchor) → bool` — O trecho que a edição pretende substituir existe no arquivo?.
 ### `src/agent/orchestrator/planner.py`
 
 **Propósito:** Memória canônica do objetivo.
@@ -1312,6 +1478,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `root_of(session: Session, task: TaskModel) -> TaskModel` — sobe até raiz (parent_id=None).
 - `siblings_declare_covers(session: Session, task: TaskModel) -> bool` — Diz se alguma tarefa irmã da mesma fase declara `covers`, o que torna a tarefa sem declaração uma etapa de apoio. Entrada: sessão e tarefa; saída: booleano.
 
+
+- `_verification_rejected(session, task) → bool` — A etapa **concluiu** e a verificação mais recente reprovou.
+- `_unproven_by_superseded(session, root, reqs, req_id, live_coverers) → bool` — Uma etapa substituída tinha uma verificação que reprovou e ninguém a refez.
 ### `src/agent/orchestrator/resume.py`
 
 **Propósito:** identifica onde a tarefa parou, o que ainda falta e retoma o run pausado sem refazer o trabalho já feito. **Quando/onde:** usado pela API de retomada (`POST /runs/{id}/resume`) e na preparação de briefings de continuação.
@@ -1358,6 +1527,12 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_profile_from_config(run_config: dict, settings: Settings) -> ModelProfile` — Deriva o `ModelProfile` (modelo, limites de contexto e geração) da configuração do run e das configurações globais. Entrada: configuração do run e settings; saída: `ModelProfile`.
 - `_select_provider(settings: Settings, run_config: dict) -> LLMProvider` — Escolhe o provider LLM a partir do nome configurado (`ollama`, `llamacpp` ou `mock`), aplicando timeout e mapa de palavras-chave do mock. Entrada: settings e configuração do run; saída: instância de `LLMProvider`.
 
+
+- `_widen_output_budget(self, task, *, factor) → int` — Aumenta o orçamento de resposta da etapa (o modelo gastou tudo e devolveu nada).
+- `_sync_agent_execution(self, task, run_id) → None` — Alinha o estado do agente lógico com o estado da tarefa.
+
+- `RunOrchestrator._widen_output_budget(self, task, *, factor) → int` — Aumenta o orçamento de resposta da etapa (o modelo gastou tudo e devolveu nada).
+- `RunOrchestrator._sync_agent_execution(self, task, run_id) → None` — Alinha o estado do agente lógico com o estado da tarefa.
 ### `src/agent/orchestrator/execution/README.md`
 
 **Propósito:** Índice da pasta `execution/` — como uma etapa roda (despacho, operação de modelo, escrita e verificação). **Quando/onde:** leitura inicial de quem mexe na execução de tarefa.
@@ -1389,6 +1564,20 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `TaskExecutor.work_root(project, task) -> str` — Calcula a raiz de trabalho efetiva do projeto, considerando a conversa da tarefa. Entrada: projeto e tarefa opcional; saída: caminho da raiz de trabalho.
 - `TaskExecutor._provider(settings, config)` — Provedor do run segundo a política da execução (a fábrica injetada ou a padrão do pacote).
 
+
+- `_session(self)` — Sessão SQLAlchemy em uso.
+- `_settings(self)` — Configuração do processo.
+- `_tasks(self)` — Serviço de tarefas (transições de estado e dependências).
+- `_attempts(self)` — Registro de tentativas (contagem, dedup e fingerprint).
+- `_tools(self)` — Registro de ferramentas determinísticas.
+
+- `TaskExecutor._session(self)` — Sessão SQLAlchemy em uso.
+- `TaskExecutor._settings(self)` — Configuração do processo.
+- `TaskExecutor._tasks(self)` — Serviço de tarefas (transições de estado e dependências).
+- `TaskExecutor._attempts(self)` — Registro de tentativas (contagem, dedup e fingerprint).
+- `TaskExecutor._tools(self)` — Registro de ferramentas determinísticas.
+
+- `TaskExecutor.__init__(self, runtime) → None` — Guarda os colaboradores da execução.
 ### `src/agent/orchestrator/execution/model_operation.py`
 
 **Propósito:** Executa a etapa de operação de modelo (contexto, ciclo de ferramentas, protocolo JSON da alteração e recusa de escrita). **Quando/onde:** chamado por `TaskExecutor.execute` quando a etapa é `model_operation`.
@@ -1397,6 +1586,14 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ModelOperation.run(run, project, task, config, root_path, ctx) -> dict[str, Any]` — Monta o contexto da operação, chama o modelo (com ciclo de ferramentas quando o provedor suporta), aplica a alteração respondendo ao pedido e devolve o desfecho da etapa. Entrada: run, projeto, tarefa, configuração, pasta de trabalho e contexto de ferramentas; saída: dicionário de ação.
 - `ModelOperation._context_overflow(run, project, task, provider_name, profile, exc) -> dict[str, Any]` — Trata o estouro de orçamento de contexto: explica qual componente obrigatório não cabe, registra a tentativa, bloqueia a tarefa e devolve `blocked_context`. Entrada: run, projeto, tarefa, provider, perfil e a exceção; saída: dicionário de ação com a falha.
 
+
+- `_runtime(self)` — Colaboradores da execução (sessão, settings, serviços, ferramentas).
+- `_chat_model(provider_obj, request, *, purpose, stream)` — Chamada ao modelo dentro do ciclo: registra a evidência de cada iteração.
+- `_on_tool_call(entry, result) → None` — Registra a chamada de ferramenta feita pelo modelo durante o ciclo.
+
+- `ModelOperation._runtime(self)` — Colaboradores da execução (sessão, settings, serviços, ferramentas).
+
+- `ModelOperation.__init__(self, executor) → None` — Guarda o executor responsável pela etapa.
 ### `src/agent/orchestrator/execution/providers.py`
 
 **Propósito:** Escolha do provedor do run, perfil do modelo e contabilidade de tokens. **Quando/onde:** usado pelo executor e pelo modelo.
@@ -1478,6 +1675,14 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ProfessionalStrategy.needs_atomization() -> bool` — Indica se a etapa interna deve ser subdividida recursivamente em diagnóstico → correção → verificação, o que ocorre para tarefas complexas (rank >= 2). Entrada: instância da estratégia; saída: booleano.
 - `ProfessionalStrategy.render_summary() -> str` — Renderiza a estratégia como texto estruturado (domínio, complexidade, especialidades, requisitos, riscos e critérios de aceitação) para inspeção e injeção no contexto.
 
+
+- `is_read_only_request(objective) → bool` — O pedido proíbe explicitamente alterar o projeto?.
+- `protects_test_files(objective) → bool` — O pedido manda mexer nos testes? Se não, os testes são protegidos.
+- `looks_like_test_file(path) → bool` — O caminho aponta para um arquivo de teste?.
+
+- `_analyze(self, objective, *, context_summary) → ProfessionalStrategy` — Formula a estratégia a partir do texto do pedido.
+
+- `ProfessionalStrategist._analyze(self, objective, *, context_summary) → ProfessionalStrategy` — Formula a estratégia a partir do texto do pedido.
 ### `src/agent/orchestrator/usage.py`
 
 **Propósito:** Acúmulo de tokens por tarefa.
@@ -1514,9 +1719,21 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `init_db(engine: Engine | None=None, settings: Settings | None=None) -> Engine` — `Base.metadata.create_all`.
 - `session_scope(session_factory: sessionmaker[Session]) -> Generator[Session, None, None]` — context manager que abre uma sessão, faz `commit` no sucesso, `rollback` em exceção e sempre fecha. Entrada: fábrica de sessões; saída: gerador que entrega a `Session` ativa. Quando os serviços do agente abrem transações curtas.
 
+
+- `migrate_legacy_schedules(engine) → int` — Converte as linhas antigas de `scheduled_runs` em automações.
+
+- `_set_sqlite_pragma(dbapi_conn, _connection_record) → None` — Aplica um pragma do SQLite na conexão (WAL, chaves estrangeiras, timeout).
 ### `src/agent/persistence/models.py`
 
 **Propósito:** declara os modelos ORM (SQLAlchemy 2.0) que formam o schema do agente: projetos, conversas, tarefas, runs, memórias, grafo e evidências. **Quando/onde:** importado pelos serviços de persistência e usado por `Base.metadata.create_all` na criação do banco.
+
+- `ProjectRemoteModel` — Computador remoto do projeto: quando existe, as ações do projeto rodam lá por SSH.
+- `AutomationModel` — Automação persistente: a definição aprovada de um trabalho que roda sozinho.
+- `AutomationFiringModel` — Disparo de uma automação: a unidade de trabalho registrada e recuperável.
+- `AutomationEventModel` — Evento durável de automação: a entrada de adaptadores (webhook, arquivo, watcher).
+- `AgentModel` — Agente lógico: identidade, papel, instruções, permissões e responsabilidade.
+- `AgentExecutionModel` — Execução: instância ativa que usa modelo, contexto e ferramentas.
+- `AgentQueryModel` — Consulta de um agente a outro.
 
 - `Base(DeclarativeBase)` — classe base declarativa do SQLAlchemy 2.0 que concentra o metadado de todas as tabelas. Entrada: nenhuma; saída: classe base da qual herdam os modelos. Quando o banco é criado a partir do metadado.
 - `BranchModel(Base)` — `branches` (id, conversation_id, parent_id, fork_task_id, created_at).
@@ -1548,6 +1765,14 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [observed.py](/src/agent/providers/observed.py)
 - Arquivo: [ollama.py](/src/agent/providers/ollama.py)
 
+
+- `ProjectRemoteModel` — Computador remoto do projeto: quando existe, as ações do projeto rodam lá por SSH.
+- `AutomationModel` — Automação persistente: a definição aprovada de um trabalho que roda sozinho.
+- `AutomationFiringModel` — Disparo de uma automação: a unidade de trabalho registrada e recuperável.
+- `AutomationEventModel` — Evento durável de automação: a entrada de adaptadores (webhook, arquivo, watcher).
+- `AgentModel` — Agente lógico: identidade, papel, instruções, permissões e responsabilidade.
+- `AgentExecutionModel` — Execução: instância ativa que usa modelo, contexto e ferramentas.
+- `AgentQueryModel` — Consulta de um agente a outro.
 ### `src/agent/providers/README.md`
 
 **Propósito:** Índice da pasta `providers/`.
@@ -1570,6 +1795,29 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ModelProfile(BaseModel)` — Símbolo do módulo — ver a descrição do arquivo.
 - `ProviderError(RuntimeError)` — exceção base.
 
+
+- `ToolCall` — Chamada de ferramenta pedida pelo modelo. `arguments` é o objeto já decodificado.
+- `ProviderCapabilities` — O que o provedor realmente oferece. Recurso ausente é declarado, nunca simulado.
+- `ProviderHealth` — Diagnóstico de conectividade de um provedor.
+- `ProviderConnectionError` — O servidor não respondeu (recusou a conexão, DNS falhou, host inacessível).
+- `ProviderTimeoutError` — A operação estourou o tempo limite configurado.
+- `ProviderAuthError` — Credencial ausente, inválida ou sem permissão.
+- `ProviderRateLimitError` — Limite de uso do provedor atingido (HTTP 429).
+- `ProviderConfigError` — Configuração inválida ou incompleta do provedor (URL, tipo, credencial).
+- `ProviderNotSupportedError` — O recurso pedido não existe na API deste provedor.
+- `ProviderResponseError` — A resposta chegou, mas não pôde ser lida (JSON inválido, corpo inesperado).
+- `capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor. O padrão assume apenas o que a classe implementa.
+- `health_check(self) → ProviderHealth` — Verificação de conectividade barata: lista os modelos do servidor, sem inferência.
+- `close(self) → None` — Libera recursos do provedor (nenhum por padrão).
+
+- `_chat(self, request) → ChatCompletionResponse` — Implementação da inferência pelo provedor. Sempre chamada por `chat`.
+- `_chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Implementação do streaming pelo provedor. Sempre chamada por `chat_streaming`.
+
+- `LLMProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor. O padrão assume apenas o que a classe implementa.
+- `LLMProvider._chat(self, request) → ChatCompletionResponse` — Implementação da inferência pelo provedor. Sempre chamada por `chat`.
+- `LLMProvider._chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Implementação do streaming pelo provedor. Sempre chamada por `chat_streaming`.
+- `LLMProvider.health_check(self) → ProviderHealth` — Verificação de conectividade barata: lista os modelos do servidor, sem inferência.
+- `LLMProvider.close(self) → None` — Libera recursos do provedor (nenhum por padrão).
 ### `src/agent/providers/llamacpp.py`
 
 **Propósito:** integra servidores llama.cpp/llama-server pela API compatível com OpenAI, com chat simples e streaming. **Quando/onde:** usado como provedor de inferência local quando o `provider` configurado é `llamacpp`.
@@ -1583,6 +1831,19 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_data_url(encoded: str) -> str` — monta a `data:` URL de uma imagem base64, inferindo `image/jpeg` (prefixo `/9j/`) ou `image/png`. Entrada: base64 da imagem; saída: string `data:<mime>;base64,<dados>`.
 - `_openai_message(message) -> dict` — converte uma `ChatMessage` no formato OpenAI: texto simples quando não há imagens, ou lista de partes `text` + `image_url` quando há. Entrada: mensagem do request; saída: dicionário `{role, content}`.
 
+
+- `read_api_key_file(path) → str` — `llama-server --api-key-file` guarda a chave em arquivo; o conteúdo vira o bearer token.
+- `capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
+
+- `_tool_calls(message) → list[ToolCall] | None` — Extrai as chamadas de ferramenta de uma mensagem do llama-server.
+- `_client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
+- `_chat_streaming(self, request, on_delta) → ChatCompletionResponse` — `stream: true` no endpoint OpenAI: eventos `data: {...}` com `choices[0].delta.content` até `[DONE]`;.
+- `_chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pelo llama-server.
+
+- `LlamaCppProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
+- `LlamaCppProvider._client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
+- `LlamaCppProvider._chat_streaming(self, request, on_delta) → ChatCompletionResponse` — `stream: true` no endpoint OpenAI: eventos `data: {...}` com `choices[0].delta.content` até `[DONE]`;.
+- `LlamaCppProvider._chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pelo llama-server.
 ### `src/agent/providers/mock.py`
 
 **Propósito:** provedor de inferência determinístico, sem rede, para testes e simulações. **Quando/onde:** usado nos testes e em execuções sem modelo real, quando o `provider` configurado é `mock`.
@@ -1593,15 +1854,33 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `MockProvider.list_models() -> list[str]` — Devolve as chaves do mapa de palavras-chave configurado — os modelos do provider de teste.
 - `decomposition_json(subtasks: list[dict[str, Any]]) -> str` — serializa a lista de subtarefas no JSON `{"subtasks": [...]}` usado como resposta simulada da decomposição. Entrada: lista de specs; saída: string JSON com `ensure_ascii=False`.
 
+
+- `capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
+
+- `_chat(self, request) → ChatCompletionResponse` — Devolve a resposta correspondente ao pedido, de forma determinística.
+
+- `MockProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
+- `MockProvider._chat(self, request) → ChatCompletionResponse` — Devolve a resposta correspondente ao pedido, de forma determinística.
 ### `src/agent/providers/observed.py`
 
 **Propósito:** Wrapper `observed_chat` — emite eventos streaming no EventBus.
 
 - `observed_chat(provider: LLMProvider, request: ChatCompletionRequest, *, purpose: str, stream: bool=True) -> ChatCompletionResponse` — Chama o provider emitindo os eventos de streaming no barramento (`agent.started`, `agent.output.delta`, `agent.output.completed/failed`) e agrupa os fragmentos; devolve a resposta completa.
 
+
+- `publish(text) → None` — Publica um fragmento do texto recebido, com o deslocamento acumulado.
+- `on_delta(piece) → None` — Acumula um fragmento e agenda sua publicação em lote.
+- `failed(error, *, cancelled) → None` — Publica o desfecho de falha, preservando o texto parcial recebido.
 ### `src/agent/providers/ollama.py`
 
 **Propósito:** integra o Ollama por HTTP (`/api/tags`, `/api/chat`), com chat simples e streaming. **Quando/onde:** usado como provedor de inferência local quando o `provider` configurado é `ollama`.
+
+- `_ollama_tool_call(call) → dict` — Chamada de ferramenta no formato do Ollama (`function.name` + `function.arguments` já decodificado).
+- `_tool_calls(message) → list[ToolCall] | None` — Extrai as chamadas de ferramenta de uma mensagem do Ollama.
+- `OllamaProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
+- `OllamaProvider._client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
+- `OllamaProvider._chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela API do Ollama.
+- `OllamaProvider._chat_streaming(self, request, on_delta) → ChatCompletionResponse` — `/api/chat` com `stream: true`: uma linha JSON por fragmento; a última (`done`) traz uso de tokens.
 
 - `OllamaProvider(LLMProvider)` — `name="ollama"`, `supports_streaming=True`.
 - `OllamaProvider.__init__(base_url: str, timeout: float=120.0) -> None` — normaliza a URL base (sem barra final) e guarda o timeout usado nas chamadas HTTP ao Ollama. Entrada: URL do servidor e timeout; saída: `None`.
@@ -1620,6 +1899,19 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [README.md](/src/agent/security/README.md)
 - Arquivo: [paths.py](/src/agent/security/paths.py)
 
+
+- `capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
+
+- `_ollama_tool_call(call) → dict` — Chamada de ferramenta no formato do Ollama (`function.name` + `function.arguments` já decodificado).
+- `_tool_calls(message) → list[ToolCall] | None` — Extrai as chamadas de ferramenta de uma mensagem do Ollama.
+- `_client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
+- `_chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela API do Ollama.
+- `_chat_streaming(self, request, on_delta) → ChatCompletionResponse` — `/api/chat` com `stream: true`: uma linha JSON por fragmento; a última (`done`) traz uso de tokens.
+
+- `OllamaProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
+- `OllamaProvider._client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
+- `OllamaProvider._chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela API do Ollama.
+- `OllamaProvider._chat_streaming(self, request, on_delta) → ChatCompletionResponse` — `/api/chat` com `stream: true`: uma linha JSON por fragmento; a última (`done`) traz uso de tokens.
 ### `src/agent/security/README.md`
 
 **Propósito:** Índice da pasta `security/`.
@@ -1667,6 +1959,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `attachment_note(refs: list[dict]) -> str` — texto para anexar ao objective.
 - `materialize_attachments(project_root: str, task_id: str, items: list) -> list[dict]` — salva arquivos, retorna refs `{path, mime, size}`.
 
+
+- `_attachments_folder(project_root, task_id) → str` — Pasta de anexos da tarefa. Mantém a pasta legada quando ela já tem arquivos,.
 ### `src/agent/services/attempt_service.py`
 
 **Propósito:** Registro de tentativas de operação e detecção de loops de saída repetida. **Quando/onde:** usado pelo orquestrador a cada chamada de modelo/ferramenta para persistir o histórico e decidir quando desistir.
@@ -1680,6 +1974,12 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `AttemptService.record(*, run_id: uuid.UUID, task_id: uuid.UUID, kind: AttemptKind, provider: str | None, request: dict | None, response: dict | None, success: bool, error: str | None=None, project_id: uuid.UUID | None=None, failure: Failure | None=None) -> OperationAttemptModel` — Grava uma `OperationAttemptModel` (tipo, provider, request, response, sucesso e falha) e devolve a linha persistida.
 - `AttemptService.repeated_output_detected(task_id: uuid.UUID, output_fingerprint: str, window: int=3) -> bool` — Indica se a mesma saída (mesmo fingerprint) apareceu na janela recente de tentativas — sinal de loop.
 
+
+- `count_model_calls(self, task_id) → int` — Chamadas ao modelo da tarefa, incluindo as iterações do ciclo de ferramentas.
+- `count_tool_calls(self, task_id) → int` — Chamadas de ferramenta feitas pela tarefa.
+
+- `AttemptService.count_model_calls(self, task_id) → int` — Chamadas ao modelo da tarefa, incluindo as iterações do ciclo de ferramentas.
+- `AttemptService.count_tool_calls(self, task_id) → int` — Chamadas de ferramenta feitas pela tarefa.
 ### `src/agent/services/autonomous_worker.py`
 
 **Propósito:** Execução autônoma em segundo plano, varrendo runs ativos em loop. **Quando/onde:** usado pelo servidor da API para avançar runs marcados como `autonomous` sem intervenção do usuário.
@@ -1690,6 +1990,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `start_background_worker() -> asyncio.Task` — inicia loop (lifespan API).
 - `stop_background_worker() -> None` — cancela task.
 
+
+- `build_scheduler(settings) → AgentScheduler` — Escalonador do worker, com os tratadores de etapa de run e de consulta.
+
+- `_run_step(operation) → dict` — Avança um run autônomo e devolve a ação do passo.
+- `_answer_query(operation) → dict` — Resolve uma consulta pendente: estado persistido primeiro, inferência se faltar.
 ### `src/agent/services/branches.py`
 
 **Propósito:** Lógica de visibilidade de branches + memória.
@@ -1699,6 +2004,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `memory_visible(*, memory_branch_id: uuid.UUID | None, memory_created_at: datetime | None, conversation_id: uuid.UUID | None, task_branch_id: uuid.UUID | None, branches: dict[uuid.UUID, BranchModel]) -> bool` — memória visível se branch ancestral ou mesma branch.
 - `visible_tasks(tasks: list[TaskModel], branch: BranchModel, branches: dict[uuid.UUID, BranchModel]) -> list[TaskModel]` — filtra tasks visíveis na branch ativa.
 
+
+- `root_id(task) → uuid.UUID` — Identificador da raiz da conversa à qual a branch pertence.
 ### `src/agent/services/contract_service.py`
 
 **Propósito:** Contratos explícitos entre tarefas (entradas, saídas, invariantes, aceite) e análise de impacto por arquivos. **Quando/onde:** usado ao planejar decomposição de tarefas e ao localizar tarefas afetadas por mudanças de contrato.
@@ -1748,6 +2055,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `browse_directories(path: str | None=None) -> dict` — lista entradas (path, kind=dir/file), `os.listdir`.
 - `pick_folder_native() -> str` — macOS `osascript` para escolher pasta no Finder.
 
+
+- `create_directory(path, name) → dict` — Cria uma pasta dentro de `path` (que precisa estar no alcance permitido).
 ### `src/agent/services/inbox.py`
 
 **Propósito:** Representa a pasta do usuário como destino padrão quando nenhum diretório foi escolhido. **Quando/onde:** usado por `ConversationService` e `ProjectService` para criar e reconhecer o projeto de conversas soltas.
@@ -1784,6 +2093,16 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ProjectService.update_project(project_id: uuid.UUID, *, name: str | None=None, root_path: str | None=None) -> ProjectModel` — Atualiza nome, pasta raiz e/ou descrição do projeto e devolve a linha persistida.
 - `_is_leaked_test_project(root_path: str) -> bool` — Detecta caminhos residuais de `pytest-of-`/`/T/pytest-` ou o pseudo-caminho de inbox; devolve `True` para descartar esses projetos. Quando `list_projects` filtra projetos que escaparam de testes automatizados.
 
+
+- `get_remote(self, project_id) → dict | None` — Configuração do computador remoto do projeto (None quando o projeto é local).
+- `set_remote(self, project_id, config) → dict` — Grava a configuração do computador remoto do projeto.
+- `clear_remote(self, project_id) → bool` — Remove a configuração do computador remoto do projeto.
+- `delete_project(self, project_id) → dict` — Remove o projeto e tudo que pertence a ele: conversas, tarefas, execuções, eventos,.
+
+- `ProjectService.get_remote(self, project_id) → dict | None` — Configuração do computador remoto do projeto (None quando o projeto é local).
+- `ProjectService.set_remote(self, project_id, config) → dict` — Grava a configuração do computador remoto do projeto.
+- `ProjectService.clear_remote(self, project_id) → bool` — Remove a configuração do computador remoto do projeto.
+- `ProjectService.delete_project(self, project_id) → dict` — Remove o projeto e tudo que pertence a ele: conversas, tarefas, execuções, eventos,.
 ### `src/agent/services/run_service.py`
 
 **Propósito:** Controle do ciclo de vida de execuções (start, pause, resume, cancel) e registro de eventos. **Quando/onde:** usado pela API de execução e pelo orquestrador ao retomar ou cancelar runs.
@@ -1808,6 +2127,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `start_scheduler() -> None` — inicia scheduler, agenda jobs ativos.
 - `stop_scheduler() -> None` — para scheduler.
 
+
+- `current_supervisor() → AutomationSupervisor | None` — Supervisor de automações em execução.
+- `legacy_scheduled_run(session, schedule_id) → ScheduledRunModel | None` — Linha antiga de `scheduled_runs` (compatibilidade de leitura).
+
+- `_as_uuid(schedule_id) → uuid.UUID` — Normaliza um identificador de agendamento para `uuid.UUID`.
 ### `src/agent/services/task_service.py`
 
 **Propósito:** CRUD de tarefas, dependências e transições de status com log de eventos. **Quando/onde:** usado pela API e pelo orquestrador para criar, consultar e promover tarefas dentro de um projeto.
@@ -1977,6 +2301,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `python_for(project_root: str) -> str` — escolhe o interpretador do projeto: o `python` do `.venv`/`venv` se existir, senão o `sys.executable` do agente. Entrada: raiz do projeto; saída: caminho do interpretador. Quando `_run_command`, `_run_script` e `_run_pytest` montam o argv.
 - `register_all(registry: ToolRegistry) -> None` — registra todas builtins.
 
+
+- `_run_command_remote(ctx, args, *, kind) → dict` — Comando executado no computador remoto do projeto (SSH), com saída em tempo real.
+- `_out(stream) → DeltaBatcher` — Monta a resposta da ferramenta com a saída capturada e o código de saída.
+- `_out(text) → None` — Monta a resposta da ferramenta com a saída capturada e o código de saída.
 ### `src/agent/tools/diffing.py`
 
 **Propósito:** Diff unificado textual (para `file_edit` emitir diff).
@@ -2102,6 +2430,12 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `Settings.resolved_database_url() -> str` — Devolve a URL final do SQLite — nos testes força `data_dir/agent.db` para não gravar no banco real; em produção usa `database_url` ou `data/agent.db`, criando o diretório quando necessário.
 - `get_settings() -> Settings` — Cria uma instância de `Settings` e, se `mcp_config_path` não foi definido, preenche com `data_dir/mcp.json`. Chamada sempre que alguém precisa da configuração atual.
 
+
+- `resolved_provider_config_path(self) → Path` — Arquivo de provedores em uso: o configurado ou, por padrão, `data/providers.yaml`.
+- `resolved_secrets_dir(self) → Path` — Pasta das credenciais gravadas pela interface (fora do versionamento).
+
+- `Settings.resolved_provider_config_path(self) → Path` — Arquivo de provedores em uso: o configurado ou, por padrão, `data/providers.yaml`.
+- `Settings.resolved_secrets_dir(self) → Path` — Pasta das credenciais gravadas pela interface (fora do versionamento).
 ### `src/README.md`
 
 **Propósito:** índice da pasta `src/`, apontando para o pacote `agent/`. **Quando/onde:** leitura de orientação para quem navega no repositório.
@@ -2658,3 +2992,2444 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `web/README.md`
 
 **Propósito:** Índice da pasta `web/` (SPA estática, build, assets).
+
+### `src/agent/api/agent_routes.py`
+
+**Propósito:** agent_routes — módulo do projeto.
+
+- `AgentExecutionRead` — Representação pública de uma execução de agente, serializada para a interface.
+- `list_agents(project_id, session) → list[AgentRead]` — Árvore de agentes do projeto (raízes primeiro).
+- `get_agent(agent_id, session) → AgentRead` — Detalha um agente da hierarquia.
+- `agent_executions(agent_id, session) → list[AgentExecutionRead]` — Lista o histórico de execuções de um agente.
+- `suspend_agent(agent_id, reason, session) → dict` — Suspende a execução do agente: persiste o estado e libera o contexto.
+- `resume_agent(agent_id, session) → dict` — Retoma a execução suspensa a partir do estado persistido.
+- `discard_agent(agent_id, body, session) → dict` — Descarta o estado recuperável do agente. Resultados e artefatos são preservados.
+- `agent_queries(agent_id, session) → list[AgentQueryRead]` — Lista as consultas dirigidas feitas a um agente.
+- `ask_agent(agent_id, body, session, settings) → AgentQueryRead` — Consulta dirigida: o solicitante pergunta ao alvo e recebe a resposta.
+- `resource_metrics(session, settings) → dict` — Métricas de recursos e de uso — só o que o Callidus sabe medir de fato.
+
+
+- `_agent_read(service, agent) → AgentRead` — Converte um agente persistido na visão pública da interface.
+- `_count_by(rows, attribute) → dict[str, int]` — Conta as linhas agrupadas pelo valor de um atributo.
+### `src/agent/api/automation_routes.py`
+
+**Propósito:** automation_routes — módulo do projeto.
+
+- `AutomationIn` — Definição enviada pela interface.
+- `AutomationPatch` — Mudanças parciais de uma automação existente.
+- `TestIn` — Opções do teste controlado de uma automação.
+- `validate_automation(body) → dict` — Valida a definição sem gravar nada.
+- `create_automation(body, session) → dict` — Cria a automação. Ela nasce desabilitada, a menos que `activate` peça o contrário.
+- `list_automations(project_id, state, session) → list[dict]` — Lista as automações visíveis, opcionalmente filtradas.
+- `supervisor_status(settings) → dict` — Situação do runtime de automações.
+- `supervisor_diagnose(settings) → dict` — Diagnóstico: automações, próximos disparos e disparos pendentes.
+- `get_automation(automation_id, session) → dict` — Detalha uma automação com seus disparos recentes e eventos.
+- `update_automation(automation_id, body, session) → dict` — Aplica mudanças parciais em uma automação.
+- `delete_automation(automation_id, session) → dict` — Remove uma automação.
+- `enable_automation(automation_id, session) → dict` — Reativa uma automação suspensa ou desabilitada.
+- `suspend_automation(automation_id, session) → dict` — Suspende uma automação, pausando os disparos futuros.
+- `disable_automation(automation_id, session) → dict` — Desabilita uma automação de forma permanente, até nova reativação.
+- `list_firings(automation_id, limit, session) → list[dict]` — Lista os disparos de uma automação, do mais recente para o mais antigo.
+- `run_now(automation_id, wait, session, settings) → dict` — Executa uma vez, agora. Cria um disparo manual (chave própria).
+- `test_automation(automation_id, body, session, settings) → dict` — Verifica a prontidão e, com `execute`, dispara um teste controlado.
+- `cancel_automation(automation_id, session) → dict` — Cancela os disparos pendentes da automação.
+
+
+- `_present(session, row) → dict[str, Any]` — Serializa uma automação persistida no formato entregue à interface.
+- `_present_firing(row) → dict[str, Any]` — Serializa um disparo de automação no formato entregue à interface.
+- `_readable_errors(exc) → list[dict]` — Erros de validação legíveis (o `ctx` do pydantic carrega objetos não serializáveis).
+- `_service(session) → AutomationService` — Cria o serviço de automações sobre a sessão da requisição.
+- `_load(session, automation_id) → AutomationModel` — Carrega uma automação ou responde 404.
+### `src/agent/api/provider_routes.py`
+
+**Propósito:** provider_routes — módulo do projeto.
+
+- `ProviderEntry` — Descrição de um provedor editável pela interface.
+- `ProviderConfigIn` — Configuração de provedores enviada pela interface.
+- `SecretIn` — Credencial de um provedor enviada pela interface.
+- `read_provider_config(settings) → dict` — Configuração de provedores em uso (sem credenciais) e onde ela vive.
+- `write_provider_config(payload, settings) → dict` — Grava a configuração de provedores. Valida tipos, URLs e nomes antes de escrever.
+- `delete_provider(name, settings) → dict` — Remove um provedor da configuração (a credencial gravada vai junto).
+- `set_provider_secret(name, payload, settings) → dict` — Grava a credencial do provedor em arquivo com permissão restrita e aponta a configuração.
+- `clear_provider_secret(name, settings) → dict` — Apaga a credencial gravada e limpa a referência no arquivo de configuração.
+- `test_provider(name, settings) → dict` — Testa a conexão com o provedor: lista os modelos, sem gastar inferência.
+
+
+- `_catalog(settings) → ProviderCatalog` — Carrega o catálogo de provedores das configurações.
+- `_config_payload(settings) → dict[str, Any]` — Monta o payload da configuração de provedores, sem credenciais.
+### `src/agent/automation/__init__.py`
+
+**Propósito:** __init__ — módulo do projeto.
+
+
+### `src/agent/automation/actions/__init__.py`
+
+**Propósito:** __init__ — módulo do projeto.
+
+
+### `src/agent/automation/actions/base.py`
+
+**Propósito:** base — módulo do projeto.
+
+- `ActionContext` — Tudo o que a ação precisa, já resolvido.
+- `ActionResult` — Desfecho de uma ação.
+- `Action` — O mínimo que o runtime precisa de uma ação.
+- `register_action(kind, factory) → None` — Registra (ou substitui) um tipo de ação.
+- `action_factories() → dict[str, ActionFactory]` — Fábricas de ação registradas.
+- `build_action(spec) → Action` — Instancia a ação de uma especificação.
+- `execute(self, ctx) → ActionResult` — Executa a ação aprovada e devolve o resultado (saída, código de saída e erro).
+
+
+- `Action.execute(self, ctx) → ActionResult` — Executa a ação aprovada e devolve o resultado (saída, código de saída e erro).
+### `src/agent/automation/actions/callidus.py`
+
+**Propósito:** callidus — módulo do projeto.
+
+- `CallidusActionRunner` — Ação Callidus.
+- `execute(self, ctx) → ActionResult` — Cria a tarefa raiz, inicia o run e o entrega ao worker autônomo.
+
+
+- `_uuid_or_none(value) → uuid.UUID | None` — Converte um texto em UUID, tolerando ausência e valor inválido.
+- `_resolve_objective(self, ctx) → str | None` — Objetivo da execução, conforme a política de versão.
+- `_wait_for_run(self, ctx, run_id) → tuple[str, dict[str, Any]] | None` — Espera o run chegar a um estado terminal.
+
+- `CallidusActionRunner.execute(self, ctx) → ActionResult` — Cria a tarefa raiz, inicia o run e o entrega ao worker autônomo.
+- `CallidusActionRunner._resolve_objective(self, ctx) → str | None` — Objetivo da execução, conforme a política de versão.
+- `CallidusActionRunner._wait_for_run(self, ctx, run_id) → tuple[str, dict[str, Any]] | None` — Espera o run chegar a um estado terminal.
+
+- `CallidusActionRunner.__init__(self, spec) → None` — Cria a ação a partir da sua especificação.
+### `src/agent/automation/actions/script.py`
+
+**Propósito:** script — módulo do projeto.
+
+- `ScriptActionRunner` — Ação de script.
+- `execute(self, ctx) → ActionResult` — Valida as permissões e executa o script no destino configurado.
+
+
+- `_remote_config(remote_cfg)` — Traduz a configuração do destino em `RemoteConfig` (o mesmo do projeto remoto).
+- `_command(self) → list[str]` — Comando a executar, já com o interpretador quando informado.
+- `_run_local(self, ctx, command, timeout, project_root) → ActionResult` — Executa o script na máquina local.
+- `_run_remote(self, ctx, command, timeout) → ActionResult` — Executa o script no computador remoto do projeto.
+- `_receipt_path(self, ctx, cwd) → Path | None` — Caminho do recibo da execução, quando a definição informa um.
+- `_read_receipt(self, receipt) → str | None` — Conteúdo do recibo, quando existe.
+- `_write_receipt(self, receipt, key) → None` — Grava o recibo da execução.
+- `_safe_command(self) → list[str]` — Comando informado na definição, sem o interpretador acrescentado.
+
+- `ScriptActionRunner._command(self) → list[str]` — Comando a executar, já com o interpretador quando informado.
+- `ScriptActionRunner.execute(self, ctx) → ActionResult` — Valida as permissões e executa o script no destino configurado.
+- `ScriptActionRunner._run_local(self, ctx, command, timeout, project_root) → ActionResult` — Executa o script na máquina local.
+- `ScriptActionRunner._run_remote(self, ctx, command, timeout) → ActionResult` — Executa o script no computador remoto do projeto.
+- `ScriptActionRunner._receipt_path(self, ctx, cwd) → Path | None` — Caminho do recibo da execução, quando a definição informa um.
+- `ScriptActionRunner._read_receipt(self, receipt) → str | None` — Conteúdo do recibo, quando existe.
+- `ScriptActionRunner._write_receipt(self, receipt, key) → None` — Grava o recibo da execução.
+- `ScriptActionRunner._safe_command(self) → list[str]` — Comando informado na definição, sem o interpretador acrescentado.
+
+- `ScriptActionRunner.__init__(self, spec) → None` — Cria a ação a partir da sua especificação.
+### `src/agent/automation/cli.py`
+
+**Propósito:** cli — módulo do projeto.
+
+- `cmd_run(args) → int` — Roda o supervisor em primeiro plano.
+- `cmd_install(args) → int` — Instala o serviço nativo do sistema operacional.
+- `cmd_uninstall(args) → int` — Remove o serviço nativo.
+- `cmd_start(args) → int` — Inicia o serviço nativo.
+- `cmd_stop(args) → int` — Para o serviço nativo.
+- `cmd_status(args) → int` — Mostra a situação do runtime e do serviço nativo.
+- `cmd_diagnose(args) → int` — Mostra o diagnóstico detalhado do runtime.
+- `cmd_list(args) → int` — Lista as automações registradas.
+- `build_parser() → argparse.ArgumentParser` — Monta o interpretador de argumentos da linha de comando.
+- `main(argv) → int` — Ponto de entrada da linha de comando.
+
+
+- `_print(payload) → None` — Imprime um payload em JSON.
+- `_run_forever(settings, interval) → None` — Roda o supervisor e o worker autônomo até receber um sinal de parada.
+- `_request_stop(*_args) → None` — Envia o pedido de parada do supervisor e devolve a resposta do comando.
+### `src/agent/automation/contracts.py`
+
+**Propósito:** contracts — módulo do projeto.
+
+- `TriggerSpec` — Gatilho: quando a automação acorda.
+- `CallidusAction` — Ação Callidus: cria ou retoma um trabalho pelos serviços existentes.
+- `ScriptAction` — Ação de script: execução determinística, sem depender de inferência.
+- `parse_action(data) → CallidusAction | ScriptAction` — Valida um dicionário de ação (JSON persistido ou payload da API).
+- `dump_action(action) → dict` — Serializa a ação para JSON (persistência).
+- `StartStrategy` — Como iniciar a dependência quando ela não está pronta.
+- `DependencySpec` — Dependência que precisa estar pronta antes da ação rodar.
+- `PermissionSpec` — Permissões decididas antes do disparo — o modelo não as amplia durante a execução.
+- `RecoveryPolicy` — Política de recuperação da ação.
+- `AutomationDefinition` — Definição completa de uma automação — o que a API e a interface enviam.
+- `model_post_init(self, _context) → None` — Confere que os campos exigidos pelo tipo de gatilho estão presentes.
+- `label(self) → str` — Rótulo legível da dependência, para mensagens e evidências.
+
+
+- `_fuso_valido(cls, value) → str` — Valida o fuso informado no gatilho.
+- `_comando_lista(cls, value) → list[str]` — Normaliza o comando da ação de script em uma lista de textos não vazios.
+- `_fuso_valido(cls, value) → str` — Valida o fuso informado na definição.
+
+- `TriggerSpec._fuso_valido(cls, value) → str` — Valida o fuso informado no gatilho.
+- `TriggerSpec.model_post_init(self, _context) → None` — Confere que os campos exigidos pelo tipo de gatilho estão presentes.
+- `ScriptAction._comando_lista(cls, value) → list[str]` — Normaliza o comando da ação de script em uma lista de textos não vazios.
+- `DependencySpec.label(self) → str` — Rótulo legível da dependência, para mensagens e evidências.
+- `AutomationDefinition._fuso_valido(cls, value) → str` — Valida o fuso informado na definição.
+### `src/agent/automation/dependencies.py`
+
+**Propósito:** dependencies — módulo do projeto.
+
+- `DependencyReport` — Estado de uma dependência.
+- `DependencyCheck` — Resultado agregado da verificação.
+- `DependencyResolver` — Resolve e verifica as dependências declaradas por uma automação.
+- `sh_quote(value) → str` — Cita um valor para o shell POSIX.
+- `as_dict(self) → dict[str, Any]` — Serializa a dependência para o registro da automação.
+- `ok(self) → bool` — Pronta quando toda dependência **crítica** está pronta.
+- `blocking(self) → list[DependencyReport]` — Indica se a dependência impede a execução quando não está satisfeita.
+- `as_dict(self) → dict[str, Any]` — Verificação agregada como dicionário serializável.
+- `check_all(self, specs) → DependencyCheck` — Verifica todas as dependências e aciona a inicialização autorizada.
+
+
+- `_remote_config(remote_cfg)` — Configuração do destino remoto, convertida no contrato do transporte SSH.
+- `_check_one(self, spec) → DependencyReport` — Verifica uma dependência conforme o seu tipo.
+- `_check_project_dir(self, spec) → DependencyReport` — Verifica a pasta do projeto da automação.
+- `_check_workdir(self, spec) → DependencyReport` — Verifica a pasta de trabalho declarada pela automação.
+- `_check_os(self, spec) → DependencyReport` — Verifica se o sistema operacional exigido está disponível.
+- `_target_os_family(self) → str` — Família de sistema do destino da automação.
+- `_check_interpreter(self, spec) → DependencyReport` — Verifica o interpretador configurado para a automação.
+- `_check_script(self, spec) → DependencyReport` — Verifica o script declarado pela automação.
+- `_check_remote(self, spec) → DependencyReport` — Verifica o computador remoto declarado pela automação.
+- `_check_provider(self, spec) → DependencyReport` — Verifica o provedor de modelo exigido pela automação.
+- `_check_tool(self, spec) → DependencyReport` — Verifica a ferramenta exigida pela automação.
+- `_check_mcp(self, spec) → DependencyReport` — Verifica o servidor MCP exigido pela automação.
+- `_check_credential(self, spec) → DependencyReport` — Confere a existência da credencial **sem** revelar o valor.
+- `_can_start(self, spec) → bool` — Indica se a dependência pode ser iniciada automaticamente.
+- `_start(self, spec) → tuple[bool, str]` — Executa a estratégia de inicialização da dependência.
+- `_start_command(self, strategy) → tuple[bool, str]` — Executa o comando de inicialização, local ou remoto.
+- `_start_service(self, strategy) → tuple[bool, str]` — Reinicia o serviço nativo declarado na estratégia.
+- `_remote_service(self, name, strategy) → tuple[bool, str]` — Reinicia o serviço no computador remoto.
+- `_start_mcp(self, spec, strategy) → tuple[bool, str]` — Reinicia um processo MCP gerenciado (o `McpManager` recarrega a configuração).
+- `_remote_which(self, name) → tuple[bool, str]` — Procura um executável no computador remoto.
+
+- `DependencyReport.as_dict(self) → dict[str, Any]` — Serializa a dependência para o registro da automação.
+- `DependencyCheck.ok(self) → bool` — Pronta quando toda dependência **crítica** está pronta.
+- `DependencyCheck.blocking(self) → list[DependencyReport]` — Indica se a dependência impede a execução quando não está satisfeita.
+- `DependencyCheck.as_dict(self) → dict[str, Any]` — Verificação agregada como dicionário serializável.
+- `DependencyResolver.check_all(self, specs) → DependencyCheck` — Verifica todas as dependências e aciona a inicialização autorizada.
+- `DependencyResolver._check_one(self, spec) → DependencyReport` — Verifica uma dependência conforme o seu tipo.
+- `DependencyResolver._check_project_dir(self, spec) → DependencyReport` — Verifica a pasta do projeto da automação.
+- `DependencyResolver._check_workdir(self, spec) → DependencyReport` — Verifica a pasta de trabalho declarada pela automação.
+- `DependencyResolver._check_os(self, spec) → DependencyReport` — Verifica se o sistema operacional exigido está disponível.
+- `DependencyResolver._target_os_family(self) → str` — Família de sistema do destino da automação.
+- `DependencyResolver._check_interpreter(self, spec) → DependencyReport` — Verifica o interpretador configurado para a automação.
+- `DependencyResolver._check_script(self, spec) → DependencyReport` — Verifica o script declarado pela automação.
+- `DependencyResolver._check_remote(self, spec) → DependencyReport` — Verifica o computador remoto declarado pela automação.
+- `DependencyResolver._check_provider(self, spec) → DependencyReport` — Verifica o provedor de modelo exigido pela automação.
+- `DependencyResolver._check_tool(self, spec) → DependencyReport` — Verifica a ferramenta exigida pela automação.
+- `DependencyResolver._check_mcp(self, spec) → DependencyReport` — Verifica o servidor MCP exigido pela automação.
+- `DependencyResolver._check_credential(self, spec) → DependencyReport` — Confere a existência da credencial **sem** revelar o valor.
+- `DependencyResolver._can_start(self, spec) → bool` — Indica se a dependência pode ser iniciada automaticamente.
+- `DependencyResolver._start(self, spec) → tuple[bool, str]` — Executa a estratégia de inicialização da dependência.
+- `DependencyResolver._start_command(self, strategy) → tuple[bool, str]` — Executa o comando de inicialização, local ou remoto.
+- `DependencyResolver._start_service(self, strategy) → tuple[bool, str]` — Reinicia o serviço nativo declarado na estratégia.
+- `DependencyResolver._remote_service(self, name, strategy) → tuple[bool, str]` — Reinicia o serviço no computador remoto.
+- `DependencyResolver._start_mcp(self, spec, strategy) → tuple[bool, str]` — Reinicia um processo MCP gerenciado (o `McpManager` recarrega a configuração).
+- `DependencyResolver._remote_which(self, name) → tuple[bool, str]` — Procura um executável no computador remoto.
+
+- `DependencyResolver.__init__(self, *, settings, project_root, remote, target_kind) → None` — Cria o verificador de dependências.
+### `src/agent/automation/dispatcher.py`
+
+**Propósito:** dispatcher — módulo do projeto.
+
+- `DispatchResult` — O que o despachante fez.
+- `temporal_key(automation_id, kind, moment) → str` — Chave de idempotência de um disparo temporal.
+- `event_key(automation_id, source, event_id) → str` — Chave de idempotência de um disparo por evento.
+- `manual_key(automation_id, tag) → str` — Chave de idempotência de um disparo manual, sempre única.
+- `Dispatcher` — Registra disparos elegíveis.
+- `as_dict(self) → dict` — Desfecho do despacho como dicionário serializável.
+- `dispatch_due(self, automation, *, now) → DispatchResult` — Registra os disparos vencidos de uma automação temporal.
+- `dispatch_event(self, automation, candidate) → AutomationFiringModel | None` — Registra o disparo de um evento interno (idempotente pelo identificador do evento).
+- `dispatch_manual(self, automation, *, tag, state, result, scheduled_for) → AutomationFiringModel | None` — Disparo manual ("executar agora", "testar"). Sempre único.
+
+
+- `_create(self, automation, *, key, scheduled_for, state, result) → AutomationFiringModel | None` — Cria a linha de disparo, respeitando a chave de idempotência.
+- `_advance(self, automation, last_occurrence, now) → None` — Avança o marcador de última execução e recalcula o próximo disparo.
+
+- `DispatchResult.as_dict(self) → dict` — Desfecho do despacho como dicionário serializável.
+- `Dispatcher.dispatch_due(self, automation, *, now) → DispatchResult` — Registra os disparos vencidos de uma automação temporal.
+- `Dispatcher.dispatch_event(self, automation, candidate) → AutomationFiringModel | None` — Registra o disparo de um evento interno (idempotente pelo identificador do evento).
+- `Dispatcher.dispatch_manual(self, automation, *, tag, state, result, scheduled_for) → AutomationFiringModel | None` — Disparo manual ("executar agora", "testar"). Sempre único.
+- `Dispatcher._create(self, automation, *, key, scheduled_for, state, result) → AutomationFiringModel | None` — Cria a linha de disparo, respeitando a chave de idempotência.
+- `Dispatcher._advance(self, automation, last_occurrence, now) → None` — Avança o marcador de última execução e recalcula o próximo disparo.
+
+- `Dispatcher.__init__(self, session) → None` — Cria o despachante ligado a uma sessão.
+### `src/agent/automation/enums.py`
+
+**Propósito:** enums — módulo do projeto.
+
+- `AutomationState` — Estado da definição da automação (o que o usuário controla).
+- `TriggerKind` — Modalidades iniciais de gatilho. Novas modalidades entram por registro.
+- `ActionKind` — Tipos de ação. A arquitetura permite novos tipos por registro.
+- `TargetKind` — Onde a ação acontece: nesta máquina ou no computador remoto do projeto.
+- `ObjectiveMode` — Como a automação escolhe o objetivo de uma conversa/tarefa.
+- `MissedPolicy` — O que fazer com disparos perdidos durante uma interrupção.
+- `DependencyKind` — Tipos de dependência verificável antes da execução.
+- `StartMechanism` — Como uma dependência pode ser iniciada automaticamente.
+- `FiringState` — Estados do disparo (a máquina de estados do trabalho executado).
+
+### `src/agent/automation/executor.py`
+
+**Propósito:** executor — módulo do projeto.
+
+- `ExecutionOutcome` — Desfecho da execução de um disparo.
+- `AutomationExecutor` — Executa disparos de automação.
+- `execute(self, firing) → ExecutionOutcome` — Executa um disparo: dependências, ação, evidência e estado.
+- `reconcile(self) → list[ExecutionOutcome]` — Fecha os disparos que ficaram rodando, olhando o estado real do run.
+
+
+- `_seconds(value)` — Converte segundos em um intervalo de tempo.
+- `_target_info(self, automation) → dict[str, Any]` — Resolve o destino da automação: local ou remoto, com suas permissões.
+- `_next_attempt(self, policy, attempt) → datetime` — Instante da próxima tentativa, com backoff exponencial limitado.
+- `_log(self, automation, firing, event_type, payload) → None` — Registra um fato da automação no log de eventos.
+
+- `AutomationExecutor._target_info(self, automation) → dict[str, Any]` — Resolve o destino da automação: local ou remoto, com suas permissões.
+- `AutomationExecutor.execute(self, firing) → ExecutionOutcome` — Executa um disparo: dependências, ação, evidência e estado.
+- `AutomationExecutor.reconcile(self) → list[ExecutionOutcome]` — Fecha os disparos que ficaram rodando, olhando o estado real do run.
+- `AutomationExecutor._next_attempt(self, policy, attempt) → datetime` — Instante da próxima tentativa, com backoff exponencial limitado.
+- `AutomationExecutor._log(self, automation, firing, event_type, payload) → None` — Registra um fato da automação no log de eventos.
+
+- `AutomationExecutor.__init__(self, session, settings) → None` — Cria o executor ligado a uma sessão.
+### `src/agent/automation/security.py`
+
+**Propósito:** security — módulo do projeto.
+
+- `PermissionDenied` — A execução não está autorizada pela definição aprovada.
+- `command_allowed(command, permissions) → bool` — O executável (primeiro item) está na allowlist?.
+- `assert_script_allowed(command, permissions) → None` — Valida a autorização de um script antes de executá-lo.
+- `resolve_workdir(cwd, *, project_root, permissions) → Path` — Resolve o diretório de trabalho dentro do escopo autorizado.
+- `assert_path_allowed(path, permissions, *, project_root) → Path` — Valida um caminho explícito (script, recibo) contra os escopos autorizados.
+- `build_env(extra, *, allow_inherit) → dict[str, str]` — Ambiente controlado: herda o ambiente do processo (sem segredos novos) e aplica o extra.
+- `redact_evidence(evidence) → dict[str, Any]` — Sanitiza a evidência antes de persistir (segredos não entram no banco nem nos logs).
+- `which_or_none(executable) → str | None` — Localiza um executável no `PATH`.
+
+
+- `PermissionDenied.__init__(self, message, *, reason) → None` — Registra a violação com o caminho e o motivo.
+### `src/agent/automation/service/__init__.py`
+
+**Propósito:** __init__ — módulo do projeto.
+
+- `current_adapter() → ServiceAdapter` — Adaptador da plataforma atual (o primeiro compatível).
+- `adapters_status() → list[dict]` — Situação de todos os adaptadores (útil para diagnóstico multiplataforma).
+
+### `src/agent/automation/service/base.py`
+
+**Propósito:** base — módulo do projeto.
+
+- `ServiceOptions` — Como o serviço nativo deve chamar o runtime.
+- `ServiceStatus` — Situação do serviço nativo.
+- `ServiceAdapter` — Interface dos adaptadores de serviço.
+- `default_options() → ServiceOptions` — Opções padrão: executa o supervisor a partir do pacote instalado.
+- `as_dict(self) → dict[str, Any]` — Situação do serviço como dicionário serializável.
+- `available(self) → bool` — Este adaptador funciona nesta máquina?.
+- `install(self, options) → dict[str, Any]` — Instala o serviço nativo.
+- `uninstall(self) → dict[str, Any]` — Remove o serviço nativo.
+- `start(self) → dict[str, Any]` — Inicia o serviço.
+- `stop(self) → dict[str, Any]` — Para o serviço.
+- `status(self) → ServiceStatus` — Situação do serviço.
+
+
+- `_run(self, args, *, timeout) → tuple[int, str, str]` — Executa um comando do sistema operacional.
+- `_which(self, executable) → str | None` — Localiza um executável no `PATH`.
+- `_home(self) → Path` — Pasta pessoal do usuário.
+
+- `ServiceStatus.as_dict(self) → dict[str, Any]` — Situação do serviço como dicionário serializável.
+- `ServiceAdapter.available(self) → bool` — Este adaptador funciona nesta máquina?.
+- `ServiceAdapter.install(self, options) → dict[str, Any]` — Instala o serviço nativo.
+- `ServiceAdapter.uninstall(self) → dict[str, Any]` — Remove o serviço nativo.
+- `ServiceAdapter.start(self) → dict[str, Any]` — Inicia o serviço.
+- `ServiceAdapter.stop(self) → dict[str, Any]` — Para o serviço.
+- `ServiceAdapter.status(self) → ServiceStatus` — Situação do serviço.
+- `ServiceAdapter._run(self, args, *, timeout) → tuple[int, str, str]` — Executa um comando do sistema operacional.
+- `ServiceAdapter._which(self, executable) → str | None` — Localiza um executável no `PATH`.
+- `ServiceAdapter._home(self) → Path` — Pasta pessoal do usuário.
+### `src/agent/automation/service/launchd.py`
+
+**Propósito:** launchd — módulo do projeto.
+
+- `LaunchdAdapter` — Adaptador do `launchd` (macOS).
+- `available(self) → bool` — Indica se o `launchd` pode ser usado nesta máquina.
+- `install(self, options) → dict[str, Any]` — Grava o `plist` e carrega o agente no `launchd`.
+- `uninstall(self) → dict[str, Any]` — Descarrega o agente e apaga o `plist`.
+- `start(self) → dict[str, Any]` — Inicia o agente do `launchd`.
+- `stop(self) → dict[str, Any]` — Para o agente do `launchd`.
+- `status(self) → ServiceStatus` — Situação do agente do `launchd`.
+
+
+- `_plist_path(self, label) → Path` — Caminho do arquivo `plist` do agente.
+
+- `LaunchdAdapter._plist_path(self, label) → Path` — Caminho do arquivo `plist` do agente.
+- `LaunchdAdapter.available(self) → bool` — Indica se o `launchd` pode ser usado nesta máquina.
+- `LaunchdAdapter.install(self, options) → dict[str, Any]` — Grava o `plist` e carrega o agente no `launchd`.
+- `LaunchdAdapter.uninstall(self) → dict[str, Any]` — Descarrega o agente e apaga o `plist`.
+- `LaunchdAdapter.start(self) → dict[str, Any]` — Inicia o agente do `launchd`.
+- `LaunchdAdapter.stop(self) → dict[str, Any]` — Para o agente do `launchd`.
+- `LaunchdAdapter.status(self) → ServiceStatus` — Situação do agente do `launchd`.
+### `src/agent/automation/service/systemd.py`
+
+**Propósito:** systemd — módulo do projeto.
+
+- `SystemdAdapter` — Adaptador do `systemd` (Linux).
+- `available(self) → bool` — Indica se o `systemd` pode ser usado nesta máquina.
+- `install(self, options) → dict[str, Any]` — Grava a unidade, recarrega o `systemd` e habilita o serviço.
+- `uninstall(self) → dict[str, Any]` — Para, desabilita e apaga a unidade nos dois escopos.
+- `start(self) → dict[str, Any]` — Inicia o serviço de usuário.
+- `stop(self) → dict[str, Any]` — Para o serviço de usuário.
+- `status(self) → ServiceStatus` — Situação do serviço, consultando o escopo de usuário e o de sistema.
+
+
+- `_user_unit_path(self) → Path` — Caminho da unidade de usuário.
+- `_system_unit_path(self) → Path` — Caminho da unidade de sistema.
+- `_unit_path(self, scope) → Path` — Caminho da unidade conforme o escopo.
+- `_ctl(self, args, scope) → tuple[int, str, str]` — Chama o `systemctl` no escopo pedido.
+- `_unit_content(self, options) → str` — Conteúdo do arquivo de unidade.
+
+- `SystemdAdapter._user_unit_path(self) → Path` — Caminho da unidade de usuário.
+- `SystemdAdapter._system_unit_path(self) → Path` — Caminho da unidade de sistema.
+- `SystemdAdapter._unit_path(self, scope) → Path` — Caminho da unidade conforme o escopo.
+- `SystemdAdapter._ctl(self, args, scope) → tuple[int, str, str]` — Chama o `systemctl` no escopo pedido.
+- `SystemdAdapter.available(self) → bool` — Indica se o `systemd` pode ser usado nesta máquina.
+- `SystemdAdapter._unit_content(self, options) → str` — Conteúdo do arquivo de unidade.
+- `SystemdAdapter.install(self, options) → dict[str, Any]` — Grava a unidade, recarrega o `systemd` e habilita o serviço.
+- `SystemdAdapter.uninstall(self) → dict[str, Any]` — Para, desabilita e apaga a unidade nos dois escopos.
+- `SystemdAdapter.start(self) → dict[str, Any]` — Inicia o serviço de usuário.
+- `SystemdAdapter.stop(self) → dict[str, Any]` — Para o serviço de usuário.
+- `SystemdAdapter.status(self) → ServiceStatus` — Situação do serviço, consultando o escopo de usuário e o de sistema.
+### `src/agent/automation/service/windows.py`
+
+**Propósito:** windows — módulo do projeto.
+
+- `WindowsTaskAdapter` — Adaptador do Agendador de Tarefas (Windows).
+- `available(self) → bool` — Indica se o Agendador de Tarefas pode ser usado nesta máquina.
+- `install(self, options) → dict[str, Any]` — Cria a tarefa agendada, no escopo de usuário ou de sistema.
+- `uninstall(self) → dict[str, Any]` — Apaga a tarefa agendada.
+- `start(self) → dict[str, Any]` — Executa a tarefa agendada agora.
+- `stop(self) → dict[str, Any]` — Interrompe a execução da tarefa agendada.
+- `status(self) → ServiceStatus` — Situação da tarefa agendada.
+
+
+- `_task_name(self) → str` — Nome da tarefa agendada.
+- `_is_admin(self) → bool` — Indica se o processo roda com privilégio administrativo.
+
+- `WindowsTaskAdapter.available(self) → bool` — Indica se o Agendador de Tarefas pode ser usado nesta máquina.
+- `WindowsTaskAdapter._task_name(self) → str` — Nome da tarefa agendada.
+- `WindowsTaskAdapter.install(self, options) → dict[str, Any]` — Cria a tarefa agendada, no escopo de usuário ou de sistema.
+- `WindowsTaskAdapter.uninstall(self) → dict[str, Any]` — Apaga a tarefa agendada.
+- `WindowsTaskAdapter.start(self) → dict[str, Any]` — Executa a tarefa agendada agora.
+- `WindowsTaskAdapter.stop(self) → dict[str, Any]` — Interrompe a execução da tarefa agendada.
+- `WindowsTaskAdapter.status(self) → ServiceStatus` — Situação da tarefa agendada.
+- `WindowsTaskAdapter._is_admin(self) → bool` — Indica se o processo roda com privilégio administrativo.
+### `src/agent/automation/store.py`
+
+**Propósito:** store — módulo do projeto.
+
+- `AutomationNotFound` — Automação inexistente ou com identificador inválido.
+- `AutomationService` — Serviço das automações de um projeto.
+- `get(self, automation_id) → AutomationModel` — Automação por identificador.
+- `list(self, project_id, *, state) → list[AutomationModel]` — Automações do catálogo, filtradas por projeto e por estado.
+- `enabled(self) → list[AutomationModel]` — Automações habilitadas, que o supervisor deve vigiar.
+- `create(self, definition) → AutomationModel` — Grava a definição aprovada de uma automação.
+- `update(self, automation_id, changes) → AutomationModel` — Aplica alterações na definição de uma automação.
+- `set_state(self, automation_id, state) → AutomationModel` — Muda o estado da automação (habilitada, suspensa ou desabilitada).
+- `delete(self, automation_id) → bool` — Remove uma automação.
+- `to_definition(self, row) → AutomationDefinition` — Documento validado da automação gravada.
+- `trigger_of(self, row)` — Gatilho da automação, já instanciado.
+- `next_occurrence(self, row, *, after) → datetime | None` — Próximo instante elegível da automação.
+
+
+- `_uuid_or_none(value) → uuid.UUID | None` — Converte um valor em UUID, tolerando ausência e texto inválido.
+- `_recompute_next_run(self, row) → None` — Recalcula o próximo disparo a partir do gatilho da definição.
+- `_objective_snapshot(self, definition, *, action) → dict | None` — Congela o objetivo no momento da aprovação (modo `frozen`).
+- `_log(self, row, event_type, payload) → None` — Registra um fato da automação no log de eventos.
+
+- `AutomationService.get(self, automation_id) → AutomationModel` — Automação por identificador.
+- `AutomationService.list(self, project_id, *, state) → list[AutomationModel]` — Automações do catálogo, filtradas por projeto e por estado.
+- `AutomationService.enabled(self) → list[AutomationModel]` — Automações habilitadas, que o supervisor deve vigiar.
+- `AutomationService.create(self, definition) → AutomationModel` — Grava a definição aprovada de uma automação.
+- `AutomationService.update(self, automation_id, changes) → AutomationModel` — Aplica alterações na definição de uma automação.
+- `AutomationService.set_state(self, automation_id, state) → AutomationModel` — Muda o estado da automação (habilitada, suspensa ou desabilitada).
+- `AutomationService.delete(self, automation_id) → bool` — Remove uma automação.
+- `AutomationService.to_definition(self, row) → AutomationDefinition` — Documento validado da automação gravada.
+- `AutomationService.trigger_of(self, row)` — Gatilho da automação, já instanciado.
+- `AutomationService.next_occurrence(self, row, *, after) → datetime | None` — Próximo instante elegível da automação.
+- `AutomationService._recompute_next_run(self, row) → None` — Recalcula o próximo disparo a partir do gatilho da definição.
+- `AutomationService._objective_snapshot(self, definition, *, action) → dict | None` — Congela o objetivo no momento da aprovação (modo `frozen`).
+- `AutomationService._log(self, row, event_type, payload) → None` — Registra um fato da automação no log de eventos.
+
+- `AutomationService.__init__(self, session) → None` — Cria o serviço ligado a uma sessão.
+### `src/agent/automation/supervisor.py`
+
+**Propósito:** supervisor — módulo do projeto.
+
+- `SupervisorStats` — Contadores do runtime de automações.
+- `AutomationSupervisor` — Núcleo do runtime de automações — compartilhado pela API e pelo supervisor nativo.
+- `build_supervisor(settings) → AutomationSupervisor` — Supervisor com o banco inicializado (cria as tabelas que faltarem).
+- `find_automation(session, automation_id) → AutomationModel | None` — Procura uma automação pelo identificador.
+- `as_dict(self) → dict[str, Any]` — Contadores como dicionário serializável.
+- `stop(self) → None` — Pede o encerramento do laço do supervisor.
+- `run_forever(self, interval_sec) → None` — Laço principal do supervisor.
+- `tick(self) → dict[str, Any]` — Um ciclo completo: recuperação → disparo → execução.
+- `status(self) → dict[str, Any]` — Situação do runtime: automações, disparos e contadores.
+- `diagnose(self) → dict[str, Any]` — Diagnóstico detalhado: automações vencidas, dependências e disparos pendentes.
+
+
+- `_heartbeat(self, session) → None` — Grava o batimento do runtime — é o que `status` mostra de outro processo.
+- `_tick_with(self, session) → dict[str, Any]` — Executa as três etapas do tique em uma sessão.
+- `_recover(self, session, service, executor) → int` — Recupera disparos interrompidos por encerramento do processo.
+- `_dispatch(self, session, service, dispatcher, now) → dict[str, Any]` — Registra os disparos vencidos e os eventos elegíveis.
+- `_execute(self, session, executor, now) → list[dict]` — Executa os disparos prontos e reconcilia os que ficaram rodando.
+- `_read_heartbeat(self, session) → dict[str, Any] | None` — Batimento gravado pelo runtime em execução (visível de outro processo).
+
+- `SupervisorStats.as_dict(self) → dict[str, Any]` — Contadores como dicionário serializável.
+- `AutomationSupervisor.stop(self) → None` — Pede o encerramento do laço do supervisor.
+- `AutomationSupervisor.run_forever(self, interval_sec) → None` — Laço principal do supervisor.
+- `AutomationSupervisor.tick(self) → dict[str, Any]` — Um ciclo completo: recuperação → disparo → execução.
+- `AutomationSupervisor._heartbeat(self, session) → None` — Grava o batimento do runtime — é o que `status` mostra de outro processo.
+- `AutomationSupervisor._tick_with(self, session) → dict[str, Any]` — Executa as três etapas do tique em uma sessão.
+- `AutomationSupervisor._recover(self, session, service, executor) → int` — Recupera disparos interrompidos por encerramento do processo.
+- `AutomationSupervisor._dispatch(self, session, service, dispatcher, now) → dict[str, Any]` — Registra os disparos vencidos e os eventos elegíveis.
+- `AutomationSupervisor._execute(self, session, executor, now) → list[dict]` — Executa os disparos prontos e reconcilia os que ficaram rodando.
+- `AutomationSupervisor.status(self) → dict[str, Any]` — Situação do runtime: automações, disparos e contadores.
+- `AutomationSupervisor._read_heartbeat(self, session) → dict[str, Any] | None` — Batimento gravado pelo runtime em execução (visível de outro processo).
+- `AutomationSupervisor.diagnose(self) → dict[str, Any]` — Diagnóstico detalhado: automações vencidas, dependências e disparos pendentes.
+
+- `AutomationSupervisor.__init__(self, settings, *, session_factory) → None` — Cria o supervisor.
+### `src/agent/automation/timezones.py`
+
+**Propósito:** timezones — módulo do projeto.
+
+- `resolve_timezone(name) → str` — Normaliza e valida um nome de fuso. `None`/vazio vira `UTC`.
+- `to_utc(value) → datetime` — Normaliza um datetime para UTC. Sem fuso, assume UTC.
+- `localize(naive_local, tz_name) → datetime` — Converte um horário local (sem fuso) no instante UTC correspondente.
+- `next_cron_occurrence(expression, tz_name, after, *, limit) → list[datetime]` — Próximas ocorrências de uma expressão cron, em UTC.
+- `occurrences_between(expression, tz_name, start, end, *, limit) → list[datetime]` — Ocorrências de cron dentro de uma janela (UTC, inclusiva no início).
+- `seconds_until(now, target) → float` — Segundos entre dois instantes (pode ser negativo).
+- `floor_minute(moment) → datetime` — Arredonda para o minuto — usado para detectar o mesmo minuto de disparo.
+- `add_interval(moment, seconds) → datetime` — Soma um intervalo a um instante, em UTC.
+
+### `src/agent/automation/triggers/__init__.py`
+
+**Propósito:** __init__ — módulo do projeto.
+
+
+### `src/agent/automation/triggers/base.py`
+
+**Propósito:** base — módulo do projeto.
+
+- `Trigger` — O mínimo que o runtime precisa de um gatilho.
+- `register_trigger(kind, factory) → None` — Registra (ou substitui) um tipo de gatilho.
+- `trigger_factories() → dict[str, TriggerFactory]` — Fábricas de gatilho registradas.
+- `build_trigger(spec) → Trigger` — Instancia o gatilho de uma especificação.
+- `next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois de `after` (UTC).
+- `occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela (UTC) — usado para recuperar disparos perdidos.
+
+
+- `Trigger.next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois de `after` (UTC).
+- `Trigger.occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela (UTC) — usado para recuperar disparos perdidos.
+### `src/agent/automation/triggers/internal.py`
+
+**Propósito:** internal — módulo do projeto.
+
+- `EventCandidate` — Um evento elegível, pronto para virar disparo.
+- `EventTrigger` — Gatilho de evento interno.
+- `with_project(self, project_id) → 'EventTrigger'` — Restringe o gatilho aos eventos de um projeto.
+- `event_types(self) → list[str]` — Tipos de evento escutados pelo gatilho.
+- `next_occurrence(self, after) → datetime | None` — Eventos não têm horário próprio: o próximo disparo depende do evento.
+- `occurrences(self, start, end, *, limit) → list[datetime]` — Eventos não têm horário próprio: nada a listar na janela.
+- `candidate_events(self, session, *, since, limit) → list[EventCandidate]` — Eventos elegíveis, dos mais recentes para os mais antigos.
+
+
+- `_matches_filter(payload, criteria) → bool` — Confere se o payload casa com os critérios de filtro do gatilho.
+
+- `EventTrigger.with_project(self, project_id) → 'EventTrigger'` — Restringe o gatilho aos eventos de um projeto.
+- `EventTrigger.event_types(self) → list[str]` — Tipos de evento escutados pelo gatilho.
+- `EventTrigger.next_occurrence(self, after) → datetime | None` — Eventos não têm horário próprio: o próximo disparo depende do evento.
+- `EventTrigger.occurrences(self, start, end, *, limit) → list[datetime]` — Eventos não têm horário próprio: nada a listar na janela.
+- `EventTrigger.candidate_events(self, session, *, since, limit) → list[EventCandidate]` — Eventos elegíveis, dos mais recentes para os mais antigos.
+
+- `EventTrigger.__init__(self, spec) → None` — Cria o gatilho a partir da sua especificação.
+### `src/agent/automation/triggers/temporal.py`
+
+**Propósito:** temporal — módulo do projeto.
+
+- `OnceTrigger` — Execução única em um instante determinado.
+- `CronTrigger` — Recorrência por expressão cron (5 ou 6 campos).
+- `IntervalTrigger` — Recorrência por intervalo fixo, contado a partir do horário de referência.
+- `DailyAtTrigger` — Atalho: todo dia, no horário local informado (ex.: `09:30` no fuso da automação).
+- `next_occurrence(self, after) → datetime | None` — Instante único, quando ainda está no futuro.
+- `occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
+- `next_occurrence(self, after) → datetime | None` — Devolve a próxima ocorrência do gatilho a partir de um instante.
+- `occurrences(self, start, end, *, limit) → list[datetime]` — Devolve as próximas ocorrências do gatilho dentro de uma janela.
+- `next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois do instante informado.
+- `occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
+- `next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois do instante informado.
+- `occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
+
+
+- `OnceTrigger.next_occurrence(self, after) → datetime | None` — Instante único, quando ainda está no futuro.
+- `OnceTrigger.occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
+- `CronTrigger.next_occurrence(self, after) → datetime | None` — Devolve a próxima ocorrência do gatilho a partir de um instante.
+- `CronTrigger.occurrences(self, start, end, *, limit) → list[datetime]` — Devolve as próximas ocorrências do gatilho dentro de uma janela.
+- `IntervalTrigger.next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois do instante informado.
+- `IntervalTrigger.occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
+- `DailyAtTrigger.next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois do instante informado.
+- `DailyAtTrigger.occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
+
+- `OnceTrigger.__init__(self, spec) → None` — Cria o gatilho de execução única.
+- `CronTrigger.__init__(self, spec) → None` — Cria o gatilho de recorrência por cron.
+- `IntervalTrigger.__init__(self, spec) → None` — Cria o gatilho de intervalo fixo.
+- `DailyAtTrigger.__init__(self, spec) → None` — Cria o gatilho diário a partir do horário `HH:MM` informado.
+### `src/agent/brand.py`
+
+**Propósito:** brand — módulo do projeto.
+
+- `is_attachments_dir(rel) → bool` — True quando o caminho relativo aponta para a pasta de anexos (nova ou legada).
+
+### `src/agent/domain/agent_enums.py`
+
+**Propósito:** agent_enums — módulo do projeto.
+
+- `AgentStatus` — Estado do agente lógico. Não é o estado da tarefa: o agente sobrevive à tarefa.
+- `ExecutionStatus` — Estado da execução — a parte que ocupa memória de inferência.
+- `QueryStatus` — Estado da consulta entre agentes.
+
+### `src/agent/domain/agent_lifecycle.py`
+
+**Propósito:** agent_lifecycle — módulo do projeto.
+
+- `InvalidAgentTransition` — Transição de estado de agente ou execução não permitida.
+- `can_transition_agent(current, target) → bool` — Indica se a mudança de estado do agente lógico é permitida.
+- `can_transition_execution(current, target) → bool` — Indica se a mudança de estado da execução é permitida.
+- `validate_agent_transition(current, target) → None` — Valida a mudança de estado do agente, levantando erro quando inválida.
+- `validate_execution_transition(current, target) → None` — Valida a mudança de estado da execução, levantando erro quando inválida.
+- `transition_agent(current, target) → AgentStatus` — Devolve o novo estado do agente após validar a transição.
+- `transition_execution(current, target) → ExecutionStatus` — Devolve o novo estado da execução após validar a transição.
+
+
+- `InvalidAgentTransition.__init__(self, current, target) → None` — Monta o registro de ciclo de vida do agente.
+### `src/agent/orchestrator/plan_contract.py`
+
+**Propósito:** plan_contract — módulo do projeto.
+
+- `normalize_kind(raw) → tuple[TaskKind, str | None]` — `kind` do modelo → `TaskKind`. Rótulo desconhecido vira `operation` com aviso, nunca erro.
+- `is_final_answer_label(raw) → bool` — Diz se um rótulo de `kind` indica a etapa de resposta final.
+- `normalize_depends(raw) → tuple[list[int], list[str]]` — `depends_on_indices` → índices inteiros válidos. Índice inválido é descartado com aviso:.
+- `normalize_covers(raw) → list[dict[str, Any]] | None` — `metadata.covers` → lista uniforme. `None` quando não declarado (a cobertura é herdada).
+- `normalize_plan_payload(data) → tuple[dict[str, Any], list[str]]` — Payload cru do modelo → payload no formato de `DecompositionResult`, com avisos.
+
+### `src/agent/orchestrator/tool_loop.py`
+
+**Propósito:** tool_loop — módulo do projeto.
+
+- `ToolLoopOutcome` — Resultado do ciclo: o que o modelo respondeu e o que ele pediu no caminho.
+- `json_schema_for(spec) → dict[str, Any]` — Traduz o `input_schema` da ferramenta (forma simplificada do Callidus) para JSON Schema.
+- `tool_schemas(registry, tool_ids) → list[dict[str, Any]]` — Esquemas no formato de função (OpenAI/Ollama) para as ferramentas pedidas.
+- `tool_result_text(result, limit) → str` — Resultado da ferramenta como texto para o modelo (curto e sem metadados internos).
+- `run_tool_loop(*, provider, messages, profile, registry, ctx, approved, tool_ids, max_iterations, max_tool_calls, final_tools, final_tools_after, final_instruction, final_instruction_after, purpose, stream, chat, on_tool_call, payload_ok, deliverable_hint, tool_guard) → ToolLoopOutcome` — Chama o modelo em ciclo: ele pede ferramentas, o agente as executa, o modelo prossegue.
+- `asked_tools(self) → list[str]` — Lista as ferramentas que o modelo pediu no ciclo.
+- `applied(self) → bool` — Diz se o modelo deixou alguma alteração aplicada no disco.
+
+
+- `_execute(call_item) → tuple[dict[str, Any], dict[str, Any]]` — Executa uma chamada de ferramenta pedida pelo modelo.
+- `_budget_note() → str` — Monta a nota de orçamento de chamadas de ferramenta que entra na conversa.
+
+- `ToolLoopOutcome.asked_tools(self) → list[str]` — Lista as ferramentas que o modelo pediu no ciclo.
+- `ToolLoopOutcome.applied(self) → bool` — Diz se o modelo deixou alguma alteração aplicada no disco.
+### `src/agent/providers/anthropic.py`
+
+**Propósito:** anthropic — módulo do projeto.
+
+- `anthropic_messages(messages) → tuple[str, list[dict[str, Any]]]` — Separa o prompt de sistema (campo `system` da API) das mensagens de conversa.
+- `anthropic_tools(tools) → list[dict[str, Any]] | None` — Converte o formato de ferramenta do Callidus (OpenAI) para o da Anthropic.
+- `AnthropicProvider` — Anthropic Messages API (`/v1/messages`). A API não é compatível com OpenAI: usa.
+- `capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
+- `list_models(self, *, force) → list[str]` — Lista os modelos disponíveis na API, com cache curto.
+
+
+- `_media_type(encoded) → str` — Deduz o tipo de mídia de uma imagem codificada em base64.
+- `_image_block(encoded) → dict[str, Any]` — Monta o bloco de imagem aceito pela Messages API.
+- `_client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
+- `_body(self, request) → dict` — Monta o corpo da requisição de inferência no formato da Messages API.
+- `_parse(data) → tuple[str, list[ToolCall] | None, str | None]` — Extrai texto, chamadas de ferramenta e motivo de término da resposta da API.
+- `_chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela Messages API.
+- `_chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Executa uma inferência em streaming pela Messages API.
+
+- `AnthropicProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
+- `AnthropicProvider._client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
+- `AnthropicProvider.list_models(self, *, force) → list[str]` — Lista os modelos disponíveis na API, com cache curto.
+- `AnthropicProvider._body(self, request) → dict` — Monta o corpo da requisição de inferência no formato da Messages API.
+- `AnthropicProvider._parse(data) → tuple[str, list[ToolCall] | None, str | None]` — Extrai texto, chamadas de ferramenta e motivo de término da resposta da API.
+- `AnthropicProvider._chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela Messages API.
+- `AnthropicProvider._chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Executa uma inferência em streaming pela Messages API.
+
+- `AnthropicProvider.__init__(self, base_url, *, model, api_key, headers, timeout, max_retries, allow_private_hosts, verify_tls, anthropic_version, models_cache_ttl) → None` — Configura o provedor e resolve a URL base e os cabeçalhos de autenticação.
+### `src/agent/providers/gemini.py`
+
+**Propósito:** gemini — módulo do projeto.
+
+- `gemini_contents(messages) → tuple[str | None, list[dict[str, Any]]]` — Separa a instrução de sistema e monta `contents` (papel `model` no lugar de `assistant`).
+- `gemini_tools(tools) → list[dict[str, Any]] | None` — Converte o formato de ferramenta do Callidus (OpenAI) para `functionDeclarations`.
+- `GeminiProvider` — Gemini (`/v1beta/models/{model}:generateContent`). A API não é compatível com OpenAI:.
+- `capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
+- `list_models(self, *, force) → list[str]` — Lista os modelos disponíveis na API, com cache curto.
+
+
+- `_media_type(encoded) → str` — Deduz o tipo de mídia de uma imagem codificada em base64.
+- `_image_part(encoded) → dict[str, Any]` — Monta a parte de imagem aceita pela API do Gemini.
+- `_client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
+- `_model_path(self, model_id) → str` — Normaliza o identificador do modelo para o caminho da API.
+- `_body(self, request) → dict` — Monta o corpo da requisição de inferência no formato da API do Gemini.
+- `_parse(data) → tuple[str, list[ToolCall] | None, str | None]` — Extrai texto, chamadas de função e motivo de término da resposta do Gemini.
+- `_chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela API do Gemini.
+- `_chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Executa uma inferência em streaming pela API do Gemini.
+
+- `GeminiProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
+- `GeminiProvider._client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
+- `GeminiProvider._model_path(self, model_id) → str` — Normaliza o identificador do modelo para o caminho da API.
+- `GeminiProvider.list_models(self, *, force) → list[str]` — Lista os modelos disponíveis na API, com cache curto.
+- `GeminiProvider._body(self, request) → dict` — Monta o corpo da requisição de inferência no formato da API do Gemini.
+- `GeminiProvider._parse(data) → tuple[str, list[ToolCall] | None, str | None]` — Extrai texto, chamadas de função e motivo de término da resposta do Gemini.
+- `GeminiProvider._chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela API do Gemini.
+- `GeminiProvider._chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Executa uma inferência em streaming pela API do Gemini.
+
+- `GeminiProvider.__init__(self, base_url, *, model, api_key, headers, timeout, max_retries, allow_private_hosts, verify_tls, models_cache_ttl) → None` — Configura o provedor e resolve a URL base e os cabeçalhos de autenticação.
+### `src/agent/providers/http.py`
+
+**Propósito:** http — módulo do projeto.
+
+- `redact(text, secrets) → str` — Tira segredos de uma mensagem de log/erro: chaves explícitas e formatos conhecidos.
+- `validate_base_url(url, *, allow_private_hosts) → str` — Valida a URL base de um provedor. Endereços privados só são recusados quando o operador.
+- `HttpClientConfig` — Política HTTP comum: tempo limite, cabeçalhos, credencial e política de retry.
+- `client_kwargs(config) → dict[str, Any]` — Argumentos de construção do `httpx.AsyncClient` (redirecionamento desligado por padrão).
+- `map_http_error(exc, *, label, secrets, response) → ProviderError` — Converte exceção HTTP em erro de provedor com causa explícita (sem vazar credencial).
+- `get_json(client, url, *, label, secrets, max_retries, backoff) → Any` — Executa um GET e devolve o corpo JSON.
+- `post_json(client, url, body, *, label, secrets, max_retries, backoff) → Any` — Executa um POST e devolve o corpo JSON.
+- `stream_lines(client, url, body, *, label, secrets) → Iterator[str]` — Linhas do corpo de uma resposta em streaming (JSON por linha ou SSE). Sem retry: uma.
+- `sse_payloads(lines) → Iterator[str]` — Extrai o payload de eventos SSE (`data: ...`), ignorando comentários e linhas vazias.
+- `resolved_base_url(self) → str` — URL base validada segundo a política de hosts privados.
+- `resolved_headers(self) → dict[str, str]` — Cabeçalhos das requisições, com a credencial aplicada no cabeçalho configurado.
+- `secrets(self) → list[str]` — Credenciais conhecidas, para serem removidas das mensagens de erro.
+- `operation()` — Executa a requisição HTTP e devolve a resposta tipada do provedor.
+- `operation()` — Executa a requisição HTTP e devolve a resposta tipada do provedor.
+
+
+- `_is_private_address(host) → bool` — Indica se um endereço IP é interno (privado, loopback, link-local, reservado ou multicast).
+- `_response_excerpt(response, limit) → str` — Trecho inicial do corpo da resposta, para compor mensagens de erro.
+- `_retryable(exc) → bool` — Indica se o erro vale uma retentativa.
+- `_with_retry(operation, *, label, secrets, max_retries, backoff)` — Executa uma operação HTTP repetindo apenas falhas transitórias.
+
+- `HttpClientConfig.resolved_base_url(self) → str` — URL base validada segundo a política de hosts privados.
+- `HttpClientConfig.resolved_headers(self) → dict[str, str]` — Cabeçalhos das requisições, com a credencial aplicada no cabeçalho configurado.
+- `HttpClientConfig.secrets(self) → list[str]` — Credenciais conhecidas, para serem removidas das mensagens de erro.
+### `src/agent/providers/openai_compatible.py`
+
+**Propósito:** openai_compatible — módulo do projeto.
+
+- `generation_body(generation) → dict[str, Any]` — Traduz os parâmetros de geração do Callidus para o corpo de uma API compatível com OpenAI.
+- `response_format_body(response_format) → dict[str, Any] | None` — Aceita o formato do Callidus (`{"schema": {...}}`) e o formato nativo (`{"type": ...}`).
+- `openai_message(message) → dict` — Converte uma mensagem do Callidus no formato de mensagem da OpenAI.
+- `parse_tool_calls(message) → list[ToolCall] | None` — Extrai as chamadas de ferramenta de uma mensagem da OpenAI.
+- `OpenAICompatibleProvider` — Adaptador para qualquer serviço que exponha o formato de `/v1/chat/completions` da OpenAI:.
+- `capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
+- `list_models(self, *, force) → list[str]` — Modelos disponíveis no serviço. Com `models_cache_ttl` a lista é cacheada em memória,.
+
+
+- `_data_url(encoded) → str` — Monta a URL de dados de uma imagem base64.
+- `_client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
+- `_body(self, request) → dict` — Monta o corpo da requisição de inferência no formato da API compatível com OpenAI.
+- `_chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela API compatível com OpenAI.
+- `_chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Executa uma inferência em streaming pela API compatível com OpenAI.
+
+- `OpenAICompatibleProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
+- `OpenAICompatibleProvider._client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
+- `OpenAICompatibleProvider.list_models(self, *, force) → list[str]` — Modelos disponíveis no serviço. Com `models_cache_ttl` a lista é cacheada em memória,.
+- `OpenAICompatibleProvider._body(self, request) → dict` — Monta o corpo da requisição de inferência no formato da API compatível com OpenAI.
+- `OpenAICompatibleProvider._chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela API compatível com OpenAI.
+- `OpenAICompatibleProvider._chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Executa uma inferência em streaming pela API compatível com OpenAI.
+
+- `OpenAICompatibleProvider.__init__(self, base_url, *, model, api_key, headers, timeout, max_retries, allow_private_hosts, verify_tls, name, models_cache_ttl) → None` — Configura o provedor e resolve a URL base e os cabeçalhos de autenticação.
+### `src/agent/providers/openrouter.py`
+
+**Propósito:** openrouter — módulo do projeto.
+
+- `OpenRouterProvider` — OpenRouter fala o formato compatível com OpenAI (`/api/v1/chat/completions`) e acrescenta.
+
+
+- `OpenRouterProvider.__init__(self, base_url, *, model, api_key, headers, timeout, max_retries, allow_private_hosts, verify_tls, referer, title, models_cache_ttl) → None` — Configura o provedor com os cabeçalhos opcionais de identificação do OpenRouter.
+### `src/agent/providers/registry.py`
+
+**Propósito:** registry — módulo do projeto.
+
+- `ProviderSpec` — Descrição de um provedor no arquivo de configuração.
+- `interpolate_text(text) → str` — Substitui `${VAR}` e `${VAR:-padrão}` pelo valor do ambiente.
+- `parse_document(text, path) → dict[str, Any]` — Lê YAML ou JSON conforme a extensão do arquivo.
+- `ProviderCatalog` — Provedores nomeados, carregados de um arquivo de configuração.
+- `load_catalog(path) → ProviderCatalog` — Carrega o catálogo de provedores de um arquivo.
+- `config_path_for_settings(settings) → Path` — Arquivo de provedores em uso: o configurado (`PROVIDERS_CONFIG_PATH`) ou o padrão da.
+- `catalog_for_settings(settings) → ProviderCatalog` — Catálogo da configuração apontada nas settings (cacheado por arquivo e mtime).
+- `resolve_api_key(spec, name) → str | None` — Chave do ambiente, arquivo de chave ou valor literal da configuração.
+- `build_provider(name, spec, settings) → Any` — Instancia o provedor descrito pela especificação. Nenhuma credencial é impressa ou logada.
+- `catalog_to_mapping(catalog) → dict[str, Any]` — Catálogo como mapa (o que vai para o arquivo de configuração).
+- `save_catalog(catalog, path) → Path` — Grava o catálogo no arquivo (YAML ou JSON conforme a extensão) e invalida o cache.
+- `build_builtin_provider(name, settings) → Any` — Provedores históricos, configurados por variável de ambiente (sem arquivo de configuração).
+- `build_provider_by_name(name, settings) → Any` — Resolve um nome de provedor: primeiro o catálogo configurado, depois os provedores.
+- `kind(self) → str` — Tipo do provedor normalizado em minúsculas.
+- `replace(match) → str` — Substitui a configuração de um provedor, preservando a credencial.
+- `from_mapping(cls, data) → ProviderCatalog` — Constrói o catálogo a partir do mapa lido do arquivo de configuração.
+- `default_provider(self) → str | None` — Nome do provedor padrão declarado na configuração.
+- `names(self) → list[str]` — Nomes dos provedores do catálogo.
+- `get(self, name) → ProviderSpec | None` — Especificação de um provedor, quando existe.
+- `spec(self, name) → ProviderSpec` — Especificação de um provedor, com erro explícito quando o nome não existe.
+- `build(self, name, settings) → Any` — Instancia o provedor nomeado.
+
+
+- `_interpolate(value) → Any` — Aplica a interpolação de ambiente em toda a estrutura da configuração.
+
+- `ProviderSpec.kind(self) → str` — Tipo do provedor normalizado em minúsculas.
+- `ProviderCatalog.from_mapping(cls, data) → ProviderCatalog` — Constrói o catálogo a partir do mapa lido do arquivo de configuração.
+- `ProviderCatalog.default_provider(self) → str | None` — Nome do provedor padrão declarado na configuração.
+- `ProviderCatalog.names(self) → list[str]` — Nomes dos provedores do catálogo.
+- `ProviderCatalog.get(self, name) → ProviderSpec | None` — Especificação de um provedor, quando existe.
+- `ProviderCatalog.spec(self, name) → ProviderSpec` — Especificação de um provedor, com erro explícito quando o nome não existe.
+- `ProviderCatalog.build(self, name, settings) → Any` — Instancia o provedor nomeado.
+
+- `ProviderCatalog.__init__(self, providers, default_provider) → None` — Cria o catálogo a partir de especificações já validadas.
+### `src/agent/providers/secrets.py`
+
+**Propósito:** secrets — módulo do projeto.
+
+- `secret_path(settings, name) → Path` — Arquivo da credencial de um provedor. O nome do provedor vira nome de arquivo seguro.
+- `write_secret(settings, name, secret) → Path` — Grava a credencial com permissão restrita (0600) e devolve o caminho.
+- `read_secret(settings, name) → str | None` — Lê a credencial gravada de um provedor.
+- `delete_secret(settings, name) → bool` — Remove a credencial gravada de um provedor.
+- `secret_state(settings, name) → dict` — Situação da credencial sem revelar o valor.
+- `is_world_readable(path) → bool` — A credencial não pode ficar legível por outros usuários do sistema.
+
+### `src/agent/remote/__init__.py`
+
+**Propósito:** __init__ — módulo do projeto.
+
+
+### `src/agent/remote/ssh.py`
+
+**Propósito:** ssh — módulo do projeto.
+
+- `RemoteConfig` — Como alcançar o computador remoto do projeto.
+- `RemoteError` — Falha ao falar com o servidor remoto.
+- `CommandResult` — Desfecho de um comando remoto.
+- `SshTransport` — Fala com o servidor pelo binário `ssh` do sistema (sem dependências extras).
+- `target(self) → str` — Destino da conexão, no formato `usuario@host` quando há usuário.
+- `is_windows(self) → bool` — Indica se o servidor remoto usa PowerShell.
+- `run(self, command, *, cwd, timeout, on_output) → CommandResult` — Roda um comando no servidor remoto e devolve saída e código.
+- `list_dir(self, path) → list[dict[str, Any]]` — Lista o conteúdo de uma pasta remota.
+- `read_text(self, path) → str` — Lê um arquivo remoto como texto.
+- `write_text(self, path, content) → int` — Grava um arquivo remoto, enviando o conteúdo em base64.
+- `make_dir(self, path) → None` — Cria uma pasta remota (e os diretórios intermediários).
+- `remove(self, path) → None` — Remove um arquivo ou pasta remoto, recursivamente.
+- `move(self, source, target) → None` — Move ou renomeia um caminho no servidor remoto.
+- `check(self) → dict[str, Any]` — Diagnóstico: o servidor responde? Qual o sistema?.
+- `pump(stream, chunks, sink)` — Transfere os dados entre a sessão local e o canal remoto.
+
+
+- `_resolve_key(key_path) → str | None` — Resolve o caminho da chave SSH privada, quando informada.
+- `_host_preenchido(cls, value) → str` — Valida que o host do computador remoto foi informado.
+- `_shell_conhecido(cls, value) → str` — Normaliza o shell do servidor para `posix` ou `powershell`.
+- `_base_args(self) → list[str]` — Argumentos base da chamada ao `ssh`.
+- `_quote(self, value) → str` — Cita um valor para o shell do servidor (POSIX ou PowerShell).
+- `_remote_path(self, path) → str` — Junta a pasta remota do projeto com o caminho relativo.
+
+- `RemoteConfig._host_preenchido(cls, value) → str` — Valida que o host do computador remoto foi informado.
+- `RemoteConfig._shell_conhecido(cls, value) → str` — Normaliza o shell do servidor para `posix` ou `powershell`.
+- `RemoteConfig.target(self) → str` — Destino da conexão, no formato `usuario@host` quando há usuário.
+- `RemoteConfig.is_windows(self) → bool` — Indica se o servidor remoto usa PowerShell.
+- `SshTransport._base_args(self) → list[str]` — Argumentos base da chamada ao `ssh`.
+- `SshTransport._quote(self, value) → str` — Cita um valor para o shell do servidor (POSIX ou PowerShell).
+- `SshTransport._remote_path(self, path) → str` — Junta a pasta remota do projeto com o caminho relativo.
+- `SshTransport.run(self, command, *, cwd, timeout, on_output) → CommandResult` — Roda um comando no servidor remoto e devolve saída e código.
+- `SshTransport.list_dir(self, path) → list[dict[str, Any]]` — Lista o conteúdo de uma pasta remota.
+- `SshTransport.read_text(self, path) → str` — Lê um arquivo remoto como texto.
+- `SshTransport.write_text(self, path, content) → int` — Grava um arquivo remoto, enviando o conteúdo em base64.
+- `SshTransport.make_dir(self, path) → None` — Cria uma pasta remota (e os diretórios intermediários).
+- `SshTransport.remove(self, path) → None` — Remove um arquivo ou pasta remoto, recursivamente.
+- `SshTransport.move(self, source, target) → None` — Move ou renomeia um caminho no servidor remoto.
+- `SshTransport.check(self) → dict[str, Any]` — Diagnóstico: o servidor responde? Qual o sistema?.
+
+- `SshTransport.__init__(self, config) → None` — Monta o cliente SSH com a configuração do computador remoto.
+### `src/agent/remote/tools.py`
+
+**Propósito:** tools — módulo do projeto.
+
+- `transport(ctx) → SshTransport` — Transporte SSH do contexto (o projeto tem computador remoto configurado).
+- `read_file(ctx, args) → dict` — Lê uma janela de linhas de um arquivo remoto.
+- `write_file(ctx, args) → dict` — Grava um arquivo remoto, criando as pastas intermediárias.
+- `list_dir(ctx, args) → dict` — Lista o conteúdo de uma pasta remota.
+- `edit_file(ctx, args) → dict` — Substitui um trecho de um arquivo remoto.
+- `delete_file(ctx, args) → dict` — Remove um arquivo ou pasta remoto.
+- `make_dir(ctx, args) → dict` — Cria uma pasta remota.
+- `move_file(ctx, args) → dict` — Move ou renomeia um caminho remoto.
+- `glob_files(ctx, args) → dict` — Busca arquivos remotos pelo nome.
+- `search_grep(ctx, args) → dict` — Busca um padrão no conteúdo dos arquivos remotos.
+
+
+- `_guard(ctx, path) → dict | None` — Mantém a trava de segurança: o caminho tem de ficar dentro do projeto.
+### `src/agent/services/agent_scheduler.py`
+
+**Propósito:** agent_scheduler — módulo do projeto.
+
+- `SchedulerOperation` — Uma operação elegível (executar uma etapa, responder uma consulta, retomar um agente).
+- `OperationResult` — Desfecho de uma operação. `ok=False` não interrompe a fila.
+- `AgentScheduler` — Fila de operações elegíveis, executadas uma a uma.
+- `age(self) → float` — Tempo que a operação espera na fila, em segundos.
+- `as_dict(self) → dict[str, Any]` — Desfecho como dicionário serializável.
+- `register(self, kind, handler) → None` — Registra quem executa um tipo de operação.
+- `submit(self, kind, key, payload, *, priority) → bool` — Enfileira uma operação. `False` quando a mesma chave já está pendente.
+- `pending_keys(self) → list[str]` — Chaves das operações pendentes.
+- `stats(self) → dict[str, Any]` — Contadores da fila.
+- `history(self, limit) → list[dict[str, Any]]` — Desfechos recentes das operações executadas.
+- `execute(self, operation) → OperationResult` — Executa uma operação com tempo limite; erro não derruba a fila.
+- `run_once(self) → OperationResult | None` — Executa a próxima operação elegível. `None` quando não há nada pendente.
+- `run_forever(self) → None` — Laço principal. Dorme na fila — nenhuma inferência para procurar trabalho.
+- `wait_idle(self, timeout) → bool` — Espera a fila esvaziar — sem consumir token. `True` se esvaziou no prazo.
+- `stop(self) → None` — Interrompe o laço do escalonador.
+
+
+- `_pick(self) → SchedulerOperation | None` — Retira a próxima operação, respeitando prioridade e tempo de espera.
+- `_sync_idle(self) → None` — Marca o escalonador como ocioso quando não há pendências nem operação em curso.
+
+- `SchedulerOperation.age(self) → float` — Tempo que a operação espera na fila, em segundos.
+- `OperationResult.as_dict(self) → dict[str, Any]` — Desfecho como dicionário serializável.
+- `AgentScheduler.register(self, kind, handler) → None` — Registra quem executa um tipo de operação.
+- `AgentScheduler.submit(self, kind, key, payload, *, priority) → bool` — Enfileira uma operação. `False` quando a mesma chave já está pendente.
+- `AgentScheduler.pending_keys(self) → list[str]` — Chaves das operações pendentes.
+- `AgentScheduler.stats(self) → dict[str, Any]` — Contadores da fila.
+- `AgentScheduler.history(self, limit) → list[dict[str, Any]]` — Desfechos recentes das operações executadas.
+- `AgentScheduler._pick(self) → SchedulerOperation | None` — Retira a próxima operação, respeitando prioridade e tempo de espera.
+- `AgentScheduler.execute(self, operation) → OperationResult` — Executa uma operação com tempo limite; erro não derruba a fila.
+- `AgentScheduler.run_once(self) → OperationResult | None` — Executa a próxima operação elegível. `None` quando não há nada pendente.
+- `AgentScheduler._sync_idle(self) → None` — Marca o escalonador como ocioso quando não há pendências nem operação em curso.
+- `AgentScheduler.run_forever(self) → None` — Laço principal. Dorme na fila — nenhuma inferência para procurar trabalho.
+- `AgentScheduler.wait_idle(self, timeout) → bool` — Espera a fila esvaziar — sem consumir token. `True` se esvaziou no prazo.
+- `AgentScheduler.stop(self) → None` — Interrompe o laço do escalonador.
+
+- `AgentScheduler.__init__(self, settings, *, operation_timeout_sec) → None` — Monta o escalonador com a sessão e a política de agentes.
+### `src/agent/services/agent_service.py`
+
+**Propósito:** agent_service — módulo do projeto.
+
+- `AgentNotFoundError` — Agente inexistente.
+- `AgentDepthError` — A delegação passaria do limite de profundidade configurado.
+- `DiscardBlockedError` — Descartar o agente agora quebraria algo que ainda é necessário.
+- `AgentService` — Operações sobre agentes lógicos e suas execuções.
+- `get(self, agent_id) → AgentModel` — Agente por identificador.
+- `find(self, agent_id) → AgentModel | None` — Agente por identificador, sem erro quando não existe.
+- `agent_for_task(self, task_id) → AgentModel | None` — Agente associado a uma tarefa.
+- `children(self, agent_id) → list[AgentModel]` — Delegados diretos de um agente.
+- `descendants(self, agent_id) → list[AgentModel]` — Descendentes em ordem de profundidade (o mais perto primeiro).
+- `ancestors(self, agent_id) → list[AgentModel]` — Cadeia de ancestrais, do mais distante para o mais próximo.
+- `executions(self, agent_id) → list[AgentExecutionModel]` — Execuções de um agente, da mais antiga para a mais recente.
+- `current_execution(self, agent_id) → AgentExecutionModel | None` — Execução viva ou recuperável do agente (a última em aberto).
+- `ensure_agent(self, task_id, *, parent_agent_id, role, instructions) → AgentModel` — Agente da tarefa, criado se ainda não existir.
+- `start_execution(self, agent_id, *, task_id, run_id, checkpoint) → AgentExecutionModel` — Abre uma execução do agente.
+- `suspend(self, agent_id, *, reason, checkpoint) → AgentExecutionModel` — Suspende a execução: persiste o estado e libera o contexto de inferência.
+- `resume(self, agent_id) → AgentExecutionModel` — Retoma a execução suspensa a partir do estado persistido.
+- `wait_for_child(self, agent_id) → AgentExecutionModel` — A execução fica esperando uma resposta de descendente.
+- `complete_execution(self, agent_id, *, result) → AgentExecutionModel` — Encerra a execução como concluída, gravando o resultado no checkpoint.
+- `fail_execution(self, agent_id, error) → AgentExecutionModel` — Encerra a execução como falhada, guardando a causa.
+- `cancel_execution(self, agent_id, *, reason) → AgentExecutionModel` — Cancela a execução em andamento.
+- `save_checkpoint(self, agent_id, payload, *, merge) → AgentExecutionModel` — Grava o estado operacional da execução (etapa, plano, pendências, erros).
+- `bound_checkpoint(self, checkpoint) → dict[str, Any]` — Mantém o checkpoint dentro do limite configurado.
+- `checkpoint(self, agent_id) → dict[str, Any]` — Checkpoint atual do agente.
+- `record_finding(self, agent_id, text, *, evidence, artifacts, kind) → dict[str, Any]` — Guarda uma descoberta do agente no estado persistente.
+- `findings(self, agent_id) → list[dict[str, Any]]` — Descobertas registradas pelo agente.
+- `record_task_result(self, task_id) → list[dict[str, Any]]` — Importa o resultado e as evidências de uma tarefa para o agente dela.
+- `record_external_effect(self, agent_id, *, description, effect_id, resumable, verify_hint) → dict[str, Any]` — Registra um efeito externo (comando, sessão, transação) que a execução fez.
+- `external_effects(self, agent_id) → list[dict[str, Any]]` — Efeitos externos registrados pelo agente.
+- `effects_requiring_verification(self, agent_id) → list[dict[str, Any]]` — Efeitos externos que precisam ser verificados antes de a ação ser repetida.
+- `mark_effect_verified(self, agent_id, effect_id) → dict[str, Any] | None` — Marca um efeito externo como verificado.
+- `discard_checks(self, agent_id) → dict[str, Any]` — Verifica o que impede descartar o agente agora.
+- `discard(self, agent_id, *, purge, reason, force) → dict[str, Any]` — Descarta o estado recuperável do agente.
+
+
+- `_utcnow_iso() → str` — Instante atual em UTC, no formato ISO 8601.
+- `_role_for_kind(kind) → str` — Papel do agente derivado do tipo da tarefa.
+- `_set_agent_status(self, agent, target) → AgentModel` — Move o agente para um novo estado, validando a transição.
+- `_set_execution_status(self, execution, target, error) → AgentExecutionModel` — Move a execução para um novo estado, validando a transição.
+
+- `AgentService.get(self, agent_id) → AgentModel` — Agente por identificador.
+- `AgentService.find(self, agent_id) → AgentModel | None` — Agente por identificador, sem erro quando não existe.
+- `AgentService.agent_for_task(self, task_id) → AgentModel | None` — Agente associado a uma tarefa.
+- `AgentService.children(self, agent_id) → list[AgentModel]` — Delegados diretos de um agente.
+- `AgentService.descendants(self, agent_id) → list[AgentModel]` — Descendentes em ordem de profundidade (o mais perto primeiro).
+- `AgentService.ancestors(self, agent_id) → list[AgentModel]` — Cadeia de ancestrais, do mais distante para o mais próximo.
+- `AgentService.executions(self, agent_id) → list[AgentExecutionModel]` — Execuções de um agente, da mais antiga para a mais recente.
+- `AgentService.current_execution(self, agent_id) → AgentExecutionModel | None` — Execução viva ou recuperável do agente (a última em aberto).
+- `AgentService.ensure_agent(self, task_id, *, parent_agent_id, role, instructions) → AgentModel` — Agente da tarefa, criado se ainda não existir.
+- `AgentService._set_agent_status(self, agent, target) → AgentModel` — Move o agente para um novo estado, validando a transição.
+- `AgentService._set_execution_status(self, execution, target, error) → AgentExecutionModel` — Move a execução para um novo estado, validando a transição.
+- `AgentService.start_execution(self, agent_id, *, task_id, run_id, checkpoint) → AgentExecutionModel` — Abre uma execução do agente.
+- `AgentService.suspend(self, agent_id, *, reason, checkpoint) → AgentExecutionModel` — Suspende a execução: persiste o estado e libera o contexto de inferência.
+- `AgentService.resume(self, agent_id) → AgentExecutionModel` — Retoma a execução suspensa a partir do estado persistido.
+- `AgentService.wait_for_child(self, agent_id) → AgentExecutionModel` — A execução fica esperando uma resposta de descendente.
+- `AgentService.complete_execution(self, agent_id, *, result) → AgentExecutionModel` — Encerra a execução como concluída, gravando o resultado no checkpoint.
+- `AgentService.fail_execution(self, agent_id, error) → AgentExecutionModel` — Encerra a execução como falhada, guardando a causa.
+- `AgentService.cancel_execution(self, agent_id, *, reason) → AgentExecutionModel` — Cancela a execução em andamento.
+- `AgentService.save_checkpoint(self, agent_id, payload, *, merge) → AgentExecutionModel` — Grava o estado operacional da execução (etapa, plano, pendências, erros).
+- `AgentService.bound_checkpoint(self, checkpoint) → dict[str, Any]` — Mantém o checkpoint dentro do limite configurado.
+- `AgentService.checkpoint(self, agent_id) → dict[str, Any]` — Checkpoint atual do agente.
+- `AgentService.record_finding(self, agent_id, text, *, evidence, artifacts, kind) → dict[str, Any]` — Guarda uma descoberta do agente no estado persistente.
+- `AgentService.findings(self, agent_id) → list[dict[str, Any]]` — Descobertas registradas pelo agente.
+- `AgentService.record_task_result(self, task_id) → list[dict[str, Any]]` — Importa o resultado e as evidências de uma tarefa para o agente dela.
+- `AgentService.record_external_effect(self, agent_id, *, description, effect_id, resumable, verify_hint) → dict[str, Any]` — Registra um efeito externo (comando, sessão, transação) que a execução fez.
+- `AgentService.external_effects(self, agent_id) → list[dict[str, Any]]` — Efeitos externos registrados pelo agente.
+- `AgentService.effects_requiring_verification(self, agent_id) → list[dict[str, Any]]` — Efeitos externos que precisam ser verificados antes de a ação ser repetida.
+- `AgentService.mark_effect_verified(self, agent_id, effect_id) → dict[str, Any] | None` — Marca um efeito externo como verificado.
+- `AgentService.discard_checks(self, agent_id) → dict[str, Any]` — Verifica o que impede descartar o agente agora.
+- `AgentService.discard(self, agent_id, *, purge, reason, force) → dict[str, Any]` — Descarta o estado recuperável do agente.
+
+- `AgentService.__init__(self, session, settings) → None` — Cria o serviço ligado a uma sessão.
+### `src/agent/services/cascade.py`
+
+**Propósito:** cascade — módulo do projeto.
+
+- `delete_cascade(session, root_table, root_id) → dict[str, int]` — Remove a linha e tudo que depende dela, na ordem segura (filhos antes dos pais).
+
+
+- `_children_map() → dict[str, list[tuple[Any, str]]]` — Tabela pai → [(tabela filha, coluna filha)] segundo as chaves estrangeiras do modelo.
+- `_scope(session, root_table, root_id) → dict[str, set]` — Conjunto de ids por tabela que descendem da linha raiz.
+- `_deletion_order(scope) → list[str]` — Ordem topológica: cada tabela é apagada antes das tabelas que ela referencia.
+### `src/agent/services/executor.py`
+
+**Propósito:** executor — módulo do projeto.
+
+- `ExecutorMetrics` — Contadores observáveis. Só mede o que o executor sabe de fato: tempos de espera e.
+- `ExecutionSlot` — Uma inferência admitida. `waited_seconds` é o tempo parado na fila do executor.
+- `InferenceExecutor` — Serializa as inferências do processo até o limite configurado.
+- `get_executor(settings) → InferenceExecutor` — Executor compartilhado do processo. Cria no primeiro uso e ajusta o limite quando.
+- `reset_executor() → None` — Descarta o executor do processo (isolamento de testes).
+- `snapshot(self) → dict[str, Any]` — Métricas como dicionário, para exibição e diagnóstico.
+- `limit(self) → int` — Limite atual de inferências simultâneas.
+- `set_limit(self, limit) → None` — Muda o limite. A nova valer vale para as próximas aquisições.
+- `acquire(self, *, purpose, provider, model) → ExecutionSlot` — Toma o slot de inferência. O chamador é responsável por `release()`.
+- `release(self, *, error, slot) → None` — Devolve o slot. `error` distingue falha, cancelamento e sucesso.
+- `metrics(self) → ExecutorMetrics` — Fotografia das métricas do executor.
+
+
+- `_waiter(self, loop) → asyncio.Event` — Evento de espera associado a um laço de eventos.
+- `_wake_all(self) → None` — Acorda todos os laços em espera (chamado quando um slot é devolvido).
+
+- `ExecutorMetrics.snapshot(self) → dict[str, Any]` — Métricas como dicionário, para exibição e diagnóstico.
+- `InferenceExecutor.limit(self) → int` — Limite atual de inferências simultâneas.
+- `InferenceExecutor.set_limit(self, limit) → None` — Muda o limite. A nova valer vale para as próximas aquisições.
+- `InferenceExecutor._waiter(self, loop) → asyncio.Event` — Evento de espera associado a um laço de eventos.
+- `InferenceExecutor._wake_all(self) → None` — Acorda todos os laços em espera (chamado quando um slot é devolvido).
+- `InferenceExecutor.acquire(self, *, purpose, provider, model) → ExecutionSlot` — Toma o slot de inferência. O chamador é responsável por `release()`.
+- `InferenceExecutor.release(self, *, error, slot) → None` — Devolve o slot. `error` distingue falha, cancelamento e sucesso.
+- `InferenceExecutor.metrics(self) → ExecutorMetrics` — Fotografia das métricas do executor.
+
+- `InferenceExecutor.__init__(self, limit) → None` — Cria o executor com o limite de inferências simultâneas.
+### `src/agent/services/query_service.py`
+
+**Propósito:** query_service — módulo do projeto.
+
+- `QueryRejectedError` — Consulta recusada: violaria uma regra do protocolo (ciclo, limite, alvo).
+- `QueryService` — Consultas entre agentes: criação, resolução e correlação de respostas.
+- `ask(self, requester_agent_id, target_agent_id, question, *, task_id, correlation_id, max_attempts) → AgentQueryModel` — Registra a pergunta do solicitante ao alvo.
+- `get(self, query_id) → AgentQueryModel` — Consulta por identificador.
+- `pending_for(self, agent_id) → list[AgentQueryModel]` — Consultas pendentes dirigidas a um agente.
+- `queries_of(self, agent_id) → list[AgentQueryModel]` — Consultas em que um agente participa, como solicitante ou alvo.
+- `answer_from_persisted(self, query) → dict[str, Any] | None` — Responde a partir do estado já persistido, sem reativar ninguém.
+- `resolve(self, query_id, *, provider, profile) → AgentQueryModel` — Resolve a consulta: estado persistido primeiro, inferência só se faltar.
+- `answer(self, query_id, answer, *, evidence, artifacts, uncertainty, answered_by_agent_id) → AgentQueryModel` — Registra a resposta de um agente a uma consulta (caminho sem inferência).
+- `cancel(self, query_id, *, reason) → AgentQueryModel` — Cancela uma consulta pendente.
+
+
+- `_declara_ausencia(texto) → bool` — O texto diz que não há evidência disponível?.
+- `_sem_acento(text) → str` — Remove diacríticos.
+- `_tokens(text) → set[str]` — Palavras úteis do texto, sem acentos, sem palavras vazias e sem as curtas demais.
+- `_normalize(text) → str` — Normaliza o texto para comparação lexical.
+- `_relevant(self, question, findings) → dict[str, Any] | None` — Descoberta persistida que responde à pergunta (busca lexical, sem inferência).
+- `_context_for(self, agent, *, limit) → str` — Contexto mínimo do próprio agente: checkpoint e descoberta, sem transcrição.
+- `_context_for_agents(self, agents, *, limit) → str` — Contexto de um conjunto de agentes, com atribuição de quem descobriu o quê.
+- `_subtree_context(self, agent, *, limit) → str` — Estado do agente e de sua descendência.
+- `_is_grounded(self, answer, agent) → tuple[bool, list[str]]` — A resposta da inferência encontra respaldo no estado persistido?.
+- `_answer_with_inference(self, query, provider, profile) → dict[str, Any]` — Reativa o agente consultado e responde com uma inferência pelo executor compartilhado.
+- `_remember_inference(self, agent, content, fundamentada) → None` — Guarda a resposta sintetizada como descoberta do agente consultado.
+
+- `QueryService.ask(self, requester_agent_id, target_agent_id, question, *, task_id, correlation_id, max_attempts) → AgentQueryModel` — Registra a pergunta do solicitante ao alvo.
+- `QueryService.get(self, query_id) → AgentQueryModel` — Consulta por identificador.
+- `QueryService.pending_for(self, agent_id) → list[AgentQueryModel]` — Consultas pendentes dirigidas a um agente.
+- `QueryService.queries_of(self, agent_id) → list[AgentQueryModel]` — Consultas em que um agente participa, como solicitante ou alvo.
+- `QueryService._relevant(self, question, findings) → dict[str, Any] | None` — Descoberta persistida que responde à pergunta (busca lexical, sem inferência).
+- `QueryService.answer_from_persisted(self, query) → dict[str, Any] | None` — Responde a partir do estado já persistido, sem reativar ninguém.
+- `QueryService._context_for(self, agent, *, limit) → str` — Contexto mínimo do próprio agente: checkpoint e descoberta, sem transcrição.
+- `QueryService._context_for_agents(self, agents, *, limit) → str` — Contexto de um conjunto de agentes, com atribuição de quem descobriu o quê.
+- `QueryService._subtree_context(self, agent, *, limit) → str` — Estado do agente e de sua descendência.
+- `QueryService.resolve(self, query_id, *, provider, profile) → AgentQueryModel` — Resolve a consulta: estado persistido primeiro, inferência só se faltar.
+- `QueryService._is_grounded(self, answer, agent) → tuple[bool, list[str]]` — A resposta da inferência encontra respaldo no estado persistido?.
+- `QueryService._answer_with_inference(self, query, provider, profile) → dict[str, Any]` — Reativa o agente consultado e responde com uma inferência pelo executor compartilhado.
+- `QueryService._remember_inference(self, agent, content, fundamentada) → None` — Guarda a resposta sintetizada como descoberta do agente consultado.
+- `QueryService.answer(self, query_id, answer, *, evidence, artifacts, uncertainty, answered_by_agent_id) → AgentQueryModel` — Registra a resposta de um agente a uma consulta (caminho sem inferência).
+- `QueryService.cancel(self, query_id, *, reason) → AgentQueryModel` — Cancela uma consulta pendente.
+
+- `QueryService.__init__(self, session, settings, *, agent_service) → None` — Cria o serviço ligado a uma sessão.
+### `scripts/avaliar-consultas.py`
+
+**Propósito:** avaliar-consultas — módulo do projeto.
+
+- `montar_estado(tmp)` — Cria o projeto, a árvore de tarefas e os agentes, e persiste as descobertas usadas no gabarito.
+- `main() → int` — Executa o gabarito contra o serviço de consultas e imprime o relatório de acertos.
+
+### `scripts/build_brand_assets.py`
+
+**Propósito:** build_brand_assets — módulo do projeto.
+
+- `shapes(svg) → list[tuple[str, str, str]]` — Devolve [(tag, classe, conteúdo do atributo d/points)] na ordem do arquivo.
+- `to_path(tag, cls, data) → str` — Converte a forma em um `<path>` com `d` equivalente.
+- `write_svg(name, view_box, body, title) → None` — Grava o SVG final com o viewBox, o tamanho e o título informados.
+- `main() → None` — Extrai as formas dos quatro SVG de origem e escreve os assets finais da marca.
+
+### `scripts/medir-hierarquia.py`
+
+**Propósito:** medir-hierarquia — módulo do projeto.
+
+- `montar_cenario(tmp, niveis)` — Árvore de `niveis` gerações, cada uma com uma descoberta persistida.
+- `main() → int` — Executa os três caminhos de medição e imprime o comparativo.
+
+### `scripts/medir-ollama.py`
+
+**Propósito:** medir-ollama — módulo do projeto.
+
+- `rss_ollama_mb() → float` — RSS total (MB) dos processos `ollama` — a memória que o servidor de inferência usa.
+- `modelo_carregado(base_url) → dict` — `GET /api/ps` — modelo residente e VRAM, se o backend informar.
+- `main() → int` — Executa o cenário de medição contra o Ollama e imprime o relatório.
+
+### `scripts/preencher_resume.py`
+
+**Propósito:** preencher_resume — módulo do projeto.
+
+- `secoes(texto) → dict[str, tuple[int, int]]` — Seções de arquivo do `resume.md` e seus limites de linha.
+- `main(argv) → int` — Preenche as lacunas do `resume.md` e informa o que foi acrescentado.
+
+
+- `_assinatura(no) → str` — Assinatura legível de uma função ou método.
+- `_retorno(no) → str` — Tipo de retorno declarado, quando houver.
+- `_primeira_linha(texto) → str` — Primeira linha útil de uma docstring.
+- `_simbolos(caminho) → list[tuple[str, str, str]]` — Símbolos públicos de um arquivo Python, com a descrição de cada um.
+- `_funcoes_js(caminho) → list[tuple[str, str, str]]` — Funções exportadas de um arquivo JavaScript, com a descrição do JSDoc.
+- `_proposito_de(caminho) → str` — Propósito de um arquivo, lido do próprio documento ou do docstring do módulo.
+- `_proposito_de_ativo(caminho) → str` — Propósito de um arquivo de asset (SVG, CSS, YAML, JSON).
+- `_simbolos_por_arquivo(raiz) → dict[str, list[tuple[str, str, str]]]` — Símbolos de cada arquivo do inventário, indexados pelo caminho relativo.
+- `_falta_simbolo(corpo, nome) → bool` — O símbolo já é citado no corpo da seção?.
+### `web/static/assets/app/api.js`
+
+**Propósito:** api — módulo do projeto.
+
+- `api`
+- `cleanError`
+- `openRunStream`
+
+### `web/static/assets/app/chat-scroll.js`
+
+**Propósito:** chat-scroll — módulo do projeto.
+
+- `createScrollFollow`
+- `nearBottom`
+- `setFollowing`
+- `clearTimer`
+- `cancelAutoScroll`
+- `leaveBottom`
+- `handleScroll`
+- `handleWheel`
+- `handleTouchStart`
+- `handleTouchMove`
+- `handleTouchEnd`
+- `followContent`
+- `scrollToBottom`
+- `reset`
+- `isFollowing`
+
+### `web/static/assets/app/components/automations.js`
+
+**Propósito:** automations — módulo do projeto.
+
+- `definition`
+- `submit`
+- `act`
+- `open`
+- `remove`
+- `stateLabel`
+- `when`
+
+### `web/static/assets/app/components/chat.js`
+
+**Propósito:** chat — módulo do projeto.
+
+- `isOpen`
+- `toggleEntry`
+- `isTurnCollapsed`
+- `toggleTurn`
+- `insideNestedScroller`
+- `onScroll`
+- `onWheel`
+- `onTouchStart`
+- `onTouchMove`
+- `onTouchEnd`
+- `scrollToBottom`
+- `onProviderChange`
+- `onSend`
+- `onKeydown`
+- `onFiles`
+- `readAsBase64`
+- `removeAttachment`
+
+### `web/static/assets/app/components/details.js`
+
+**Propósito:** details — módulo do projeto.
+
+- `selectTab`
+
+### `web/static/assets/app/components/live.js`
+
+**Propósito:** live — módulo do projeto.
+
+- `onClick`
+- `onSearch`
+- `bump`
+
+### `web/static/assets/app/components/palette.js`
+
+**Propósito:** palette — módulo do projeto.
+
+- `close`
+- `run`
+- `onKeydown`
+- `newConversation`
+- `toggleTheme`
+
+### `web/static/assets/app/components/providers.js`
+
+**Propósito:** providers — módulo do projeto.
+
+- `typeInfo`
+- `startNew`
+- `edit`
+- `onTypeChange`
+- `entryFromForm`
+- `save`
+- `remove`
+- `makeDefault`
+- `test`
+- `fetchModels`
+- `clearSecret`
+
+### `web/static/assets/app/components/settings.js`
+
+**Propósito:** settings — módulo do projeto.
+
+- `ensureModels`
+- `startRename`
+- `confirmRename`
+- `showRemote`
+- `pickFolder`
+
+### `web/static/assets/app/components/sidebar.js`
+
+**Propósito:** sidebar — módulo do projeto.
+
+
+### `web/static/assets/app/components/topbar.js`
+
+**Propósito:** topbar — módulo do projeto.
+
+- `activateBranch`
+
+### `web/static/assets/app/live-state.js`
+
+**Propósito:** live-state — módulo do projeto.
+
+- `category`
+- `cap`
+- `tailText`
+- `emptyMetrics`
+- `createState`
+- `newOp`
+- `newOutput`
+- `insertSorted`
+- `parseTs`
+- `recordLatency`
+- `applyEvent`
+- `reduce`
+- `findLast`
+- `criterionText`
+- `reduceRun`
+- `reduceTask`
+- `reduceAgent`
+- `trimOutputs`
+- `reduceOp`
+- `trimOps`
+- `applyLive`
+- `markConnection`
+- `markResync`
+- `currentTask`
+- `elapsedSeconds`
+- `latency`
+- `sortTasks`
+- `buildTree`
+- `subtreeIds`
+- `matches`
+- `visibleEvents`
+- `scoped`
+- `outputsList`
+- `terminalList`
+- `toolList`
+- `filesList`
+- `verificationList`
+- `countsText`
+- `progressText`
+- `describe`
+
+### `web/static/assets/app/live-stream.js`
+
+**Propósito:** live-stream — módulo do projeto.
+
+- `createStream`
+- `open`
+- `stop`
+
+### `web/static/assets/app/live-view.js`
+
+**Propósito:** live-view — módulo do projeto.
+
+- `esc`
+- `clock`
+- `duration`
+- `taskTitle`
+- `statusBadge`
+- `renderHeader`
+- `renderFilters`
+- `treeNode`
+- `renderTree`
+- `renderTaskHistory`
+- `renderActivity`
+- `renderOutputs`
+- `renderTerminal`
+- `summaryText`
+- `renderTools`
+- `renderFiles`
+- `renderVerification`
+- `renderMetrics`
+- `renderInterrupted`
+
+### `web/static/assets/app/main.js`
+
+**Propósito:** main — módulo do projeto.
+
+- `isTyping`
+- `onGlobalKey`
+- `newProject`
+- `createProject`
+- `openFolder`
+- `pickFolderForProject`
+- `openRemote`
+- `saveRemoteConfig`
+- `checkRemote`
+- `removeRemote`
+- `createFolder`
+- `browse`
+- `useFolder`
+- `moveFolderTo`
+- `renameConversation`
+
+### `web/static/assets/app/store.js`
+
+**Propósito:** store — módulo do projeto.
+
+- `toast`
+- `workspaceId`
+- `roots`
+- `childrenOf`
+- `descendantIds`
+- `setTheme`
+- `setDensity`
+- `watchViewport`
+- `openView`
+- `bootstrap`
+- `loadRemote`
+- `saveRemote`
+- `clearRemote`
+- `testRemote`
+- `renameProject`
+- `moveProject`
+- `deleteProject`
+- `conversationStatus`
+- `loadProviders`
+- `selectProject`
+- `selectConversation`
+- `deleteConversation`
+- `refreshTasks`
+- `refreshRun`
+- `runConfig`
+- `sendMessage`
+- `startRun`
+- `stepRun`
+- `autoRun`
+- `flushQueue`
+- `cancelQueued`
+- `setAutoMode`
+- `pauseRun`
+- `resumeRun`
+- `cancelRun`
+- `connectStream`
+- `startTaskPolling`
+- `stopTaskPolling`
+- `disconnectStream`
+- `selectTask`
+- `loadInspector`
+- `loadDiff`
+- `loadMetrics`
+- `loadGraph`
+- `loadTools`
+- `discoverMcp`
+- `rootIdOf`
+- `pushActivity`
+- `loadModels`
+- `testProvider`
+- `saveProviderConfig`
+- `removeProvider`
+- `setProviderSecret`
+- `clearProviderSecret`
+- `loadAutomations`
+- `loadAutomationDetail`
+- `createAutomation`
+- `automationAction`
+- `deleteAutomation`
+- `loadSupervisorStatus`
+
+### `web/static/assets/app/ui.js`
+
+**Propósito:** ui — módulo do projeto.
+
+- `icon`
+- `escapeHtml`
+- `renderMarkdown`
+- `isListItem`
+- `isTableRow`
+- `isTableSeparator`
+- `splitTableRow`
+- `renderList`
+- `level`
+- `inline`
+- `stamp`
+- `ago`
+- `toolOf`
+- `titleOf`
+- `statusLabel`
+- `modelLabel`
+- `plural`
+- `toolArgsSummary`
+- `describeActivity`
+- `summarizeActivity`
+- `diffLines`
+
+### `.pytest_cache/README.md`
+
+**Propósito:** This directory contains data from the pytest's cache plugin,.
+
+
+### `data/debug-e2e/workspace/calc.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `data/debug-e2e/workspace/tests/test_calc.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `docs/architecture/automacoes.md`
+
+**Propósito:** Voltar ao [Hub](/docs/architecture/README.md) · [Modelo de dados](/docs/architecture/modelo-dados.md) · [Execução autônoma](/docs/architecture/execucao-autonoma.md).
+
+
+### `docs/architecture/avaliacao.md`
+
+**Propósito:** A avaliação reproduzível com critérios objetivos de aceite.
+
+
+### `docs/architecture/ciclo-ferramentas.md`
+
+**Propósito:** O ciclo de inspeção com ferramentas antes da resposta do modelo.
+
+
+### `docs/architecture/execucao-remota.md`
+
+**Propósito:** O projeto rodando em outro computador, por SSH.
+
+
+### `docs/architecture/hierarquia-agentes.md`
+
+**Propósito:** Voltar ao [Hub](/docs/architecture/README.md) · [Visão geral](/docs/architecture/visao-geral.md) · [Provedores](/docs/architecture/provedores.md).
+
+
+### `docs/architecture/provedores.md`
+
+**Propósito:** Voltar ao [Hub](/docs/architecture/README.md) · Código: [`src/agent/providers/`](/src/agent/providers/README.md).
+
+
+### `docs/regras/marca.md`
+
+**Propósito:** **Regra:** o projeto se chama **Callidus**. Toda interface, documentação, metadado de API e mensagem de usuário usa o nome "Callidus" e o símbolo oficial. Termos genéricos em português ("o agente", "o runtime") continuam valendo como substantivo comum — não são nome de produto.
+
+
+### `internal/tarefas/2026-10-17-complemento-regras-operacionais.md`
+
+**Propósito:** | Campo | Valor |.
+
+
+### `internal/tarefas/2026-10-17-diagramas-dimensoes-verificacao.md`
+
+**Propósito:** | Campo | Valor |.
+
+
+### `internal/tarefas/2026-10-17-nucleo-agente-fase0-1.md`
+
+**Propósito:** | Campo | Valor |.
+
+
+### `internal/tarefas/2026-10-17-repositorio-local.md`
+
+**Propósito:** | Campo | Valor |.
+
+
+### `internal/tarefas/2026-10-18-evolucao-arquitetural.md`
+
+**Propósito:** | Campo | Valor |.
+
+
+### `internal/tarefas/2026-10-18-observabilidade-tempo-real.md`
+
+**Propósito:** | Campo | Valor |.
+
+
+### `internal/tarefas/2026-10-18-validacao-verificacao-progresso.md`
+
+**Propósito:** | Campo | Valor |.
+
+
+### `internal/tarefas/2026-10-19-evolucao-skills-decomposicao-execucao.md`
+
+**Propósito:** | Campo | Valor |.
+
+
+### `internal/tarefas/2026-10-19-rebrand-callidus.md`
+
+**Propósito:** | Campo | Valor |.
+
+
+### `internal/tarefas/2026-10-20-automacoes-persistentes.md`
+
+**Propósito:** | Campo | Valor |.
+
+
+### `internal/tarefas/2026-10-20-hierarquia-agentes-executor.md`
+
+**Propósito:** | Campo | Valor |.
+
+
+### `internal/tarefas/2026-10-20-remodelagem-arquitetural.md`
+
+**Propósito:** | Campo | Valor |.
+
+
+### `internal/tarefas/_modelo-checklist.md`
+
+**Propósito:** O modelo de checklist usado por toda atividade do projeto.
+
+
+### `lab/avaliar.py`
+
+**Propósito:** Avaliação reproduzível do Callidus com o modelo local de referência.
+
+
+### `lab/out/baseline-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/baseline-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/diag1-root/check_verification.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/diag1-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/diag1-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/diag2-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/diag2-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed10-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed10-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed11-root/README.md`
+
+**Propósito:** Este é o README do projeto Callidus.
+
+
+### `lab/out/fixed11-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed11-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed12-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed12-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed13-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed13-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed14-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed14-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed15-root/answer.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed15-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed15-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed16-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed16-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed17-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed17-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed18-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed18-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed19-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed19-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed3-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed3-root/structure.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed3-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed4-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed4-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed5-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed5-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed6-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed6-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed7-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed7-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed8-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed8-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed9-root/src/main.js`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/out/fixed9-root/tests/test_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `lab/run_scenario.py`
+
+**Propósito:** Cenário controlado: reproduz a última conversa real ("continue") com gpt-oss:20b.
+
+
+### `src/agent/automation/README.md`
+
+**Propósito:** Automações persistentes, autônomas e multiplataforma: o Callidus planeja, grava,.
+
+
+### `src/agent/remote/README.md`
+
+**Propósito:** Transporte das ações de um projeto (comandos, leituras, escritas) quando o projeto roda em.
+
+
+### `tests/conftest.py`
+
+**Propósito:** Arquivo: tests/conftest.py.
+
+
+### `tests/fixtures/README.md`
+
+**Propósito:** Projetos de exemplo usados pelos testes de ponta a ponta.
+
+
+### `tests/fixtures/sample_project/calc.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `tests/fixtures/sample_project/tests/test_calc.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `tests/test_agent_api.py`
+
+**Propósito:** Arquivo: tests/test_agent_api.py.
+
+
+### `tests/test_agent_hierarchy_e2e.py`
+
+**Propósito:** Arquivo: tests/test_agent_hierarchy_e2e.py.
+
+
+### `tests/test_agent_resilience.py`
+
+**Propósito:** Arquivo: tests/test_agent_resilience.py.
+
+
+### `tests/test_agent_scheduler.py`
+
+**Propósito:** Arquivo: tests/test_agent_scheduler.py.
+
+
+### `tests/test_agent_service.py`
+
+**Propósito:** Arquivo: tests/test_agent_service.py.
+
+
+### `tests/test_anthropic_provider.py`
+
+**Propósito:** Arquivo: tests/test_anthropic_provider.py.
+
+
+### `tests/test_api_smoke.py`
+
+**Propósito:** Arquivo: tests/test_api_smoke.py.
+
+
+### `tests/test_automation_api.py`
+
+**Propósito:** Arquivo: tests/test_automation_api.py.
+
+
+### `tests/test_automation_end_to_end.py`
+
+**Propósito:** Arquivo: tests/test_automation_end_to_end.py.
+
+
+### `tests/test_automation_platforms.py`
+
+**Propósito:** Arquivo: tests/test_automation_platforms.py.
+
+
+### `tests/test_automation_runtime.py`
+
+**Propósito:** Arquivo: tests/test_automation_runtime.py.
+
+
+### `tests/test_brand.py`
+
+**Propósito:** Arquivo: tests/test_brand.py.
+
+
+### `tests/test_context_requirements.py`
+
+**Propósito:** Arquivo: tests/test_context_requirements.py.
+
+
+### `tests/test_execution_package.py`
+
+**Propósito:** Arquivo: tests/test_execution_package.py.
+
+
+### `tests/test_executor_scope.py`
+
+**Propósito:** Arquivo: tests/test_executor_scope.py.
+
+
+### `tests/test_gemini_provider.py`
+
+**Propósito:** Arquivo: tests/test_gemini_provider.py.
+
+
+### `tests/test_http_transport.py`
+
+**Propósito:** Arquivo: tests/test_http_transport.py.
+
+
+### `tests/test_inference_executor.py`
+
+**Propósito:** Arquivo: tests/test_inference_executor.py.
+
+
+### `tests/test_llamacpp_remote.py`
+
+**Propósito:** Arquivo: tests/test_llamacpp_remote.py.
+
+
+### `tests/test_model_tool_operation.py`
+
+**Propósito:** Arquivo: tests/test_model_tool_operation.py.
+
+
+### `tests/test_ollama_provider.py`
+
+**Propósito:** Arquivo: tests/test_ollama_provider.py.
+
+
+### `tests/test_openai_compatible_provider.py`
+
+**Propósito:** Arquivo: tests/test_openai_compatible_provider.py.
+
+
+### `tests/test_openrouter_provider.py`
+
+**Propósito:** Arquivo: tests/test_openrouter_provider.py.
+
+
+### `tests/test_plan_contract.py`
+
+**Propósito:** Arquivo: tests/test_plan_contract.py.
+
+
+### `tests/test_project_delete.py`
+
+**Propósito:** Arquivo: tests/test_project_delete.py.
+
+
+### `tests/test_provider_config_api.py`
+
+**Propósito:** Arquivo: tests/test_provider_config_api.py.
+
+
+### `tests/test_provider_security.py`
+
+**Propósito:** Arquivo: tests/test_provider_security.py.
+
+
+### `tests/test_provider_selection.py`
+
+**Propósito:** Arquivo: tests/test_provider_selection.py.
+
+
+### `tests/test_providers_api.py`
+
+**Propósito:** Arquivo: tests/test_providers_api.py.
+
+
+### `tests/test_providers_registry.py`
+
+**Propósito:** Arquivo: tests/test_providers_registry.py.
+
+
+### `tests/test_query_service.py`
+
+**Propósito:** Arquivo: tests/test_query_service.py.
+
+
+### `tests/test_recovery_and_reporting.py`
+
+**Propósito:** Arquivo: tests/test_recovery_and_reporting.py.
+
+
+### `tests/test_remote_ssh.py`
+
+**Propósito:** Arquivo: tests/test_remote_ssh.py.
+
+
+### `tests/test_request_permissions.py`
+
+**Propósito:** Arquivo: tests/test_request_permissions.py.
+
+
+### `tests/test_tool_loop.py`
+
+**Propósito:** Arquivo: tests/test_tool_loop.py.
+
+
+### `tests/test_truncated_output.py`
+
+**Propósito:** Arquivo: tests/test_truncated_output.py.
+
+
+### `tests/test_verification_integrity.py`
+
+**Propósito:** Arquivo: tests/test_verification_integrity.py.
+
+
+### `tests/test_web_frontend.py`
+
+**Propósito:** Documento do projeto..
+
+
+### `tests/web/chat-scroll.test.mjs`
+
+**Propósito:** Documento do projeto..
+
+### `.cursor/resume-inventario.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `data/providers.yaml`
+
+**Propósito:** Exemplo de configuração de provedores (modelo de referência)..
+
+
+### `lab/out/avaliacao-antes.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/avaliacao-depois.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/avaliacao-depois2.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/baseline-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/baseline.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/diag1-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/diag1.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/diag2-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/diag2.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed10-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed10.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed11-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed11.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed12-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed12.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed13-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed13.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed14-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed14.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed15-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed15.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed16-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed16.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed17-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed17.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed18-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed18.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed19-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed3-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed3.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed4-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed4.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed5-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed5.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed6-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed6.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed7-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed7.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed8-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed8.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `lab/out/fixed9-root/src/styles.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `lab/out/fixed9.json`
+
+**Propósito:** Configuração de runtime do Callidus..
+
+
+### `media/Callidus Logo.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/Callidus Name + Logo Horizontal.svg`
+
+**Propósito:** Logotipo em texto da marca (fonte)..
+
+
+### `media/Callidus Name + Logo Vertical.svg`
+
+**Propósito:** Logotipo em texto da marca (fonte)..
+
+
+### `media/Callidus Name.svg`
+
+**Propósito:** Logotipo em texto da marca (fonte)..
+
+
+### `media/icons/alerta.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/arquitetura.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/arquivos.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/ativos-visuais.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/autoaperfeicoamento.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/checklist.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/commits.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/conceitos.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/configuracao.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/desenvolvimento.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/documentacao.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/exemplos.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/fluxos.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/hub.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/integracoes.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/leitura.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/mcp.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/metricas.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/navegacao.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/objetivo.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/organizacao.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/principios.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/projeto.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/referencias.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/restricoes.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/seguranca.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/tarefas.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/testes.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/validacoes.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `media/icons/verificacao.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `providers.example.yaml`
+
+**Propósito:** Exemplo de configuração de provedores (modelo de referência)..
+
+
+### `web/static/assets/app/style.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+
+### `web/static/assets/brand/callidus-lockup-vertical.svg`
+
+**Propósito:** Logotipo vertical da marca (fonte)..
+
+
+### `web/static/assets/brand/callidus-lockup.svg`
+
+**Propósito:** Recurso visual da marca..
+
+
+### `web/static/assets/brand/callidus-mark-current.svg`
+
+**Propósito:** Símbolo da marca (fonte)..
+
+
+### `web/static/assets/brand/callidus-mark.svg`
+
+**Propósito:** Símbolo da marca (fonte)..
+
+
+### `web/static/assets/brand/callidus-wordmark.svg`
+
+**Propósito:** Logotipo em texto da marca (fonte)..
+
+
+### `web/static/assets/brand/favicon.svg`
+
+**Propósito:** Ícone de aba do navegador..
