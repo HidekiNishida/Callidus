@@ -198,7 +198,7 @@ class AnthropicProvider(LLMProvider):
                 calls.append(ToolCall(id=block.get("id"), name=block.get("name") or "", arguments=payload))
         return "".join(parts), (calls or None), (data or {}).get("stop_reason")
 
-    async def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+    async def _chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         url = f"{self._base_url}/v1/messages"
         body = self._body(request)
         try:
@@ -229,7 +229,7 @@ class AnthropicProvider(LLMProvider):
         remember_usage(self, response.prompt_tokens_estimate, response.completion_tokens_estimate)
         return response
 
-    async def chat_streaming(
+    async def _chat_streaming(
         self, request: ChatCompletionRequest, on_delta: Callable[[str], None]
     ) -> ChatCompletionResponse:
         url = f"{self._base_url}/v1/messages"

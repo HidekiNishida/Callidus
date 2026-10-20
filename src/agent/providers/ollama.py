@@ -22,7 +22,29 @@ def _ollama_message(message) -> dict:
     payload = {"role": message.role, "content": message.content}
     if message.images:
         payload["images"] = message.images
+    if message.tool_calls:
+        payload["tool_calls"] = [_ollama_tool_call(call) for call in message.tool_calls]
     return payload
+
+
+def _ollama_tool_call(call: dict) -> dict:
+    """Chamada de ferramenta no formato do Ollama (`function.name` + `function.arguments` já decodificado)."""
+    function = call.get("function") or {}
+    name = function.get("name") or call.get("name") or ""
+    arguments = function.get("arguments")
+    if arguments is None:
+        arguments = call.get("arguments")
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except json.JSONDecodeError:
+            arguments = {"raw": arguments}
+    if not isinstance(arguments, dict):
+        arguments = {}
+    item: dict = {"type": "function", "function": {"name": name, "arguments": arguments}}
+    if call.get("id"):
+        item["id"] = call["id"]
+    return item
 
 
 def inference_failure_text(exc: Exception) -> str:
@@ -48,6 +70,13 @@ def chat_body(request: ChatCompletionRequest) -> dict:
     }
     if _reasoning_model(request.profile.model_id):
         body["think"] = bool(think)
+    # `keep_alive` é a capacidade real do Ollama para manter o modelo residente. Numa
+    # hierarquia de agentes os intervalos entre inferências podem ser longos: manter o
+    # modelo carregado evita recarregar pesos a cada pergunta. Só é enviado quando
+    # configurado — o padrão do servidor continua valendo.
+    keep_alive = options.pop("keep_alive", None)
+    if keep_alive is not None:
+        body["keep_alive"] = keep_alive
     if options:
         body["options"] = options
     if request.response_format is not None:
@@ -115,6 +144,7 @@ class OllamaProvider(LLMProvider):
         return ProviderCapabilities(
             streaming=True,
             tools=True,
+            tool_loop=True,
             structured_output=True,
             vision=True,
             model_listing=True,
@@ -142,7 +172,7 @@ class OllamaProvider(LLMProvider):
         return [m.get("name", "") for m in models if m.get("name")]
 
 
-    async def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+    async def _chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         url = f"{self._base_url}/api/chat"
         body = chat_body(request)
 
@@ -169,13 +199,14 @@ class OllamaProvider(LLMProvider):
             tool_calls=_tool_calls(message),
             finish_reason=(data or {}).get("done_reason"),
             model=(data or {}).get("model"),
+            reasoning=message.get("thinking") or None,
         )
         from agent.orchestrator.usage import remember_usage
 
         remember_usage(self, response.prompt_tokens_estimate, response.completion_tokens_estimate)
         return response
 
-    async def chat_streaming(
+    async def _chat_streaming(
         self, request: ChatCompletionRequest, on_delta: Callable[[str], None]
     ) -> ChatCompletionResponse:
         """`/api/chat` com `stream: true`: uma linha JSON por fragmento; a última (`done`) traz uso de tokens
@@ -184,6 +215,8 @@ class OllamaProvider(LLMProvider):
         body = chat_body(request)
         body["stream"] = True
         parts: list[str] = []
+        thoughts: list[str] = []
+        streamed_calls: list[dict] = []
         final: dict = {}
         try:
             async with self._client() as client:
@@ -204,10 +237,16 @@ class OllamaProvider(LLMProvider):
                         ) from exc
                     if data.get("error"):
                         raise ProviderError(f"Falha na inferência Ollama: {data['error']}")
-                    piece = (data.get("message") or {}).get("content") or ""
+                    message = data.get("message") or {}
+                    piece = message.get("content") or ""
                     if piece:
                         parts.append(piece)
                         on_delta(piece)
+                    thought = message.get("thinking") or ""
+                    if thought:
+                        thoughts.append(thought)
+                    if message.get("tool_calls"):
+                        streamed_calls.extend(message["tool_calls"])
                     if data.get("done"):
                         final = data
                         break
@@ -217,14 +256,16 @@ class OllamaProvider(LLMProvider):
             raise ProviderError("Falha na inferência Ollama: a transmissão terminou sem a mensagem final")
         content = "".join(parts)
         message = final.get("message") or {}
+        calls = _tool_calls(message) or _tool_calls({"tool_calls": streamed_calls})
         response = ChatCompletionResponse(
             content=content,
             raw={**final, "message": {"role": "assistant", "content": content}},
             prompt_tokens_estimate=final.get("prompt_eval_count"),
             completion_tokens_estimate=final.get("eval_count"),
-            tool_calls=_tool_calls(message),
+            tool_calls=calls,
             finish_reason=final.get("done_reason"),
             model=final.get("model"),
+            reasoning="".join(thoughts) or None,
         )
         from agent.orchestrator.usage import remember_usage
 

@@ -25,12 +25,10 @@ def _data_url(encoded: str) -> str:
 
 
 def _openai_message(message) -> dict:
-    if not message.images:
-        return {"role": message.role, "content": message.content}
-    parts: list[dict] = [{"type": "text", "text": message.content}]
-    for image in message.images:
-        parts.append({"type": "image_url", "image_url": {"url": _data_url(image)}})
-    return {"role": message.role, "content": parts}
+    """Mesma tradução da API compatível com OpenAI (inclusive a conversa de ferramentas)."""
+    from agent.providers.openai_compatible import openai_message
+
+    return openai_message(message)
 
 
 def _tool_calls(message: dict) -> list[ToolCall] | None:
@@ -104,6 +102,7 @@ class LlamaCppProvider(LLMProvider):
         return ProviderCapabilities(
             streaming=True,
             tools=True,
+            tool_loop=True,
             structured_output=True,
             vision=True,
             model_listing=True,
@@ -146,7 +145,7 @@ class LlamaCppProvider(LLMProvider):
             body["tool_choice"] = request.tool_choice
         return body
 
-    async def chat_streaming(
+    async def _chat_streaming(
         self, request: ChatCompletionRequest, on_delta: Callable[[str], None]
     ) -> ChatCompletionResponse:
         """`stream: true` no endpoint OpenAI: eventos `data: {...}` com `choices[0].delta.content` até `[DONE]`;
@@ -204,7 +203,7 @@ class LlamaCppProvider(LLMProvider):
         remember_usage(self, response.prompt_tokens_estimate, response.completion_tokens_estimate)
         return response
 
-    async def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+    async def _chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         url = f"{self._base_url}/v1/chat/completions"
         body = self._body(request)
 

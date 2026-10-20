@@ -12,6 +12,10 @@ class ChatMessage(BaseModel):
     role: str
     content: str
     images: list[str] | None = None
+    # Historical do ciclo de ferramentas: a mensagem do assistente que pediu a ferramenta e a
+    # mensagem de resultado. Sem as duas pontas o modelo não consegue continuar a conversa.
+    tool_calls: list[dict[str, Any]] | None = None
+    tool_call_id: str | None = None
 
 
 class ToolCall(BaseModel):
@@ -27,6 +31,9 @@ class ProviderCapabilities(BaseModel):
 
     streaming: bool = False
     tools: bool = False
+    # O provedor sabe manter a conversa de ferramentas (mensagem do assistente com a chamada e
+    # mensagem de resultado). Sem isso, o modelo não pode inspecionar o projeto antes de responder.
+    tool_loop: bool = False
     structured_output: bool = False
     vision: bool = False
     model_listing: bool = True
@@ -71,6 +78,9 @@ class ChatCompletionResponse(BaseModel):
     tool_calls: list[ToolCall] | None = None
     finish_reason: str | None = None
     model: str | None = None
+    # Raciocínio do modelo (canal `thinking` do Ollama). Serve para diagnosticar resposta vazia:
+    # sem ele não há como saber se o modelo gastou o orçamento pensando ou pediu uma ferramenta.
+    reasoning: str | None = None
 
 
 class ProviderError(RuntimeError):
@@ -120,16 +130,60 @@ class LLMProvider(ABC):
     async def list_models(self) -> list[str]:
         raise NotImplementedError
 
-    @abstractmethod
     async def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+        """Inferência. Toda chamada passa pelo executor compartilhado do processo: é aqui que
+        a exclusividade de inferência ativa é garantida, e não por convenção dos chamadores.
+
+        O provedor concreto implementa `_chat`; quem chama continua usando `chat`.
+        """
+        from agent.services.executor import get_executor
+
+        executor = get_executor()
+        slot = await executor.acquire(
+            purpose="chat",
+            provider=self.name,
+            model=request.profile.model_id,
+        )
+        try:
+            response = await self._chat(request)
+        except BaseException as exc:
+            executor.release(error=exc, slot=slot)
+            raise
+        executor.release(slot=slot)
+        return response
+
+    @abstractmethod
+    async def _chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+        """Implementação da inferência pelo provedor. Sempre chamada por `chat`."""
         raise NotImplementedError
 
     async def chat_streaming(
         self, request: ChatCompletionRequest, on_delta: Callable[[str], None]
     ) -> ChatCompletionResponse:
         """Recebe a resposta em fragmentos, chama `on_delta` a cada um e devolve a resposta completa (com uso
-        de tokens). Provedores sem streaming real não implementam: quem chama usa `chat`."""
+        de tokens). Provedor sem streaming real não implementa: quem chama usa `chat`."""
+        from agent.services.executor import get_executor
+
+        executor = get_executor()
+        slot = await executor.acquire(
+            purpose="chat_streaming",
+            provider=self.name,
+            model=request.profile.model_id,
+        )
+        try:
+            response = await self._chat_streaming(request, on_delta)
+        except BaseException as exc:
+            executor.release(error=exc, slot=slot)
+            raise
+        executor.release(slot=slot)
+        return response
+
+    async def _chat_streaming(
+        self, request: ChatCompletionRequest, on_delta: Callable[[str], None]
+    ) -> ChatCompletionResponse:
+        """Implementação do streaming pelo provedor. Sempre chamada por `chat_streaming`."""
         raise ProviderNotSupportedError(f"O provedor '{self.name}' não transmite a resposta em fragmentos.")
+
 
     async def health_check(self) -> ProviderHealth:
         """Verificação de conectividade barata: lista os modelos do servidor, sem inferência.

@@ -29,15 +29,36 @@ class LLMProvider(ABC):
 
     def capabilities(self) -> ProviderCapabilities: ...
     async def list_models(self) -> list[str]: ...
-    async def chat(self, request) -> ChatCompletionResponse: ...
-    async def chat_streaming(self, request, on_delta): ...   # opcional
-    async def health_check(self) -> ProviderHealth: ...       # conectividade sem inferência
+    async def chat(self, request) -> ChatCompletionResponse: ...          # ponto único de admissão
+    async def chat_streaming(self, request, on_delta): ...                 # opcional
+    async def health_check(self) -> ProviderHealth: ...                    # conectividade sem inferência
     async def close(self) -> None: ...
+
+    # O provedor concreto implementa só isto:
+    async def _chat(self, request) -> ChatCompletionResponse: ...
+    async def _chat_streaming(self, request, on_delta): ...                # opcional
 ```
 
+### Exclusividade de inferência
+
+`chat` e `chat_streaming` são **o ponto único de admissão**: eles passam pelo
+[executor compartilhado](/src/agent/services/executor.py) antes de chamar `_chat`.
+É o que garante que o processo inteiro rode **no máximo uma inferência ativa por vez**
+(padrão: `MAX_CONCURRENT_INFERENCES=1`), sem depender de convenção dos chamadores.
+
+Um provedor novo implementa `_chat` (e `_chat_streaming`, se transmitir de verdade) —
+**nunca** sobrescreve `chat`. Assim toda rota de chamada (runner, ciclo de ferramentas,
+decomposição, worker autônomo, endpoint de depuração) herda a garantia.
+
 `ProviderCapabilities` declara o que o provedor **realmente** oferece: `streaming`, `tools`,
-`structured_output`, `vision`, `model_listing`, `usage_reporting`, `cancellation`. Recurso
-ausente não é simulado: o pedido incompatível falha com `ProviderNotSupportedError`.
+`tool_loop`, `structured_output`, `vision`, `model_listing`, `usage_reporting`, `cancellation`.
+Recurso ausente não é simulado: o pedido incompatível falha com `ProviderNotSupportedError`.
+
+`tool_loop` é o recurso que permite a **conversa de ferramentas** (a mensagem do assistente com a
+chamada e a mensagem de resultado): só os provedores que a traduzem entram no ciclo de
+ferramentas da operação. `ChatCompletionResponse.reasoning` traz o canal de raciocínio
+(`thinking` do Ollama), usado para distinguir "o modelo pediu uma ferramenta" de "o modelo
+respondeu vazio". Detalhes: [ciclo-ferramentas.md](/docs/architecture/ciclo-ferramentas.md).
 
 ### Erros (`base.py`)
 
@@ -54,15 +75,15 @@ ausente não é simulado: o pedido incompatível falha com `ProviderNotSupported
 
 ## Recursos por provedor
 
-| Provedor | Streaming | Ferramentas | JSON estruturado | Visão | Lista de modelos | Autenticação |
-|----------|-----------|-----------|------------------|--------|------------------|--------------|
-| Ollama | ✅ (JSON por linha) | ✅ | ✅ (`format`) | ✅ (`images`) | ✅ `/api/tags` | `Authorization: Bearer` (opcional) |
-| llama.cpp | ✅ (SSE) | ✅ | ✅ (`response_format`) | ✅ | ✅ `/v1/models` | `Authorization: Bearer` ou `--api-key-file` |
-| OpenAI-compatível | ✅ (SSE) | ✅ | ✅ (`json_schema`) | ✅ | ✅ `/models` | `Authorization: Bearer` |
-| OpenRouter | ✅ (SSE) | ✅ | ✅ | ✅ | ✅ `/api/v1/models` (cache 5 min) | `Authorization: Bearer` |
-| Anthropic | ✅ (SSE) | ✅ | ❌ | ✅ | ✅ `/v1/models` | `x-api-key` + `anthropic-version` |
-| Gemini | ✅ (SSE `alt=sse`) | ✅ | ✅ (`responseSchema`) | ✅ | ✅ `/v1beta/models` (cache 5 min) | `x-goog-api-key` |
-| Mock | ❌ | ❌ | ❌ | ❌ | ✅ (fixo) | — |
+| Provedor | Streaming | Ferramentas | Ciclo (`tool_loop`) | JSON estruturado | Visão | Lista de modelos | Autenticação |
+|----------|-----------|-----------|--------------------|------------------|--------|------------------|--------------|
+| Ollama | ✅ (JSON por linha) | ✅ | ✅ | ✅ (`format`) | ✅ (`images`) | ✅ `/api/tags` | `Authorization: Bearer` (opcional) |
+| llama.cpp | ✅ (SSE) | ✅ | ✅ | ✅ (`response_format`) | ✅ | ✅ `/v1/models` | `Authorization: Bearer` ou `--api-key-file` |
+| OpenAI-compatível | ✅ (SSE) | ✅ | ✅ | ✅ (`json_schema`) | ✅ | ✅ `/models` | `Authorization: Bearer` |
+| OpenRouter | ✅ (SSE) | ✅ | ✅ | ✅ | ✅ | ✅ `/api/v1/models` (cache 5 min) | `Authorization: Bearer` |
+| Anthropic | ✅ (SSE) | ✅ | ❌ | ❌ | ✅ | ✅ `/v1/models` | `x-api-key` + `anthropic-version` |
+| Gemini | ✅ (SSE `alt=sse`) | ✅ | ❌ | ✅ (`responseSchema`) | ✅ | ✅ `/v1beta/models` (cache 5 min) | `x-goog-api-key` |
+| Mock | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (fixo) | — |
 
 > O suporte real de ferramentas e JSON estruturado depende do **modelo** escolhido, não só do
 > provedor. O Callidus não promete o que o modelo não faz.
@@ -164,7 +185,7 @@ fallback quando `ALLOW_MOCK_FALLBACK=true` (opt-in explícito).
 ## Como registrar um novo adaptador
 
 1. Crie `src/agent/providers/<nome>.py` com uma classe que herda de `LLMProvider`.
-2. Implemente `list_models()` e `chat()`; `chat_streaming()` só se o serviço transmitir de verdade.
+2. Implemente `list_models()` e `_chat()`; `_chat_streaming()` só se o serviço transmitir de verdade. Não sobrescreva `chat`: a exclusividade de inferência mora no contrato base.
 3. Declare `capabilities()` com o que a API realmente oferece.
 4. Reutilize `HttpClientConfig`/`client_kwargs`/`get_json`/`post_json`/`stream_lines` para ter
    tempo limite, erros tipados, redação e retry sem duplicar lógica.

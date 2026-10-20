@@ -37,7 +37,7 @@ class MockProvider(LLMProvider):
     async def list_models(self) -> list[str]:
         return ["mock-model"]
 
-    async def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+    async def _chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         user_text = ""
         for m in request.messages:
             if m.role == "user":

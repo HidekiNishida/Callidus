@@ -222,7 +222,7 @@ class GeminiProvider(LLMProvider):
                     )
         return "".join(parts), (calls or None), finish
 
-    async def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+    async def _chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         url = f"{self._base_url}/models/{self._model_path(request.profile.model_id)}:generateContent"
         body = self._body(request)
         try:
@@ -253,7 +253,7 @@ class GeminiProvider(LLMProvider):
         remember_usage(self, response.prompt_tokens_estimate, response.completion_tokens_estimate)
         return response
 
-    async def chat_streaming(
+    async def _chat_streaming(
         self, request: ChatCompletionRequest, on_delta: Callable[[str], None]
     ) -> ChatCompletionResponse:
         model = self._model_path(request.profile.model_id)

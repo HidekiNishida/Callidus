@@ -75,12 +75,18 @@ def _data_url(encoded: str) -> str:
 
 
 def openai_message(message) -> dict:
+    payload: dict[str, Any] = {"role": message.role, "content": message.content}
+    if getattr(message, "tool_calls", None):
+        payload["tool_calls"] = message.tool_calls
+    if getattr(message, "tool_call_id", None):
+        payload["tool_call_id"] = message.tool_call_id
     if not message.images:
-        return {"role": message.role, "content": message.content}
+        return payload
     parts: list[dict] = [{"type": "text", "text": message.content}]
     for image in message.images:
         parts.append({"type": "image_url", "image_url": {"url": _data_url(image)}})
-    return {"role": message.role, "content": parts}
+    payload["content"] = parts
+    return payload
 
 
 def parse_tool_calls(message: dict) -> list[ToolCall] | None:
@@ -150,6 +156,7 @@ class OpenAICompatibleProvider(LLMProvider):
         return ProviderCapabilities(
             streaming=True,
             tools=True,
+            tool_loop=True,
             structured_output=True,
             vision=True,
             model_listing=True,
@@ -202,7 +209,7 @@ class OpenAICompatibleProvider(LLMProvider):
             body["tool_choice"] = request.tool_choice
         return body
 
-    async def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+    async def _chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         url = f"{self._base_url}/chat/completions"
         body = self._body(request)
         try:
@@ -247,7 +254,7 @@ class OpenAICompatibleProvider(LLMProvider):
         remember_usage(self, response.prompt_tokens_estimate, response.completion_tokens_estimate)
         return response
 
-    async def chat_streaming(
+    async def _chat_streaming(
         self, request: ChatCompletionRequest, on_delta: Callable[[str], None]
     ) -> ChatCompletionResponse:
         url = f"{self._base_url}/chat/completions"
