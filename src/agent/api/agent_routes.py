@@ -218,6 +218,9 @@ async def ask_agent(
             profile = profile_from_run_config({}, settings, provider=provider)
         except Exception:  # noqa: BLE001 — sem provedor, responde com o estado persistido
             provider = None
+    # A consulta já existe antes da inferência: se a resposta falhar, o registro (e a
+    # tentativa contada) não desaparecem com o rollback da requisição.
+    session.commit()
     query = await service.resolve(query.id, provider=provider, profile=profile)
     return AgentQueryRead.model_validate(query)
 

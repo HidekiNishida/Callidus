@@ -81,9 +81,16 @@ def build_scheduler(settings: Settings | None = None) -> AgentScheduler:
                 "query_id": str(query_id),
                 "status": query.status,
             }
-        except Exception:
-            session.rollback()
-            raise
+        except Exception as exc:
+            # **Confirma** em vez de desfazer: a tentativa da consulta precisa sobreviver à
+            # falha. Desfazer a transação devolveria a consulta a PENDING com o contador
+            # intacto e ela seria reenviada a cada tique, sem nunca chegar ao limite.
+            try:
+                session.commit()
+            except Exception:  # pragma: no cover - sessão inutilizável
+                session.rollback()
+            logger.warning("consulta %s falhou: %s", query_id, exc)
+            return {"action": "query_failed", "query_id": str(query_id), "error": str(exc)}
         finally:
             session.close()
 

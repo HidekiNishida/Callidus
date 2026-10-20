@@ -5,6 +5,49 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+# Restrições negativas do pedido: o usuário diz explicitamente que o trabalho **não** deve
+# mudar nada. Elas viram permissão de ferramenta: uma etapa só de leitura não recebe
+# `write_file`/`edit_file`, porque "não altere nenhum arquivo" não pode ser só um texto no
+# prompt que o modelo ignora.
+_READ_ONLY_PATTERNS = (
+    r"n[ãa]o\s+(?:altere|modifique|edite|reescreva|apague|remova|crie|execute\s+nada)",
+    r"n[ãa]o\s+(?:fa[çc]a|mude|troque)\s+(?:nenhuma\s+)?(?:altera|modifica)",
+    r"sem\s+alterar",
+    r"sem\s+modificar",
+    r"apenas\s+(?:leia|leitura|reporte|relate|informe|consulte|verifique|execute\s+a\s+su[íi]te)",
+    r"s[óo]\s+(?:leia|leitura|reporte|relate|inspecione)",
+    r"read[- ]only",
+    r"sem\s+tocar\s+em\s+(?:nenhum\s+)?arquivo",
+)
+
+
+def is_read_only_request(objective: str) -> bool:
+    """O pedido proíbe explicitamente alterar o projeto?"""
+    text = (objective or "").lower()
+    return any(re.search(pattern, text) for pattern in _READ_ONLY_PATTERNS)
+
+
+# Os testes são a **régua** da medição. Alterar a régua para a medição passar não é
+# resolver o problema — é trocar o critério. A régua só pode mudar quando o pedido pede
+# isso explicitamente ("crie testes", "atualize a suíte").
+_TEST_FILE = re.compile(r"(^|/)(test_[^/]*\.py|[^/]*_test\.py|conftest\.py|[^/]*\.(spec|test)\.[jt]sx?)$")
+_TESTS_ARE_THE_TARGET = re.compile(
+    r"(cri[ae]|criar|cria|adicion|escrev|corri[gj]|atualiz|modific|reescrev|gerar)\w*\s+"
+    r"(os\s+|as\s+|a\s+|o\s+|novos?\s+|novas\s+)?(testes?|specs?|su[íi]te(\s+de\s+testes?)?)"
+    r"|(testes?|specs?|su[íi]te\s+de\s+testes?)\s+(novos?|adicionados?|novas\s+de\s+regress[ãa]o)",
+    re.IGNORECASE,
+)
+
+
+def protects_test_files(objective: str) -> bool:
+    """O pedido manda mexer nos testes? Se não, os testes são protegidos."""
+    return not _TESTS_ARE_THE_TARGET.search(objective or "")
+
+
+def looks_like_test_file(path: str) -> bool:
+    """O caminho aponta para um arquivo de teste?"""
+    return bool(_TEST_FILE.search((path or "").strip().replace("\\", "/")))
+
 
 @dataclass
 class ProfessionalStrategy:
@@ -91,6 +134,17 @@ class ProfessionalStrategist:
     """
 
     def analyze(self, objective: str, *, context_summary: str = "") -> ProfessionalStrategy:
+        strategy = self._analyze(objective, context_summary=context_summary)
+        # A restrição de somente leitura vale para **qualquer** tipo de pedido: ela é do
+        # pedido, não do ramo de análise.
+        strategy.metadata = {**strategy.metadata, "read_only": is_read_only_request(strategy.original_request)}
+        # Os testes são a régua da medição: só mudam se o pedido pedir.
+        strategy.metadata = {
+            **strategy.metadata,
+            "protect_tests": protects_test_files(strategy.original_request),
+        }
+        return strategy
+    def _analyze(self, objective: str, *, context_summary: str = "") -> ProfessionalStrategy:
         clean_obj = objective.strip()
         lower = clean_obj.lower()
         words = set(re.findall(r"\w+", lower))

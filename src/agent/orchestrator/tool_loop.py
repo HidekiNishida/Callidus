@@ -163,12 +163,22 @@ async def run_tool_loop(
     stream: bool = True,
     chat: Callable[..., Awaitable[Any]] | None = None,
     on_tool_call: Callable[[dict[str, Any], dict[str, Any]], Awaitable[None]] | None = None,
+    payload_ok: Callable[[str], bool] | None = None,
+    deliverable_hint: str = "",
+    tool_guard: Callable[[str, dict[str, Any]], str | None] | None = None,
 ) -> ToolLoopOutcome:
     """Chama o modelo em ciclo: ele pede ferramentas, o agente as executa, o modelo prossegue.
 
     O orçamento é duplo: rodadas (`max_iterations`) e chamadas de ferramenta (`max_tool_calls`).
     Um modelo que pede muitas leituras por rodada esgota o ciclo sem decidir; o orçamento de
     chamadas é o que fecha essa porta.
+
+    `payload_ok` diz se a resposta do modelo já é o que a etapa espera. Quando não é, o ciclo
+    **não recomeça**: pede a entrega uma vez, com o histórico da inspeção intacto. Recomeçar do
+    zero faria o modelo reler os mesmos arquivos e devolver a mesma resposta inválida.
+
+    `tool_guard` confere a permissão do pedido **antes** de executar a ferramenta: devolvendo
+    um motivo, a chamada é recusada e o modelo recebe a recusa como resultado.
     """
     from agent.providers.observed import observed_chat
 
@@ -188,10 +198,16 @@ async def run_tool_loop(
 
     async def _execute(call_item) -> tuple[dict[str, Any], dict[str, Any]]:
         args = call_item.arguments if isinstance(call_item.arguments, dict) else {}
-        try:
-            result = await registry.execute(call_item.name, ctx, args, approved=approved)
-        except Exception as exc:  # a ferramenta quebrou: o modelo precisa saber, o ciclo continua
-            result = {"success": False, "error": f"{type(exc).__name__}: {exc}"}
+        refusal = tool_guard(call_item.name, args) if tool_guard is not None else None
+        if refusal:
+            # A permissão do pedido é conferida **antes** da mutação: recusar depois já
+            # escreveu no disco.
+            result = {"success": False, "error": refusal, "refused": True}
+        else:
+            try:
+                result = await registry.execute(call_item.name, ctx, args, approved=approved)
+            except Exception as exc:  # a ferramenta quebrou: o modelo precisa saber, o ciclo continua
+                result = {"success": False, "error": f"{type(exc).__name__}: {exc}"}
         entry = {
             "tool": call_item.name,
             "args": args,
@@ -217,7 +233,35 @@ async def run_tool_loop(
         response = await call(provider, request, purpose=purpose, stream=stream)
         reasoning = getattr(response, "reasoning", None) or reasoning
         calls = list(getattr(response, "tool_calls", None) or [])
-        if not calls:
+        if not calls and payload_ok is not None and not payload_ok(response.content or ""):
+            # O modelo respondeu, mas não entregou o que a etapa espera. Uma cobrança única,
+            # com a inspeção já feita: recomeçar o ciclo faria o modelo reler os mesmos
+            # arquivos e devolver a mesma resposta inválida.
+            history.append(
+                ChatMessage(
+                    role="user",
+                    content=deliverable_hint
+                    or "Entregue agora o resultado no formato pedido. Não peça mais ferramentas.",
+                )
+            )
+            retry = await call(
+                provider,
+                ChatCompletionRequest(messages=history, profile=profile, tools=final_schemas or None),
+                purpose=purpose,
+                stream=stream,
+            )
+            reasoning = getattr(retry, "reasoning", None) or reasoning
+            calls = list(getattr(retry, "tool_calls", None) or [])
+            response = retry
+            if not calls:
+                return ToolLoopOutcome(
+                    content=retry.content or "",
+                    iterations=iteration,
+                    stop_reason="final",
+                    reasoning=reasoning,
+                    tool_log=log,
+                )
+        elif not calls:
             return ToolLoopOutcome(
                 content=response.content or "",
                 iterations=iteration,

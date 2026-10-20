@@ -82,21 +82,29 @@ class OperationContextBuilder:
         acceptance = task.acceptance_criteria or "Atender o objetivo sem violar requisitos canônicos."
         tools_summary = TOOL_CATALOG
         page = (task.metadata_json or {}).get("prompt_key") == "page"
-        output_format = (
-            'Grave a página inteira: {"path":"index.html","content":"..."}. '
-            "O content é o HTML completo, com cabeçalho, seções, estilo e chamado para ação. "
-            "Não entregue um esboço de um parágrafo. Responda só JSON."
-            if page
-            else (
-                "Inspecione o projeto com as ferramentas e faça a alteração com write_file ou edit_file. "
-                f"Você pode pedir no máximo {self._inspection_budget()} leituras; depois disso, faça a alteração. "
-                'Se preferir responder em JSON: criar {"path":"...","content":"..."}, '
-                'editar {"path":"...","old_string":"...","new_string":"..."}. '
-                "Responda só JSON, sem explicação."
-                if (task.metadata_json or {}).get("model_operation")
-                else "JSON estruturado quando solicitado."
+        read_only = bool((task.metadata_json or {}).get("read_only"))
+        if read_only:
+            output_format = (
+                "Esta etapa é SOMENTE LEITURA: inspecione o projeto com as ferramentas de leitura "
+                "e reporte o que encontrou. Não altere nenhum arquivo — a escrita é recusada. "
+                "Responda em texto, direto, dizendo o que observou."
             )
-        )
+        else:
+            output_format = (
+                'Grave a página inteira: {"path":"index.html","content":"..."}. '
+                "O content é o HTML completo, com cabeçalho, seções, estilo e chamado para ação. "
+                "Não entregue um esboço de um parágrafo. Responda só JSON."
+                if page
+                else (
+                    "Inspecione o projeto com as ferramentas e faça a alteração com write_file ou edit_file. "
+                    f"Você pode pedir no máximo {self._inspection_budget()} leituras; depois disso, faça a alteração. "
+                    'Se preferir responder em JSON: criar {"path":"...","content":"..."}, '
+                    'editar {"path":"...","old_string":"...","new_string":"..."}. '
+                    "Responda só JSON, sem explicação."
+                    if (task.metadata_json or {}).get("model_operation")
+                    else "JSON estruturado quando solicitado."
+                )
+            )
         rules = GLOBAL_RULES if not page else f"{GLOBAL_RULES} O arquivo pedido é o produto completo."
         skills_rendered, matched_skills = self._skills_block(root_path, task, profile)
         previous_failures = self._failures_block(task)

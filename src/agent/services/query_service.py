@@ -359,9 +359,19 @@ class QueryService:
         query.status = QueryStatus.ROUTED.value
         self._session.flush()
 
-        answer = self.answer_from_persisted(query)
-        if answer is None and provider is not None and profile is not None:
-            answer = await self._answer_with_inference(query, provider, profile)
+        try:
+            answer = self.answer_from_persisted(query)
+            if answer is None and provider is not None and profile is not None:
+                answer = await self._answer_with_inference(query, provider, profile)
+        except Exception as exc:
+            # A tentativa contada não pode ser desfeita. A consulta volta a PENDING (e não
+            # ROUTED, que o worker não recolhe) com o contador intacto: quem chamou precisa
+            # **confirmar** a transação, senão o rollback devolve a consulta ao estado
+            # anterior e ela é reenviada para sempre, gastando inferência a cada tique.
+            query.error_message = f"{type(exc).__name__}: {exc}"[:500]
+            query.status = QueryStatus.PENDING.value
+            self._session.flush()
+            raise
         if answer is None:
             answer = {
                 "answer": "Sem evidência no estado persistido do agente consultado.",
@@ -450,6 +460,9 @@ class QueryService:
             # O modelo respondeu algo que não está no estado. A resposta é preservada,
             # mas marcada: o pai precisa saber que ela não tem lastro.
             content = "[sem evidência no estado persistido] " + content
+        # A resposta da inferência vira descoberta do agente: a pergunta equivalente
+        # passa a ser respondida pelo estado persistido, sem nova inferência.
+        self._remember_inference(agent, content, fundamentada)
         return {
             "answer": content,
             "evidence": [],
@@ -461,6 +474,18 @@ class QueryService:
             "inference_used": True,
             "grounded": fundamentada,
         }
+
+    def _remember_inference(self, agent: AgentModel, content: str, fundamentada: bool) -> None:
+        """Guarda a resposta sintetizada como descoberta do agente consultado."""
+        try:
+            self._agents.record_finding(
+                agent.id,
+                content,
+                kind="inference",
+                evidence=[] if fundamentada else ["[sem evidência no estado persistido]"],
+            )
+        except Exception:  # pragma: no cover - a descoberta é cache, não requisito
+            return
 
     # ------------------------------------------------------------- respostas
 

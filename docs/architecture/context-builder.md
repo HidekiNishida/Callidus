@@ -6,9 +6,10 @@ Cada chamada ao modelo para uma tarefa passa por `OperationContextBuilder`, que 
 
 - Memória canônica do projeto (até 5 registros recentes).
 - Objetivo e critérios da tarefa.
+- **Requisitos obrigatórios que a etapa cobre** (obrigatório): id, descrição e critério de aceite de cada requisito do qual esta etapa é responsável. Sem este bloco o modelo executava a etapa sem saber o que tinha de provar: o critério de aceite canônico não chegava ao prompt, e a validação depois apontava o requisito como não comprovado.
 - **Arquivos-alvo** (obrigatório): conteúdo atual dos arquivos citados no título, objetivo, critérios, contrato ou `tool_args.path` que existem dentro do projeto — até 8 mil caracteres por arquivo e 12 mil no total; arquivo maior entra com o início e o aviso do tamanho. Nunca é compactado, para `old_string` casar com o disco. A lista vai em `strategy_notes_json` (`arquivos: …`).
 - **Contrato** (obrigatório, se existir): entradas, saídas, invariantes e aceite do `TaskContractModel`.
-- **Objetivo global** (opcional): objetivo da raiz, quando a tarefa é um passo dele.
+- **Objetivo global** (obrigatório): objetivo da raiz, quando a tarefa é um passo dele.
 - **Resultados das dependências** (opcional): título, status e resumo do resultado de cada tarefa da qual esta depende.
 - **Tentativas anteriores** (obrigatório, se houver falhas): ver abaixo.
 - Trechos técnicos (símbolos sugeridos pelo grafo).
@@ -19,7 +20,9 @@ A resposta final usa os formatos que o chat desenha (título, lista, tabela, có
 
 ## Orçamento
 
-`build_operation_context` aplica limite do `ModelProfile`, reserva de saída e margem de segurança (256 tokens). Regras globais, objetivo, critérios e formato de saída são **obrigatórios**; regras do projeto, contexto técnico e ferramentas entram se couberem, e os omitidos ficam em `refs_json` e `strategy_notes_json`.
+`build_operation_context` aplica limite do `ModelProfile`, reserva de saída e margem de segurança (256 tokens). Regras globais, objetivo, **requisitos**, critérios, formato de saída, **objetivo global** e **regras do projeto** são **obrigatórios**; skills, contexto técnico e ferramentas entram se couberem, e os omitidos ficam em `refs_json` e `strategy_notes_json`.
+
+O que é grande e dispensável (skills, contexto técnico, resumo de ferramentas) é o que sai quando falta espaço. O objetivo global e as regras do projeto são protegidos porque são o *porquê* da etapa e as restrições canônicas do projeto: perdê-los faz o modelo errar sem perceber.
 
 ### Nova tentativa
 

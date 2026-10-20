@@ -33,6 +33,45 @@ Quando nenhuma tarefa pode avançar (e o replanejamento não tem mais o que faze
 
 `consolidate_parent` nunca conclui um pai com filho falho: devolve `achieved=false` e `pending`. Pai em execução com filho falho vai a `BLOCKED` (`blocked_dependency/dependency_failed`), o que aciona o replanejamento do nível de cima.
 
+**Etapa cancelada é trabalho que não foi feito.** A consolidação distingue o cancelamento
+**previsto** do que sobrou pelo caminho:
+
+| Cancelamento | Efeito |
+|--------------|--------|
+| Previsto (`superseded_by_replan`, `cancelled_reason` = `duplicate` / `invalid_plan`) | outra etapa assume o trabalho; o pai pode seguir |
+| Não previsto | pendência: o pai **não** conclude como se o plano inteiro tivesse sido cumprido |
+
+O replanejamento marca os irmãos que cancela com `superseded_by_replan` — sem a marcação, o pai
+ficava `BLOCKED` mesmo com o plano novo já concluído.
+
+## A resposta final carrega os fatos
+
+O texto que o modelo escreve para a pessoa é curto e, por desenho, não cita verificações. Mas
+quem lê não pode depender do julgamento do modelo para saber se os testes passaram: uma resposta
+que afirma sucesso enquanto a suíte reprova é uma conclusão falsa.
+
+Por isso a resposta final ganha um **rodapé determinístico** (`closing.verification_footer`):
+as verificações que passaram, as que reprovaram e as inconclusivas, com o resumo de cada uma, e
+as execuções que reprovaram. Ele não depende do modelo e é escrito a partir das evidências
+persistidas. Medido em 20/10/2026: no cenário de verificação reprovada, o texto do modelo
+reportava sucesso com a suíte vermelha; com o rodapé, a reprovação aparece.
+
+## Permissões ao pelo do pedido
+
+"Não altere nenhum arquivo do projeto" é uma restrição do pedido, e restrição vira **permissão**:
+
+- A estratégia (`strategy.is_read_only_request`) reconhece a restrição negativa e a marca na raiz.
+- A marca **desce** com a decomposição, com o replanejamento, com a decomposição adaptativa e
+  com a etapa de comprovação de requisito (`consolidation.inherits_read_only`).
+- Uma etapa somente leitura recebe só as ferramentas de **inspeção** no ciclo de ferramentas.
+- A escrita é **recusada antes de tocar o disco** nos três caminhos: chamada de ferramenta durante
+  o ciclo, JSON com `path`/`content` e etapa de plano com `tool: write_file`. A recusa vira o
+  resultado da etapa (o modelo respondeu, o arquivo não mudou) — bloquear a etapa faria o
+  sistema repetir o mesmo pedido para sempre.
+
+No mesmo cenário de 20/10/2026, o agente alterava `app.py` apesar do pedido; com a permissão, o
+arquivo ficou intacto e o run concluiu reportando a reprovação da suíte.
+
 ## Verificação proporcional ao risco
 
 | Etapa | Verificação |

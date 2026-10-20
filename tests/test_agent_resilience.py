@@ -239,11 +239,33 @@ async def test_a_falha_da_inferencia_nao_corrompe_a_consulta(session: Session, a
             consulta.id, provider=provider, profile=ModelProfile(model_id="m")
         )
 
-    # A consulta ficou coerente: conta a tentativa e pode ser refeita.
+    # A consulta ficou coerente: conta a tentativa e pode ser refeita. Ela volta a PENDING
+    # (e não ROUTED, que o worker não recolhe) para poder ser reenviada — com o contador
+    # já somado, de modo que o limite de tentativas é alcancável.
     recem = queries.get(consulta.id)
-    assert recem.status == QueryStatus.ROUTED.value
+    assert recem.status == QueryStatus.PENDING.value
     assert recem.attempts == 1
     assert recem.answer is None
+
+
+@pytest.mark.asyncio
+async def test_a_tentativa_falha_ao_atingir_o_limite(session: Session, arvore):
+    """O limite de tentativas encerra a consulta: sem isso ela seria reenviada para sempre."""
+    queries = QueryService(session)
+    pai = arvore["agents"]["pai"]
+    filho = arvore["agents"]["filho"]
+
+    consulta = queries.ask(pai.id, filho.id, "qual foi a causa da falha?")
+    for _ in range(consulta.max_attempts):
+        with pytest.raises(RuntimeError):
+            await queries.resolve(
+                consulta.id,
+                provider=_ProvedorQueFalha(),
+                profile=ModelProfile(model_id="m"),
+            )
+    exhausted = await queries.resolve(consulta.id, profile=ModelProfile(model_id="m"))
+    assert exhausted.status == QueryStatus.FAILED.value
+    assert exhausted.attempts == consulta.max_attempts
 
 
 @pytest.mark.asyncio

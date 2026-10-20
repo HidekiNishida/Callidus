@@ -28,6 +28,7 @@ from agent.orchestrator.consolidation import (
     consolidate_parent,
     pending_reason,
     settled,
+    stages_outcome,
     verification_evidence_ok,
 )
 from agent.orchestrator.global_verify import (
@@ -68,6 +69,7 @@ from agent.orchestrator.stagnation import (
     strategy_signature,
 )
 from agent.orchestrator.requirements import effective_covers, ensure_requirements, root_of
+from agent.orchestrator.strategy import looks_like_test_file
 from agent.orchestrator.tool_loop import ToolLoopOutcome, run_tool_loop
 from agent.orchestrator.usage import accumulate_usage
 from agent.context.budget import ContextBudgetError
@@ -92,7 +94,7 @@ from agent.services.project_service import ProjectService
 from agent.services.task_service import TaskService
 from agent.tools.registry import ToolContext, build_default_registry
 from agent.verification.fingerprint import snapshot as artifact_snapshot
-from agent.verification.runner import run_verification
+from agent.verification.runner import VerificationResult, run_verification
 
 
 class RunBlockedError(RuntimeError):
@@ -100,6 +102,73 @@ class RunBlockedError(RuntimeError):
 
 
 _ACTION_KEYS = ("mcp_tool", "final_answer", "model_operation", "tool", "verification")
+
+
+def _is_informative_test_result(tool_id: str, out: dict) -> bool:
+    """A ferramenta rodou e o resultado é um veredito, não uma falha de execução.
+
+    `run_pytest` que termina com código de saída diferente de zero e saída de texto é a suíte
+    **reprovando** — a ferramenta funcionou. Só há falha de ferramenta quando o comando nem
+    chegou a rodar (executável ausente, timeout, caminho bloqueado).
+    """
+    if tool_id not in {"run_pytest", "pytest"}:
+        return False
+    if out.get("success"):
+        return False
+    if out.get("exit_code") is None:
+        return False
+    return bool(str(out.get("stdout") or "").strip() or str(out.get("stderr") or "").strip())
+
+
+def _operation_tools_for(meta: dict) -> tuple[str, ...]:
+    """Ferramentas da etapa: sem `write_file`/`edit_file` quando o pedido é somente leitura.
+
+    "Não altere nenhum arquivo do projeto" vira **permissão**, não apenas instrução: o modelo
+    recebe as ferramentas de leitura e o caminho que escreve no disco recusa a alteração.
+    """
+    from agent.orchestrator.tool_loop import INSPECTION_TOOLS, OPERATION_TOOLS
+
+    if (meta or {}).get("read_only"):
+        return INSPECTION_TOOLS
+    return OPERATION_TOOLS
+
+
+def _write_refusal_reason(meta: dict, tool_name: str, path: str | None) -> str | None:
+    """Por que esta escrita não pode acontecer (ou `None`, quando pode).
+
+    Duas proteções, ambas do pedido e não do modelo:
+
+    - **Somente leitura**: o pedido proíbe alterar o projeto.
+    - **Régua protegida**: os arquivos de teste são o critério da medição. Alterá-los para a
+      medição passar é trocar o critério, não resolver o problema — a menos que o pedido
+      mande mexer nos testes.
+    """
+    if tool_name not in {"write_file", "edit_file", "move_file"}:
+        return None
+    if meta.get("read_only"):
+        return "a etapa é somente leitura: o pedido proíbe alterar arquivos"
+    if meta.get("protect_tests") and path and looks_like_test_file(str(path)):
+        return f"o pedido não pede para alterar os testes: «{path}» é o critério da medição"
+    return None
+
+
+def _payload_is_usable(content: str) -> bool:
+    """A resposta do modelo já é o JSON que a etapa espera (criar ou editar)?"""
+    from agent.util.json_parse import parse_json_object
+
+    data, err = parse_json_object(content or "")
+    if err or not isinstance(data, dict):
+        return False
+    if not isinstance(data.get("path"), str) or not data.get("path").strip():
+        return False
+    return bool(data.get("content") or data.get("new_string"))
+
+
+def _test_summary(out: dict) -> str:
+    """Resumo curto do que a suíte contou."""
+    text = str(out.get("stdout") or out.get("stderr") or "").strip()
+    lines = [line for line in text.splitlines() if line.strip()]
+    return lines[-1][:200] if lines else f"código de saída {out.get('exit_code')}"
 
 
 def _select_provider(settings: Settings, run_config: dict) -> LLMProvider:
@@ -343,6 +412,11 @@ class RunOrchestrator:
         for child in children_of(self._session, parent.id):
             child_meta = dict(child.metadata_json or {})
             child_meta.setdefault("lead_specialty", strategy.lead_specialty)
+            for flag in ("read_only", "protect_tests"):
+                if strategy.metadata.get(flag):
+                    # Restrições do pedido viram permissão, não só instrução, e descem com a
+                    # decomposição.
+                    child_meta.setdefault(flag, True)
             if strategy.needs_atomization and not child_meta.get("tool") and not child_meta.get("verification"):
                 child_meta.setdefault("atomize", True)
             if strategy.extracted_requirements:
@@ -913,6 +987,12 @@ class RunOrchestrator:
                     "professional_strategy": strat.as_dict(),
                     "lead_specialty": strat.lead_specialty,
                 }
+                if strat.metadata.get("read_only"):
+                    # A restrição fica na própria raiz: assim ela desce com a decomposição,
+                    # com o replanejamento e com a decomposição adaptativa.
+                    task.metadata_json = {**task.metadata_json, "read_only": True}
+                if strat.metadata.get("protect_tests"):
+                    task.metadata_json = {**task.metadata_json, "protect_tests": True}
                 emit("strategy.formulated", strat.as_dict(), task_id=task.id, commit=True)
             return {"action": "started_planning", "task_id": str(task.id)}
 
@@ -1379,6 +1459,17 @@ class RunOrchestrator:
                         stream=stream_allowed,
                         chat=_chat_model,
                         on_tool_call=_on_tool_call,
+                        tool_ids=_operation_tools_for(meta),
+                        payload_ok=_payload_is_usable,
+                        tool_guard=lambda name, args: _write_refusal_reason(
+                            meta, name, args.get("path")
+                        ),
+                        deliverable_hint=(
+                            "Entregue agora a alteração. Responda só com JSON: "
+                            '{"path":"arquivo","content":"conteúdo inteiro"} ou '
+                            '{"path":"arquivo","old_string":"trecho","new_string":"novo"}. '
+                            "Nada de explicação, nada de comentário."
+                        ),
                     )
                 else:
                     resp = await _chat_model(
@@ -1433,6 +1524,43 @@ class RunOrchestrator:
                 tool_name = outcome.applied_tool or "write_file"
                 payload = dict(outcome.applied_args or {})
                 out = dict(outcome.applied_result or {})
+                refusal = _write_refusal_reason(meta, tool_name, payload.get("path"))
+                if refusal:
+                    # A escrita é recusada e a recusa é o resultado da etapa (o modelo
+                    # respondeu, o arquivo não mudou). Bloquear a etapa faria o sistema
+                    # repetir o mesmo pedido para sempre.
+                    task.consolidated_result_json = {
+                        "model_operation": True,
+                        "refused_write": {"tool": tool_name, "path": payload.get("path"), "reason": refusal},
+                        "report": content.strip(),
+                        "context_snapshot_id": str(snap.id),
+                    }
+                    self._note_thought(run, task, refusal, phase="tool")
+                    self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                    done = await self._finalize_verification(run, project, task, root_path)
+                    done["thought"] = excerpt
+                    return done
+                    self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                    done = await self._finalize_verification(run, project, task, root_path)
+                    done["thought"] = excerpt
+                    return done
+                # A operação que aplicou a mudança é uma tentativa da tarefa: sem esta linha a
+                # contagem de tentativas ignoraria toda operação que terminou em escrita.
+                self._attempts.record(
+                    run_id=run.id,
+                    task_id=task.id,
+                    kind=AttemptKind.MODEL,
+                    provider=provider.name,
+                    request=attempt_request,
+                    response={
+                        "content_preview": content[:500],
+                        "tool_calls": [str(item.get("tool")) for item in tool_log],
+                        "applied": tool_name,
+                        "reasoning_chars": len(outcome.reasoning or ""),
+                    },
+                    success=bool(out.get("success")),
+                    project_id=project.id,
+                )
                 path = payload.get("path")
                 task.consolidated_result_json = {
                     "model_operation": True,
@@ -1474,6 +1602,19 @@ class RunOrchestrator:
                 }
             data, err = parse_json_object(content)
             missing = ["path"] if data is not None and "path" not in data else None
+            if data is None and meta.get("read_only") and content.strip():
+                # Etapa somente leitura: a entrega é o relatório em texto, não uma escrita.
+                # Exigir JSON aqui transformaria um pedido de leitura em erro de formato.
+                task.consolidated_result_json = {
+                    "model_operation": True,
+                    "read_only": True,
+                    "report": content.strip(),
+                    "context_snapshot_id": str(snap.id),
+                }
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                done = await self._finalize_verification(run, project, task, root_path)
+                done["thought"] = excerpt
+                return done
             # O orçamento efetivo de saída: o que o provedor pode gerar nesta chamada.
             generation_now = dict(profile.generation or {})
             output_budget = int(
@@ -1538,6 +1679,21 @@ class RunOrchestrator:
             else:
                 tool_name = "write_file"
                 payload = {"path": data["path"], "content": data.get("content", "")}
+            refusal = _write_refusal_reason(meta, tool_name, payload.get("path"))
+            if refusal:
+                # A escrita é recusada antes de tocar o disco, e a recusa vira o resultado da
+                # etapa (sem repetir o mesmo pedido para sempre).
+                task.consolidated_result_json = {
+                    "model_operation": True,
+                    "refused_write": {"tool": tool_name, "path": payload.get("path"), "reason": refusal},
+                    "report": content.strip(),
+                    "context_snapshot_id": str(snap.id),
+                }
+                self._note_thought(run, task, refusal, phase="tool")
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                done = await self._finalize_verification(run, project, task, root_path)
+                done["thought"] = excerpt
+                return done
             out = await self._tools.execute(tool_name, ctx, payload, approved=approved)
             task.consolidated_result_json = {
                 "model_operation": True,
@@ -1575,6 +1731,25 @@ class RunOrchestrator:
             args = meta.get("tool_args") or {}
             target = args.get("path") or args.get("pattern") or args.get("command") or ""
             where = f" em {target}" if isinstance(target, str) and target else ""
+            refusal = _write_refusal_reason(meta, tool_id, args.get("path"))
+            if refusal:
+                # A escrita do plano é recusada antes de tocar o disco, e a recusa fica
+                # registrada como o resultado da etapa.
+                out = {
+                    "success": False,
+                    "error": refusal,
+                    "refused": True,
+                }
+                task.consolidated_result_json = {
+                    "tool": tool_id,
+                    "result": out,
+                    "refused_write": {"tool": tool_id, "path": args.get("path"), "reason": refusal},
+                }
+                self._note_thought(run, task, refusal, phase="tool")
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                done = await self._finalize_verification(run, project, task, root_path)
+                done["tool"] = tool_id
+                return done
             self._note_thought(run, task, f"Usando {tool_id}{where}.", phase="tool")
             out = await self._tools.execute(tool_id, ctx, args, approved=approved)
             fp = AttemptService.fingerprint({"tool": tool_id, "result": out})
@@ -1608,6 +1783,17 @@ class RunOrchestrator:
             if failure is None:
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
                 return await self._finalize_verification(run, project, task, root_path)
+            if _is_informative_test_result(tool_id, out):
+                # Rodar a suíte e ver os testes falharem **é o resultado**, não uma ferramenta
+                # quebrada: repetir a mesma chamada devolve a mesma falha. A etapa registra o
+                # que a suíte disse e segue para a verificação, que é quem julga o código.
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                done = await self._finalize_verification(run, project, task, root_path)
+                done["tool"] = tool_id
+                done["thought"] = (
+                    f"A suíte de testes rodou e reprovou: {_test_summary(out)}"
+                )
+                return done
             if failure.cause == FailureCause.TOOL_INPUT and self._attempts.repeated_output_detected(
                 task.id, fp, window=2, kind=AttemptKind.TOOL
             ):
@@ -1690,13 +1876,17 @@ class RunOrchestrator:
                 report["sources"] = result.get("sources") or []
                 root.consolidated_result_json = report
                 return
-        from agent.orchestrator.closing import compose_final_markdown
+        from agent.orchestrator.closing import compose_final_markdown, verification_footer
 
         stages = [
             {"title": child.title, "status": child.status, "sources": []}
             for child in children_of(self._session, root.id)
         ]
-        report["final_answer"] = compose_final_markdown(objective=root.objective or root.title, stages=stages)
+        markdown = compose_final_markdown(objective=root.objective or root.title, stages=stages)
+        footer = verification_footer(self._session, root)
+        if footer:
+            markdown = f"{markdown.rstrip()}\n\n{footer}"
+        report["final_answer"] = markdown
         root.consolidated_result_json = report
 
     def _work_root(self, project: ProjectModel, task: TaskModel | None) -> str:
@@ -1718,6 +1908,7 @@ class RunOrchestrator:
             extract_sources,
             local_now_line,
             usable_reply,
+            verification_footer,
         )
         from agent.providers.base import ChatCompletionRequest, ChatMessage
 
@@ -1769,9 +1960,22 @@ class RunOrchestrator:
             stages=stages,
             model_text=model_text,
         )
+        # O rodapé é determinístico: o texto do modelo é conciso por desenho, e quem lê a
+        # resposta precisa saber, sem depender do julgamento do modelo, o que foi verificado.
+        footer = verification_footer(self._session, parent if parent is not None else task)
+        if footer:
+            markdown = f"{markdown.rstrip()}\n\n{footer}"
         sources = extract_sources(markdown, *[str(stage.get("sources")) for stage in stages])
         task.consolidated_result_json = {"final_answer": True, "markdown": markdown, "sources": sources}
         self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+        spec = (task.metadata_json or {}).get("verification")
+        if isinstance(spec, dict) and spec:
+            # A verificação declarada na etapa de resposta final **roda**: sem isso a etapa
+            # ficava sem evidência, a consolidação a reabria, e o agent reescrevia a
+            # resposta para sempre — a resposta não muda nada, a medição é a mesma.
+            return await self._finalize_verification(
+                run, project, task, self._work_root(project, task)
+            )
         self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
         if task.parent_id:
             consolidate_parent(self._session, task.parent_id)
@@ -1790,7 +1994,11 @@ class RunOrchestrator:
         root_path = work_root or self._work_root(project, task)
         meta = task.metadata_json or {}
         spec = meta.get("verification") or implicit_spec or meta.get("implicit_verification")
-        if not spec:
+        if isinstance(spec, str):
+            # Verificação vinda como texto ("verification": "pytest"): não é um contrato.
+            # Tratar como ausente é melhor do que derrubar a etapa com uma exceção.
+            spec = None
+        if not isinstance(spec, dict) or not spec:
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
             consolidate_parent(self._session, task.parent_id) if task.parent_id else None
             return {"action": "completed_without_verification", "task_id": str(task.id)}
@@ -1798,12 +2006,18 @@ class RunOrchestrator:
         config = self._run_config(run)
         approved = bool(config.get("approve_risky_tools"))
         tool_args = meta.get("tool_args") or {}
-        vresult = await run_verification(
-            project_root=root_path,
-            spec=spec,
-            tool_args=tool_args,
-            approved=approved,
-        )
+        if str(spec.get("type") or "") == "stages":
+            # `stages` confere as etapas das quais esta depende: precisa do estado persistido,
+            # não só do disco — por isso não é verificador de arquivo.
+            passed_stages, summary_stages, detail_stages = stages_outcome(self._session, task)
+            vresult = VerificationResult("stages", passed_stages, summary_stages, detail_stages)
+        else:
+            vresult = await run_verification(
+                project_root=root_path,
+                spec=spec,
+                tool_args=tool_args,
+                approved=approved,
+            )
         detail = dict(vresult.detail) if isinstance(vresult.detail, dict) else {}
         artifacts = artifact_snapshot(root_path, spec, tool_args)
         if artifacts:
@@ -1871,6 +2085,21 @@ class RunOrchestrator:
             return {"action": "verify_blocked", "task_id": str(task.id), "failure": noted}
 
         if vresult.passed is False:
+            if meta.get("final_answer"):
+                # A resposta final foi entregue; a verificação reprovou. Reescrever a resposta
+                # não muda a medição — o que reprovou é o código, não o texto. A etapa
+                # conclude com a evidência reprovada, e o rodapé da resposta reporta o
+                # veredito. Quem decide se o requisito está provado é o aceite por requisito.
+                task.consolidated_result_json = {
+                    "final_answer": True,
+                    "verified": False,
+                    "summary": vresult.summary,
+                }
+                self._remember_failure(task, failure)
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
+                if task.parent_id:
+                    consolidate_parent(self._session, task.parent_id)
+                return {"action": "verify_failed", "task_id": str(task.id), "final_answer": True}
             fp = AttemptService.fingerprint({"passed": False, "summary": vresult.summary})
             if self._attempts.repeated_output_detected(task.id, fp, window=2, kind=AttemptKind.VERIFICATION):
                 noted = self._remember_failure(

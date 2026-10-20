@@ -40,6 +40,22 @@ O prompt da operação (`context/operation_builder.py`) diz ao modelo que ele po
 ferramentas e que a alteração pode ser feita com `write_file`/`edit_file`, e informa o orçamento de
 leituras (mesmo limite do ciclo).
 
+## A cobrança única
+
+Um modelo pequeno responde ao ciclo de duas formas: ou entrega o JSON pedido, ou responde
+`{}`/texto e para. O `{}` era tratado como "resposta inválida" e a **etapa inteira recomeçava**:
+o modelo reinspecionava os mesmos arquivos e devolvia a mesma resposta inválida, até o orçamento
+de tentativas estourar (32 chamadas ao modelo e 15 falhas no cenário `funcional`, medido em
+20/10/2026).
+
+Agora, quando o modelo responde **sem** pedir ferramenta e a resposta não é o que a etapa espera,
+o ciclo faz **uma cobrança** com o histórico da inspeção intacto (`payload_ok` +
+`deliverable_hint`): "Entregue agora a alteração. Responda só JSON: …". Uma chamada a mais,
+sem reler nada. Se ainda assim não vier o payload, a etapa segue para o diagnóstico normal.
+
+Medido com `gpt-oss:20b` (Ollama local, 5 cenários): as falhas de modelo caíram de 15 para 1 e as
+chamadas ao modelo de 65 para 9 — ver [avaliacao.md](/docs/architecture/avaliacao.md).
+
 ## Contratos
 
 | Objeto | Onde | O que garante |
@@ -49,6 +65,15 @@ leituras (mesmo limite do ciclo).
 | `ChatMessage.tool_calls` / `tool_call_id` | `providers/base.py` | Histórico da conversa de ferramentas |
 | `ChatCompletionResponse.reasoning` | `providers/base.py` | Canal de raciocínio (`thinking` do Ollama): sem ele não há como distinguir "modelo pensou e não respondeu" de "resposta inválida" |
 | `AttemptKind.MODEL` com `iteration_fp` | `services/attempt_service.py` | Iteração interna do ciclo **não** conta como tentativa da tarefa (o orçamento de tentativas é da estratégia, não das leituras) |
+| `run_tool_loop(payload_ok, deliverable_hint)` | `tool_loop.py` | Cobrança única quando a resposta não é o payload esperado |
+
+## Permissões da etapa
+
+As ferramentas oferecidas no ciclo dependem da etapa: uma etapa de um pedido **somente leitura**
+recebe só as ferramentas de inspeção (`_operation_tools_for`), e a escrita é recusada antes de
+tocar o disco, nos três caminhos (chamada de ferramenta durante o ciclo, JSON com `path`/`content`
+e etapa de plano com `tool: write_file`). "Não altere nenhum arquivo" deixa de ser um texto no
+prompt — vira permissão. Ver [execucao-autonoma.md](/docs/architecture/execucao-autonoma.md#permissões-ao-pelo-do-pedido).
 
 ## Limites
 
