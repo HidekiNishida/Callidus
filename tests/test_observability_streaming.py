@@ -135,10 +135,10 @@ class _Hanging(LLMProvider):
     async def list_models(self):
         return []
 
-    async def chat(self, request):
+    async def _chat(self, request):
         raise AssertionError("não deveria chamar chat")
 
-    async def chat_streaming(self, request, on_delta) -> ChatCompletionResponse:
+    async def _chat_streaming(self, request, on_delta) -> ChatCompletionResponse:
         on_delta("pensando")
         await asyncio.sleep(3600)
         raise AssertionError("inalcançável")

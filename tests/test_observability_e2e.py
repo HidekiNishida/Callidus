@@ -37,10 +37,10 @@ class _Streaming(LLMProvider):
     async def list_models(self):
         return []
 
-    async def chat(self, request):
+    async def _chat(self, request):
         raise AssertionError("deveria transmitir")
 
-    async def chat_streaming(self, request, on_delta) -> ChatCompletionResponse:
+    async def _chat_streaming(self, request, on_delta) -> ChatCompletionResponse:
         for piece in self.pieces:
             on_delta(piece)
             await asyncio.sleep(0.15)
@@ -48,7 +48,7 @@ class _Streaming(LLMProvider):
 
 
 class _Broken(_Streaming):
-    async def chat_streaming(self, request, on_delta) -> ChatCompletionResponse:
+    async def _chat_streaming(self, request, on_delta) -> ChatCompletionResponse:
         on_delta("começ")
         raise ProviderError("conexão caiu")
 
