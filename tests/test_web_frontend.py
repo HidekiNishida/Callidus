@@ -56,6 +56,7 @@ def test_vue_is_vendored_locally():
         "store.js",
         "api.js",
         "ui.js",
+        "chat-scroll.js",
         "components/sidebar.js",
         "components/topbar.js",
         "components/chat.js",
@@ -225,15 +226,23 @@ def test_mensagem_enviada_durante_a_execucao_entra_na_fila():
 def test_rolagem_automatica_para_quando_o_usuario_esta_no_fim():
     """A rolagem acompanha o feed só enquanto o usuário estiver no fim da conversa."""
     chat = (APP_DIR / "components" / "chat.js").read_text(encoding="utf-8")
-    assert "const stick = atBottom.value && !userTookOver.value;" in chat
-    # o scroll da própria rolagem automática não conta como decisão do usuário
-    assert "autoScrolling" in chat
-    assert "behavior: \"smooth\"" in chat
-    assert "scrollHeight" in chat
+    scroll = (APP_DIR / "chat-scroll.js").read_text(encoding="utf-8")
+    # o estado da rolagem vive num módulo próprio (testável em node)
+    assert (APP_DIR / "chat-scroll.js").is_file()
+    assert "createScrollFollow" in chat
+    assert "scrollFollow.isFollowing()" in chat
+    assert "scrollFollow.followContent(element)" in chat
     assert "@scroll=\"onScroll\"" in chat
-    # o usuário assume o controle (roda/toque) e a rolagem suave em andamento é cancelada
-    assert "onUserScrollIntent" in chat
-    assert "userTookOver" in chat
+    # o scroll da própria rolagem automática não conta como decisão do usuário
+    assert "autoScrolling" in scroll
+    assert "behavior: \"smooth\"" in scroll
+    assert "scrollHeight" in scroll
+    # o usuário assume o controle (roda/toque/teclado) e a rolagem suave é cancelada
+    assert "handleWheel" in chat and "handleTouchMove" in chat
+    assert "behavior: \"instant\"" in scroll
+    # o estado é derivado da posição real: voltar ao fim religa o acompanhamento
+    assert "nearBottom" in scroll
+    assert "userTookOver" not in chat
 
 
 def test_etiquetas_do_plano_acima_do_prompt():

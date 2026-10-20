@@ -28,6 +28,7 @@ import {
   diffLines,
 } from "../ui.js";
 import { filesList, currentTask } from "../live-state.js";
+import { createScrollFollow } from "../chat-scroll.js";
 
 export const ChatView = {
   name: "ChatView",
@@ -76,6 +77,24 @@ export const ChatView = {
     const models = Vue.computed(() => state.providerModels[state.provider] || []);
     const logRef = Vue.ref(null);
 
+    // A conversa está no ponto mais baixo? (o usuário pode estar lendo algo acima)
+    const atBottom = Vue.ref(true);
+    // Quem manda na rolagem: o estado segue a posição real da conversa, então
+    // voltar ao fim sempre religa o acompanhamento do feed.
+    const scrollFollow = createScrollFollow({
+      onChange: (following) => {
+        atBottom.value = following;
+      },
+    });
+
+    // Conversa nova: o acompanhamento do feed recomeça, colado no fim.
+    Vue.watch(
+      () => state.conversation?.id || null,
+      () => {
+        scrollFollow.reset();
+      },
+    );
+
     // Rolagem automática: acompanha o feed enquanto o usuário estiver no fim; se ele
     // subiu para ler, a rolagem é parada até ele voltar ao fim.
     Vue.watch(
@@ -84,22 +103,16 @@ export const ChatView = {
           .map((message) => `${message.stages.length}:${message.activity.length}`)
           .join(","),
       () => {
-        const element = logRef.value;
-        if (!element) return;
-        // Acompanha o feed enquanto a conversa estiver no ponto mais baixo.
-        const stick = atBottom.value && !userTookOver.value;
+        // A decisão é tomada antes do DOM mudar: o feed é seguido enquanto a
+        // conversa estiver no ponto mais baixo.
+        const follow = scrollFollow.isFollowing();
         Vue.nextTick(() => {
-          if (!stick || userTookOver.value) return;
-          autoScrolling = true;
-          element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
-          // Ao terminar, a conversa continua no fim: o próximo item do feed é seguido.
-          window.setTimeout(() => {
-            autoScrolling = false;
-            atBottom.value = true;
-          }, 450);
+          const element = logRef.value;
+          if (!element || !follow) return;
+          scrollFollow.followContent(element);
         });
       },
-      { flush: "pre" },
+      { flush: "pre", immediate: true },
     );
     const thoughts = Vue.computed(() => {
       const live = state.live;
@@ -145,14 +158,6 @@ export const ChatView = {
       return task ? task.title : null;
     });
 
-    // A conversa está no ponto mais baixo? (o usuário pode estar lendo algo acima)
-    const atBottom = Vue.ref(true);
-    // O usuário assumiu o controle da rolagem (roda do mouse/toque/teclado): a rolagem
-    // automática para até ele voltar ao fim.
-    const userTookOver = Vue.ref(false);
-    // Verdadeiro enquanto a rolagem automática está em curso (para não confundir o
-    // scroll disparado por ela com o scroll do usuário).
-    let autoScrolling = false;
     // Entradas abertas e fechadas pelo usuário (o que tem diff abre sozinho).
     const openIds = Vue.reactive(new Set());
     const closedIds = Vue.reactive(new Set());
@@ -183,26 +188,47 @@ export const ChatView = {
       else collapsedTurns.add(message.id);
     }
 
-    function onScroll() {
-      const element = logRef.value;
-      if (!element) return;
-      const bottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
-      atBottom.value = bottom;
-      // Scroll nosso (animação automática) não conta como decisão do usuário.
-      if (autoScrolling) return;
-      if (bottom) userTookOver.value = false;
+    // Um bloco com conteúdo próprio (diff, saída do modelo) rola sozinho: a rolagem
+    // dentro dele não é a rolagem da conversa.
+    function insideNestedScroller(event, element) {
+      if (!event || !event.target || !element) return false;
+      let node = event.target;
+      while (node && node !== element) {
+        if (node.scrollHeight > node.clientHeight + 1) {
+          const style = window.getComputedStyle(node);
+          if (/(auto|scroll|overlay)/.test(style.overflowY)) return true;
+        }
+        node = node.parentElement;
+      }
+      return false;
     }
 
-    function onUserScrollIntent() {
-      userTookOver.value = true;
-      const element = logRef.value;
-      // Cancela a rolagem suave em andamento para não arrastar o usuário até o fim.
-      if (element) element.scrollTo({ top: element.scrollTop, behavior: "auto" });
+    function onScroll(event) {
+      scrollFollow.handleScroll(event && event.currentTarget);
+    }
+
+    function onWheel(event) {
+      const element = event && event.currentTarget;
+      if (insideNestedScroller(event, element)) return;
+      scrollFollow.handleWheel(element, event && event.deltaY);
+    }
+
+    function onTouchStart(event) {
+      scrollFollow.handleTouchStart(event && event.currentTarget, event);
+    }
+
+    function onTouchMove(event) {
+      const element = event && event.currentTarget;
+      if (insideNestedScroller(event, element)) return;
+      scrollFollow.handleTouchMove(element, event);
+    }
+
+    function onTouchEnd() {
+      scrollFollow.handleTouchEnd();
     }
 
     function scrollToBottom() {
-      const element = logRef.value;
-      if (element) element.scrollTop = element.scrollHeight;
+      scrollFollow.scrollToBottom(logRef.value);
     }
 
     async function onProviderChange() {
@@ -211,10 +237,16 @@ export const ChatView = {
       if (found.length) state.modelId = found[0];
     }
 
+    function onSend() {
+      // A mensagem enviada sempre aparece no fim da conversa.
+      scrollFollow.scrollToBottom(logRef.value);
+      sendMessage();
+    }
+
     function onKeydown(event) {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        sendMessage();
+        onSend();
       }
     }
 
@@ -258,7 +290,10 @@ export const ChatView = {
       currentStage,
       atBottom,
       onScroll,
-      onUserScrollIntent,
+      onWheel,
+      onTouchStart,
+      onTouchMove,
+      onTouchEnd,
       scrollToBottom,
       isOpen,
       toggleEntry,
@@ -270,6 +305,7 @@ export const ChatView = {
       thoughts,
       onProviderChange,
       onKeydown,
+      onSend,
       onFiles,
       removeAttachment,
       toast,
@@ -292,8 +328,10 @@ export const ChatView = {
         ref="logRef"
         v-if="messages.length"
         @scroll="onScroll"
-        @wheel="onUserScrollIntent"
-        @touchstart="onUserScrollIntent"
+        @wheel="onWheel"
+        @touchstart="onTouchStart"
+        @touchmove="onTouchMove"
+        @touchend="onTouchEnd"
       >
         <article v-for="message in messages" :key="message.id" class="turn">
           <div class="bubble user">
@@ -464,7 +502,7 @@ export const ChatView = {
         </div>
       </div>
 
-      <form class="composer" @submit.prevent="sendMessage()">
+      <form class="composer" @submit.prevent="onSend()">
         <div class="chips" v-if="state.attachments.length">
           <span class="chip" v-for="(item, index) in state.attachments" :key="item.name + index">
             <span v-html="icon('paperclip', 12)"></span>{{ item.name }}
