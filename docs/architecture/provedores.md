@@ -279,8 +279,11 @@ curl http://127.0.0.1:8080/v1/models
 ## Como registrar um novo adaptador
 
 1. **Arquivo** `src/agent/providers/<nome>.py`, classe que herda de `LLMProvider`.
-2. **Contrato**: implemente `list_models()` e `chat()`; `chat_streaming()` apenas se o serviço
-   transmitir de verdade. Declare `capabilities()` com o que a API oferece.
+2. **Contrato**: implemente `list_models()` e `_chat()`; `_chat_streaming()` apenas se o serviço
+   transmitir de verdade. **Não sobrescreva `chat`**: a exclusividade de inferência mora no
+   contrato base ([`base.py`](/src/agent/providers/base.py)), que passa toda chamada pelo
+   [executor compartilhado](/src/agent/services/executor.py). Declare `capabilities()` com o que a
+   API oferece.
 3. **Transporte**: reutilize `HttpClientConfig`, `client_kwargs`, `get_json`, `post_json` e
    `stream_lines` — tempo limite, erros, redação e retry vêm de graça.
 4. **Registro**: acrescente o tipo em `PROVIDER_TYPES` e no `build_provider()`
@@ -295,8 +298,11 @@ curl http://127.0.0.1:8080/v1/models
 1. **Compatibilidade não é universal** — “compatível com OpenAI” cobre `chat/completions`,
    `models`, streaming SSE, `tools` e `response_format`. Reaproveitamento de `embeddings`,
    `audio`, `batch` e afins não existe.
-2. **Ferramentas ainda não são executadas em laço** — os adaptadores devolvem `tool_calls` na
-   resposta, mas o ciclo de ferramentas do agente continua sendo o atual (JSON de operação).
+2. **Ciclo de ferramentas por capacidade, não por modelo** — os adaptadores devolvem `tool_calls`
+   na resposta e o agente executa o laço (`tool_loop`) quando o provedor declara
+   `capabilities().tool_loop` (Ollama, OpenAI-compatível, llama.cpp). Anthropic e Gemini mantêm o
+   protocolo JSON de uma tacada: o mapeamento de `tool_use`/`tool_result` ainda não foi validado.
+   Detalhes: [ciclo-ferramentas.md](/docs/architecture/ciclo-ferramentas.md).
 3. **Anthropic** não tem JSON estruturado nativo: a resposta estruturada continua dependendo de
    instrução no prompt.
 4. **Cache de modelos** existe para OpenRouter, Gemini e compatível com OpenAI; Ollama e llama.cpp
@@ -305,6 +311,13 @@ curl http://127.0.0.1:8080/v1/models
 6. **Chave literal em `api_key`** fica no arquivo de configuração — use `api_key_env`.
 7. **Sem verificação de que o modelo suporta ferramentas/JSON**: a tentativa é feita e o erro do
    provedor é repassado.
+8. **Exclusividade de inferência é por processo** — o executor compartilhado serializa as
+   inferências (padrão: uma por vez, `MAX_CONCURRENT_INFERENCES`) para todas as sessões e threads
+   do processo. **Dois processos** do Callidus contra o mesmo servidor de inferência inferem em
+   paralelo: serializar exigiria uma trava externa, que não se justifica na instalação local.
+   Nenhum backend permite descarregar o modelo ou retomar uma inferência: o Callidus mantém o
+   modelo carregado (Ollama: `keep_alive`) e libera o contexto de execução. Detalhes:
+   [hierarquia-agentes.md](/docs/architecture/hierarquia-agentes.md).
 
 ## Resolução de problemas
 

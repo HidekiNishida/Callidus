@@ -17,6 +17,9 @@ Persistência principal: SQLite em `data/agent.db` (configurável via `AGENT_DAT
 | `KgNode` / `KgEdge` | Grafo de conhecimento (arquivo, símbolo, documento, requisito) |
 | `TaskContract` | Entradas/saídas/invariantes de integração por tarefa |
 | `ContextSnapshot` | Métricas e componentes do contexto enviado ao modelo |
+| `Agent` | Agente lógico: papel, instruções, permissões, pai e estado |
+| `AgentExecution` | Execução ativa do agente: checkpoint, tentativa, erro |
+| `AgentQuery` | Consulta entre agentes: perguntas, correlação, tentativas, resposta |
 
 ## Task — campos essenciais
 
@@ -27,6 +30,25 @@ Persistência principal: SQLite em `data/agent.db` (configurável via `AGENT_DAT
 - `metadata_json` — entradas/saídas esperadas, limites, ferramentas autorizadas
 - `consolidated_result_json` — resumo após conclusão verificada
 - timestamps: `created_at`, `updated_at`, `started_at`, `completed_at`
+
+## Hierarquia de agentes
+
+Três entidades distintas, com ciclo de vida próprio:
+
+| Tabela | Chave | Papel |
+|--------|-------|-------|
+| `agents` | `id`, `project_id`, `parent_id` (agente pai), `task_id`, `role`, `status`, `depth`, `metadata_json` | Identidade, papel, hierarquia recursiva e descobertas |
+| `agent_executions` | `id`, `agent_id`, `task_id`, `run_id`, `status`, `attempt`, `checkpoint_json`, `context_refs_json`, `last_error` | O que ocupa memória de inferência e como retomá-lo |
+| `agent_queries` | `id`, `requester_agent_id`, `target_agent_id`, `answered_by_agent_id`, `task_id`, `correlation_id`, `questions_json`, `status`, `answer_json`, `attempts` | Pergunta entre agentes e resposta correlacionada |
+
+- `agents.parent_id` é auto-referente: a profundidade não é fixa.
+- `agent_executions.checkpoint_json` guarda o estado **estruturado** (etapa, plano,
+  pendências, erros), limitado por `MAX_AGENT_CHECKPOINT_CHARS`. A transcrição bruta
+  continua em `event_logs`, que é a trilha de auditoria.
+- `metadata_json` do agente guarda as descobertas (`findings`), as decisões e os
+  artefatos — é o que permite responder a uma consulta sem reexecutar o trabalho.
+
+Detalhe: [hierarquia-agentes.md](/docs/architecture/hierarquia-agentes.md).
 
 ## Memória
 

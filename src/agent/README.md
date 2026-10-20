@@ -8,8 +8,8 @@ Núcleo do **Callidus**: orquestração explícita, persistência SQLite, modelo
 |-------|--------|---------------------------|
 | [`api/`](api/README.md) | [README.md](api/README.md) | **FastAPI** — rotas HTTP, SSE, SPA estática, deps (DB, Settings, ToolRegistry) |
 | [`domain/`](domain/README.md) | [README.md](domain/README.md) | **Contratos de domínio** — enums, máquina de estados, schemas Pydantic, falhas |
-| [`persistence/`](persistence/README.md) | [README.md](persistence/README.md) | **SQLAlchemy 2 + SQLite** — models (14 tabelas), database (engine/session), migrações manuais |
-| [`services/`](services/README.md) | [README.md](services/README.md) | **Regras de negócio** — 11 services: Project, Conversation, Task, Run, Contract, Memory, KnowledgeGraph, Metrics, AutonomousWorker, Scheduler, Attempt |
+| [`persistence/`](persistence/README.md) | [README.md](persistence/README.md) | **SQLAlchemy 2 + SQLite** — models (17 tabelas), database (engine/session), migrações manuais |
+| [`services/`](services/README.md) | [README.md](services/README.md) | **Regras de negócio** — 15 services: Project, Conversation, Task, Run, Contract, Memory, KnowledgeGraph, Metrics, AutonomousWorker, Scheduler, Attempt + **Executor compartilhado**, **AgentService**, **QueryService**, **AgentScheduler** |
 | [`orchestrator/`](orchestrator/README.md) | [README.md](orchestrator/README.md) | **Ciclo de execução** — runner (step, run_until_idle), planner, strategy (abordagem profissional), decomposition, atomizer, plan_validation, consolidation, global_verify, requirements, progress, stagnation, replan, closing, usage, resume |
 | [`tools/`](tools/README.md) | [README.md](tools/README.md) | **Ferramentas** — registry central, 17 builtins (arquivos, comandos, git, testes, browser, memória), browser (Playwright), diffing, aliases |
 | [`providers/`](providers/README.md) | [README.md](providers/README.md) | **Provedores de inferência** — Ollama, llama.cpp, OpenRouter, OpenAI-compatível, Anthropic, Gemini, mock + interface `LLMProvider`, registro declarativo e `observed_chat` (streaming real) |

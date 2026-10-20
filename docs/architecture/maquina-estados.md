@@ -48,6 +48,44 @@ stateDiagram-v2
 
 Transições inválidas levantam `InvalidTransitionError` — nunca silenciosamente.
 
+## Agente lógico e execução
+
+A tarefa tem a máquina acima; o **agente lógico** e a **execução** têm as suas
+(implementação: `domain/agent_lifecycle.py`).
+
+```mermaid
+stateDiagram-v2
+  [*] --> IDLE
+  IDLE --> ACTIVE : start_execution
+  ACTIVE --> WAITING : wait_for_child
+  WAITING --> ACTIVE : resposta do filho
+  ACTIVE --> SUSPENDED : suspend
+  SUSPENDED --> ACTIVE : resume
+  ACTIVE --> COMPLETED : complete_execution
+  COMPLETED --> DISCARDED : discard
+  ACTIVE --> FAILED : fail_execution
+  FAILED --> ACTIVE : resume
+  SUSPENDED --> DISCARDED : discard
+  DISCARDED --> [*]
+```
+
+| Estado | Significado |
+|--------|-------------|
+| `IDLE` | O agente existe, sem execução ativa |
+| `ACTIVE` | Execução em curso (ocupa memória de inferência) |
+| `WAITING` | Aguarda resposta de descendente |
+| `SUSPENDED` | Estado recuperável, sem execução ativa |
+| `COMPLETED` | A tarefa do agente terminou; o agente continua existindo |
+| `FAILED` | Falha não resolvida — retomável |
+| `DISCARDED` | Estado recuperável descartado (resultados preservados) |
+
+Estados da execução: `PENDING`, `RUNNING`, `SUSPENDING`, `SUSPENDED`,
+`WAITING_FOR_CHILD`, `RESUMING`, `COMPLETED`, `FAILED`, `CANCELLED`, `DISCARDED`.
+
+Transições inválidas levantam `InvalidAgentTransition`: estado inconsistente é erro,
+nunca correção silenciosa. Detalhes:
+[hierarquia-agentes.md](/docs/architecture/hierarquia-agentes.md).
+
 ## Conclusão
 
 `VERIFYING → BLOCKED`: verificação que não pôde rodar (executável ausente, aprovação pendente) ou inconclusiva; não é falha da implementação.

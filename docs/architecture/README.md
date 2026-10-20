@@ -15,6 +15,7 @@ Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 | [provedores.md](/docs/architecture/provedores.md) | **Provedores** — Ollama, llama.cpp, OpenRouter, OpenAI-compatível, Anthropic, Gemini, mock |
 | [execucao-remota.md](/docs/architecture/execucao-remota.md) | **Computador remoto** — projeto em servidor Linux/macOS/Windows por SSH |
 | [ferramentas.md](/docs/architecture/ferramentas.md) | Tools |
+| [ciclo-ferramentas.md](/docs/architecture/ciclo-ferramentas.md) | **Ciclo de ferramentas da operação** — inspeção com ferramentas antes de responder |
 | [mcp.md](/docs/architecture/mcp.md) | MCP stdio |
 | [frontend.md](/docs/architecture/frontend.md) | UI |
 | [ux-ui.md](/docs/architecture/ux-ui.md) | Análise UX + layout |
@@ -25,5 +26,6 @@ Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 | [execucao-autonoma.md](/docs/architecture/execucao-autonoma.md) | Worker autônomo |
 | [requisitos-verificacao-progresso.md](/docs/architecture/requisitos-verificacao-progresso.md) | Requisitos rastreáveis, validação do plano, verificação independente, progresso real |
 | [skills-estrategia.md](/docs/architecture/skills-estrategia.md) | Skills sob demanda, estratégia profissional, decomposição recursiva e recuperação da verificação |
+| [hierarquia-agentes.md](/docs/architecture/hierarquia-agentes.md) | **Hierarquia de agentes** — executor compartilhado, ciclo de vida, consultas sob demanda, escalonador e descarte |
 
 Voltar: [docs/README.md](/docs/README.md) · [README raiz](/README.md)

@@ -6,11 +6,11 @@ Camada de dados: modelos ORM, engine, session factory e inicialização do banco
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
-| [`models.py`](models.py) | 14 models SQLAlchemy (`ProjectModel`, `TaskModel`, `ConversationModel`, `BranchModel`, `TaskDependencyModel`, `ExecutionRunModel`, `ScheduledRunModel`, `OperationAttemptModel`, `EventLogModel`, `MemoryRecordModel`, `KgNodeModel`, `KgEdgeModel`, `TaskContractModel`, `ContextSnapshotModel`, `EvidenceModel`) | **Tabelas** — UUID PK, FKs, JSON columns, índices, constraints |
+| [`models.py`](models.py) | 17 models SQLAlchemy (`ProjectModel`, `TaskModel`, `ConversationModel`, `BranchModel`, `TaskDependencyModel`, `ExecutionRunModel`, `ScheduledRunModel`, `OperationAttemptModel`, `EventLogModel`, `MemoryRecordModel`, `KgNodeModel`, `KgEdgeModel`, `TaskContractModel`, `ContextSnapshotModel`, `EvidenceModel`, `AgentModel`, `AgentExecutionModel`, `AgentQueryModel`) | **Tabelas** — UUID PK, FKs, JSON columns, índices, constraints |
 | [`database.py`](database.py) | `create_db_engine`, `build_session_factory`, `init_db`, `get_engine` | Engine singleton + sessionmaker + `Base.metadata.create_all` |
 | [`__init__.py`](__init__.py) | Re-exporta models + database | Facilita `from agent.persistence import ProjectModel, get_engine` |
 
-## Modelo de Dados (14 Tabelas)
+## Modelo de Dados (17 Tabelas)
 
 | Tabela | Entidade | Campos-Chave |
 |--------|----------|--------------|
@@ -29,6 +29,9 @@ Camada de dados: modelos ORM, engine, session factory e inicialização do banco
 | `task_contracts` | `TaskContractModel` | `id`, `task_id` (unique), `inputs_json`, `outputs_json`, `invariants_json`, `acceptance_json`, `created_at` |
 | `context_snapshots` | `ContextSnapshotModel` | `id`, `project_id`, `task_id`, `run_id`, `estimated_tokens`, `components_json`, `strategy_notes_json`, `refs_json`, `created_at` |
 | `evidences` | `EvidenceModel` | `id`, `task_id`, `attempt_id`, `verifier`, `passed`, `summary`, `detail_json`, `created_at` |
+| `agents` | `AgentModel` | `id`, `project_id`, `parent_id` (agente pai), `task_id`, `role`, `instructions`, `permissions_json`, `status`, `depth`, `metadata_json`, timestamps |
+| `agent_executions` | `AgentExecutionModel` | `id`, `agent_id`, `task_id`, `run_id`, `status`, `attempt`, `checkpoint_json`, `context_refs_json`, `last_error`, `started_at`, `finished_at` |
+| `agent_queries` | `AgentQueryModel` | `id`, `project_id`, `requester_agent_id`, `target_agent_id`, `answered_by_agent_id`, `task_id`, `correlation_id`, `questions_json`, `status`, `answer`, `answer_json`, `attempts`, `max_attempts`, `created_at`, `answered_at` |
 
 ## Engine & Session
 

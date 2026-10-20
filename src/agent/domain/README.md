@@ -7,8 +7,10 @@ Definições centrais compartilhadas por toda a aplicação: enums, máquina de 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
 | [`enums.py`](enums.py) | `TaskStatus`, `RunStatus`, `TaskKind`, `MemoryKind`, `AttemptKind` | Enums de domínio (StrEnum) |
+| [`agent_enums.py`](agent_enums.py) | `AgentStatus`, `ExecutionStatus`, `QueryStatus` | Estados do agente lógico, da execução e da consulta |
+| [`agent_lifecycle.py`](agent_lifecycle.py) | `AGENT_TRANSITIONS`, `EXECUTION_TRANSITIONS`, `validate_agent_transition`, `validate_execution_transition`, `InvalidAgentTransition` | **Transições válidas** de agente e execução |
 | [`state_machine.py`](state_machine.py) | `ALLOWED_TRANSITIONS`, `TERMINAL_STATUSES`, `can_transition`, `validate_transition`, `transition`, `InvalidTransitionError` | **Transições válidas** de `TaskStatus` — nunca silenciosas |
-| [`schemas.py`](schemas.py) | `ProjectCreate/Read/Update`, `ConversationCreate/Read/Update/Fork/Move`, `BranchRead`, `TaskCreate/Read/StatusUpdate/DependencyCreate`, `ExecutionRunCreate/Read`, `EventRead`, `MemoryCreate/Read`, `ResumeBody` | **Contratos Pydantic** — validação request/response + `model_config = {"from_attributes": True}` |
+| [`schemas.py`](schemas.py) | `ProjectCreate/Read/Update`, `ConversationCreate/Read/Update/Fork/Move`, `BranchRead`, `TaskCreate/Read/StatusUpdate/DependencyCreate`, `ExecutionRunCreate/Read`, `EventRead`, `MemoryCreate/Read`, `AgentRead`, `AgentAsk`, `AgentDiscard`, `AgentQueryRead`, `ResumeBody` | **Contratos Pydantic** — validação request/response + `model_config = {"from_attributes": True}` |
 | [`failures.py`](failures.py) | `Failure`, `FailureCategory`, `FailureCause`, `classify_context_error`, `classify_model_output`, `classify_provider_error`, `classify_tool_result`, `classify_verification` | **Classificação estruturada** de falhas (categoria + causa + signature + strategy) |
 
 ## Machine de Estados (`TaskStatus`)

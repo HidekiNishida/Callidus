@@ -1,8 +1,8 @@
-# Serviços (`services/`) — Regras de Negócio (11 Services)
+# Serviços (`services/`) — Regras de Negócio (15 Services)
 
-Camada de aplicação sobre o ORM: CRUD, transições, worker autônomo, scheduler, métricas, contratos, memória, knowledge graph.
+Camada de aplicação sobre o ORM: CRUD, transições, worker autônomo, scheduler, métricas, contratos, memória, knowledge graph — e a camada de **agentes** (agente lógico, execução, consulta e escalonador).
 
-## Módulos (11 Services)
+## Módulos (15 Services)
 
 | Arquivo | Classe | Responsabilidade |
 |---------|--------|------------------|
@@ -20,6 +20,10 @@ Camada de aplicação sobre o ORM: CRUD, transições, worker autônomo, schedul
 | [`inbox.py`](inbox.py) | `effective_root`, `is_inbox_project` | Resolve pasta do usuário (`Path.home()`) para projetos/conversas sem pasta |
 | [`fs_browse.py`](fs_browse.py) | `browse_directories`, `pick_folder_native` | API `/fs/browse` + `/fs/pick-folder` (macOS `osascript`) |
 | [`attachments.py`](attachments.py) | `materialize_attachments`, `attachment_note` | Salva anexos (imagens/docs) em `data/attachments/{task_id}/` |
+| [`executor.py`](executor.py) | `InferenceExecutor`, `get_executor`, `reset_executor` | **Executor compartilhado** — limita inferências de LLM simultâneas (padrão 1) e mede concorrência/espera |
+| [`agent_service.py`](agent_service.py) | `AgentService` | **Agente lógico** — `ensure_agent`, `start_execution`, `suspend`, `resume`, `save_checkpoint`, `record_finding`, `discard` |
+| [`query_service.py`](query_service.py) | `QueryService` | **Consultas entre agentes** — `ask`, `resolve`, `answer_from_persisted`, `pending_for` |
+| [`agent_scheduler.py`](agent_scheduler.py) | `AgentScheduler` | **Escalonador por eventos** — fila de operações elegíveis, uma por vez, sem espera que gasta token |
 
 ## Fluxos Principais
 
@@ -45,16 +49,30 @@ _log_event(f"task.{target.value.lower()}", ...)
 
 ### Worker Autônomo (`autonomous_worker.py`)
 ```python
-async def autonomous_loop(interval_sec=2.0):
+async def autonomous_loop(interval_sec=2.0, scheduler=None):
     while not _stop.is_set():
         session = factory()
+        # Descoberta: consulta ao SQLite. Nenhuma inferência para descobrir trabalho.
         runs = session.scalars(select(ExecutionRunModel).where(status=ACTIVE, config.autonomous=true))
         for run in runs:
-            orch = RunOrchestrator(session, settings)
-            await orch.step(run.id)
+            scheduler.submit("run_step", f"run:{run.id}", {"run_id": str(run.id)})
+        for query in consultas_pendentes(session):
+            scheduler.submit("query", f"query:{query.id}", {"query_id": str(query.id)})
         session.commit()
+        # Execução: uma operação por vez, em sessão própria.
+        await scheduler.run_once()
         await asyncio.sleep(interval_sec)
 ```
+
+### Agente, execução e consulta (`agent_service.py`, `query_service.py`)
+```python
+agent = AgentService(session).ensure_agent(task.id)   # agente lógico da tarefa
+AgentService(session).start_execution(agent.id)         # execução ocupa memória de inferência
+AgentService(session).save_checkpoint(agent.id, {"step": "analisando"})
+AgentService(session).suspend(agent.id)                 # libera a execução, guarda o estado
+
+query = QueryService(session).ask(pai.id, filho.id, "causa da falha?")
+resposta = await QueryService(session).resolve(query.id)  # estado persistido primeiro
 
 ### Tentativas (`AttemptService`)
 - **Dedup**: `prompt_fp` = hash(messages + generation params) — mesmo prompt não reenvia

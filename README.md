@@ -175,9 +175,18 @@ sequenceDiagram
     ORCH->>DB: EventLog(task.started)
     alt model_operation
       ORCH->>CTX: build_operation_context (budget, compact se needed)
-      ORCH->>PROV: observed_chat(streaming) → JSON {path, old_string, new_string}
-      ORCH->>TOOLS: edit_file/write_file
-      TOOLS->>DB: file.changed event
+      loop ciclo de ferramentas (até max_tool_iterations)
+        ORCH->>PROV: observed_chat(streaming) + tools → tool_calls?
+        PROV-->>ORCH: tool_calls (read_file, list_dir, write_file…)
+        ORCH->>TOOLS: execute(tool_id, args)
+        TOOLS-->>ORCH: resultado (mensagem tool)
+      end
+      alt modelo aplicou a alteração (write_file/edit_file)
+        ORCH->>TOOLS: alteração já registrada (file.changed)
+      else modelo respondeu JSON {path, old_string, new_string}
+        ORCH->>TOOLS: edit_file/write_file
+        TOOLS->>DB: file.changed event
+      end
       ORCH->>VERIF: run_verification(file_contains + syntax)
     else tool (run_pytest, run_command, etc.)
       ORCH->>TOOLS: execute(tool_id, args)
@@ -509,6 +518,60 @@ stateDiagram-v2
 | `FAILED` | Estagnado sem recuperação automática (`run_stalled`) |
 | `CANCELLED` | Interrompido pelo usuário |
 
+### Hierarquia de Agentes: Quem Existe × Quem Executa
+
+O Callidus coordena uma **hierarquia recursiva** de agentes (avô → pai → filho → neto
+→ …), em que os três conceitos são separados:
+
+| Conceito | Onde vive | Sobrevive a |
+|----------|-----------|-------------|
+| **Agente lógico** | `agents` | fim da tarefa e da execução |
+| **Tarefa** | `tasks` | fim da execução |
+| **Execução** | `agent_executions` | nada — termina com a execução |
+| **Consulta** | `agent_queries` | fim da resposta |
+
+**Regra de recursos:** *um modelo selecionado e, no máximo, **uma** inferência ativa por
+vez*. A exclusividade está no contrato do provedor ([`LLMProvider.chat`](/src/agent/providers/base.py)),
+não na convenção de quem chama — vale para o runner, o ciclo de ferramentas, a
+decomposição, o worker autônomo e a API. Limite configurável em
+`MAX_CONCURRENT_INFERENCES` (padrão `1`); em servidor potente, basta subir o número.
+
+```mermaid
+flowchart LR
+  A["Agente (existe)"] -->|inicia| E["Execução (ocupa memória de inferência)"]
+  E -->|suspend| C[("Checkpoint no SQLite")]
+  C -->|resume| E2["Nova execução"]
+  P["Pai"] -->|consulta| F["Filho (suspenso)"]
+  F -->|estado persistido| P
+```
+
+- **Suspender** persiste o estado estruturado e libera a execução; o agente continua
+  existindo e consultável.
+- **Retomar** reconstrói a execução a partir do checkpoint, sem repetir trabalho.
+- **Consultas sob demanda**: o pai pergunta por identificador de tarefa/agente; a
+  resposta vem do estado persistido quando ele já contém a evidência (sem inferência) e
+  desce pela descendência quando a evidência está no neto.
+- **Descarte** libera o estado recuperável, mas **preserva** resultado, evidência e
+  artefato.
+
+**Escopo da exclusividade**: uma inferência por vez para todas as sessões e threads do
+**processo**. Dois processos do Callidus contra o mesmo servidor de inferência inferem
+em paralelo — serializar exigiria trava externa, não justificada na instalação local.
+
+**Medições reais** (Ollama com `llama3.2:3b`, hierarquia de 3 níveis):
+
+| Métrica | Valor |
+|---------|-------|
+| Consulta respondida do estado persistido | 0,006 s, **0 inferências** |
+| Consulta com inferência | 1,9 – 3,6 s, **1 inferência** |
+| Contexto enviado ao modelo | 95 – 149 caracteres |
+| Redução de contexto vs. relatório completo | **93,4 %** |
+| Concorrência máxima observada | **1** (limite 1) |
+| RSS do Ollama antes → depois | 3 948 → 3 959 MB (modelo **não** recarregado) |
+| Casamento lexical (gabarito com adversariais) | 13/15, **0 falsos positivos** |
+
+Detalhe completo: [`docs/architecture/hierarquia-agentes.md`](/docs/architecture/hierarquia-agentes.md).
+
 ### Persistência e Recuperação de Falhas
 - **Fonte da verdade = SQLite** — cada passo grava `EventLog` (seq monotônico por run), `OperationAttempt`, `Evidence`, `ContextSnapshot`.
 - **Interrupção entre passos** deixa estado consistente; próximo `step()` retoma da task selecionada.
@@ -587,11 +650,12 @@ pytest tests/test_observability_*.py -v
 | 1 | [`README.md`](README.md) | Este arquivo — visão geral completa |
 | 2 | [`docs/architecture/visao-geral.md`](docs/architecture/visao-geral.md) | Arquitetura em camadas + fases + ADRs |
 | 3 | [`docs/architecture/maquina-estados.md`](docs/architecture/maquina-estados.md) | Estados + transições + conclusão |
-| 4 | [`docs/architecture/modelo-dados.md`](docs/architecture/modelo-dados.md) | 14 tabelas + campos essenciais |
+| 4 | [`docs/architecture/modelo-dados.md`](docs/architecture/modelo-dados.md) | 17 tabelas + campos essenciais |
 | 5 | [`docs/architecture/execucao-local.md`](docs/architecture/execucao-local.md) | Instalação + padrões + conversas + memória + UI |
 | 6 | [`docs/architecture/requisitos-verificacao-progresso.md`](docs/architecture/requisitos-verificacao-progresso.md) | Requisitos rastreáveis + validação + verificação + progresso real + paus/retomada |
 | 7 | [`docs/architecture/skills-estrategia.md`](docs/architecture/skills-estrategia.md) | Skills sob demanda + estratégia profissional + decomposição recursiva + recuperação |
-| 8 | [`src/agent/config.py`](src/agent/config.py) | Todas as configurações + `resolved_database_url()` |
+| 8 | [`docs/architecture/hierarquia-agentes.md`](docs/architecture/hierarquia-agentes.md) | **Hierarquia de agentes** — executor compartilhado, ciclo de vida, consultas sob demanda, escalonador |
+| 9 | [`src/agent/config.py`](src/agent/config.py) | Todas as configurações + `resolved_database_url()` |
 | 9 | [`src/agent/domain/state_machine.py`](src/agent/domain/state_machine.py) | Transições válidas (código executável) |
 | 10 | [`src/agent/persistence/models.py`](src/agent/persistence/models.py) | Modelos SQLAlchemy (tabelas reais) |
 | 11 | [`src/agent/orchestrator/runner.py`](src/agent/orchestrator/runner.py) | **Coração** — `step()`, `_step_body()`, `_execute_task()`, `_finalize_verification()` |

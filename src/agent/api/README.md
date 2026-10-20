@@ -8,6 +8,7 @@ Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) 
 |---------|------------------|
 | [`main.py`](main.py) | **App FastAPI** — lifespan (engine, background worker), rotas principais, mounting SPA, `run()` entrypoint |
 | [`observe_routes.py`](observe_routes.py) | **Rotas de observabilidade** — SSE `/events`, `/live`, `/snapshot`, histórico, diff git |
+| [`agent_routes.py`](agent_routes.py) | **Rotas da hierarquia de agentes** — árvore, suspender, retomar, descartar, consultar e métricas de recursos |
 | [`deps.py`](deps.py) | **Dependências FastAPI** — `db_session`, `read_settings`, `get_engine`, `ToolRegistry`, `McpManager` |
 
 ## Rotas Principais (Resumo)
@@ -38,6 +39,14 @@ Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) 
 | `POST` | `/projects/{id}/knowledge/reindex\|search\|neighbors` | Grafo de conhecimento |
 | `GET` | `/projects/{id}/metrics\|events` | Métricas + timeline de eventos |
 | `GET` | `/config/ui-defaults` | Defaults para UI (provider, model, approve_tools) |
+| `GET` | `/projects/{id}/agents` | Árvore de agentes do projeto |
+| `GET` | `/agents/{id}` | Agente: papel, estado, execuções, descobertas e checkpoint |
+| `GET` | `/agents/{id}/executions` | Histórico de execuções do agente |
+| `POST` | `/agents/{id}/suspend` | Suspende a execução (persiste estado, libera contexto) |
+| `POST` | `/agents/{id}/resume` | Retoma a execução a partir do estado persistido |
+| `POST` | `/agents/{id}/discard` | Descarta o estado recuperável (preserva resultado e artefatos) |
+| `GET/POST` | `/agents/{id}/queries` | Consultas entre agentes: pendentes e criação (resposta dirigida) |
+| `GET` | `/metrics/resources` | Concorrência de inferências, espera e estado da hierarquia |
 | `GET` | `/fs/browse`, `/fs/pick-folder` | Navegação de pastas |
 | `POST` | `/fs/mkdir` | Cria uma pasta dentro do alcance permitido (seletor de pastas) |
 | `GET` | `/projects/{id}/git-diff` | Diff git do projeto |
