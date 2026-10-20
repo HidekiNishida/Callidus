@@ -24,6 +24,7 @@ A **complexidade fica na arquitetura do agente**, não na janela de contexto do 
 flowchart TB
   API["api/ — HTTP + SSE"]
   ORCH["orchestrator/ — ciclo de execução"]
+  EXEC["orchestrator/execution/ — execução de uma tarefa"]
   DOM["domain/ — tarefas, estados, transições"]
   PERS["persistence/ — SQLite, repositórios"]
   CTX["context/ — montagem de prompt (Fase 4)"]
@@ -32,6 +33,9 @@ flowchart TB
   VER["verification/ — checks determinísticos (Fase 5)"]
   SKILL["skills/ — competências sob demanda"]
   API --> ORCH
+  ORCH --> EXEC
+  EXEC --> DOM
+  EXEC --> PERS
   ORCH --> DOM
   ORCH --> PERS
   ORCH --> CTX
@@ -41,6 +45,16 @@ flowchart TB
   ORCH --> SKILL
   SKILL --> CTX
 ```
+
+O **`orchestrator/` decide *quando*** uma etapa roda (ciclo, planejamento, estagnação, pausa);
+o **`orchestrator/execution/` decide *como*** ela roda (despacho da etapa, operação de modelo,
+escrita, verificação). A separação existe porque a execução de uma tarefa é um problema
+diferente do ciclo do run — e muda em ritmo diferente.
+
+A **`api/` é uma fachada de roteadores**: `main.py` monta a aplicação e inclui os roteadores
+por assunto (`system_`, `project_`, `conversation_`, `task_`, `run_`, `agent_`, `automation_`,
+`provider_`, `observe_`); a apresentação de leitura fica em `presenters.py` e a visão ao vivo
+em `live_view.py`. Nenhuma rota concentra regra de negócio — elas validam, delegam e serializam.
 
 ## Fases de implementação
 
@@ -64,6 +78,7 @@ flowchart TB
 3. **Uma operação por vez por padrão** — concorrência limitada só para subtarefas independentes (fase posterior).
 4. **Provedores via interface comum** — chat-completions compatível onde possível; capacidades via perfil de modelo.
 5. **Complexidade na arquitetura, não no prompt** — estratégia, skills e decomposição recursiva vivem em código e no SQLite; o modelo é uma peça substituível ([skills-estrategia.md](/docs/architecture/skills-estrategia.md)).
+6. **Ciclo e execução em pacotes diferentes** — `orchestrator/` (quando) e `orchestrator/execution/` (como) evoluem separadamente; a verificação continua independente de quem executa.
 
 ## Documentos relacionados
 

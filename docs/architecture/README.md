@@ -9,6 +9,7 @@ Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 | Doc | Tema |
 |-----|------|
 | [visao-geral.md](/docs/architecture/visao-geral.md) | Módulos e fases |
+| [decisoes-arquitetura.md](/docs/architecture/decisoes-arquitetura.md) | **ADRs** — ciclo × execução, API por assunto, verificação independente |
 | [modelo-dados.md](/docs/architecture/modelo-dados.md) | SQLite |
 | [maquina-estados.md](/docs/architecture/maquina-estados.md) | Tarefas |
 | [execucao-local.md](/docs/architecture/execucao-local.md) | Instalação, **Ollama padrão** |

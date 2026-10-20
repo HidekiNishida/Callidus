@@ -496,6 +496,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Subpasta: [src/agent/orchestrator/](/src/agent/orchestrator/)
 - Subpasta: [src/agent/persistence/](/src/agent/persistence/)
 - Subpasta: [src/agent/providers/](/src/agent/providers/)
+- Subpasta: [src/agent/remote/](/src/agent/remote/)
 - Subpasta: [src/agent/security/](/src/agent/security/)
 - Subpasta: [src/agent/services/](/src/agent/services/)
 - Subpasta: [src/agent/skills/](/src/agent/skills/)
@@ -513,9 +514,43 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - Arquivo: [README.md](/src/agent/api/README.md)
 - Arquivo: [__init__.py](/src/agent/api/__init__.py)
+- Arquivo: [agent_routes.py](/src/agent/api/agent_routes.py)
+- Arquivo: [automation_routes.py](/src/agent/api/automation_routes.py)
+- Arquivo: [conversation_routes.py](/src/agent/api/conversation_routes.py)
 - Arquivo: [deps.py](/src/agent/api/deps.py)
+- Arquivo: [live_view.py](/src/agent/api/live_view.py)
 - Arquivo: [main.py](/src/agent/api/main.py)
 - Arquivo: [observe_routes.py](/src/agent/api/observe_routes.py)
+- Arquivo: [presenters.py](/src/agent/api/presenters.py)
+- Arquivo: [project_routes.py](/src/agent/api/project_routes.py)
+- Arquivo: [provider_routes.py](/src/agent/api/provider_routes.py)
+- Arquivo: [run_routes.py](/src/agent/api/run_routes.py)
+- Arquivo: [system_routes.py](/src/agent/api/system_routes.py)
+- Arquivo: [task_routes.py](/src/agent/api/task_routes.py)
+
+### `AGENTS.md`
+
+**Propósito:** Regras de engenharia do Callidus — cabeçalho padrão, docstrings, SOLID pragmático, design patterns, organização modular, contratos que não podem quebrar, testes, documentação hierárquica e sincronização obrigatória. **Quando/onde:** fonte canônica lida por qualquer agente antes de escrever código.
+
+### `docs/architecture/decisoes-arquitetura.md`
+
+**Propósito:** Registro das decisões de arquitetura (ADR) — ciclo × execução, API por assunto, verificação independente, SQLite como fonte da verdade e modelo substituível. **Quando/onde:** ao propor uma mudança estrutural.
+
+### `scripts/check_imports.py`
+
+**Propósito:** Conferir que uma alteração não removeu importações nem definições de símbolos do código anterior. **Quando/onde:** depois de refatorações e movimentações de arquivo.
+
+### `scripts/check_code_drift.py`
+
+**Propósito:** Detectar se a edição de um arquivo Python alterou código além de comentários e docstrings. **Quando/onde:** auditoria final de uma mudança que só deveria ter mexido em documentação.
+
+### `scripts/check_docs.py`
+
+**Propósito:** Conferir que os links internos da documentação existem no repositório. **Quando/onde:** antes de publicar mudanças de documentação.
+
+### `scripts/padronizar_cabecalhos.py`
+
+**Propósito:** Aplicar o cabeçalho padrão (campos `Arquivo`, `Nome`, `Propósito`, …) nos módulos Python, sem alterar o código. **Quando/onde:** ao padronizar uma pasta de módulos.
 
 ### `src/agent/api/README.md`
 
@@ -536,80 +571,115 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `src/agent/api/main.py`
 
-**Propósito:** Expõe a API HTTP FastAPI do agente (projetos, conversas, tarefas, runs, memória, grafo de conhecimento, métricas e observabilidade) e monta a SPA web estática. **Quando/onde:** Usado quando o processo sobe via `run()`/uvicorn (`agent.api.main:app`); as rotas dependem da sessão `db_session` e o módulo monta o frontend já na importação.
+**Propósito:** Fachada da API HTTP: monta a aplicação FastAPI, inclui os roteadores por assunto, publica a SPA estática e sobe o servidor (`run()`). **Quando/onde:** importado por `agent.api.main:app` (uvicorn) e por `callidus-api`; as regras de cada rota vivem no serviço ou no orquestrador.
 
-- `ResumeBody(BaseModel)` — Modelo Pydantic do corpo de `POST /tasks/{task_id}/resume-brief`; único campo `apply: bool = False` que decide se o brief é apenas informativo ou reaplica a execução.
+- `_web_dir(settings: Settings) -> Path | None` — Localiza a pasta do frontend: `settings.static_web_dir` se for diretório, senão `web/static` na raiz do repositório; devolve `None` quando nada existe.
+- `lifespan(app: FastAPI)` — Gerenciador de contexto assíncrono do FastAPI: inicializa o engine, liga o worker em background se habilitado e garante o desligamento dele no `finally`.
+- `run() -> None` — Entry point do console script `agente-api` — sobe o Uvicorn com a aplicação FastAPI no host/porta configurados.
+
+### `src/agent/api/system_routes.py`
+
+**Propósito:** Rotas de sistema — saúde, provedores embutidos, ferramentas, MCP, preferências da interface e chat de debug. **Quando/onde:** a cada verificação de ambiente da interface ou de diagnóstico.
+
 - `_RevalidatedStatic(StaticFiles)` — Subclasse de `StaticFiles` que força `Cache-Control: no-cache` em toda resposta de arquivo, evitando o navegador misturar HTML antigo com módulos novos.
 - `_RevalidatedStatic.file_response(*args, **kwargs)` — Sobrescreve `StaticFiles.file_response` para acrescentar o cabeçalho `Cache-Control: no-cache` à resposta antes de devolvê-la.
-- `_how_for_task(task) -> str` — Deriva dos metadados da tarefa (tool, verification, model_operation, mcp_tool) uma frase curta explicando como ela será executada; o fallback descreve a máquina de estados do orquestrador.
-- `_mark_repeated_thought(thoughts: list[dict], item: dict) -> None` — Calcula no item o contador `repeat` (1 ou 2+) comparando o texto com os pensamentos já coletados, para a interface mostrar que a frase se repetiu sem mudança.
-- `_mcp_path(settings: Settings) -> Path` — Resolve o arquivo de configuração MCP: usa `settings.mcp_config_path` ou `data_dir/mcp.json`; se não existir, cai no `data/mcp.example.json` da raiz do repositório.
 - `_mount_web(settings: Settings) -> None` — Monta a SPA web estática no app FastAPI: publica `/assets` via `_RevalidatedStatic` e registra `GET /` servindo `index.html`; executado na importação do módulo.
-- `_present_conversation(session: Session, item: ConversationModel) -> ConversationRead` — Serializa a conversa em `ConversationRead`, garantindo a branch ativa, anexando branches, `root_path` efetivo e `path_origin` (chosen/home), e ocultando `project_id` nas conversas da inbox.
-- `_present_task(session: Session, task) -> TaskRead` — Monta o `TaskRead` da tarefa, traduzindo o título para o idioma da tarefa e preenchendo `usage_tokens` e `metadata_json` com o modelo lembrado.
-- `_remembered_model(session: Session, task) -> dict` — Devolve os metadados da tarefa preservando `model_id`; se a tarefa raiz não tiver modelo, procura na run mais recente que a iniciou para recuperar o `model_id` usado.
-- `_thought_trace(session: Session, project_id: uuid.UUID, tasks: list) -> list[dict]` — Lê os eventos `agent.thought`/`orchestrator.action` do projeto, traduz as ações por `ACTION_COPY`, descarta ações internas e devolve os 16 pensamentos mais recentes com fase, texto e task associada.
-- `_usage_tokens(session: Session, task) -> int` — Estima os tokens consumidos pela tarefa: usa `metadata["usage"]["total"]` quando existe, senão o `estimated_tokens` do snapshot de contexto mais recente.
-- `_web_dir(settings: Settings) -> Path | None` — Localiza a pasta do frontend: `settings.static_web_dir` se for diretório, senão `web/static` na raiz do repositório; devolve `None` quando nada existe.
-- `activate_branch(conversation_id: uuid.UUID, branch_id: uuid.UUID, session: Session=Depends(db_session)) -> ConversationRead` — `POST /conversations/{conversation_id}/branches/{branch_id}/activate`: ativa a branch indicada e devolve a conversa atualizada; 404 se a conversa não existir.
-- `add_dependency(task_id: uuid.UUID, body: TaskDependencyCreate, session: Session=Depends(db_session)) -> dict` — `POST /tasks/{task_id}/dependencies`: cria a dependência entre tarefas a partir do corpo e devolve `{id, task_id, depends_on}`; 404 tarefa inexistente, 400 dependência inválida.
-- `add_memory(project_id: uuid.UUID, body: MemoryCreate, session: Session=Depends(db_session)) -> MemoryRead` — `POST /projects/{project_id}/memory`: grava memória canônica ou contextual via `ProjectService.add_memory` e devolve `MemoryRead`; 404 se o projeto não existir.
-- `cancel_run(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/cancel`: cancela a execução e devolve `{id, status}`; 404 se a run não existir.
-- `conversation_tasks(conversation_id: uuid.UUID, branch_id: uuid.UUID | None=None, session: Session=Depends(db_session)) -> list[TaskRead]` — `GET /conversations/{conversation_id}/tasks`: lista as tarefas da conversa (branch ativa ou a `branch_id` informada) já apresentadas por `_present_task`; 404 conversa inexistente.
-- `create_conversation(project_id: uuid.UUID, body: ConversationCreate, session: Session=Depends(db_session)) -> ConversationRead` — `POST /projects/{project_id}/conversations`: cria uma conversa dentro do projeto a partir do corpo e devolve `ConversationRead`; 404 projeto inexistente.
-- `create_loose_conversation(body: ConversationCreate, session: Session=Depends(db_session)) -> ConversationRead` — `POST /conversations`: cria uma conversa sem projeto (inbox/"loose") e devolve `ConversationRead` com branches e raiz efetiva.
-- `create_project(body: ProjectCreate, session: Session=Depends(db_session)) -> ProjectRead` — `POST /projects`: cria o projeto via `ProjectService.create_project` e devolve o `ProjectRead` correspondente.
-- `create_task(project_id: uuid.UUID, body: TaskCreate, session: Session=Depends(db_session)) -> TaskRead` — `POST /projects/{project_id}/tasks`: cria a tarefa detectando idioma, materializando anexos, tocando o título da conversa e extraindo memórias do objetivo; 404 projeto, 400 objetivo inválido.
 - `debug_chat_ollama(body: dict, settings: Settings=Depends(read_settings)) -> dict` — chat direto Ollama (debug).
-- `delete_conversation(conversation_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `DELETE /conversations/{conversation_id}`: remove a conversa e devolve `{"deleted": true}`; 404 se não existir.
-- `disable_autonomous(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/autonomous/disable`: desliga o modo autônomo ajustando `config_json["autonomous"]` para `False`, faz commit e devolve `{id, autonomous}`.
-- `enable_autonomous(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/autonomous/enable`: habilita o modo autônomo via `enable_autonomous_on_run`, faz commit e devolve `{id, autonomous}`.
-- `fork_conversation(conversation_id: uuid.UUID, body: ConversationFork, session: Session=Depends(db_session)) -> dict` — `POST /conversations/{conversation_id}/fork`: cria a tarefa-filha a partir de `body.task_id` e `body.objective` e devolve a conversa com a nova task.
-- `fs_browse(path: str | None=None) -> dict` — `GET /fs/browse`: navega o sistema de arquivos local a partir de um caminho devolvendo diretórios e subpastas; 400 para caminho inválido.
-- `fs_pick_folder() -> dict` — `POST /fs/pick-folder`: abre o seletor nativo de pastas do sistema operacional e devolve `{"path": ...}`; 400 quando não há seleção válida.
-- `get_context_snapshot(snapshot_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /context-snapshots/{snapshot_id}`: devolve o snapshot de contexto (tokens estimados, componentes, notas de estratégia, refs, timestamp) ou 404 se não existir.
-- `get_project(project_id: uuid.UUID, session: Session=Depends(db_session)) -> ProjectRead` — `GET /projects/{project_id}`: busca o projeto pelo id e devolve `ProjectRead`; 404 quando não encontrado.
-- `get_task(task_id: uuid.UUID, session: Session=Depends(db_session)) -> TaskRead` — `GET /tasks/{task_id}`: devolve a tarefa apresentada (título traduzido, usage, modelo lembrado) em `TaskRead`; 404 se não existir.
-- `get_task_contract(task_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /tasks/{task_id}/contract`: devolve o contrato da tarefa (inputs, outputs, invariantes, aceite) ou 404 quando o contrato não foi definido.
 - `health() -> dict` — health check + versão.
-- `kg_neighbors(project_id: uuid.UUID, ref: str, depth: int=1, session: Session=Depends(db_session)) -> dict` — `GET /projects/{project_id}/knowledge/neighbors`: busca no grafo de conhecimento os nós vizinhos de uma referência (profundidade limitada a 3) e devolve `{ref, nodes}`.
-- `kg_reindex(project_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `POST /projects/{project_id}/knowledge/reindex`: reindexa o grafo do projeto a partir do `root_path` e devolve as estatísticas da indexação.
-- `kg_search(project_id: uuid.UUID, q: str, limit: int=20, session: Session=Depends(db_session)) -> dict` — `GET /projects/{project_id}/knowledge/search`: pesquisa no grafo do projeto (limite máximo 100) e devolve `{query, hits}`.
-- `lifespan(app: FastAPI)` — Gerenciador de contexto assíncrono do FastAPI: inicializa o engine, liga o worker em background se habilitado e garante o desligamento dele no `finally`.
-- `list_conversations(project_id: uuid.UUID, session: Session=Depends(db_session)) -> list[ConversationRead]` — `GET /projects/{project_id}/conversations`: lista as conversas do projeto (validando o projeto) com branches e raiz efetiva; 404 projeto inexistente.
 - `list_events(project_id: uuid.UUID, session: Session=Depends(db_session)) -> list[EventRead]` — timeline de eventos.
-- `list_loose_conversations(session: Session=Depends(db_session)) -> list[ConversationRead]` — `GET /conversations`: lista as conversas sem projeto (inbox) apresentadas por `_present_conversation`.
-- `list_memory(project_id: uuid.UUID, kind: MemoryKind | None=None, session: Session=Depends(db_session)) -> list[MemoryRead]` — `GET /projects/{project_id}/memory`: lista as memórias do projeto, opcionalmente filtradas por `MemoryKind`; 404 projeto inexistente.
-- `list_projects(session: Session=Depends(db_session)) -> list[ProjectRead]` — `GET /projects`: lista todos os projetos persistidos e devolve a lista de `ProjectRead`.
-- `list_runs(project_id: uuid.UUID, session: Session=Depends(db_session)) -> list[ExecutionRunRead]` — `GET /projects/{project_id}/runs`: lista as execuções do projeto em `list[ExecutionRunRead]`; 404 projeto inexistente.
-- `list_tasks(project_id: uuid.UUID, session: Session=Depends(db_session)) -> list[TaskRead]` — `GET /projects/{project_id}/tasks`: lista as tarefas do projeto já apresentadas (título traduzido, usage, modelo); 404 projeto inexistente.
 - `list_tools() -> dict` — specs das ferramentas registradas.
 - `llamacpp_models(settings: Settings=Depends(read_settings)) -> dict` — lista modelos llama.cpp.
 - `mcp_call(body: dict, settings: Settings=Depends(read_settings)) -> dict` — chama ferramenta MCP.
 - `mcp_discover(settings: Settings=Depends(read_settings)) -> dict` — descobre ferramentas nos servidores MCP.
 - `mcp_servers(settings: Settings=Depends(read_settings)) -> dict` — servidores + ferramentas MCP.
-- `move_conversation(conversation_id: uuid.UUID, body: ConversationMove, session: Session=Depends(db_session)) -> ConversationRead` — `POST /conversations/{conversation_id}/move`: move a conversa para outro projeto (`body.project_id`) e devolve a conversa apresentada; 404 se não existir.
 - `ollama_models(settings: Settings=Depends(read_settings)) -> dict` — lista modelos Ollama.
-- `pause_run(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/pause`: pausa a execução via `RunService.pause_run` e devolve `{id, status}`.
-- `project_git_diff(project_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /projects/{project_id}/git-diff`: executa a ferramenta `git_diff` do registry com o `root_path` do projeto e devolve o diff do repositório.
 - `project_live(project_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — estado atual para UI (thoughts, focus, action).
-- `project_metrics(project_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /projects/{project_id}/metrics`: devolve as métricas agregadas do projeto via `MetricsService.project_metrics`; 404 projeto inexistente.
 - `project_overview(project_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — resumo (tasks por status, run ativa).
-- `resume_run(run_id: uuid.UUID, retry_blocked: bool=False, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/resume`: retoma a run pausada, opcionalmente repetindo tarefas bloqueadas (`retry_blocked`); 404 run inexistente, 409 quando não pode retomar.
-- `run() -> None` — Entry point do console script `agente-api` — sobe o Uvicorn com a aplicação FastAPI no host/porta configurados.
 - `run_execute(run_id: uuid.UUID, max_steps: int=50, session: Session=Depends(db_session), settings: Settings=Depends(read_settings)) -> dict` — múltiplos passos (`run_until_idle`).
-- `run_metrics(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /runs/{run_id}/metrics`: devolve as métricas da execução (tokens, tempos) via `MetricsService.run_metrics` ou 404 se a run não existir.
 - `run_step(run_id: uuid.UUID, session: Session=Depends(db_session), settings: Settings=Depends(read_settings)) -> dict` — um passo do orquestrador.
+- `ui_defaults(settings: Settings=Depends(read_settings)) -> dict` — `GET /config/ui-defaults`: devolve os padrões de configuração da interface (provider, model_id, URLs de Ollama/llama.cpp, aprovação de tools e template genérico).
+- `_mcp_path(settings: Settings) -> Path` — Resolve o arquivo de configuração MCP: usa `settings.mcp_config_path` ou `data_dir/mcp.json`; se não existir, cai no `data/mcp.example.json` da raiz do repositório.
+
+### `src/agent/api/project_routes.py`
+
+**Propósito:** Rotas de projeto — CRUD do projeto, computador remoto, filesystem, grafo de conhecimento, métricas, visão ao vivo, eventos e memória. **Quando/onde:** a cada ação sobre um projeto.
+
+- `add_memory(project_id: uuid.UUID, body: MemoryCreate, session: Session=Depends(db_session)) -> MemoryRead` — `POST /projects/{project_id}/memory`: grava memória canônica ou contextual via `ProjectService.add_memory` e devolve `MemoryRead`; 404 se o projeto não existir.
+- `create_project(body: ProjectCreate, session: Session=Depends(db_session)) -> ProjectRead` — `POST /projects`: cria o projeto via `ProjectService.create_project` e devolve o `ProjectRead` correspondente.
+- `create_task(project_id: uuid.UUID, body: TaskCreate, session: Session=Depends(db_session)) -> TaskRead` — `POST /projects/{project_id}/tasks`: cria a tarefa detectando idioma, materializando anexos, tocando o título da conversa e extraindo memórias do objetivo; 404 projeto, 400 objetivo inválido.
+- `fs_browse(path: str | None=None) -> dict` — `GET /fs/browse`: navega o sistema de arquivos local a partir de um caminho devolvendo diretórios e subpastas; 400 para caminho inválido.
+- `fs_pick_folder() -> dict` — `POST /fs/pick-folder`: abre o seletor nativo de pastas do sistema operacional e devolve `{"path": ...}`; 400 quando não há seleção válida.
+- `get_project(project_id: uuid.UUID, session: Session=Depends(db_session)) -> ProjectRead` — `GET /projects/{project_id}`: busca o projeto pelo id e devolve `ProjectRead`; 404 quando não encontrado.
+- `kg_neighbors(project_id: uuid.UUID, ref: str, depth: int=1, session: Session=Depends(db_session)) -> dict` — `GET /projects/{project_id}/knowledge/neighbors`: busca no grafo de conhecimento os nós vizinhos de uma referência (profundidade limitada a 3) e devolve `{ref, nodes}`.
+- `kg_reindex(project_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `POST /projects/{project_id}/knowledge/reindex`: reindexa o grafo do projeto a partir do `root_path` e devolve as estatísticas da indexação.
+- `kg_search(project_id: uuid.UUID, q: str, limit: int=20, session: Session=Depends(db_session)) -> dict` — `GET /projects/{project_id}/knowledge/search`: pesquisa no grafo do projeto (limite máximo 100) e devolve `{query, hits}`.
+- `list_memory(project_id: uuid.UUID, kind: MemoryKind | None=None, session: Session=Depends(db_session)) -> list[MemoryRead]` — `GET /projects/{project_id}/memory`: lista as memórias do projeto, opcionalmente filtradas por `MemoryKind`; 404 projeto inexistente.
+- `list_projects(session: Session=Depends(db_session)) -> list[ProjectRead]` — `GET /projects`: lista todos os projetos persistidos e devolve a lista de `ProjectRead`.
+- `list_runs(project_id: uuid.UUID, session: Session=Depends(db_session)) -> list[ExecutionRunRead]` — `GET /projects/{project_id}/runs`: lista as execuções do projeto em `list[ExecutionRunRead]`; 404 projeto inexistente.
+- `list_tasks(project_id: uuid.UUID, session: Session=Depends(db_session)) -> list[TaskRead]` — `GET /projects/{project_id}/tasks`: lista as tarefas do projeto já apresentadas (título traduzido, usage, modelo); 404 projeto inexistente.
+- `project_git_diff(project_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /projects/{project_id}/git-diff`: executa a ferramenta `git_diff` do registry com o `root_path` do projeto e devolve o diff do repositório.
+- `project_metrics(project_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /projects/{project_id}/metrics`: devolve as métricas agregadas do projeto via `MetricsService.project_metrics`; 404 projeto inexistente.
 - `start_run(project_id: uuid.UUID, body: ExecutionRunCreate, session: Session=Depends(db_session)) -> ExecutionRunRead` — `POST /projects/{project_id}/runs`: inicia uma execução para o projeto a partir de `ExecutionRunCreate` e devolve `ExecutionRunRead`; 404 projeto inexistente.
+- `update_project(project_id: uuid.UUID, body: ProjectUpdate, session: Session=Depends(db_session)) -> ProjectRead` — `PATCH /projects/{project_id}`: atualiza nome e/ou `root_path` do projeto; 404 projeto inexistente, 400 valor inválido.
+
+### `src/agent/api/conversation_routes.py`
+
+**Propósito:** Rotas de conversa — conversas soltas, mover, renomear, bifurcar, ativar ramo e as conversas de um projeto. **Quando/onde:** a cada ação sobre conversas.
+
+- `activate_branch(conversation_id: uuid.UUID, branch_id: uuid.UUID, session: Session=Depends(db_session)) -> ConversationRead` — `POST /conversations/{conversation_id}/branches/{branch_id}/activate`: ativa a branch indicada e devolve a conversa atualizada; 404 se a conversa não existir.
+- `conversation_tasks(conversation_id: uuid.UUID, branch_id: uuid.UUID | None=None, session: Session=Depends(db_session)) -> list[TaskRead]` — `GET /conversations/{conversation_id}/tasks`: lista as tarefas da conversa (branch ativa ou a `branch_id` informada) já apresentadas por `_present_task`; 404 conversa inexistente.
+- `create_conversation(project_id: uuid.UUID, body: ConversationCreate, session: Session=Depends(db_session)) -> ConversationRead` — `POST /projects/{project_id}/conversations`: cria uma conversa dentro do projeto a partir do corpo e devolve `ConversationRead`; 404 projeto inexistente.
+- `create_loose_conversation(body: ConversationCreate, session: Session=Depends(db_session)) -> ConversationRead` — `POST /conversations`: cria uma conversa sem projeto (inbox/"loose") e devolve `ConversationRead` com branches e raiz efetiva.
+- `delete_conversation(conversation_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `DELETE /conversations/{conversation_id}`: remove a conversa e devolve `{"deleted": true}`; 404 se não existir.
+- `fork_conversation(conversation_id: uuid.UUID, body: ConversationFork, session: Session=Depends(db_session)) -> dict` — `POST /conversations/{conversation_id}/fork`: cria a tarefa-filha a partir de `body.task_id` e `body.objective` e devolve a conversa com a nova task.
+- `list_conversations(project_id: uuid.UUID, session: Session=Depends(db_session)) -> list[ConversationRead]` — `GET /projects/{project_id}/conversations`: lista as conversas do projeto (validando o projeto) com branches e raiz efetiva; 404 projeto inexistente.
+- `list_loose_conversations(session: Session=Depends(db_session)) -> list[ConversationRead]` — `GET /conversations`: lista as conversas sem projeto (inbox) apresentadas por `_present_conversation`.
+- `move_conversation(conversation_id: uuid.UUID, body: ConversationMove, session: Session=Depends(db_session)) -> ConversationRead` — `POST /conversations/{conversation_id}/move`: move a conversa para outro projeto (`body.project_id`) e devolve a conversa apresentada; 404 se não existir.
+- `update_conversation(conversation_id: uuid.UUID, body: ConversationUpdate, session: Session=Depends(db_session)) -> ConversationRead` — `PATCH /conversations/{conversation_id}`: renomeia, define ou limpa o `root_path` da conversa conforme o corpo e devolve a conversa apresentada.
+
+### `src/agent/api/task_routes.py`
+
+**Propósito:** Rotas de tarefa — criação e leitura, status, dependências, contrato, snapshots de contexto, tentativas e evidências. **Quando/onde:** a cada ação sobre tarefas.
+
+- `ResumeBody(BaseModel)` — Modelo Pydantic do corpo de `POST /tasks/{task_id}/resume-brief`; único campo `apply: bool = False` que decide se o brief é apenas informativo ou reaplica a execução.
+- `add_dependency(task_id: uuid.UUID, body: TaskDependencyCreate, session: Session=Depends(db_session)) -> dict` — `POST /tasks/{task_id}/dependencies`: cria a dependência entre tarefas a partir do corpo e devolve `{id, task_id, depends_on}`; 404 tarefa inexistente, 400 dependência inválida.
+- `get_context_snapshot(snapshot_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /context-snapshots/{snapshot_id}`: devolve o snapshot de contexto (tokens estimados, componentes, notas de estratégia, refs, timestamp) ou 404 se não existir.
+- `get_task(task_id: uuid.UUID, session: Session=Depends(db_session)) -> TaskRead` — `GET /tasks/{task_id}`: devolve a tarefa apresentada (título traduzido, usage, modelo lembrado) em `TaskRead`; 404 se não existir.
+- `get_task_contract(task_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /tasks/{task_id}/contract`: devolve o contrato da tarefa (inputs, outputs, invariantes, aceite) ou 404 quando o contrato não foi definido.
 - `task_attempts(task_id: uuid.UUID, session: Session=Depends(db_session)) -> list[dict]` — `GET /tasks/{task_id}/attempts`: lista as tentativas de operação da tarefa (kind, provider, sucesso, erro, timestamp) da mais nova para a mais antiga.
 - `task_context_snapshots(task_id: uuid.UUID, session: Session=Depends(db_session)) -> list[dict]` — `GET /tasks/{task_id}/context-snapshots`: devolve até 20 snapshots de contexto da tarefa (tokens, componentes, notas, refs) ordenados por data decrescente.
 - `task_evidences(task_id: uuid.UUID, session: Session=Depends(db_session)) -> list[dict]` — `GET /tasks/{task_id}/evidences`: lista as evidências de verificação da tarefa (verifier, passed, summary).
 - `task_resume_brief(task_id: uuid.UUID, body: ResumeBody, session: Session=Depends(db_session)) -> dict` — `POST /tasks/{task_id}/resume-brief`: sobe até a tarefa raiz e devolve o brief de retomada; com `body.apply` reativa a execução e devolve `reactivated_run_id`.
-- `ui_defaults(settings: Settings=Depends(read_settings)) -> dict` — `GET /config/ui-defaults`: devolve os padrões de configuração da interface (provider, model_id, URLs de Ollama/llama.cpp, aprovação de tools e template genérico).
-- `update_conversation(conversation_id: uuid.UUID, body: ConversationUpdate, session: Session=Depends(db_session)) -> ConversationRead` — `PATCH /conversations/{conversation_id}`: renomeia, define ou limpa o `root_path` da conversa conforme o corpo e devolve a conversa apresentada.
-- `update_project(project_id: uuid.UUID, body: ProjectUpdate, session: Session=Depends(db_session)) -> ProjectRead` — `PATCH /projects/{project_id}`: atualiza nome e/ou `root_path` do projeto; 404 projeto inexistente, 400 valor inválido.
 - `update_task_status(task_id: uuid.UUID, body: TaskStatusUpdate, session: Session=Depends(db_session)) -> TaskRead` — `PATCH /tasks/{task_id}/status`: aplica a mudança de status validando a máquina de estados; 404 tarefa inexistente, 409 transição inválida.
 - `upsert_task_contract(task_id: uuid.UUID, body: dict, session: Session=Depends(db_session)) -> dict` — `PUT /tasks/{task_id}/contract`: grava (cria ou atualiza) o contrato com inputs/outputs/invariantes/aceite e devolve o impacto da mudança; 404 tarefa inexistente.
+
+### `src/agent/api/run_routes.py`
+
+**Propósito:** Rotas de execução — iniciar, avançar, pausar, retomar, cancelar, modo autônomo e métricas do run. **Quando/onde:** a cada ação sobre uma execução.
+
+- `cancel_run(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/cancel`: cancela a execução e devolve `{id, status}`; 404 se a run não existir.
+- `disable_autonomous(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/autonomous/disable`: desliga o modo autônomo ajustando `config_json["autonomous"]` para `False`, faz commit e devolve `{id, autonomous}`.
+- `enable_autonomous(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/autonomous/enable`: habilita o modo autônomo via `enable_autonomous_on_run`, faz commit e devolve `{id, autonomous}`.
+- `pause_run(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/pause`: pausa a execução via `RunService.pause_run` e devolve `{id, status}`.
+- `resume_run(run_id: uuid.UUID, retry_blocked: bool=False, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/resume`: retoma a run pausada, opcionalmente repetindo tarefas bloqueadas (`retry_blocked`); 404 run inexistente, 409 quando não pode retomar.
+- `run_metrics(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /runs/{run_id}/metrics`: devolve as métricas da execução (tokens, tempos) via `MetricsService.run_metrics` ou 404 se a run não existir.
+
+### `src/agent/api/presenters.py`
+
+**Propósito:** Montagem dos payloads de leitura (tarefa e conversa) devolvidos pela API. **Quando/onde:** em toda resposta de leitura de tarefa ou conversa.
+
+- `present_conversation(session: Session, item: ConversationModel) -> ConversationRead` — Serializa a conversa em `ConversationRead`, garantindo a branch ativa, anexando branches, `root_path` efetivo e `path_origin` (chosen/home), e ocultando `project_id` nas conversas da inbox.
+- `present_task(session: Session, task) -> TaskRead` — Monta o `TaskRead` da tarefa, traduzindo o título para o idioma da tarefa e preenchendo `usage_tokens` e `metadata_json` com o modelo lembrado.
+- `remembered_model(session: Session, task) -> dict` — Devolve os metadados da tarefa preservando `model_id`; se a tarefa raiz não tiver modelo, procura na run mais recente que a iniciou para recuperar o `model_id` usado.
+- `usage_tokens(session: Session, task) -> int` — Estima os tokens consumidos pela tarefa: usa `metadata["usage"]["total"]` quando existe, senão o `estimated_tokens` do snapshot de contexto mais recente.
+
+### `src/agent/api/live_view.py`
+
+**Propósito:** Linha do tempo de pensamentos e texto legível das ações do orquestrador. **Quando/onde:** ao montar a visão ao vivo do projeto.
+
+- `how_for_task(task) -> str` — Deriva dos metadados da tarefa (tool, verification, model_operation, mcp_tool) uma frase curta explicando como ela será executada; o fallback descreve a máquina de estados do orquestrador.
+- `mark_repeated_thought(thoughts: list[dict], item: dict) -> None` — Calcula no item o contador `repeat` (1 ou 2+) comparando o texto com os pensamentos já coletados, para a interface mostrar que a frase se repetiu sem mudança.
+- `thought_trace(session: Session, project_id: uuid.UUID, tasks: list) -> list[dict]` — Lê os eventos `agent.thought`/`orchestrator.action` do projeto, traduz as ações por `ACTION_COPY`, descarta ações internas e devolve os 16 pensamentos mais recentes com fase, texto e task associada.
 
 ### `src/agent/api/observe_routes.py`
 
@@ -1034,12 +1104,38 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `open_operations(session: Session, run_id: uuid.UUID) -> list[dict[str, Any]]` — Lista chamadas ao modelo, ferramentas, comandos e testes que começaram (`*.started`) e não têm evento de conclusão gravado.
 - `run_snapshot(session: Session, run_id: uuid.UUID, *, bus: EventBus | None=None, recent: int=300) -> dict[str, Any]` — Monta o retrato completo da run (run, header com modo replay/paused/live/interrupted, tarefas com evidências e tentativas, saídas em memória, operações interrompidas, eventos recentes e estatísticas); levanta `LookupError` se a run não existir.
 
+## `src/agent/orchestrator/execution/`
+
+**Propósito:** Execução de uma tarefa — despacho (MCP, modelo, ferramenta, verificação), contexto da operação, escrita do arquivo e evidência.
+
+- Arquivo: [README.md](/src/agent/orchestrator/execution/README.md)
+- Arquivo: [__init__.py](/src/agent/orchestrator/execution/__init__.py)
+- Arquivo: [executor.py](/src/agent/orchestrator/execution/executor.py)
+- Arquivo: [guards.py](/src/agent/orchestrator/execution/guards.py)
+- Arquivo: [journal.py](/src/agent/orchestrator/execution/journal.py)
+- Arquivo: [model_operation.py](/src/agent/orchestrator/execution/model_operation.py)
+- Arquivo: [providers.py](/src/agent/orchestrator/execution/providers.py)
+- Arquivo: [runtime.py](/src/agent/orchestrator/execution/runtime.py)
+- Arquivo: [tool_results.py](/src/agent/orchestrator/execution/tool_results.py)
+- Arquivo: [workspace.py](/src/agent/orchestrator/execution/workspace.py)
+- Arquivo: [writes.py](/src/agent/orchestrator/execution/writes.py)
+
+## `src/agent/remote/`
+
+**Propósito:** Execução remota por SSH — quando o projeto roda em outro computador, os comandos, leituras e escritas acontecem no servidor.
+
+- Arquivo: [README.md](/src/agent/remote/README.md)
+- Arquivo: [__init__.py](/src/agent/remote/__init__.py)
+- Arquivo: [ssh.py](/src/agent/remote/ssh.py)
+- Arquivo: [tools.py](/src/agent/remote/tools.py)
+
 ## `src/agent/orchestrator/`
 
 **Propósito:** Ciclo de execução: estratégia, decomposição, validação, verificação, consolidação e progresso.
 
 - Arquivo: [README.md](/src/agent/orchestrator/README.md)
 - Arquivo: [__init__.py](/src/agent/orchestrator/__init__.py)
+- Subpasta: [src/agent/orchestrator/execution/](/src/agent/orchestrator/execution/)
 - Arquivo: [atomizer.py](/src/agent/orchestrator/atomizer.py)
 - Arquivo: [closing.py](/src/agent/orchestrator/closing.py)
 - Arquivo: [consolidation.py](/src/agent/orchestrator/consolidation.py)
@@ -1233,21 +1329,15 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `RunOrchestrator` — Orquestrador do run: coordena status das tarefas, provider, ferramentas, tentativas, validação de plano, verificação e memória. Entrada: sessão do SQLAlchemy e `Settings` via `__init__`; saída: o dicionário de ação de cada passo.
 - `RunOrchestrator.__init__(session: Session, settings: Settings | None=None) -> None` — Inicializa o orquestrador com a sessão, as configurações, o `TaskService`, o `AttemptService` (limite de tentativas) e o registro de ferramentas. Entrada: sessão e configurações opcionais; saída: `None`.
 - `RunOrchestrator._all_terminal_under(root_id: uuid.UUID) -> bool` — Verifica se todas as descendentes da raiz já estão em estado terminal (completed, cancelled ou failed), ignorando a própria raiz. Entrada: id da raiz; saída: booleano.
-- `RunOrchestrator._apply_provider_usage(task: TaskModel, provider) -> None` — Acumula no metadado da tarefa o uso de tokens reportado pelo provider na última chamada. Entrada: tarefa e provider; saída: `None` (metadado atualizado).
 - `RunOrchestrator._block_invalid_plan(parent: TaskModel, validation: PlanValidation) -> dict[str, Any]` — Bloqueia o pai quando o plano não pôde ser corrigido: classifica a falha (externo, limite operacional ou mudança de estratégia), move a tarefa para BLOCKED pela tabela de transições e devolve a ação `plan_invalid`. Entrada: pai e validação; saída: dicionário de ação com veredito e falha.
 - `RunOrchestrator._capture_outcome_memory(project: ProjectModel, root: TaskModel) -> None` — Grava a memória contextual "Resultado da conversa" com objetivo e resposta final da raiz, evitando duplicar. Entrada: projeto e raiz; saída: `None`.
 - `RunOrchestrator._check_stagnation(run_id: uuid.UUID, out: dict[str, Any]) -> dict[str, Any] | None` — Reage à repetição da mesma falha com a mesma estratégia: diagnostica a causa, decide entre replanejar o pai ou pausar o run e grava o evento `run.stagnation`. Entrada: id do run e saída do passo; saída: dicionário de ação ou `None` quando ainda não há estagnação.
-- `RunOrchestrator._context_overflow(run: ExecutionRunModel, project: ProjectModel, task: TaskModel, provider_name: str, profile: ModelProfile, exc: ContextBudgetError) -> dict[str, Any]` — Trata o estouro de orçamento de contexto: explica qual componente obrigatório não cabe, registra a tentativa, bloqueia a tarefa e devolve `blocked_context`. Entrada: run, projeto, tarefa, provider, perfil e a exceção; saída: dicionário de ação com a falha.
-- `RunOrchestrator._criteria_of(task: TaskModel) -> dict[str, Any]` — Monta o critério avaliado pela verificação: requisitos cobertos pela etapa (e os parciais) e o critério de aceite dela. Entrada: modelo da tarefa; saída: dicionário com `requirements`, `partial` e `acceptance`.
 - `RunOrchestrator._depth(task: TaskModel) -> int` — Calcula a profundidade da tarefa na árvore, contando os ancestrais. Entrada: modelo da tarefa; saída: inteiro de profundidade.
 - `RunOrchestrator._ensure_final_message(root: TaskModel) -> None` — Garante que a raiz tenha uma resposta final: reaproveita o Markdown da etapa `final_answer` ou compõe um relatório com as etapas filhas. Entrada: raiz; saída: `None` (resultado consolidado atualizado).
-- `RunOrchestrator._execute_task(run: ExecutionRunModel, project: ProjectModel, task: TaskModel, config: dict, work_root: str | None=None) -> dict[str, Any]` — Executa a etapa conforme o metadado: ferramenta MCP, resposta final, operação do modelo (com montagem de contexto, streaming e escrita/edição de arquivo) ou ferramenta determinística, com registro de tentativas e tratamento de falhas/loops. Entrada: run, projeto, tarefa, configuração e raiz de trabalho; saída: dicionário de ação (sucesso, falha ou bloqueio).
-- `RunOrchestrator._finalize_verification(run: ExecutionRunModel, project: ProjectModel, task: TaskModel, work_root: str | None=None, implicit_spec: dict | None=None) -> dict[str, Any]` — Roda a verificação proporcional ao risco (a declarada, ou a implícita de escrita), grava a evidência com snapshot dos artefatos e decide entre concluir, bloquear, planejar recuperação ou reentrar em retry. Entrada: run, projeto, tarefa, raiz de trabalho e spec implícita opcional; saída: dicionário de ação com a evidência/falha.
 - `RunOrchestrator._note_thought(run: ExecutionRunModel, task: TaskModel | None, text: str, *, phase: str='thinking') -> None` — Registra o que está acontecendo como evento `agent.thought` e faz commit para a interface ler durante a inferência. Entrada: run, tarefa opcional, texto e fase; saída: `None`.
 - `RunOrchestrator._pause_run(run: ExecutionRunModel, root: TaskModel, hit: dict[str, Any], next_action: str, *, diagnosis: dict[str, Any] | None=None) -> dict[str, Any]` — Pausa o run (retomável) ao atingir um limite, gravando estado, pendências, requisitos, motivo e próxima ação na raiz e no evento `run.paused`, sem mudar o estado das tarefas. Entrada: run, raiz, limite atingido e próxima ação; saída: dicionário de ação `run_paused`.
 - `RunOrchestrator._pending_under(root_id: uuid.UUID) -> list[dict[str, Any]]` — Lista as folhas pendentes sob a raiz (não concluídas, não assentadas e sem filhos), com título, status e motivo. Entrada: id da raiz; saída: lista de dicionários de pendência.
 - `RunOrchestrator._pick_next_task(root_id: uuid.UUID) -> TaskModel | None` — Escolhe a próxima tarefa a executar por prioridade de status (running, verifying, ready, retry_pending, planning, pending), respeitando dependências e filhos não assentados. Entrada: id da raiz; saída: `TaskModel` ou `None` quando nada pode avançar.
-- `RunOrchestrator._plan_verification_recovery(task: TaskModel, vresult: Any, detail: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]` — Diagnostica a reprovação da verificação e planeja a recuperação (diagnóstico → correção → re-verificação), contando as recuperações e emitindo `verification.recovery_planned`. Entrada: tarefa, resultado da verificação, detalhe e spec; saída: dicionário de plano de recuperação.
 - `RunOrchestrator._promote_ready_or_block(task_id: uuid.UUID) -> dict[str, Any] | None` — Valida o contrato da tarefa: se estiver válido, move para READY; caso contrário, move para BLOCKED com os erros e devolve a ação `blocked_contract`. Entrada: id da tarefa; saída: dicionário de bloqueio ou `None`.
 - `RunOrchestrator._propagate_strategy(parent: TaskModel, plan: Any) -> None` — Repassa aos filhos a especialidade líder, o gatilho `atomize` (quando a estratégia é complexa) e os requisitos extraídos da estratégia do pai. Entrada: pai e plano; saída: `None` (metadados dos filhos atualizados).
 - `RunOrchestrator._record_action(run_id: uuid.UUID, out: dict[str, Any]) -> None` — Registra o evento `orchestrator.action` com a saída do passo e emite `run.progress` quando o estado de progresso muda. Entrada: id do run e dicionário de saída; saída: `None`.
@@ -1257,19 +1347,106 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `RunOrchestrator._run_as_leaf(run: ExecutionRunModel, task: TaskModel, *, note: str) -> dict[str, Any]` — Executa a etapa como folha, sem nova divisão: garante operação atômica, verifica dependências e promove para READY ou aguarda. Entrada: run, tarefa e nota de pensamento; saída: dicionário de ação.
 - `RunOrchestrator._run_config(run: ExecutionRunModel) -> dict` — Devolve a configuração persistida do run. Entrada: modelo do run; saída: dicionário de configuração.
 - `RunOrchestrator._same_title_above(task: TaskModel) -> bool` — Verifica se algum ancestral tem o mesmo título ou o mesmo objetivo normalizado da tarefa. Entrada: modelo da tarefa; saída: booleano.
-- `RunOrchestrator._save_requested_memory(project: ProjectModel, task: TaskModel, args: dict) -> dict` — Executa o pedido de salvar memória feito pelo modelo, definindo escopo (projeto ou conversa) e tipo canônico/contextual. Entrada: projeto, tarefa e argumentos da ferramenta; saída: dicionário com sucesso, id e resumo da memória.
 - `RunOrchestrator._stall_run(run: ExecutionRunModel, root: TaskModel, reason: str) -> dict[str, Any]` — Encerra o run como falho quando nada pode avançar: bloqueia a raiz, salva o relatório com pendências e requisitos e emite `run.failed`. Entrada: run, raiz e motivo; saída: dicionário de ação `run_stalled`.
 - `RunOrchestrator._step_body(run_id: uuid.UUID) -> dict[str, Any]` — Corpo do passo: checa limites, replaneja, escolhe a tarefa, e conforme o status avança planejamento, promoção, execução ou verificação, fechando o run quando o aceite global é aprovado. Entrada: id do run; saída: dicionário de ação do passo.
 - `RunOrchestrator._subtree_ids(root_id: uuid.UUID, tasks: list[TaskModel]) -> set[uuid.UUID]` — Devolve os ids de todas as descendentes da raiz, fechando a relação `parent_id` iterativamente sobre a lista de tarefas dada. Entrada: id da raiz e lista de tarefas; saída: conjunto de UUIDs.
 - `RunOrchestrator._task_requirements(task: TaskModel) -> list[dict]` — Lista os requisitos obrigatórios que a etapa precisa atender, combinando os requisitos da raiz com a cobertura herdada da tarefa. Entrada: modelo da tarefa; saída: lista de requisitos com marcação de parcial.
 - `RunOrchestrator._validate_plan(run: ExecutionRunModel, parent: TaskModel, config: dict[str, Any], work_root: str, spec_issues: list | None=None) -> PlanValidation` — Valida o plano do pai e o repara quando possível, usando o limite de tarefas das configurações. Entrada: run, pai, configuração, raiz de trabalho e issues extras da spec; saída: `PlanValidation`.
 - `RunOrchestrator._work_root(project: ProjectModel, task: TaskModel | None) -> str` — Calcula a raiz de trabalho efetiva do projeto, considerando a conversa da tarefa. Entrada: projeto e tarefa opcional; saída: caminho da raiz de trabalho.
-- `RunOrchestrator._write_final_answer(run: ExecutionRunModel, project: ProjectModel, task: TaskModel, config: dict) -> dict[str, Any]` — Pede ao modelo a resposta final ao usuário (ou a compõe a partir das etapas), extrai as fontes, grava o Markdown e conclui a tarefa, consolidando o pai. Entrada: run, projeto, tarefa e configuração; saída: dicionário de ação `final_answer`.
 - `RunOrchestrator.run_until_idle(run_id: uuid.UUID, max_steps: int=50) -> list[dict]` — Avança o run em sequência até alcançar um estado terminal, pausado ou bloqueado, ou até o limite de passos, acumulando o log de ações. Entrada: id do run e número máximo de passos; saída: lista de dicionários de ação.
 - `RunOrchestrator.step(run_id: uuid.UUID) -> dict[str, Any]` — Executa um passo completo do run sob observação: chama o corpo do passo, verifica estagnação e registra a ação no log de eventos. Entrada: id do run; saída: dicionário de ação do passo.
 - `_profile_from_config(run_config: dict, settings: Settings) -> ModelProfile` — Deriva o `ModelProfile` (modelo, limites de contexto e geração) da configuração do run e das configurações globais. Entrada: configuração do run e settings; saída: `ModelProfile`.
 - `_select_provider(settings: Settings, run_config: dict) -> LLMProvider` — Escolhe o provider LLM a partir do nome configurado (`ollama`, `llamacpp` ou `mock`), aplicando timeout e mapa de palavras-chave do mock. Entrada: settings e configuração do run; saída: instância de `LLMProvider`.
-- `evidence_state(passed: bool | None, blocked: bool=False) -> str` — Traduz o resultado da verificação no estado gravado na evidência: `aprovado`, `reprovado`, `inconclusivo` ou `bloqueado`. Entrada: resultado e flag de bloqueio; saída: string de estado.
+
+### `src/agent/orchestrator/execution/README.md`
+
+**Propósito:** Índice da pasta `execution/` — como uma etapa roda (despacho, operação de modelo, escrita e verificação). **Quando/onde:** leitura inicial de quem mexe na execução de tarefa.
+
+### `src/agent/orchestrator/execution/__init__.py`
+
+**Propósito:** Fachada do pacote `execution` — reexporta o executor, o runtime e os utilitários usados pelo orquestrador. **Quando/onde:** importado pelo `runner.py`.
+
+### `src/agent/orchestrator/execution/runtime.py`
+
+**Propósito:** Agrupa os colaboradores de uma execução (sessão, configuração, serviço de tarefas, registro de tentativas, registro de ferramentas e fábrica de provedor). **Quando/onde:** criado pelo `RunOrchestrator` e compartilhado com o executor e o modelo.
+
+- `ExecutionRuntime` — Dataclass com os colaboradores da execução; a instância é compartilhada (não copiada) para haver um único registro de ferramentas e uma única contagem de tentativas por run.
+- `ExecutionRuntime.build(session, settings=None, *, tasks=None, attempts=None, tools=None, provider_factory=None) -> ExecutionRuntime` — Cria o conjunto de colaboradores; o que não for informado é construído com os padrões (`Settings`, `TaskService`, `AttemptService`, registro de ferramentas).
+
+### `src/agent/orchestrator/execution/executor.py`
+
+**Propósito:** Executa uma única tarefa da árvore e registra o desfecho (despacho por natureza da etapa, verificação e evidência). **Quando/onde:** chamado pelo `RunOrchestrator._step_body` quando a etapa entra em `RUNNING`.
+
+- `TaskExecutor` — Executor de uma etapa; usa a mesma sessão, o mesmo registro de tentativas e o mesmo registro de ferramentas do orquestrador. **Observações:** a verificação é sempre independente de quem executou.
+- `TaskExecutor.execute(run, project, task, config, work_root_path=None) -> dict[str, Any]` — Executa a etapa conforme o metadado: ferramenta MCP, resposta final, operação do modelo (com montagem de contexto, streaming e escrita/edição de arquivo) ou ferramenta determinística, com registro de tentativas e tratamento de falhas/loops. Entrada: run, projeto, tarefa, configuração e raiz de trabalho; saída: dicionário de ação (sucesso, falha ou bloqueio).
+- `TaskExecutor.finalize_verification(run, project, task, work_root_path=None, implicit_spec=None) -> dict[str, Any]` — Roda a verificação proporcional ao risco (a declarada, ou a implícita de escrita), grava a evidência com snapshot dos artefatos e decide entre concluir, bloquear, planejar recuperação ou reentrar em retry. Entrada: run, projeto, tarefa, raiz de trabalho e spec implícita opcional; saída: dicionário de ação com a evidência/falha.
+- `TaskExecutor.write_final_answer(run, project, task, config) -> dict[str, Any]` — Pede ao modelo a resposta final ao usuário (ou a compõe a partir das etapas), extrai as fontes, grava o Markdown e conclui a tarefa, consolidando o pai. Entrada: run, projeto, tarefa e configuração; saída: dicionário de ação `final_answer`.
+- `TaskExecutor.plan_verification_recovery(task, vresult, detail, spec) -> dict[str, Any]` — Diagnostica a reprovação da verificação e planeja a recuperação (diagnóstico → correção → re-verificação), contando as recuperações e emitindo `verification.recovery_planned`. Entrada: tarefa, resultado da verificação, detalhe e spec; saída: dicionário de plano de recuperação.
+- `TaskExecutor.criteria_of(task) -> dict[str, Any]` — Monta o critério avaliado pela verificação: requisitos cobertos pela etapa (e os parciais) e o critério de aceite dela. Entrada: modelo da tarefa; saída: dicionário com `requirements`, `partial` e `acceptance`.
+- `TaskExecutor.save_requested_memory(project, task, args) -> dict` — Executa o pedido de salvar memória feito pelo modelo, definindo escopo (projeto ou conversa) e tipo canônico/contextual. Entrada: projeto, tarefa e argumentos da ferramenta; saída: dicionário com sucesso, id e resumo da memória.
+- `TaskExecutor.note_thought(run, task, text, *, phase='thinking') -> None` — Registra o que está acontecendo como evento `agent.thought` e faz commit para a interface ler durante a inferência. Entrada: run, tarefa opcional, texto e fase; saída: `None`.
+- `TaskExecutor.remember_failure(task, failure) -> dict[str, Any]` — Guarda a falha na tarefa (histórico `failures` e `last_failure`) com a assinatura do erro e da estratégia, para a próxima tentativa e o replanejamento lerem. Entrada: tarefa e `Failure`; saída: dicionário da falha registrada.
+- `TaskExecutor.work_root(project, task) -> str` — Calcula a raiz de trabalho efetiva do projeto, considerando a conversa da tarefa. Entrada: projeto e tarefa opcional; saída: caminho da raiz de trabalho.
+- `TaskExecutor._provider(settings, config)` — Provedor do run segundo a política da execução (a fábrica injetada ou a padrão do pacote).
+
+### `src/agent/orchestrator/execution/model_operation.py`
+
+**Propósito:** Executa a etapa de operação de modelo (contexto, ciclo de ferramentas, protocolo JSON da alteração e recusa de escrita). **Quando/onde:** chamado por `TaskExecutor.execute` quando a etapa é `model_operation`.
+
+- `ModelOperation` — Fluxo da operação de modelo; usa os colaboradores do executor que a criou. **Observações:** nada aqui aprova o próprio resultado — a escrita concluída segue para a verificação.
+- `ModelOperation.run(run, project, task, config, root_path, ctx) -> dict[str, Any]` — Monta o contexto da operação, chama o modelo (com ciclo de ferramentas quando o provedor suporta), aplica a alteração respondendo ao pedido e devolve o desfecho da etapa. Entrada: run, projeto, tarefa, configuração, pasta de trabalho e contexto de ferramentas; saída: dicionário de ação.
+- `ModelOperation._context_overflow(run, project, task, provider_name, profile, exc) -> dict[str, Any]` — Trata o estouro de orçamento de contexto: explica qual componente obrigatório não cabe, registra a tentativa, bloqueia a tarefa e devolve `blocked_context`. Entrada: run, projeto, tarefa, provider, perfil e a exceção; saída: dicionário de ação com a falha.
+
+### `src/agent/orchestrator/execution/providers.py`
+
+**Propósito:** Escolha do provedor do run, perfil do modelo e contabilidade de tokens. **Quando/onde:** usado pelo executor e pelo modelo.
+
+- `select_provider(settings, run_config) -> LLMProvider` — Escolhe o provider LLM a partir do nome configurado (`ollama`, `llamacpp` ou `mock`), aplicando timeout e mapa de palavras-chave do mock. Entrada: settings e configuração do run; saída: instância de `LLMProvider`. **Levanta:** `ProviderConfigError` quando o nome é desconhecido e não há fallback autorizado.
+- `default_provider_name(settings) -> str` — Provedor padrão: o do arquivo de provedores, se houver; senão o das settings.
+- `profile_from_config(run_config, settings, provider=None) -> ModelProfile` — Deriva o `ModelProfile` (modelo, limites de contexto e geração) da configuração do run e das configurações globais. Entrada: configuração do run e settings; saída: `ModelProfile`.
+- `supports_tool_loop(provider) -> bool` — Indica se o provedor sabe manter a conversa de ferramentas (capacidade declarada).
+- `apply_provider_usage(task, provider) -> None` — Acumula no metadado da tarefa o uso de tokens reportado pelo provider na última chamada. Entrada: tarefa e provider; saída: `None` (metadado atualizado).
+
+### `src/agent/orchestrator/execution/guards.py`
+
+**Propósito:** Decide o que a etapa pode fazer com as ferramentas e com a resposta do modelo (permissões de escrita e usabilidade do payload). **Quando/onde:** antes de toda escrita e antes de aceitar o JSON do modelo.
+
+- `operation_tools_for(meta) -> tuple[str, ...]` — Ferramentas liberadas para a etapa: sem escrita quando o pedido é somente leitura.
+- `write_refusal_reason(meta, tool_name, path) -> str | None` — Motivo da recusa da escrita (somente leitura ou régua de testes protegida) ou `None` quando a escrita é permitida.
+- `payload_is_usable(content) -> bool` — Indica se a resposta do modelo já é o JSON que a etapa espera (criar ou editar).
+- `evidence_state(passed, blocked=False) -> str` — Traduz o resultado da verificação no estado gravado na evidência: `aprovado`, `reprovado`, `inconclusivo` ou `bloqueado`. Entrada: resultado e flag de bloqueio; saída: string de estado.
+- `compact_inspection(inspections, max_items=6, max_chars=900) -> list[dict]` — Encurta a inspeção da tentativa (o que foi lido e um trecho do conteúdo) para o metadado da tarefa.
+
+### `src/agent/orchestrator/execution/tool_results.py`
+
+**Propósito:** Interpreta o resultado de uma ferramenta determinística (distinguir ferramenta quebrada de veredito negativo). **Quando/onde:** após cada execução de ferramenta.
+
+- `is_informative_test_result(tool_id, out) -> bool` — Indica que a suíte rodou e reprovou (resultado, não falha de ferramenta).
+- `test_summary(out) -> str` — Resumo curto do que a suíte contou (última linha da saída ou código de saída).
+- `as_dict(value) -> dict` — Normaliza o resultado de uma ferramenta em dicionário.
+
+### `src/agent/orchestrator/execution/writes.py`
+
+**Propósito:** Traduz a resposta do modelo em escrita de arquivo, em critério de verificação e em resultado de recusa. **Quando/onde:** no fim da operação de modelo.
+
+- `write_tool_from_payload(data) -> tuple[str, dict[str, Any]]` — Decide entre `edit_file` (há trecho a substituir) e `write_file` (conteúdo inteiro) e devolve os argumentos.
+- `implicit_spec(path, written) -> dict[str, Any] | None` — Critério implícito de verificação de uma escrita (`file_contains` com o que foi gravado, com checagem de sintaxe).
+- `model_refusal_result(tool_name, path, reason, *, report, snapshot_id=None) -> dict[str, Any]` — Resultado consolidado de uma escrita recusada vinda do modelo.
+- `tool_refusal_result(tool_id, path, reason) -> dict[str, Any]` — Resultado consolidado de uma escrita recusada vinda do plano da etapa.
+
+### `src/agent/orchestrator/execution/journal.py`
+
+**Propósito:** Registra no banco o que a execução está fazendo e o que ela já falhou. **Quando/onde:** a cada passo da execução.
+
+- `note_thought(session, run, task, text, *, phase='thinking') -> None` — Registra o pensamento como evento `agent.thought` e faz commit para a interface ler durante a inferência.
+- `remember_failure(task, failure) -> dict[str, Any]` — Guarda a falha na tarefa com assinatura e estratégia (usadas para detectar estagnação).
+- `failure_timestamp() -> str` — Instante atual em ISO-8601 (UTC) para registros de diagnóstico.
+
+### `src/agent/orchestrator/execution/workspace.py`
+
+**Propósito:** Descobre a pasta de trabalho efetiva de uma etapa (projeto ou conversa). **Quando/onde:** antes de executar as ferramentas.
+
+- `work_root(session, project, task) -> str` — Resolve a raiz de trabalho; quando a etapa tem conversa própria, a conversa define a raiz.
 
 ### `src/agent/orchestrator/stagnation.py`
 

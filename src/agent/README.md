@@ -31,8 +31,8 @@ Núcleo do **Callidus**: orquestração explícita, persistência SQLite, modelo
 
 | Arquivo | Propósito | Funções/Classes Exportadas |
 |---------|-----------|---------------------------|
-| [`config.py`](../config.py) | **Configuração central** via `.env` + variáveis de ambiente (pydantic-settings) | `Settings` (todas as opções), `Settings.resolved_database_url()`, `get_settings()` |
-| [`__init__.py`](../__init__.py) | Marca pacote + versão | `__version__ = "0.1.0"` |
+| [`config.py`](config.py) | **Configuração central** via `.env` + variáveis de ambiente (pydantic-settings) | `Settings` (todas as opções), `Settings.resolved_database_url()`, `get_settings()` |
+| [`__init__.py`](__init__.py) | Marca pacote + versão | `__version__ = "0.1.0"` |
 
 ## Fluxo Principal (Orquestrador)
 

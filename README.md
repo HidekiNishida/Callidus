@@ -220,6 +220,13 @@ sequenceDiagram
 | Diretório/Arquivo | Propósito | Quando Executa | Conexões (Entrada → Saída) |
 |-------------------|-----------|----------------|----------------------------|
 | **`src/agent/api/main.py`** | API HTTP + SSE + SPA estática | Inicialização (`callidus-api`) + cada request | HTTP JSON → Services/Orchestrator → DB + EventBus → HTTP JSON / SSE |
+| **`src/agent/api/system_routes.py`** | Rotas de sistema (health, provedores, ferramentas, MCP) | Cada request | Configuração → diagnóstico (sem credencial) |
+| **`src/agent/api/project_routes.py`** | Rotas de projeto (CRUD, remoto, grafo, memória, visão ao vivo) | Cada request | Projeto → Services/KnowledgeGraph → JSON |
+| **`src/agent/api/conversation_routes.py`** | Rotas de conversa (soltas, mover, bifurcar, ramos) | Cada request | Conversa → ConversationService → JSON |
+| **`src/agent/api/task_routes.py`** | Rotas de tarefa (status, dependências, contrato, evidências) | Cada request | Tarefa → TaskService/state_machine → JSON |
+| **`src/agent/api/run_routes.py`** | Rotas de execução (step, pause, resume, cancel, autônomo) | Cada request | Run → RunService/RunOrchestrator → JSON |
+| **`src/agent/api/presenters.py`** | Apresentação de leitura (tarefa e conversa) | Cada leitura | Model → payload único da API |
+| **`src/agent/api/live_view.py`** | Visão ao vivo (pensamentos e ações traduzidas) | `/projects/{id}/live` | EventLog → linha do tempo legível |
 | **`src/agent/api/observe_routes.py`** | Rotas SSE, histórico, snapshot | Conexão SSE `/events`, `/live`, `/snapshot` | EventBus (memória) + DB (event_logs) → SSE stream |
 | **`src/agent/api/deps.py`** | Dependências FastAPI (DB, Settings) | Cada request | `.env` + `Settings` → `Session`, `ToolRegistry`, `McpManager` |
 | **`src/agent/config.py`** | Configuração central (pydantic-settings) | Startup + cada `get_settings()` | `.env` → `Settings` (data_dir, DB URL, Ollama, limites, observabilidade) |
@@ -240,6 +247,9 @@ sequenceDiagram
 | **`src/agent/services/inbox.py`** | Projeto "inbox" (sem pasta escolhida) | Criação de tarefas/conversas sem project_id | Resolve pasta do usuário (`Path.home()`) |
 | **`src/agent/services/fs_browse.py`** | Navegação de pastas (API `/fs/browse`, `/fs/pick-folder`) | UI escolhe pasta do projeto | `os.listdir` + `pick_folder_native` (macOS `osascript`) |
 | **`src/agent/orchestrator/runner.py`** | **Coração**: `RunOrchestrator.step()` + `run_until_idle` | Cada `POST /runs/{id}/step` + AutonomousWorker | Lê DB → escolhe task → planeja/executa/verifica/consolida → escreve DB + EventBus |
+| **`src/agent/orchestrator/execution/`** | **Execução de uma tarefa** (`TaskExecutor`, `ModelOperation`) | `RUNNING` da etapa | Despacho (MCP/modelo/ferramenta/verificação) → contexto → escrita → evidência |
+| **`src/agent/orchestrator/execution/guards.py`** | Permissões de escrita e leitura do payload do modelo | Antes de toda escrita | `write_refusal_reason` (vem do pedido, não do modelo) → recusa vira resultado |
+| **`src/agent/orchestrator/execution/writes.py`** | Payload do modelo → escrita + critério implícito | `model_operation` | `write_tool_from_payload` + `implicit_spec` + resultado de recusa |
 | **`src/agent/orchestrator/planner.py`** | Memória canônica do objetivo | Início do run (root task PLANNING) | `ProjectService.add_memory(MemoryKind.CANONICAL)` |
 | **`src/agent/orchestrator/decomposition.py`** | Decomposição hierárquica (modelo + templates + atomizer) | Task `PLANNING` sem filhos | `provider` + `profile` + `objective` + `requirements` → `DecompositionResult` → `apply_decomposition` |
 | **`src/agent/orchestrator/atomizer.py`** | Decomposição adaptativa (recursiva) da etapa interna | `atomize=True` (tarefa complexa) ou tentativas ≥ 2 | Objetivo + `lead_specialty` → `SubTaskSpec` (diagnóstico → correção → verificação) |
@@ -697,15 +707,16 @@ pytest tests/test_observability_*.py -v
 | 9 | [`src/agent/config.py`](src/agent/config.py) | Todas as configurações + `resolved_database_url()` |
 | 9 | [`src/agent/domain/state_machine.py`](src/agent/domain/state_machine.py) | Transições válidas (código executável) |
 | 10 | [`src/agent/persistence/models.py`](src/agent/persistence/models.py) | Modelos SQLAlchemy (tabelas reais) |
-| 11 | [`src/agent/orchestrator/runner.py`](src/agent/orchestrator/runner.py) | **Coração** — `step()`, `_step_body()`, `_execute_task()`, `_finalize_verification()` |
-| 12 | [`src/agent/orchestrator/decomposition.py`](src/agent/orchestrator/decomposition.py) | Como o plano nasce (modelo → template → mock) |
-| 13 | [`src/agent/orchestrator/plan_validation.py`](src/agent/orchestrator/plan_validation.py) | Regras determinísticas que aceitam/bloqueiam planos |
-| 14 | [`src/agent/verification/runner.py`](src/agent/verification/runner.py) | Verificadores determinísticos (pytest, file_contains, syntax, static_analysis) |
-| 15 | [`src/agent/tools/builtins.py`](src/agent/tools/builtins.py) | 17 ferramentas reais + `TOOL_CATALOG` que o modelo vê |
-| 16 | [`src/agent/providers/ollama.py`](src/agent/providers/ollama.py) | Integração HTTP + streaming real com Ollama |
-| 17 | [`src/agent/services/autonomous_worker.py`](src/agent/services/autonomous_worker.py) | Loop background que roda sozinho |
-| 18 | [`web/static/assets/app/`](web/static/assets/app/) | SPA Vue 3: chat, plano, diff, acompanhamento, paleta de comandos, provedores e ajustes (responsivo) |
-| 19 | [`tests/test_e2e_orchestrator.py`](tests/test_e2e_orchestrator.py) | Teste E2E completo (mock provider) |
+| 11 | [`src/agent/orchestrator/runner.py`](src/agent/orchestrator/runner.py) | **Coração do ciclo** — `step()`, `_step_body()`, planejamento, estagnação e pausa |
+| 12 | [`src/agent/orchestrator/execution/README.md`](src/agent/orchestrator/execution/README.md) | **Execução de uma tarefa** — despacho, operação de modelo, escrita e verificação |
+| 13 | [`src/agent/orchestrator/decomposition.py`](src/agent/orchestrator/decomposition.py) | Como o plano nasce (modelo → template → mock) |
+| 14 | [`src/agent/orchestrator/plan_validation.py`](src/agent/orchestrator/plan_validation.py) | Regras determinísticas que aceitam/bloqueiam planos |
+| 15 | [`src/agent/verification/runner.py`](src/agent/verification/runner.py) | Verificadores determinísticos (pytest, file_contains, syntax, static_analysis) |
+| 16 | [`src/agent/tools/builtins.py`](src/agent/tools/builtins.py) | 17 ferramentas reais + `TOOL_CATALOG` que o modelo vê |
+| 17 | [`src/agent/providers/ollama.py`](src/agent/providers/ollama.py) | Integração HTTP + streaming real com Ollama |
+| 18 | [`src/agent/services/autonomous_worker.py`](src/agent/services/autonomous_worker.py) | Loop background que roda sozinho |
+| 19 | [`web/static/assets/app/`](web/static/assets/app/) | SPA Vue 3: chat, plano, diff, acompanhamento, paleta de comandos, provedores e ajustes (responsivo) |
+| 20 | [`tests/test_e2e_orchestrator.py`](tests/test_e2e_orchestrator.py) | Teste E2E completo (mock provider) |
 
 ### READMEs dos Subdiretórios (Índices Navegáveis)
 
@@ -713,6 +724,7 @@ pytest tests/test_observability_*.py -v
 - **Código**: [`src/README.md`](src/README.md) → [`src/agent/README.md`](src/agent/README.md)
 - **Arquitetura**: [`docs/architecture/README.md`](docs/architecture/README.md)
 - **Documentação**: [`docs/README.md`](docs/README.md) → [`docs/regras/README.md`](docs/regras/README.md)
+- **Regras de engenharia (canônicas)**: [`AGENTS.md`](AGENTS.md)
 - **Testes**: [`tests/README.md`](tests/README.md) → [`tests/fixtures/README.md`](tests/fixtures/README.md)
 - **Interface**: [`web/README.md`](web/README.md)
 - **Scripts**: [`scripts/README.md`](scripts/README.md)
@@ -751,7 +763,7 @@ Callidus/
 │       ├── persistence/  # SQLAlchemy models (20 tabelas) + database + migrações
 │       ├── automation/   # Automações: contratos, gatilhos, ações, dependências, supervisor, CLI
 │       ├── services/     # 15 services (CRUD + worker + scheduler + metrics)
-│       ├── orchestrator/ # 13 módulos (runner, planner, decomposition, validation, etc.)
+│       ├── orchestrator/ # Ciclo (runner, planner, decomposition, validation…) + execution/ (execução de uma tarefa)
 │       ├── tools/        # Registry + 17 builtins + browser + diffing
 │       ├── providers/    # Ollama, llama.cpp, OpenRouter, OpenAI-compatível, Anthropic, Gemini, mock + registry/http
 │       ├── context/      # Budget, assembler, operation_builder
