@@ -28,6 +28,7 @@ import { ProvidersView } from "./components/providers.js";
 import { SettingsView } from "./components/settings.js";
 import { LivePanel } from "./components/live.js";
 import { CommandPalette } from "./components/palette.js";
+import { AutomationsView } from "./components/automations.js";
 
 const { createApp, reactive, ref, computed, onMounted, onBeforeUnmount } = Vue;
 
@@ -35,6 +36,7 @@ const NAV_ITEMS = [
   { id: "chat", label: "Conversa", icon: "chat" },
   { id: "live", label: "Execução", icon: "chart" },
   { id: "providers", label: "Provedores", icon: "server" },
+  { id: "automations", label: "Automações", icon: "clock" },
   { id: "settings", label: "Ajustes", icon: "cog" },
 ];
 
@@ -48,6 +50,7 @@ const App = {
     SettingsView,
     LivePanel,
     CommandPalette,
+    AutomationsView,
   },
   setup() {
     const modal = reactive({
@@ -380,6 +383,7 @@ const App = {
             <ChatView v-if="state.view === 'chat'" key="chat" />
             <LivePanel v-else-if="state.view === 'live'" key="live" />
             <ProvidersView v-else-if="state.view === 'providers'" key="providers" />
+            <AutomationsView v-else-if="state.view === 'automations'" key="automations" />
             <SettingsView
               v-else
               key="settings"

@@ -27,6 +27,7 @@ dev = [
 [project.scripts]
 callidus-api = "agent.api.main:run"
 agente-api = "agent.api.main:run"
+callidus-supervisor = "agent.automation.cli:main"
 
 [build-system]
 requires = ["setuptools>=75.0.0", "wheel"]

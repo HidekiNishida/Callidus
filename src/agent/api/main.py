@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from agent.api.deps import db_session, get_engine, read_settings
 from agent.api.agent_routes import router as agent_router
+from agent.api.automation_routes import router as automation_router
 from agent.api.observe_routes import router as observe_router
 from agent.api.provider_routes import router as provider_router
 from agent.brand import BRAND_NAME, BRAND_TAGLINE
@@ -127,9 +128,16 @@ async def lifespan(app: FastAPI):
     settings = read_settings()
     if settings.enable_background_worker:
         start_background_worker()
+    # O runtime de automações sobe junto com a API: com a interface aberta as
+    # automações também funcionam. Quem garante o funcionamento **sem** a interface
+    # é o supervisor nativo (`callidus-supervisor`), que usa o mesmo núcleo.
+    if settings.enable_automation_supervisor:
+        start_scheduler(settings)
     try:
         yield
     finally:
+        if settings.enable_automation_supervisor:
+            await stop_scheduler()
         if settings.enable_background_worker:
             await stop_background_worker()
 
@@ -143,6 +151,7 @@ app = FastAPI(
 app.include_router(observe_router)
 app.include_router(agent_router)
 app.include_router(provider_router)
+app.include_router(automation_router)
 
 
 @app.get("/health")

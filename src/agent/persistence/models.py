@@ -144,6 +144,126 @@ class ScheduledRunModel(Base):
     )
 
 
+class AutomationModel(Base):
+    """Automação persistente: a definição aprovada de um trabalho que roda sozinho.
+
+    A definição é um contrato versionado (`contract_version`): gatilho, ação,
+    dependências, permissões e política de recuperação ficam em colunas JSON
+    validadas pelo serviço de automações. `next_run_at` é o relógio de parede do
+    próximo disparo, em UTC — quem calcula é o gatilho, não a API.
+    """
+
+    __tablename__ = "automations"
+    __table_args__ = (
+        Index("ix_automations_project", "project_id"),
+        Index("ix_automations_state", "state"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Versão do contrato de definição: quando o formato muda, o dado antigo continua legível.
+    contract_version: Mapped[int] = mapped_column(Integer, default=1)
+    # `local` (nesta máquina) ou `remote` (computador do projeto, por SSH).
+    target_kind: Mapped[str] = mapped_column(String(16), default="local")
+    trigger_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    action_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    dependencies_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    permissions_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    policy_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # Fuso do gatilho. Os carimbos persistidos são sempre UTC.
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    # Política para disparos perdidos durante interrupções.
+    missed_policy: Mapped[str] = mapped_column(String(16), default="run_once")
+    # `enabled` | `suspended` | `disabled`.
+    state: Mapped[str] = mapped_column(String(16), default="disabled")
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversations.id"), nullable=True
+    )
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
+    # Objetivo congelado no momento da aprovação (`frozen`) ou sempre a versão mais
+    # recente da conversa/tarefa (`latest`).
+    objective_mode: Mapped[str] = mapped_column(String(16), default="frozen")
+    objective_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    timeout_sec: Mapped[float | None] = mapped_column(nullable=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class AutomationFiringModel(Base):
+    """Disparo de uma automação: a unidade de trabalho registrada e recuperável.
+
+    `idempotency_key` é único: reprocessar o mesmo disparo (reinício, retentativa,
+    evento repetido) nunca cria uma segunda execução equivalente.
+    """
+
+    __tablename__ = "automation_firings"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_automation_firing_key"),
+        Index("ix_automation_firings_automation", "automation_id"),
+        Index("ix_automation_firings_state", "state"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    automation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("automations.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(191), nullable=False)
+    # Instante teórico do disparo (UTC) — o que a chave de idempotência resume.
+    scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # `pending` | `preparing` | `waiting_dependency` | `running` | `completed` |
+    # `failed` | `blocked` | `skipped` | `cancelled`.
+    state: Mapped[str] = mapped_column(String(24), default="pending")
+    attempt: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("execution_runs.id"), nullable=True
+    )
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class AutomationEventModel(Base):
+    """Evento durável de automação: a entrada de adaptadores (webhook, arquivo, watcher).
+
+    `dedupe_key` protege contra o mesmo evento chegar duas vezes (reconexão, retentativa
+    do emissor). A entrega é idempotente: o gatilho de evento cria um disparo por evento.
+    """
+
+    __tablename__ = "automation_events"
+    __table_args__ = (
+        Index("ix_automation_events_type", "event_type"),
+        Index("ix_automation_events_created", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), default="internal")
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id"), nullable=True
+    )
+    payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    dedupe_key: Mapped[str | None] = mapped_column(String(191), nullable=True, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class OperationAttemptModel(Base):
     __tablename__ = "operation_attempts"
 

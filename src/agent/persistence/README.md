@@ -6,11 +6,11 @@ Camada de dados: modelos ORM, engine, session factory e inicialização do banco
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
-| [`models.py`](models.py) | 17 models SQLAlchemy (`ProjectModel`, `TaskModel`, `ConversationModel`, `BranchModel`, `TaskDependencyModel`, `ExecutionRunModel`, `ScheduledRunModel`, `OperationAttemptModel`, `EventLogModel`, `MemoryRecordModel`, `KgNodeModel`, `KgEdgeModel`, `TaskContractModel`, `ContextSnapshotModel`, `EvidenceModel`, `AgentModel`, `AgentExecutionModel`, `AgentQueryModel`) | **Tabelas** — UUID PK, FKs, JSON columns, índices, constraints |
+| [`models.py`](models.py) | 20 models SQLAlchemy (`ProjectModel`, `TaskModel`, `ConversationModel`, `BranchModel`, `TaskDependencyModel`, `ExecutionRunModel`, `ScheduledRunModel`, `OperationAttemptModel`, `EventLogModel`, `MemoryRecordModel`, `KgNodeModel`, `KgEdgeModel`, `TaskContractModel`, `ContextSnapshotModel`, `EvidenceModel`, `AgentModel`, `AgentExecutionModel`, `AgentQueryModel`, `AutomationModel`, `AutomationFiringModel`, `AutomationEventModel`) | **Tabelas** — UUID PK, FKs, JSON columns, índices, constraints |
 | [`database.py`](database.py) | `create_db_engine`, `build_session_factory`, `init_db`, `get_engine` | Engine singleton + sessionmaker + `Base.metadata.create_all` |
 | [`__init__.py`](__init__.py) | Re-exporta models + database | Facilita `from agent.persistence import ProjectModel, get_engine` |
 
-## Modelo de Dados (17 Tabelas)
+## Modelo de Dados (20 Tabelas)
 
 | Tabela | Entidade | Campos-Chave |
 |--------|----------|--------------|
@@ -31,6 +31,9 @@ Camada de dados: modelos ORM, engine, session factory e inicialização do banco
 | `evidences` | `EvidenceModel` | `id`, `task_id`, `attempt_id`, `verifier`, `passed`, `summary`, `detail_json`, `created_at` |
 | `agents` | `AgentModel` | `id`, `project_id`, `parent_id` (agente pai), `task_id`, `role`, `instructions`, `permissions_json`, `status`, `depth`, `metadata_json`, timestamps |
 | `agent_executions` | `AgentExecutionModel` | `id`, `agent_id`, `task_id`, `run_id`, `status`, `attempt`, `checkpoint_json`, `context_refs_json`, `last_error`, `started_at`, `finished_at` |
+| `automations` | `AutomationModel` | `id`, `project_id`, `name`, `contract_version`, `target_kind`, `trigger_json`, `action_json`, `dependencies_json`, `permissions_json`, `policy_json`, `timezone`, `missed_policy`, `state`, `conversation_id`, `task_id`, `objective_mode`, `objective_json`, `max_attempts`, `timeout_sec`, `next_run_at`, `last_run_at`, timestamps |
+| `automation_firings` | `AutomationFiringModel` | `id`, `automation_id`, `project_id`, `idempotency_key` (única), `scheduled_for`, `fired_at`, `state`, `attempt`, `max_attempts`, `run_id`, `task_id`, `next_attempt_at`, `result_json`, `error`, timestamps |
+| `automation_events` | `AutomationEventModel` | `id`, `event_type`, `source`, `project_id`, `payload_json`, `dedupe_key` (único), `created_at`, `consumed_at` |
 | `agent_queries` | `AgentQueryModel` | `id`, `project_id`, `requester_agent_id`, `target_agent_id`, `answered_by_agent_id`, `task_id`, `correlation_id`, `questions_json`, `status`, `answer`, `answer_json`, `attempts`, `max_attempts`, `created_at`, `answered_at` |
 
 ## Engine & Session
@@ -55,7 +58,7 @@ session = Session()
 
 - **Arquivo**: `data/agent.db` (padrão) — configurável via `AGENT_DATA_DIR` ou `DATABASE_URL`
 - **Testes**: `Settings.resolved_database_url()` força `data/agent.db` quando `PYTEST_CURRENT_TEST` está setado (não grava no banco real)
-- **Migrações**: Manuais (SQLAlchemy `create_all` no `init_db`); schema versionado no git
+- **Migrações**: `create_all` no `init_db` + ajustes incrementais (`_migrate_sqlite`) e a conversão de `scheduled_runs` em automações (`migrate_legacy_schedules`, idempotente — a tabela antiga não é apagada)
 
 ## Relacionamentos Principais
 
@@ -78,6 +81,9 @@ erDiagram
   ExecutionRun ||--o{ OperationAttempt : "has"
   KgNode ||--o{ KgEdge : "src"
   KgNode ||--o{ KgEdge : "dst"
+  Project ||--o{ Automation : "has"
+  Automation ||--o{ AutomationFiring : "dispara"
+  Automation ||--o{ AutomationEvent : "escuta"
 ```
 
 ## Testes

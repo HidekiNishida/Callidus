@@ -451,6 +451,45 @@ PowerShell): em **Ajustes → Projetos → ícone de servidor** configure host, 
 SSH, a pasta do projeto no servidor e o sistema. A partir daí, comandos, leituras, escritas e
 listagens do projeto são executados no servidor.
 
+### Automações persistentes (trabalhos que rodam sozinhos)
+
+Uma automação é uma **definição aprovada** — gatilho, ação, dependências,
+permissões e política de recuperação — gravada no banco. Ela sobrevive ao
+encerramento da interface e do processo, e é recuperada pelo supervisor nativo.
+
+Na aba **Automações** da interface você cria, ativa, suspende, executa uma vez,
+testa, cancela e remove automações. O runtime faz o resto.
+
+- **Gatilhos**: data e hora específicas, recorrência (cron), intervalo e eventos
+  internos do Callidus (tarefa/run concluído ou falho).
+- **Ações**: tarefa do Callidus (pelo caminho normal do orquestrador) ou script
+  determinístico — **sem depender de um LLM**.
+- **Fuso explícito**: o horário local é respeitado (inclusive a virada do horário de
+  verão); o carimbo persistido é UTC.
+- **Disparos perdidos**: a política é da própria automação (`run_once`,
+  `catch_up`, `group`, `skip`).
+- **Dependências**: pasta, interpretador, script, computador remoto, provedor,
+  ferramenta, MCP e credencial são verificados antes de executar; só dependências
+  **autorizadas** e com mecanismo configurado são iniciadas automaticamente.
+- **Idempotência**: a chave do disparo é única no banco — reprocessar não cria
+  uma segunda execução.
+
+Para funcionar **sem a interface**, instale o serviço nativo do sistema:
+
+```bash
+callidus-supervisor install                # por usuário (sem privilégio administrativo)
+callidus-supervisor install --scope system # nível de sistema (exige administrador)
+callidus-supervisor status                 # runtime + serviço nativo
+callidus-supervisor diagnose               # automações, próximos disparos, pendências
+callidus-supervisor uninstall
+```
+
+macOS usa `launchd`, Linux usa `systemd` (serviço de usuário ou de sistema) e
+Windows usa o Agendador de Tarefas. O mesmo núcleo roda nas três.
+
+Detalhes: [docs/architecture/automacoes.md](/docs/architecture/automacoes.md) ·
+código: [src/agent/automation/README.md](/src/agent/automation/README.md).
+
 ### Configurar pela interface web
 
 A aba **Provedores** (`http://127.0.0.1:8765/`) cria, edita e testa provedores sem editar arquivo:
@@ -691,7 +730,7 @@ Callidus/
 ├── backups/              # Backups manuais do SQLite
 ├── data/                 # Runtime (gitignored): agent.db, mcp.json, logs
 ├── docs/
-│   ├── architecture/     # 15 docs técnicos (visão, estados, modelo, execução, requisitos, skills, etc.)
+│   ├── architecture/     # 16 docs técnicos (visão, estados, modelo, execução, requisitos, skills, automações, etc.)
 │   ├── regras/           # Como agentes trabalham (readmes-pastas, commits, checklists, etc.)
 │   ├── project-context.md
 │   └── README.md
@@ -709,8 +748,9 @@ Callidus/
 │   └── agent/            # Pacote instalável `callidus`
 │       ├── api/          # FastAPI + SSE + SPA
 │       ├── domain/       # Enums, state_machine, schemas, failures
-│       ├── persistence/  # SQLAlchemy models + database
-│       ├── services/     # 11 services (CRUD + worker + scheduler + metrics)
+│       ├── persistence/  # SQLAlchemy models (20 tabelas) + database + migrações
+│       ├── automation/   # Automações: contratos, gatilhos, ações, dependências, supervisor, CLI
+│       ├── services/     # 15 services (CRUD + worker + scheduler + metrics)
 │       ├── orchestrator/ # 13 módulos (runner, planner, decomposition, validation, etc.)
 │       ├── tools/        # Registry + 17 builtins + browser + diffing
 │       ├── providers/    # Ollama, llama.cpp, OpenRouter, OpenAI-compatível, Anthropic, Gemini, mock + registry/http
@@ -741,7 +781,7 @@ Callidus/
 ├── .env                  # Config local (gitignored)
 ├── .env.example          # Template
 ├── providers.example.yaml # Exemplo de configuração de provedores (sem credenciais)
-├── pyproject.toml        # Projeto Python + script `callidus-api`
+├── pyproject.toml        # Projeto Python + scripts `callidus-api` e `callidus-supervisor`
 ├── resume.md             # Resumo vivo do projeto (atualizado por hooks)
 ├── test_server.py        # Teste rápido da API
 └── test_step.py          # Teste rápido do step do orquestrador
@@ -757,6 +797,8 @@ Callidus/
 - **Modelos Ollama**: `GET /providers/ollama/models`
 - **MCP Servers**: `GET /mcp/servers` + `POST /mcp/discover` + `POST /mcp/call`
 - **Backup SQLite**: `./scripts/backup-data.sh`
+- **Automações (API)**: `GET /automations` + `GET /automations/supervisor/status`
+- **Supervisor**: `callidus-supervisor status` / `diagnose`
 
 ---
 

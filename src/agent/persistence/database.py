@@ -69,10 +69,79 @@ def _migrate_sqlite(engine: Engine) -> None:
         conn.commit()
 
 
+def migrate_legacy_schedules(engine: Engine) -> int:
+    """Converte as linhas antigas de `scheduled_runs` em automações.
+
+    A tabela antiga **não** é apagada: os dados continuam lá para inspeção e a migração
+    é idempotente (cada linha antiga vira no máximo uma automação). Uma linha antiga
+    só define gatilho e projeto; a ação vira uma automação Callidus sobre o projeto.
+    """
+    from sqlalchemy import select
+
+    from agent.persistence.models import AutomationModel, ScheduledRunModel
+
+    factory = build_session_factory(engine)
+    session = factory()
+    try:
+        legacy = list(session.scalars(select(ScheduledRunModel)).all())
+        created = 0
+        for row in legacy:
+            existing = session.get(AutomationModel, row.id)
+            if existing is not None:
+                continue
+            legacy_config = dict(row.config_json or {})
+            objective = legacy_config.get("objective") or legacy_config.get("prompt")
+            automation = AutomationModel(
+                id=row.id,
+                project_id=row.project_id,
+                name=f"Agendamento herdado ({row.cron_expression})",
+                description=(
+                    "Convertido de `scheduled_runs` na migração das automações. "
+                    f"Linha antiga: {row.id}. Revise e ative quando fizer sentido."
+                ),
+                contract_version=1,
+                target_kind="local",
+                trigger_json={
+                    "kind": "cron",
+                    "cron": row.cron_expression,
+                    "timezone": "UTC",
+                    "missed_policy": "run_once",
+                },
+                action_json={
+                    "kind": "callidus",
+                    "objective_mode": "latest",
+                    "objective": objective,
+                    "autonomous": True,
+                },
+                dependencies_json=[],
+                permissions_json={"allow_scripts": False, "allowed_commands": []},
+                policy_json={"max_attempts": 3, "timeout_sec": None, "backoff_sec": 30.0},
+                timezone="UTC",
+                missed_policy="run_once",
+                # Nasce **desabilitada**: o agendamento antigo nunca chegou a rodar
+                # (o protótipo criava um run inválido), então a decisão de executá-lo
+                # é do usuário, não da migração.
+                state="disabled",
+                max_attempts=3,
+                last_run_at=row.last_run_at,
+                next_run_at=None,
+            )
+            session.add(automation)
+            created += 1
+        session.commit()
+        return created
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
 def init_db(engine: Engine | None = None, settings: Settings | None = None) -> Engine:
     engine = engine or create_db_engine(settings)
     Base.metadata.create_all(engine)
     _migrate_sqlite(engine)
+    migrate_legacy_schedules(engine)
     return engine
 
 

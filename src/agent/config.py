@@ -97,6 +97,13 @@ class Settings(BaseSettings):
     static_web_dir: Path | None = None
     mcp_config_path: Path | None = None
     enable_background_worker: bool = True
+    # Runtime de automações dentro da API. O supervisor nativo (`callidus-supervisor`)
+    # usa o mesmo núcleo e funciona sem a interface.
+    enable_automation_supervisor: bool = True
+    # Segundos entre tiques do runtime de automações.
+    automation_tick_seconds: float = 5.0
+    # Teto de execuções de automação por tique (protege contra rajada de disparos).
+    automation_max_executions_per_tick: int = 20
 
     def resolved_database_url(self) -> str:
         # Pytest carrega o .env do projeto; sem isso os testes gravam no agent.db real.

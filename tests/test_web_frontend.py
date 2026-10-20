@@ -64,6 +64,7 @@ def test_vue_is_vendored_locally():
         "components/live.js",
         "components/palette.js",
         "components/settings.js",
+        "components/automations.js",
     ],
 )
 def test_application_modules_exist(module):
@@ -92,6 +93,7 @@ def test_frontend_uses_endpoints_that_exist():
         "/mcp",
         "/tools",
         "/health",
+        "/automations",
     )
     checked = {prefix for prefix in prefixes if prefix.startswith(family)}
     assert checked, "a interface deveria chamar alguma rota da API"
@@ -307,3 +309,14 @@ def test_providers_view_uses_the_configuration_endpoints():
     routes = _all_paths(app)
     assert "/providers/config" in routes
     assert "/providers/config/{name}/secret" in routes
+
+
+def test_interface_expoe_o_painel_de_automacoes():
+    """A interface precisa mostrar e comandar as automações."""
+    text = (APP_DIR / "components/automations.js").read_text(encoding="utf-8")
+    assert "AutomationsView" in text
+    assert "Automações" in text
+    for action in ("enable", "suspend", "run", "test", "cancel"):
+        assert f"'{action}'" in text
+    main = (APP_DIR / "main.js").read_text(encoding="utf-8")
+    assert 'state.view === \'automations\'' in main

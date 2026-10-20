@@ -1,143 +1,112 @@
-# src/agent/services/scheduler.py — serviço de agendamento de execuções
+# src/agent/services/scheduler.py — fachada do agendamento (compatibilidade)
+"""Ponto de entrada antigo do agendamento.
+
+O mecanismo real das automações vive em [`agent.automation`][agent.automation]: a
+definição, o disparo idempotente, a verificação de dependências, a execução e o
+supervisor headless. Este módulo continua existindo porque é ele que a API e os
+serviços já conhecem — mas aqui não há uma segunda implementação: tudo é
+delegado ao núcleo.
+
+O protótipo anterior (APScheduler + `ScheduledRunModel`) tinha três defeitos que
+quebravam o disparo de ponta a ponta: criava `ExecutionRunModel` **sem**
+`root_task_id` (violava o contrato do banco), não era iniciado pelo ciclo de vida
+da API e não tinha chave de idempotência. As linhas de `scheduled_runs` são
+convertidas em automações na migração (o dado é preservado).
+"""
 from __future__ import annotations
 
 import asyncio
+import logging
+import uuid
 from datetime import datetime
 from typing import Any
 
-from croniter import croniter
-from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from agent.config import Settings, get_settings
-from agent.persistence.database import build_session_factory, create_db_engine
-from agent.persistence.models import ExecutionRunModel, ScheduledRunModel
-from agent.domain.enums import RunStatus
-from agent.orchestrator.runner import RunOrchestrator
+from agent.automation.enums import AutomationState
+from agent.automation.store import AutomationService
+from agent.automation.supervisor import AutomationSupervisor, build_supervisor
+from agent.persistence.models import AutomationModel, ScheduledRunModel
 
-logger = __import__('logging').getLogger(__name__)
+logger = logging.getLogger(__name__)
 
-_scheduler: Any = None  # APScheduler BackgroundScheduler instance
-_scheduler_task: asyncio.Task | None = None
-_stop_event = asyncio.Event()
+_supervisor: AutomationSupervisor | None = None
+_supervisor_task: asyncio.Task | None = None
 
 
 def _get_next_run_time(cron_expr: str, base_time: datetime | None = None) -> datetime:
-    """Calcula o próximo horário de execução baseado na expressão cron."""
-    base = base_time or datetime.now()
-    itr = croniter(cron_expr, base)
-    return itr.get_next(datetime)
+    """Calcula o próximo horário de execução baseado na expressão cron (UTC)."""
+    from agent.automation.timezones import next_cron_occurrence
+
+    return next_cron_occurrence(cron_expr, "UTC", base_time or datetime.now())
 
 
-async def _schedule_job(schedule_id: str) -> None:
-    """Job chamado pelo APScheduler para disparar uma execução."""
-    logger.info(f"Disparando job agendado para schedule {schedule_id}")
-    settings = get_settings()
-    engine = create_db_engine(settings)
-    factory = build_session_factory(engine)
-    session = factory()
+# ─────────────────────────────────────────────────────────── ciclo de vida
+
+def start_scheduler(settings: Any = None) -> asyncio.Task:
+    """Inicia o runtime de automações em segundo plano.
+
+    Devolve a tarefa: quem chama decide como esperar. Um `await` do processo
+    inteiro trava o ciclo de vida da API — o runtime é um **tique**, não um
+    bloqueio.
+    """
+    global _supervisor, _supervisor_task
+    if _supervisor_task and not _supervisor_task.done():
+        return _supervisor_task
+    _supervisor = build_supervisor(settings)
+    interval = float(getattr(settings, "automation_tick_seconds", 5.0) or 5.0)
+    _supervisor_task = asyncio.create_task(_supervisor.run_forever(interval_sec=interval))
+    return _supervisor_task
+
+
+async def stop_scheduler() -> None:
+    """Para o runtime de automações."""
+    global _supervisor, _supervisor_task
+    if _supervisor is not None:
+        _supervisor.stop()
+    if _supervisor_task is not None:
+        _supervisor_task.cancel()
+        try:
+            await _supervisor_task
+        except asyncio.CancelledError:
+            pass
+        _supervisor_task = None
+    _supervisor = None
+
+
+def current_supervisor() -> AutomationSupervisor | None:
+    return _supervisor
+
+
+# ─────────────────────────────────────────────────────────── compatibilidade
+
+def _as_uuid(schedule_id: str | uuid.UUID) -> uuid.UUID:
+    if isinstance(schedule_id, uuid.UUID):
+        return schedule_id
+    return uuid.UUID(str(schedule_id))
+
+
+def schedule_enabled_on_run(session: Session, schedule_id: str | uuid.UUID) -> AutomationModel:
+    """Ativa a automação e recalcula o próximo disparo."""
+    key = _as_uuid(schedule_id)
+    service = AutomationService(session)
+    row = service.get(key)
+    service.set_state(row.id, AutomationState.ENABLED)
+    return row
+
+
+def schedule_disabled_on_run(session: Session, schedule_id: str | uuid.UUID) -> AutomationModel:
+    """Desativa a automação (para de disparar) preservando a definição."""
+    key = _as_uuid(schedule_id)
+    service = AutomationService(session)
+    row = service.get(key)
+    service.set_state(row.id, AutomationState.DISABLED)
+    return row
+
+
+def legacy_scheduled_run(session: Session, schedule_id: str | uuid.UUID) -> ScheduledRunModel | None:
+    """Linha antiga de `scheduled_runs` (compatibilidade de leitura)."""
     try:
-        # Obter o schedule
-        stmt = select(ScheduledRunModel).where(ScheduledRunModel.id == schedule_id)
-        scheduled = session.scalars(stmt).first()
-        if not scheduled or not scheduled.enabled:
-            logger.warning(f"Schedule {schedule_id} não encontrado ou desabilitado")
-            return
-
-        # Criar uma nova ExecutionRun a partir do schedule
-        run = ExecutionRunModel(
-            project_id=scheduled.project_id,
-            config_json=scheduled.config_json,
-            status=RunStatus.ACTIVE.value,  # Para que o worker autônomo a pegue
-        )
-        session.add(run)
-        session.commit()
-        logger.info(f"ExecutionRun {run.id} criado a partir do schedule {schedule_id}")
-
-        # Atualizar o schedule com o horário da última execução e calcular o próximo
-        scheduled.last_run_at = datetime.now()
-        scheduled.next_run_at = _get_next_run_time(scheduled.cron_expression, scheduled.last_run_at)
-        session.add(scheduled)
-        session.commit()
-    except Exception as exc:
-        logger.error(f"Falha ao disparar job agendado {schedule_id}: {exc}")
-        session.rollback()
-    finally:
-        session.close()
-
-
-async def start_scheduler() -> None:
-    """Inicia o serviço de agendamento em segundo plano."""
-    global _scheduler, _scheduler_task
-    if _scheduler is not None:
-        logger.warning("Scheduler já está iniciado")
-        return
-
-    settings = get_settings()
-    engine = create_db_engine(settings)
-    factory = build_session_factory(engine)
-
-    # Importar APScheduler aqui para evitar carregamento se não usado
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
-    from apscheduler.triggers.date import DateTrigger
-
-    _scheduler = AsyncIOScheduler()
-    _scheduler.start()
-
-    # Carregar schedules habilitados do banco
-    session = factory()
-    try:
-        stmt = select(ScheduledRunModel).where(ScheduledRunModel.enabled == True)  # noqa: E712
-        schedules = session.scalars(stmt).all()
-        for sched in schedules:
-            # Calcular o próximo horário de execução
-            next_run = _get_next_run_time(sched.cron_expression)
-            # Adicionar job ao scheduler
-            job = _scheduler.add_job(
-                _schedule_job,
-                trigger='cron',
-                cron_expression=sched.cron_expression,
-                id=str(sched.id),
-                replace_existing=True,
-            )
-            logger.info(f"Schedule {sched.id} adicionado com próximo horário em {next_run}")
-            # Atualizar o próximo horário no banco (opcional, já que o job vai atualizar após execução)
-            sched.next_run_at = next_run
-            session.add(sched)
-        session.commit()
-    except Exception as exc:
-        logger.error(f"Falha ao carregar schedules: {exc}")
-        session.rollback()
-    finally:
-        session.close()
-
-    # Mantém o serviço vivo até que seja parado
-    await _stop_event.wait()
-
-
-def stop_scheduler() -> None:
-    """Para o serviço de agendamento."""
-    global _scheduler, _scheduler_task, _stop_event
-    if _scheduler is None:
-        return
-    _stop_event.set()
-    _scheduler.shutdown(wait=False)
-    _scheduler = None
-    logger.info("Scheduler parado")
-
-
-def schedule_enabled_on_run(session, schedule_id: str) -> ScheduledRunModel:
-    """Marca um schedule como habilitado."""
-    sched = session.get(ScheduledRunModel, schedule_id)
-    if sched is None:
-        raise LookupError(str(schedule_id))
-    sched.enabled = True
-    return sched
-
-
-def schedule_disabled_on_run(session, schedule_id: str) -> ScheduledRunModel:
-    """Marca um schedule como desabilitado."""
-    sched = session.get(ScheduledRunModel, schedule_id)
-    if sched is None:
-        raise LookupError(str(schedule_id))
-    sched.enabled = False
-    return sched
+        return session.get(ScheduledRunModel, _as_uuid(schedule_id))
+    except (ValueError, AttributeError):
+        return None

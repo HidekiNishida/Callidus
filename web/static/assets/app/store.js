@@ -64,6 +64,10 @@ export const state = reactive({
   graphText: "",
   toolsText: "",
   mcpText: "",
+
+  automations: [],
+  automationDetail: null,
+  supervisor: null,
 });
 
 let stream = null;
@@ -761,4 +765,48 @@ export async function clearProviderSecret(name) {
   state.providerConfig = saved;
   await loadProviders();
   return saved;
+}
+
+// ─────────────────────────────────────────────────────── automações
+
+export async function loadAutomations(projectId) {
+  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  const data = await api(`/automations${query}`).catch(() => []);
+  state.automations = data || [];
+  return state.automations;
+}
+
+export async function loadAutomationDetail(id) {
+  const data = await api(`/automations/${encodeURIComponent(id)}`).catch(() => null);
+  if (data) state.automationDetail = data;
+  return data;
+}
+
+export async function createAutomation(definition, activate = false) {
+  const saved = await api("/automations", {
+    method: "POST",
+    body: JSON.stringify({ definition, activate }),
+  });
+  await loadAutomations();
+  return saved;
+}
+
+export async function automationAction(id, action, body = {}) {
+  const saved = await api(`/automations/${encodeURIComponent(id)}/${action}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  await loadAutomations();
+  return saved;
+}
+
+export async function deleteAutomation(id) {
+  await api(`/automations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  await loadAutomations();
+}
+
+export async function loadSupervisorStatus() {
+  const data = await api("/automations/supervisor/status").catch(() => null);
+  if (data) state.supervisor = data;
+  return data;
 }

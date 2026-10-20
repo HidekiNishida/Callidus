@@ -27,6 +27,7 @@ Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 | [requisitos-verificacao-progresso.md](/docs/architecture/requisitos-verificacao-progresso.md) | Requisitos rastreáveis, validação do plano, verificação independente, progresso real |
 | [avaliacao.md](/docs/architecture/avaliacao.md) | **Avaliação reproduzível** — cenários com critérios objetivos e resultado medido com o modelo local |
 | [skills-estrategia.md](/docs/architecture/skills-estrategia.md) | Skills sob demanda, estratégia profissional, decomposição recursiva e recuperação da verificação |
+| [automacoes.md](/docs/architecture/automacoes.md) | **Automações persistentes** — definição aprovada, gatilhos, ações, dependências, supervisor nativo (launchd/systemd/Windows) |
 | [hierarquia-agentes.md](/docs/architecture/hierarquia-agentes.md) | **Hierarquia de agentes** — executor compartilhado, ciclo de vida, consultas sob demanda, escalonador e descarte |
 
 Voltar: [docs/README.md](/docs/README.md) · [README raiz](/README.md)
