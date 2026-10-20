@@ -1,5 +1,13 @@
-# src/agent/automation/triggers/base.py — contrato dos gatilhos e registro de novos tipos
-"""Gatilho: a parte da automação que decide *quando*.
+"""
+Arquivo: src/agent/automation/triggers/base.py
+Nome: base.py
+Propósito: definir o contrato dos gatilhos de automação e o registro de novos tipos.
+Responsabilidade: camada de domínio — protocolo do gatilho e registro extensível.
+Componentes: Trigger, TriggerFactory, register_trigger, trigger_factories, build_trigger.
+Dependências: agent.automation.contracts, agent.automation.enums.
+Observações: um gatilho só diz quais instantes são elegíveis; a entrega é do despachante.
+
+Gatilho: a parte da automação que decide *quando*.
 
 Um gatilho não executa nada: ele diz quais instantes (UTC) são elegíveis. A
 entrega do disparo — com chave de idempotência — é do despachante.
@@ -38,16 +46,36 @@ _REGISTRY: dict[str, TriggerFactory] = {}
 
 
 def register_trigger(kind: str, factory: TriggerFactory) -> None:
-    """Registra (ou substitui) um tipo de gatilho."""
+    """Registra (ou substitui) um tipo de gatilho.
+
+    Args:
+        kind: identificador do tipo de gatilho.
+        factory: fábrica que constrói o gatilho a partir da especificação.
+    """
     _REGISTRY[str(kind)] = factory
 
 
 def trigger_factories() -> dict[str, TriggerFactory]:
+    """Fábricas de gatilho registradas.
+
+    Returns:
+        Uma cópia do registro de fábricas.
+    """
     return dict(_REGISTRY)
 
 
 def build_trigger(spec: TriggerSpec) -> Trigger:
-    """Instancia o gatilho de uma especificação."""
+    """Instancia o gatilho de uma especificação.
+
+    Args:
+        spec: especificação do gatilho.
+
+    Returns:
+        O gatilho pronto para uso.
+
+    Raises:
+        ValueError: quando o tipo de gatilho não está registrado.
+    """
     factory = _REGISTRY.get(str(spec.kind))
     if factory is None:
         raise ValueError(f"tipo de gatilho desconhecido: {spec.kind}")

@@ -1,4 +1,13 @@
-# src/agent/orchestrator/strategy.py — Camada de Abordagem Profissional e Estratégia Executável
+"""
+Arquivo: src/agent/orchestrator/strategy.py
+Nome: strategy.py
+Propósito: Camada de Abordagem Profissional e Estratégia Executável.
+Responsabilidade: camada de aplicação.
+Componentes: is_read_only_request, protects_test_files, looks_like_test_file, ProfessionalStrategy, ProfessionalStrategist.
+Dependências: __future__, dataclasses, re, typing.
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import re
@@ -84,6 +93,11 @@ class ProfessionalStrategy:
         return self.complexity_rank >= 2
 
     def as_dict(self) -> dict[str, Any]:
+        """Serializa a estratégia para os metadados da tarefa.
+
+        Returns:
+            Um dicionário com os campos da estratégia mais o nível de complexidade e a indicação de subdivisão.
+        """
         data = asdict(self)
         data["complexity_rank"] = self.complexity_rank
         data["needs_atomization"] = self.needs_atomization
@@ -134,6 +148,18 @@ class ProfessionalStrategist:
     """
 
     def analyze(self, objective: str, *, context_summary: str = "") -> ProfessionalStrategy:
+        """Formula a estratégia de abordagem para um pedido.
+
+        Args:
+            objective: pedido original do usuário.
+            context_summary: resumo do contexto disponível, usado na formulação.
+
+        Returns:
+            A estratégia com a intenção original preservada e as restrições do pedido aplicadas.
+
+        Observações:
+            A restrição de somente leitura e a proteção dos arquivos de teste valem para qualquer tipo de pedido: são restrições do pedido, não do ramo de análise.
+        """
         strategy = self._analyze(objective, context_summary=context_summary)
         # A restrição de somente leitura vale para **qualquer** tipo de pedido: ela é do
         # pedido, não do ramo de análise.
@@ -145,6 +171,18 @@ class ProfessionalStrategist:
         }
         return strategy
     def _analyze(self, objective: str, *, context_summary: str = "") -> ProfessionalStrategy:
+        """Formula a estratégia a partir do texto do pedido.
+
+        Args:
+            objective: pedido original do usuário.
+            context_summary: resumo do contexto disponível.
+
+        Returns:
+            A estratégia com especialidade líder, complexidade, requisitos, riscos e critérios de aceitação.
+
+        Observações:
+            É o corpo de cálculo de `analyze`; a diferença é que aqui as restrições do pedido ainda não foram aplicadas.
+        """
         clean_obj = objective.strip()
         lower = clean_obj.lower()
         words = set(re.findall(r"\w+", lower))

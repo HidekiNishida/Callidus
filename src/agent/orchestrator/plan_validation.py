@@ -1,4 +1,13 @@
-# src/agent/orchestrator/plan_validation.py — validação determinística do plano antes da execução
+"""
+Arquivo: src/agent/orchestrator/plan_validation.py
+Nome: plan_validation.py
+Propósito: validação determinística do plano antes da execução.
+Responsabilidade: camada de aplicação.
+Componentes: PlanVerdict, Issue, PlanValidation, sanitize_spec, active_children, plan_fingerprint….
+Dependências: agent.domain.enums, agent.domain.schemas, agent.orchestrator.consolidation, agent.orchestrator.decomposition, agent.orchestrator.requirements, agent.persistence.models….
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -30,6 +39,8 @@ from agent.verification.runner import VERIFIER_TYPES
 
 
 class PlanVerdict(StrEnum):
+    """Veredito da validação de um plano, do mais tolerante ao mais severo.
+    """
     VALID = "válido"
     WARNINGS = "válido com ressalvas"
     INCONCLUSIVE = "inconclusivo"
@@ -54,6 +65,14 @@ _READS_PATH = {"read_file", "edit_file"}
 
 @dataclass
 class Issue:
+    """Problema encontrado na validação do plano.
+
+    Atributos:
+        code: identificador estável do tipo de problema.
+        verdict: severidade do problema, que determina o veredito do plano.
+        message: descrição legível do problema.
+        task_id: tarefa em que o problema foi encontrado, quando houver.
+    """
     code: str
     verdict: PlanVerdict
     message: str
@@ -62,6 +81,17 @@ class Issue:
 
 @dataclass
 class PlanValidation:
+    """Resultado da validação de um plano de etapas.
+
+    Atributos:
+        verdict: veredito overall do plano.
+        issues: problemas encontrados, cada um com sua severidade.
+        coverage: requisitos cobertos e etapas que os cobrem.
+        blocked: motivos que impedem a execução.
+        fingerprint: impressão digital do plano, que muda quando ele muda.
+        fixes: correções aplicadas ao plano.
+        initial_verdict: veredito da primeira validação, antes das correções.
+    """
     verdict: PlanVerdict
     issues: list[Issue] = field(default_factory=list)
     coverage: dict[str, list[str]] = field(default_factory=dict)
@@ -72,9 +102,19 @@ class PlanValidation:
 
     @property
     def runnable(self) -> bool:
+        """Diz se o plano pode ser executado.
+
+        Returns:
+            Verdadeiro quando o veredito é válido, válido com ressalvas ou inconclusivo.
+        """
         return self.verdict in RUNNABLE
 
     def as_dict(self) -> dict[str, Any]:
+        """Serializa a validação para o payload da API e para os eventos.
+
+        Returns:
+            Um dicionário com o veredito e os problemas em texto, com os enums convertidos em rótulos.
+        """
         data = asdict(self)
         data["verdict"] = self.verdict.value
         data["issues"] = [{**asdict(i), "verdict": i.verdict.value} for i in self.issues]
@@ -116,6 +156,16 @@ def sanitize_spec(plan: DecompositionResult) -> tuple[DecompositionResult, list[
 
 
 def _reaches(graph: dict[int, set[int]], start: int, target: int) -> bool:
+    """Diz se um vértice do grafo alcança outro.
+
+    Args:
+        graph: grafo de dependências por índice de etapa.
+        start: vértice de partida.
+        target: vértice procurado.
+
+    Returns:
+        Verdadeiro quando existe caminho de `start` até `target`.
+    """
     stack, seen = [start], set()
     while stack:
         node = stack.pop()
@@ -154,6 +204,17 @@ def plan_fingerprint(session: Session, parent_id: uuid.UUID) -> str:
 
 
 def _verifiable(task: TaskModel) -> bool:
+    """Diz se a etapa tem alguma forma de ser verificada.
+
+    Args:
+        task: tarefa avaliada.
+
+    Returns:
+        Verdadeiro quando a etapa declara verificação, é resposta final, é operação do modelo, é subsistema ou tem critério de aceitação.
+
+    Observações:
+        Etapa de operação sem critério declarado e sem metadados não tem como ser conferida: a validação não pode dar nota de verificável a ela.
+    """
     meta = task.metadata_json or {}
     if meta.get("verification") or meta.get("final_answer") or meta.get("model_operation"):
         return True
@@ -163,6 +224,14 @@ def _verifiable(task: TaskModel) -> bool:
 
 
 def _norm(text: str | None) -> str:
+    """Normaliza um texto para comparação.
+
+    Args:
+        text: texto a normalizar.
+
+    Returns:
+        O texto com espaços normalizados e em minúsculas, ou uma string vazia.
+    """
     return " ".join((text or "").split()).casefold()
 
 
@@ -327,6 +396,16 @@ def _anchor_present(project_root: str, path: str, anchor: str) -> bool:
 
 
 def _produced_before(session: Session, task: TaskModel, path: str) -> bool:
+    """Diz se alguma dependência da etapa produz o arquivo em questão.
+
+    Args:
+        session: sessão do banco.
+        task: tarefa avaliada.
+        path: caminho do arquivo procurado.
+
+    Returns:
+        Verdadeiro quando uma tarefa da qual esta depende é operação do modelo ou cita o caminho nos seus argumentos ou objetivo.
+    """
     deps = session.scalars(select(TaskDependencyModel).where(TaskDependencyModel.task_id == task.id)).all()
     for dep in deps:
         other = session.get(TaskModel, dep.depends_on_task_id)
@@ -337,6 +416,15 @@ def _produced_before(session: Session, task: TaskModel, path: str) -> bool:
 
 
 def _dependency_issues(session: Session, kids: list[TaskModel]) -> list[Issue]:
+    """Procura dependências quebradas entre as etapas do plano.
+
+    Args:
+        session: sessão do banco.
+        kids: etapas do plano.
+
+    Returns:
+        Os problemas de dependência: referência inexistente, tarefa de outro projeto, dependência cancelada e ciclo.
+    """
     issues = []
     ids = {k.id for k in kids}
     graph: dict[uuid.UUID, set[uuid.UUID]] = {k.id: set() for k in kids}
@@ -360,6 +448,16 @@ def _dependency_issues(session: Session, kids: list[TaskModel]) -> list[Issue]:
 
 
 def _reaches_ids(graph: dict[uuid.UUID, set[uuid.UUID]], start: uuid.UUID, target: uuid.UUID) -> bool:
+    """Diz se um vértice do grafo alcança outro, usando identificadores de tarefa.
+
+    Args:
+        graph: grafo de dependências por identificador.
+        start: vértice de partida.
+        target: vértice procurado.
+
+    Returns:
+        Verdadeiro quando existe caminho de `start` até `target`.
+    """
     stack, seen = [start], set()
     while stack:
         node = stack.pop()
@@ -373,6 +471,14 @@ def _reaches_ids(graph: dict[uuid.UUID, set[uuid.UUID]], start: uuid.UUID, targe
 
 
 def _duplicate_issues(kids: list[TaskModel]) -> list[Issue]:
+    """Procura etapas repetidas ou com o mesmo título dentro do plano.
+
+    Args:
+        kids: etapas do plano.
+
+    Returns:
+        Um problema de etapa duplicada para cada repetição idêntica e um de título repetido para cada coincidência de título.
+    """
     issues = []
     seen_exact: dict[tuple, TaskModel] = {}
     seen_title: dict[str, TaskModel] = {}
@@ -389,6 +495,15 @@ def _duplicate_issues(kids: list[TaskModel]) -> list[Issue]:
 
 
 def _subtree_ids(session: Session, root: TaskModel) -> set[uuid.UUID]:
+    """Recolhe o identificador da raiz e o de todos os seus descendentes.
+
+    Args:
+        session: sessão do banco.
+        root: raiz da árvore de tarefas.
+
+    Returns:
+        O conjunto de identificadores da subárvore.
+    """
     rows = session.scalars(select(TaskModel).where(TaskModel.project_id == root.project_id)).all()
     ids = {root.id}
     changed = True
@@ -501,6 +616,17 @@ def repair_plan(session: Session, parent: TaskModel, validation: PlanValidation)
 
 
 def _cancel(ts: TaskService, task: TaskModel, reason: str, kind: str = "plan") -> None:
+    """Cancela uma etapa do plano, guardando o motivo na própria tarefa.
+
+    Args:
+        ts: serviço de tarefas que faz a transição.
+        task: etapa cancelada.
+        reason: motivo legível do cancelamento.
+        kind: categoria do cancelamento, usada pela consolidação para distinguir cancelamento previsto de trabalho não feito.
+
+    Observações:
+        Etapa já em execução ou concluída não é cancelada: só o que ainda não começou pode ser descartado.
+    """
     status = TaskStatus(task.status)
     if status == TaskStatus.PENDING or status in {TaskStatus.PLANNING, TaskStatus.READY, TaskStatus.RETRY_PENDING, TaskStatus.BLOCKED}:
         # O motivo fica na tarefa: a consolidação precisa distinguir cancelamento previsto
@@ -578,5 +704,17 @@ def validate_and_repair(
 
 
 def summarize(validation: PlanValidation, limit: int = 4) -> str:
+    """Resume a validação em uma frase.
+
+    Args:
+        validation: validação a resumir.
+        limit: número máximo de problemas citados.
+
+    Returns:
+        O veredito do plano seguido dos problemas mais severos.
+
+    Observações:
+        Sem problemas, devolve apenas o veredito.
+    """
     worst = sorted(validation.issues, key=lambda i: -_RANK[i.verdict])[:limit]
     return f"plano {validation.verdict.value}: " + "; ".join(i.message for i in worst) if worst else f"plano {validation.verdict.value}"

@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# scripts/backup-data.sh — backup timestamped do diretório data/
+# Arquivo: scripts/backup-data.sh
+# Nome: backup-data.sh
+# Propósito: gerar um backup datetado do diretório de dados do Callidus.
+# Responsabilidade: camada de script — empacota a pasta de dados em um arquivo comprimido na pasta de backups.
+# Componentes: resolução do diretório de dados, criação da pasta de destino e geração do arquivo tar.gz.
+# Dependências: tar, date e as ferramentas padrão do shell.
+# Observações: não altera os dados de origem; quando a pasta de dados não existe, o script termina com erro.
+#
+# backup timestamped do diretório data/
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DATA="${AGENT_DATA_DIR:-$ROOT/data}"

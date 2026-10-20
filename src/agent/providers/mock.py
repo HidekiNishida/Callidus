@@ -1,4 +1,12 @@
-# src/agent/providers/mock.py — provedor determinístico para testes
+"""
+Arquivo: src/agent/providers/mock.py
+Nome: mock.py
+Propósito: oferecer um provedor determinístico, sem rede, para testes e execução offline.
+Responsabilidade: camada de infraestrutura — simulação de respostas do modelo sem serviço externo.
+Componentes: MockProvider, decomposition_json.
+Dependências: agent.providers.base.
+Observações: o provedor não simula recursos que não tem: streaming, ferramentas e visão ficam desligados.
+"""
 from __future__ import annotations
 
 import json
@@ -19,11 +27,22 @@ class MockProvider(LLMProvider):
     name = "mock"
 
     def __init__(self, responses: list[str] | None = None, keyword_map: dict[str, str] | None = None) -> None:
+        """Cria o provedor de teste com as respostas e o mapa de palavras-chave.
+
+        Args:
+            responses: respostas devolvidas em ordem, uma por chamada.
+            keyword_map: mapa de palavra-chave presente no pedido → resposta correspondente.
+        """
         self._responses = list(responses or [])
         self._keyword_map = keyword_map or {}
         self._call_index = 0
 
     def capabilities(self) -> ProviderCapabilities:
+        """Recursos declarados pelo provedor.
+
+        Returns:
+            Capacidades mínimas, sem streaming, ferramentas ou visão.
+        """
         return ProviderCapabilities(
             streaming=False,
             tools=False,
@@ -35,9 +54,22 @@ class MockProvider(LLMProvider):
         )
 
     async def list_models(self) -> list[str]:
+        """Lista de modelos fictícia.
+
+        Returns:
+            A lista com o único modelo simulado.
+        """
         return ["mock-model"]
 
     async def _chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+        """Devolve a resposta correspondente ao pedido, de forma determinística.
+
+        Args:
+            request: requisição do Callidus.
+
+        Returns:
+            A resposta simulada; por padrão, um JSON de ação `noop`.
+        """
         user_text = ""
         for m in request.messages:
             if m.role == "user":
@@ -56,4 +88,12 @@ class MockProvider(LLMProvider):
 
 
 def decomposition_json(subtasks: list[dict[str, Any]]) -> str:
+    """Serializa uma decomposição de tarefas no formato esperado pelo orquestrador.
+
+    Args:
+        subtasks: subtarefas da decomposição.
+
+    Returns:
+        O JSON com a chave `subtasks`.
+    """
     return json.dumps({"subtasks": subtasks}, ensure_ascii=False)

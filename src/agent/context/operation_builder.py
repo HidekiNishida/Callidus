@@ -1,4 +1,12 @@
-# src/agent/context/operation_builder.py — Context Builder por operação
+"""
+Arquivo: src/agent/context/operation_builder.py
+Nome: operation_builder.py
+Propósito: montar o contexto de uma operação do agente a partir do banco, do grafo e do projeto.
+Responsabilidade: camada de aplicação — coleta dos componentes do prompt e gravação do snapshot do contexto.
+Componentes: OperationContextBuilder, GLOBAL_RULES, FILE_CHARS, FILES_TOTAL.
+Dependências: agent.context.assembler, agent.context.budget, agent.knowledge, agent.memory.store, agent.services.contract_service, agent.security.paths, agent.skills, agent.tools.builtins, agent.persistence.models.
+Observações: o contexto montado é persistido como snapshot; estouro de orçamento gera snapshot e erro.
+"""
 from __future__ import annotations
 
 import base64
@@ -51,7 +59,19 @@ GLOBAL_RULES = (
 
 
 class OperationContextBuilder:
+    """Monta o contexto de cada operação do agente a partir do estado persistido.
+
+    Atributos:
+        _session: sessão de leitura e escrita usada para consultar e gravar o snapshot.
+        _kg: serviço do grafo de conhecimento, consultado para trechos técnicos.
+    """
+
     def __init__(self, session: Session) -> None:
+        """Cria o construtor de contexto ligado a uma sessão.
+
+        Args:
+            session: sessão SQLAlchemy usada nas consultas e na gravação do snapshot.
+        """
         self._session = session
         self._kg = KnowledgeGraphService(session)
 
@@ -236,6 +256,11 @@ class OperationContextBuilder:
         return selector.render_selected_skills(matches, max_chars=max_chars), matches
 
     def _max_skills(self) -> int:
+        """Quantas skills podem entrar no prompt de uma operação.
+
+        Returns:
+            O limite configurado; em caso de falha de configuração, o padrão de duas skills.
+        """
         try:
             from agent.config import get_settings
 
@@ -278,6 +303,7 @@ class OperationContextBuilder:
         return f"## Orientação de recuperação\n{guidance}"
 
     def _memory_block(self, project_id: uuid.UUID, task: TaskModel) -> tuple[str, str]:
+        """Monta o bloco de memória (canônica e contextual) que entra no prompt da operação."""
         index = self._memory_index(project_id, task)
         chosen = choose_memory_index(index, task.objective)
         note = f"memória: índice {len(index)}, escolhidas {len(chosen)}"
@@ -300,6 +326,15 @@ class OperationContextBuilder:
         return "\n".join(lines), note
 
     def _memory_index(self, project_id: uuid.UUID, task) -> list[dict]:
+        """Índice de memórias visíveis para a tarefa, com resumo, fatos e tópicos.
+
+        Args:
+            project_id: projeto dono das memórias.
+            task: tarefa em execução, usada para filtrar conversa e ramo.
+
+        Returns:
+            A lista de memórias visíveis, mais recentes primeiro.
+        """
         conversation_id = task.conversation_id
         stmt = (
             select(
@@ -353,12 +388,29 @@ class OperationContextBuilder:
         return rows
 
     def _memory_bodies(self, ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+        """Conteúdo completo das memórias selecionadas.
+
+        Args:
+            ids: identificadores das memórias escolhidas.
+
+        Returns:
+            Um dicionário de identificador para conteúdo.
+        """
         if not ids:
             return {}
         stmt = select(MemoryRecordModel.id, MemoryRecordModel.content).where(MemoryRecordModel.id.in_(ids))
         return {row.id: row.content or "" for row in self._session.execute(stmt)}
 
     def _technical_snippet(self, project_id: uuid.UUID, objective: str) -> str:
+        """Trechos técnicos sugeridos pelo grafo de conhecimento a partir do objetivo.
+
+        Args:
+            project_id: projeto em que a busca acontece.
+            objective: texto da etapa, do qual são extraídos os símbolos.
+
+        Returns:
+            A lista de referências encontradas, ou uma dica para inspecionar manualmente.
+        """
         parts: list[str] = []
         for token in grep_symbols_in_objective(objective)[:8]:
             hits = self._kg.search(project_id, token, limit=3)
@@ -367,6 +419,14 @@ class OperationContextBuilder:
         return "\n".join(parts) if parts else "(nenhum trecho automático; use list_dir ou search_grep)"
 
     def _contract_block(self, task: TaskModel) -> tuple[str, list[str]]:
+        """Contrato da tarefa (entradas, saídas, invariantes e aceite) e os arquivos nele referenciados.
+
+        Args:
+            task: tarefa em execução.
+
+        Returns:
+            O contrato em texto e a lista de caminhos citados nele.
+        """
         service = ContractService(self._session)
         row = service.get(task.id)
         if row is None:
@@ -418,6 +478,14 @@ class OperationContextBuilder:
         return "\n\n".join(blocks), included
 
     def _global_objective(self, task: TaskModel) -> str:
+        """Objetivo da raiz da decomposição: o porquê da etapa dentro do pedido original.
+
+        Args:
+            task: tarefa em execução.
+
+        Returns:
+            O objetivo da raiz, ou string vazia quando a tarefa já é a raiz.
+        """
         current, seen = task, set()
         while current.parent_id and current.parent_id not in seen:
             seen.add(current.parent_id)
@@ -445,6 +513,14 @@ class OperationContextBuilder:
         return "\n".join(lines)
 
     def _ancestor_attachments(self, task: TaskModel) -> list[dict]:
+        """Anexos do pedido, somando os das tarefas ancestrais.
+
+        Args:
+            task: tarefa em execução.
+
+        Returns:
+            A lista de referências de anexo, da tarefa mais antiga para a atual.
+        """
         current: TaskModel | None = task
         seen: set[uuid.UUID] = set()
         found: list[dict] = []
@@ -457,6 +533,15 @@ class OperationContextBuilder:
         return found
 
     def _attachment_snippet(self, root_path: str, task: TaskModel) -> str:
+        """Trecho dos anexos textuais do pedido, para o modelo não precisar reler tudo.
+
+        Args:
+            root_path: raiz do projeto, usada para resolver os caminhos com segurança.
+            task: tarefa em execução.
+
+        Returns:
+            O bloco de anexos em texto, ou string vazia quando não há anexos textuais.
+        """
         refs = self._ancestor_attachments(task)
         if not refs:
             return ""
@@ -478,6 +563,16 @@ class OperationContextBuilder:
         return "\n".join(lines)
 
     def _image_payloads(self, root_path: str, task: TaskModel, profile: ModelProfile) -> list[str]:
+        """Anexos de imagem codificados em base64, quando o modelo aceita visão.
+
+        Args:
+            root_path: raiz do projeto, usada para resolver os caminhos com segurança.
+            task: tarefa em execução.
+            profile: perfil do modelo, consultado para a capacidade de visão.
+
+        Returns:
+            A lista de imagens codificadas; no máximo duas, e nenhuma acima de 4 MB.
+        """
         if not profile.supports_vision:
             return []
         payloads: list[str] = []

@@ -1,4 +1,13 @@
-# src/agent/orchestrator/decomposition.py — decomposição hierárquica
+"""
+Arquivo: src/agent/orchestrator/decomposition.py
+Nome: decomposition.py
+Propósito: decomposição hierárquica.
+Responsabilidade: camada de aplicação.
+Componentes: SubTaskSpec, DecompositionResult, plan_with_model, requirements_block, page_plan, align_verification….
+Dependências: agent.config, agent.context.budget, agent.domain.enums, agent.domain.schemas, agent.guides.discover, agent.i18n.locale….
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import re
@@ -25,6 +34,17 @@ from agent.util.json_parse import parse_json_object
 
 
 class SubTaskSpec(BaseModel):
+    """Descrição de uma subtarefa prevista em um plano.
+
+    Atributos:
+        title: título curto da etapa.
+        objective: o que a etapa precisa entregar.
+        kind: tipo da tarefa criada.
+        scope: recorte de arquivos ou área do trabalho.
+        acceptance_criteria: critério de aceitação declarado.
+        metadata: instruções de execução — ferramenta, verificação, operação de modelo.
+        depends_on_indices: índices das subtarefas do plano das quais esta depende.
+    """
     title: str
     objective: str
     kind: TaskKind = TaskKind.OPERATION
@@ -35,6 +55,12 @@ class SubTaskSpec(BaseModel):
 
 
 class DecompositionResult(BaseModel):
+    """Resultado da decomposição de um objetivo em etapas.
+
+    Atributos:
+        subtasks: as etapas do plano, na ordem de execução.
+        warnings: desvios do plano do modelo em relação ao contrato, registrados para diagnóstico.
+    """
     subtasks: list[SubTaskSpec]
     # Desvios do plano do modelo em relação ao contrato (rótulo de `kind` fora do enum,
     # dependência inválida). Ficam registrados: o plano é utilizável, mas a diagnóstico
@@ -232,6 +258,17 @@ _PAGE_REQUEST = re.compile(r"\b(site|p[aá]gina|html|landing|website|loja)\b", r
 
 
 def _is_page_request(objective: str) -> bool:
+    """Diz se o pedido é por uma página ou site, em vez de trabalho sobre código.
+
+    Args:
+        objective: objetivo pedido pelo usuário.
+
+    Returns:
+        Verdadeiro quando o texto fala de página, site ou landing e não menciona um arquivo `.py`.
+
+    Observações:
+        A menção a `.py` vence: um pedido de página que cita um arquivo Python é trabalho de código.
+    """
     text = objective or ""
     return _PAGE_REQUEST.search(text) is not None and ".py" not in text.lower()
 
@@ -405,6 +442,19 @@ async def resolve_decomposition_plan(
 def profile_from_run_config(
     run_config: dict[str, Any], settings: Settings, provider: LLMProvider | None = None
 ) -> ModelProfile:
+    """Monta o perfil do modelo a partir da configuração da run e das configurações do processo.
+
+    Args:
+        run_config: configuração da run, com modelo, limites de contexto e parâmetros de geração.
+        settings: configurações do processo, usadas como padrão.
+        provider: provedor escolhido, consultado para o modelo padrão.
+
+    Returns:
+        O perfil do modelo com os limites de contexto e o indicador de suporte a visão.
+
+    Observações:
+        O suporte a visão é deduzido do nome do modelo, quando nenhum sinal explícito existir.
+    """
     model_id = str(
         run_config.get("model_id")
         or getattr(provider, "default_model", None)
@@ -464,6 +514,14 @@ def plan_copies_siblings(sibling_titles: list[str], plan_titles: list[str], curr
     """O plano novo é a mesma lista de títulos que já existe em volta desta etapa."""
 
     def norm(items: list[str]) -> list[str]:
+        """Normaliza uma lista de títulos para comparação.
+
+        Args:
+            items: títulos a normalizar.
+
+        Returns:
+            Os títulos sem espaços nas pontas, em minúsculas, ordenados e sem repetição vazia.
+        """
         return sorted(item.strip().casefold() for item in items if item and item.strip())
 
     siblings = norm(sibling_titles)
@@ -478,6 +536,20 @@ def apply_decomposition(
     parent_id: uuid.UUID,
     plan: DecompositionResult,
 ) -> list[uuid.UUID]:
+    """Cria as tarefas do plano como filhas da tarefa pai e liga as dependências.
+
+    Args:
+        session: sessão do banco.
+        project_id: projeto que recebe as tarefas.
+        parent_id: tarefa que será decomposta.
+        plan: plano a aplicar.
+
+    Returns:
+        Os identificadores das tarefas criadas, na ordem do plano.
+
+    Observações:
+        As restrições do pedido — somente leitura e régua de testes protegida — descem para as subetarefas; dependências inválidas do plano são ignoradas para não criar auto-ciclo.
+    """
     ts = TaskService(session)
     parent = ts.get_task(parent_id)
     plan = seal_repeated_steps(parent.title, plan)

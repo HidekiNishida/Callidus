@@ -1,4 +1,12 @@
-# src/agent/verification/fingerprint.py — impressão digital dos arquivos que uma verificação avaliou
+"""
+Arquivo: src/agent/verification/fingerprint.py
+Nome: fingerprint.py
+Propósito: calcular a impressão digital dos arquivos de que uma verificação depende.
+Responsabilidade: camada de aplicação — detecção de artefato obsoleto pela mudança do disco.
+Componentes: artifact_paths, fingerprint, snapshot, is_current.
+Dependências: hashlib, pathlib.
+Observações: a impressão é barata o bastante para rodar a cada passo; arquivo ausente entra como ausente.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -31,6 +39,15 @@ def artifact_paths(spec: dict[str, Any], tool_args: dict[str, Any] | None = None
 
 
 def _files(base: Path, rel: str) -> list[Path]:
+    """Lista os arquivos relevantes de um caminho relativo à raiz.
+
+    Args:
+        base: raiz do projeto.
+        rel: caminho relativo; vazio significa a própria raiz.
+
+    Returns:
+        A lista de arquivos considerados, ignorando caches, bancos e dependências.
+    """
     target = (base / rel).resolve() if rel else base
     if target.is_file():
         return [target]
@@ -71,6 +88,16 @@ def fingerprint(root: str, paths: list[str]) -> str:
 
 
 def snapshot(root: str, spec: dict[str, Any], tool_args: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Registra os artefatos avaliados e a impressão digital correspondente.
+
+    Args:
+        root: raiz do projeto avaliado.
+        spec: especificação da verificação.
+        tool_args: argumentos da ferramenta usados na verificação.
+
+    Returns:
+        O snapshot com raiz, caminhos e impressão; `None` quando a verificação não depende de arquivo.
+    """
     paths = artifact_paths(spec, tool_args)
     if not paths:
         return None
@@ -78,7 +105,14 @@ def snapshot(root: str, spec: dict[str, Any], tool_args: dict[str, Any] | None =
 
 
 def is_current(artifacts: dict[str, Any] | None) -> bool:
-    """Evidência sem impressão (antiga ou que não depende de arquivo) continua válida."""
+    """Indica se a evidência ainda corresponde ao estado do disco.
+
+    Args:
+        artifacts: snapshot gravado com a evidência.
+
+    Returns:
+        `True` quando a evidência continua válida; `False` quando os artefatos mudaram.
+    """
     if not artifacts or not artifacts.get("fingerprint"):
         return True
     return fingerprint(artifacts.get("root") or ".", list(artifacts.get("paths") or [])) == artifacts["fingerprint"]

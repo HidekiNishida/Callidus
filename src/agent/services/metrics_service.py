@@ -1,4 +1,12 @@
-# src/agent/services/metrics_service.py — métricas agregadas de execução
+"""
+Arquivo: src/agent/services/metrics_service.py
+Nome: metrics_service.py
+Propósito: agregar as métricas de execução do projeto e de cada run.
+Responsabilidade: camada de aplicação — leitura das evidências persistidas e consolidação dos indicadores.
+Componentes: MetricsService.
+Dependências: agent.persistence.models, sqlalchemy.
+Observações: nenhuma pontuação agregada substitui o aceite por requisito.
+"""
 from __future__ import annotations
 
 import uuid
@@ -18,10 +26,29 @@ from agent.persistence.models import (
 
 
 class MetricsService:
+    """Consolida os indicadores de execução a partir do que já está persistido.
+
+    Atributos:
+        _session: sessão usada nas consultas.
+    """
+
     def __init__(self, session: Session) -> None:
+        """Cria o serviço ligado a uma sessão.
+
+        Args:
+            session: sessão SQLAlchemy a usar.
+        """
         self._session = session
 
     def project_metrics(self, project_id: uuid.UUID) -> dict:
+        """Indicadores agregados de um projeto.
+
+        Args:
+            project_id: projeto consultado.
+
+        Returns:
+            Um dicionário com tarefas, tentativas, chamadas de modelo, tokens estimados e profundidade máxima.
+        """
         tasks = list(
             self._session.scalars(select(TaskModel).where(TaskModel.project_id == project_id)).all()
         )
@@ -196,6 +223,15 @@ class MetricsService:
 
     @staticmethod
     def _model_calls_since_progress(attempts: list, events: list) -> int:
+        """Chamadas de modelo feitas desde a última melhora de estado verificável.
+
+        Args:
+            attempts: tentativas do run, em ordem cronológica.
+            events: eventos do run.
+
+        Returns:
+            A quantidade de chamadas ao modelo após a última melhora.
+        """
         from agent.orchestrator.progress import made_progress
 
         last_progress_at = None
@@ -213,6 +249,14 @@ class MetricsService:
 
     @staticmethod
     def _max_depth(tasks: list[TaskModel]) -> int:
+        """Profundidade máxima da árvore de tarefas.
+
+        Args:
+            tasks: tarefas consideradas.
+
+        Returns:
+            A maior distância entre uma tarefa e a raiz da sua árvore.
+        """
         by_id = {t.id: t for t in tasks}
         best = 0
         for t in tasks:
@@ -226,11 +270,26 @@ class MetricsService:
 
 
 def _naive(moment):
-    """SQLite devolve datas sem fuso; as ainda em memória têm UTC. Compara tudo sem fuso."""
+    """SQLite devolve datas sem fuso; as ainda em memória têm UTC. Compara tudo sem fuso.
+
+    Args:
+        moment: instante lido do banco ou da memória.
+
+    Returns:
+        O instante sem fuso, ou `None` quando não há instante.
+    """
     return moment.replace(tzinfo=None) if moment is not None else None
 
 
 def _current(evidence: EvidenceModel) -> bool:
+    """Indica se a evidência ainda corresponde ao estado do disco.
+
+    Args:
+        evidence: evidência registrada.
+
+    Returns:
+        `True` quando os artefatos avaliados não mudaram desde a verificação.
+    """
     from agent.verification.fingerprint import is_current
 
     return is_current((evidence.detail_json or {}).get("artifacts"))

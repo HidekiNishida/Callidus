@@ -1,4 +1,12 @@
-# src/agent/observability/contracts.py — contrato tipado dos eventos de execução
+"""
+Arquivo: src/agent/observability/contracts.py
+Nome: contracts.py
+Propósito: definir o contrato tipado dos eventos de execução e o envelope único de entrega.
+Responsabilidade: camada de aplicação — catálogo de eventos, validação de payload e normalização do envelope.
+Componentes: SCHEMA_VERSION, EventSpec, EVENT_SPECS, LEGACY_TYPES, EPHEMERAL_TYPES, UnknownEventType, InvalidEventPayload, EventEnvelope, spec_for, validate_payload, as_utc, envelope_from_row.
+Dependências: pydantic, dataclasses.
+Observações: o envelope é contrato público da API e do SSE; mudar seu formato quebra os assinantes.
+"""
 from __future__ import annotations
 
 import json
@@ -12,15 +20,25 @@ SCHEMA_VERSION = 1
 
 
 class UnknownEventType(ValueError):
-    pass
+    """Tipo de evento fora do catálogo tipado."""
 
 
 class InvalidEventPayload(ValueError):
-    pass
+    """Payload de evento que não satisfaz o contrato do tipo."""
 
 
 @dataclass(frozen=True)
 class EventSpec:
+    """Especificação de um tipo de evento: categoria, persistência e campos obrigatórios.
+
+    Atributos:
+        type: identificador completo do evento (ex.: `task.completed`).
+        category: prefixo do tipo, usado para agrupar eventos.
+        persist: quando `False`, o evento só existe em memória (fragmentos).
+        required: chaves obrigatórias do payload.
+        description: descrição curta do significado do evento.
+    """
+
     type: str
     category: str
     persist: bool = True
@@ -29,6 +47,17 @@ class EventSpec:
 
 
 def _spec(type_: str, required: tuple[str, ...] = (), *, persist: bool = True, description: str = "") -> EventSpec:
+    """Cria a especificação de um evento, deduzindo a categoria pelo prefixo do tipo.
+
+    Args:
+        type_: identificador completo do evento.
+        required: chaves obrigatórias do payload.
+        persist: quando `False`, o evento é efêmero (não vai para o banco).
+        description: descrição curta do evento.
+
+    Returns:
+        A `EventSpec` correspondente.
+    """
     return EventSpec(type_, type_.split(".", 1)[0], persist, required, description)
 
 
@@ -105,6 +134,17 @@ EPHEMERAL_TYPES: frozenset[str] = frozenset(t for t, s in EVENT_SPECS.items() if
 
 
 def spec_for(event_type: str) -> EventSpec:
+    """Especificação de um tipo de evento.
+
+    Args:
+        event_type: identificador do evento procurado no catálogo.
+
+    Returns:
+        A `EventSpec` correspondente.
+
+    Raises:
+        UnknownEventType: quando o tipo não existe no catálogo tipado.
+    """
     spec = EVENT_SPECS.get(event_type)
     if spec is None:
         raise UnknownEventType(event_type)
@@ -112,6 +152,19 @@ def spec_for(event_type: str) -> EventSpec:
 
 
 def validate_payload(event_type: str, data: dict[str, Any] | None) -> dict[str, Any]:
+    """Valida o payload de um evento contra o contrato do seu tipo.
+
+    Args:
+        event_type: identificador do evento.
+        data: payload a validar; `None` é tratado como payload vazio.
+
+    Returns:
+        Uma cópia do payload validado.
+
+    Raises:
+        UnknownEventType: quando o tipo não existe no catálogo tipado.
+        InvalidEventPayload: quando faltam campos obrigatórios ou o payload não é serializável.
+    """
     spec = spec_for(event_type)
     data = dict(data or {})
     missing = [k for k in spec.required if k not in data]
@@ -142,6 +195,7 @@ class EventEnvelope(BaseModel):
 
 
 def _s(value: Any) -> str | None:
+    """Converte um identificador para texto, preservando `None`."""
     return None if value is None else str(value)
 
 
@@ -153,6 +207,14 @@ def as_utc(value: datetime | None) -> datetime | None:
 
 
 def envelope_from_row(row: Any) -> dict[str, Any]:
+    """Converte uma linha de `event_logs` no envelope entregue ao cliente.
+
+    Args:
+        row: linha do modelo de evento persistido.
+
+    Returns:
+        O envelope em forma de dicionário serializável.
+    """
     return EventEnvelope(
         id=str(row.id),
         run_id=str(row.run_id),

@@ -1,4 +1,13 @@
-# src/agent/orchestrator/replan.py — revisar o plano quando uma etapa para no meio
+"""
+Arquivo: src/agent/orchestrator/replan.py
+Nome: replan.py
+Propósito: revisar o plano quando uma etapa para no meio.
+Responsabilidade: camada de aplicação.
+Componentes: ReplanDecision, replan_decision, replan_under, replan_parent.
+Dependências: agent.domain.enums, agent.domain.failures, agent.domain.schemas, agent.observability, agent.orchestrator.consolidation, agent.orchestrator.decomposition….
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -30,6 +39,12 @@ _NEEDS_OUTSIDE_ACTION = {FailureCategory.CONFIGURATION, FailureCategory.EXTERNAL
 
 @dataclass(frozen=True)
 class ReplanDecision:
+    """Decisão do orquestrador sobre replanejar uma etapa parada.
+
+    Atributos:
+        replan: indica se um plano novo deve ser feito.
+        reason: justificativa da decisão, gravada na tarefa pai.
+    """
     replan: bool
     reason: str = ""
 
@@ -94,6 +109,18 @@ def _carried_covers(session: Session, kids: list[TaskModel], stopped: TaskModel)
 
 
 def replan_parent(session: Session, parent: TaskModel) -> dict | None:
+    """Refaz o plano de uma tarefa cujo filho parou, quando a política permite.
+
+    Args:
+        session: sessão do banco.
+        parent: tarefa cujo plano pode ser refeito.
+
+    Returns:
+        O resumo do replanejamento quando ele acontece, ou `None` quando não há o que refazer ou a política recusa.
+
+    Observações:
+        As etapas concluídas permanecem; as canceladas são marcadas como substituídas e os requisitos cobertos por elas passam para o plano corrigido.
+    """
     meta = dict(parent.metadata_json or {})
     kids = children_of(session, parent.id)
     stopped = next((kid for kid in kids if kid.status in _STOP and not superseded(kid)), None)

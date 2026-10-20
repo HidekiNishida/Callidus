@@ -1,5 +1,13 @@
-# src/agent/automation/actions/script.py — ação de script (determinística, sem inferência)
-"""Executa um script previamente configurado.
+"""
+Arquivo: src/agent/automation/actions/script.py
+Nome: script.py
+Propósito: implementar a ação de script, determinística e sem depender de inferência.
+Responsabilidade: camada de aplicação — execução do script no destino local ou remoto.
+Componentes: ScriptActionRunner, DEFAULT_TIMEOUT, MAX_OUTPUT.
+Dependências: agent.automation.actions.base, agent.automation.security.
+Observações: o recibo impede repetir um script que já produziu efeito.
+
+Executa um script previamente configurado.
 
 Regras que esta ação garante:
 
@@ -38,16 +46,33 @@ MAX_OUTPUT = 20_000
 
 
 class ScriptActionRunner:
-    """Ação de script."""
+    """Ação de script.
+
+    Atributos:
+        _spec: especificação da ação (comando, diretório, ambiente e recibo).
+    """
 
     kind = ActionKind.SCRIPT
 
     def __init__(self, spec: ScriptAction) -> None:
+        """Cria a ação a partir da sua especificação.
+
+        Args:
+            spec: especificação da ação.
+        """
         self._spec = spec
 
     # ------------------------------------------------------------ comando
 
     def _command(self) -> list[str]:
+        """Comando a executar, já com o interpretador quando informado.
+
+        Returns:
+            A lista de argumentos do comando.
+
+        Raises:
+            PermissionDenied: quando a definição não traz comando nem script.
+        """
         spec = self._spec
         if spec.command:
             command = list(spec.command)
@@ -66,6 +91,14 @@ class ScriptActionRunner:
     # ------------------------------------------------------------ execução
 
     async def execute(self, ctx: ActionContext) -> ActionResult:
+        """Valida as permissões e executa o script no destino configurado.
+
+        Args:
+            ctx: contexto da ação, com as permissões e o destino.
+
+        Returns:
+            O resultado da execução, com a evidência capturada.
+        """
         spec = self._spec
         permissions = ctx.target.get("permissions")
         project_root = ctx.target.get("project_root") or os.getcwd()
@@ -97,6 +130,17 @@ class ScriptActionRunner:
         timeout: float,
         project_root: str,
     ) -> ActionResult:
+        """Executa o script na máquina local.
+
+        Args:
+            ctx: contexto da ação.
+            command: comando a executar.
+            timeout: tempo limite da execução, em segundos.
+            project_root: raiz do projeto, usada como escopo de caminho.
+
+        Returns:
+            O resultado da execução, com a evidência capturada.
+        """
         spec = self._spec
         permissions = ctx.target.get("permissions")
         try:
@@ -209,6 +253,16 @@ class ScriptActionRunner:
     async def _run_remote(
         self, ctx: ActionContext, command: list[str], timeout: float
     ) -> ActionResult:
+        """Executa o script no computador remoto do projeto.
+
+        Args:
+            ctx: contexto da ação.
+            command: comando a executar.
+            timeout: tempo limite da execução, em segundos.
+
+        Returns:
+            O resultado da execução, com a evidência capturada.
+        """
         spec = self._spec
         remote_cfg = ctx.target.get("remote")
         if not remote_cfg:
@@ -278,6 +332,15 @@ class ScriptActionRunner:
     # ------------------------------------------------------------ recibo
 
     def _receipt_path(self, ctx: ActionContext, cwd: Path) -> Path | None:
+        """Caminho do recibo da execução, quando a definição informa um.
+
+        Args:
+            ctx: contexto da ação.
+            cwd: diretório de trabalho da execução.
+
+        Returns:
+            O caminho do recibo, ou `None` quando não há recibo ou ele está fora do escopo.
+        """
         spec = self._spec
         if not spec.receipt_path:
             return None
@@ -292,12 +355,26 @@ class ScriptActionRunner:
             return None
 
     def _read_receipt(self, receipt: Path) -> str | None:
+        """Conteúdo do recibo, quando existe.
+
+        Args:
+            receipt: caminho do recibo.
+
+        Returns:
+            A chave da execução anterior, ou `None` quando não há recibo legível.
+        """
         try:
             return receipt.read_text(encoding="utf-8").strip() or None
         except OSError:
             return None
 
     def _write_receipt(self, receipt: Path, key: str) -> None:
+        """Grava o recibo da execução.
+
+        Args:
+            receipt: caminho do recibo.
+            key: chave de idempotência da execução.
+        """
         try:
             receipt.parent.mkdir(parents=True, exist_ok=True)
             receipt.write_text(key, encoding="utf-8")
@@ -306,6 +383,11 @@ class ScriptActionRunner:
             pass
 
     def _safe_command(self) -> list[str]:
+        """Comando informado na definição, sem o interpretador acrescentado.
+
+        Returns:
+            A lista de argumentos declarada.
+        """
         spec = self._spec
         if spec.command:
             return list(spec.command)
@@ -313,7 +395,14 @@ class ScriptActionRunner:
 
 
 def _remote_config(remote_cfg: dict[str, Any]):
-    """Traduz a configuração do destino em `RemoteConfig` (o mesmo do projeto remoto)."""
+    """Traduz a configuração do destino em `RemoteConfig` (o mesmo do projeto remoto).
+
+    Args:
+        remote_cfg: mapa de configuração do destino.
+
+    Returns:
+        A `RemoteConfig` correspondente.
+    """
     from agent.remote.ssh import RemoteConfig
 
     data = {

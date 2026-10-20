@@ -1,5 +1,13 @@
-# src/agent/automation/dependencies.py — verificação e inicialização de dependências
-"""Antes de executar, a automação confere se o que ela precisa existe.
+"""
+Arquivo: src/agent/automation/dependencies.py
+Nome: dependencies.py
+Propósito: verificar e, quando autorizado, inicializar as dependências declaradas por uma automação.
+Responsabilidade: camada de aplicação — conferência read-only das dependências e início opcional.
+Componentes: DependencyReport, DependencyCheck, DependencyResolver, sh_quote, _remote_config.
+Dependências: agent.automation.contracts, agent.automation.enums.
+Observações: nada é instalado nem reiniciado sem mecanismo configurado **e** autorizado.
+
+Antes de executar, a automação confere se o que ela precisa existe.
 
 O verificador é **read-only** por padrão: ele responde "está pronto?" para cada
 dependência declarada. Só quando a dependência não está pronta é que a estratégia de
@@ -39,6 +47,7 @@ class DependencyReport:
     start_detail: str = ""
 
     def as_dict(self) -> dict[str, Any]:
+        """Serializa a dependência para o registro da automação."""
         return {
             "name": self.name,
             "kind": self.kind,
@@ -64,9 +73,15 @@ class DependencyCheck:
 
     @property
     def blocking(self) -> list[DependencyReport]:
+        """Indica se a dependência impede a execução quando não está satisfeita."""
         return [r for r in self.reports if r.required and not r.ok]
 
     def as_dict(self) -> dict[str, Any]:
+        """Verificação agregada como dicionário serializável.
+
+        Returns:
+            Um dicionário com o resultado, os relatórios e as dependências bloqueantes.
+        """
         return {
             "ok": self.ok,
             "dependencies": [r.as_dict() for r in self.reports],
@@ -75,7 +90,14 @@ class DependencyCheck:
 
 
 class DependencyResolver:
-    """Resolve e verifica as dependências declaradas por uma automação."""
+    """Resolve e verifica as dependências declaradas por uma automação.
+
+    Atributos:
+        _settings: configurações do processo.
+        _project_root: raiz do projeto, quando a automação é local.
+        _remote: configuração do destino remoto, quando houver.
+        _target_kind: tipo do destino (`local` ou `remote`).
+    """
 
     def __init__(
         self,
@@ -85,6 +107,14 @@ class DependencyResolver:
         remote: dict[str, Any] | None = None,
         target_kind: str = "local",
     ) -> None:
+        """Cria o verificador de dependências.
+
+        Args:
+            settings: configurações do processo.
+            project_root: raiz do projeto local.
+            remote: configuração do destino remoto.
+            target_kind: tipo do destino (`local` ou `remote`).
+        """
         self._settings = settings
         self._project_root = project_root
         self._remote = remote
@@ -93,6 +123,14 @@ class DependencyResolver:
     # ------------------------------------------------------------ verificação
 
     async def check_all(self, specs: list[DependencySpec]) -> DependencyCheck:
+        """Verifica todas as dependências e aciona a inicialização autorizada.
+
+        Args:
+            specs: dependências declaradas na automação.
+
+        Returns:
+            A verificação agregada, com o relatório de cada dependência.
+        """
         reports: list[DependencyReport] = []
         for spec in specs or []:
             report = await self._check_one(spec)
@@ -109,6 +147,14 @@ class DependencyResolver:
         return DependencyCheck(reports=reports)
 
     async def _check_one(self, spec: DependencySpec) -> DependencyReport:
+        """Verifica uma dependência conforme o seu tipo.
+
+        Args:
+            spec: dependência a verificar.
+
+        Returns:
+            O relatório da verificação.
+        """
         kind = DependencyKind(spec.kind)
         handler = {
             DependencyKind.PROJECT_DIR: self._check_project_dir,
@@ -136,6 +182,7 @@ class DependencyResolver:
     # ── locais ───────────────────────────────────────────────────────────
 
     def _check_project_dir(self, spec: DependencySpec) -> DependencyReport:
+        """Verifica a pasta do projeto da automação."""
         root = spec.params.get("path") or self._project_root
         if not root:
             return DependencyReport(
@@ -154,6 +201,7 @@ class DependencyResolver:
         )
 
     def _check_workdir(self, spec: DependencySpec) -> DependencyReport:
+        """Verifica a pasta de trabalho declarada pela automação."""
         raw = spec.params.get("path")
         if not raw:
             return DependencyReport(
@@ -172,6 +220,7 @@ class DependencyResolver:
         )
 
     def _check_os(self, spec: DependencySpec) -> DependencyReport:
+        """Verifica se o sistema operacional exigido está disponível."""
         wanted = str(spec.params.get("os_family") or "").lower()
         if not wanted:
             return DependencyReport(
@@ -191,6 +240,11 @@ class DependencyResolver:
         )
 
     def _target_os_family(self) -> str:
+        """Família de sistema do destino da automação.
+
+        Returns:
+            `posix` ou `windows`.
+        """
         if self._target_kind == "remote" and self._remote:
             shell = str(self._remote.get("shell") or "posix").lower()
             return "windows" if shell in {"powershell", "pwsh", "cmd", "windows"} else "posix"
@@ -199,6 +253,7 @@ class DependencyResolver:
         return "posix"
 
     async def _check_interpreter(self, spec: DependencySpec) -> DependencyReport:
+        """Verifica o interpretador configurado para a automação."""
         name = str(spec.params.get("name") or spec.params.get("interpreter") or "").strip()
         if not name:
             return DependencyReport(
@@ -221,6 +276,7 @@ class DependencyResolver:
         )
 
     async def _check_script(self, spec: DependencySpec) -> DependencyReport:
+        """Verifica o script declarado pela automação."""
         raw = str(spec.params.get("path") or "").strip()
         if not raw:
             return DependencyReport(
@@ -267,6 +323,7 @@ class DependencyResolver:
         )
 
     async def _check_remote(self, spec: DependencySpec) -> DependencyReport:
+        """Verifica o computador remoto declarado pela automação."""
         if self._target_kind != "remote" or not self._remote:
             return DependencyReport(
                 name=spec.label(), kind=str(spec.kind), ok=False, state="unreachable",
@@ -290,6 +347,7 @@ class DependencyResolver:
         )
 
     async def _check_provider(self, spec: DependencySpec) -> DependencyReport:
+        """Verifica o provedor de modelo exigido pela automação."""
         name = str(spec.params.get("name") or self._settings.default_provider or "")
         try:
             from agent.providers.registry import catalog_for_settings, build_provider_by_name
@@ -316,6 +374,7 @@ class DependencyResolver:
             )
 
     def _check_tool(self, spec: DependencySpec) -> DependencyReport:
+        """Verifica a ferramenta exigida pela automação."""
         tool_id = str(spec.params.get("tool") or spec.params.get("name") or "")
         if not tool_id:
             return DependencyReport(
@@ -343,6 +402,7 @@ class DependencyResolver:
         )
 
     def _check_mcp(self, spec: DependencySpec) -> DependencyReport:
+        """Verifica o servidor MCP exigido pela automação."""
         server = str(spec.params.get("server") or spec.params.get("name") or "")
         if not server:
             return DependencyReport(
@@ -414,6 +474,14 @@ class DependencyResolver:
     # ── inicialização ────────────────────────────────────────────────────
 
     def _can_start(self, spec: DependencySpec) -> bool:
+        """Indica se a dependência pode ser iniciada automaticamente.
+
+        Args:
+            spec: dependência verificada.
+
+        Returns:
+            `True` quando há mecanismo configurado, autorizado e completo.
+        """
         strategy = spec.start
         if strategy is None:
             return False
@@ -430,6 +498,14 @@ class DependencyResolver:
         return True
 
     async def _start(self, spec: DependencySpec) -> tuple[bool, str]:
+        """Executa a estratégia de inicialização da dependência.
+
+        Args:
+            spec: dependência a iniciar.
+
+        Returns:
+            Tupla com o indicativo de sucesso e o detalhe da tentativa.
+        """
         strategy = spec.start
         assert strategy is not None
         try:
@@ -444,6 +520,14 @@ class DependencyResolver:
         return False, "mecanismo de inicialização não aplicável"
 
     async def _start_command(self, strategy: StartStrategy) -> tuple[bool, str]:
+        """Executa o comando de inicialização, local ou remoto.
+
+        Args:
+            strategy: estratégia de inicialização.
+
+        Returns:
+            Tupla com o indicativo de sucesso e o detalhe da execução.
+        """
         command = list(strategy.command)
         if self._target_kind == "remote" and self._remote:
             from agent.remote.ssh import RemoteError, SshTransport
@@ -474,6 +558,14 @@ class DependencyResolver:
         return code == 0, f"comando de inicialização retornou {code}"
 
     async def _start_service(self, strategy: StartStrategy) -> tuple[bool, str]:
+        """Reinicia o serviço nativo declarado na estratégia.
+
+        Args:
+            strategy: estratégia de inicialização.
+
+        Returns:
+            Tupla com o indicativo de sucesso e o detalhe da execução.
+        """
         name = strategy.service_name or ""
         if self._target_kind == "remote" and self._remote:
             return await self._remote_service(name, strategy)
@@ -499,6 +591,15 @@ class DependencyResolver:
         return code == 0, f"reinício do serviço '{name}' retornou {code}"
 
     async def _remote_service(self, name: str, strategy: StartStrategy) -> tuple[bool, str]:
+        """Reinicia o serviço no computador remoto.
+
+        Args:
+            name: nome do serviço.
+            strategy: estratégia de inicialização.
+
+        Returns:
+            Tupla com o indicativo de sucesso e o detalhe da execução.
+        """
         from agent.remote.ssh import RemoteError, SshTransport
 
         ssh = SshTransport(_remote_config(self._remote))
@@ -513,7 +614,15 @@ class DependencyResolver:
         return result.exit_code == 0, f"reinício remoto do serviço retornou {result.exit_code}"
 
     def _start_mcp(self, spec: DependencySpec, strategy: StartStrategy) -> tuple[bool, str]:
-        """Reinicia um processo MCP gerenciado (o `McpManager` recarrega a configuração)."""
+        """Reinicia um processo MCP gerenciado (o `McpManager` recarrega a configuração).
+
+        Args:
+            spec: dependência a iniciar.
+            strategy: estratégia de inicialização.
+
+        Returns:
+            Tupla com o indicativo de sucesso e o detalhe da recarga.
+        """
         config_path = self._settings.mcp_config_path
         if not config_path or not Path(config_path).is_file():
             return False, "arquivo de configuração MCP ausente"
@@ -533,6 +642,14 @@ class DependencyResolver:
     # ── apoio ────────────────────────────────────────────────────────────
 
     async def _remote_which(self, name: str) -> tuple[bool, str]:
+        """Procura um executável no computador remoto.
+
+        Args:
+            name: nome do executável.
+
+        Returns:
+            Tupla com o indicativo de existência e o caminho encontrado.
+        """
         from agent.remote.ssh import RemoteError, SshTransport
 
         ssh = SshTransport(_remote_config(self._remote))
@@ -550,12 +667,28 @@ class DependencyResolver:
 
 
 def sh_quote(value: str) -> str:
+    """Cita um valor para o shell POSIX.
+
+    Args:
+        value: texto a citar.
+
+    Returns:
+        O texto pronto para ser embutido em um comando remoto.
+    """
     import shlex
 
     return shlex.quote(value)
 
 
 def _remote_config(remote_cfg: dict[str, Any]):
+    """Configuração do destino remoto, convertida no contrato do transporte SSH.
+
+    Args:
+        remote_cfg: mapa de configuração gravado no projeto.
+
+    Returns:
+        A `RemoteConfig` correspondente.
+    """
     from agent.remote.ssh import RemoteConfig
 
     return RemoteConfig(

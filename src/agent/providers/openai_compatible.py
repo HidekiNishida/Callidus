@@ -1,4 +1,12 @@
-# src/agent/providers/openai_compatible.py — adaptador reutilizável para APIs compatíveis com OpenAI
+"""
+Arquivo: src/agent/providers/openai_compatible.py
+Nome: openai_compatible.py
+Propósito: adaptar o contrato do Callidus a qualquer API compatível com o formato da OpenAI.
+Responsabilidade: camada de infraestrutura — inferência, streaming e listagem de modelos em gateways compatíveis.
+Componentes: OpenAICompatibleProvider, generation_body, response_format_body, openai_message, parse_tool_calls.
+Dependências: agent.providers.base, agent.providers.http, httpx.
+Observações: recurso que o serviço não implementa apenas não volta na resposta; nada é inventado.
+"""
 from __future__ import annotations
 
 import json
@@ -41,7 +49,14 @@ _OLLAMA_ONLY_KEYS = {"think"}
 
 
 def generation_body(generation: dict[str, Any] | None) -> dict[str, Any]:
-    """Traduz os parâmetros de geração do Callidus para o corpo de uma API compatível com OpenAI."""
+    """Traduz os parâmetros de geração do Callidus para o corpo de uma API compatível com OpenAI.
+
+    Args:
+        generation: parâmetros de geração do perfil do modelo.
+
+    Returns:
+        O dicionário de parâmetros aceito pela API.
+    """
     source = dict(generation or {})
     body: dict[str, Any] = {}
     for key, value in source.items():
@@ -58,7 +73,14 @@ def generation_body(generation: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def response_format_body(response_format: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Aceita o formato do Callidus (`{"schema": {...}}`) e o formato nativo (`{"type": ...}`)."""
+    """Aceita o formato do Callidus (`{"schema": {...}}`) e o formato nativo (`{"type": ...}`).
+
+    Args:
+        response_format: formato de resposta pedido pelo orquestrador.
+
+    Returns:
+        O corpo de `response_format` aceito pela API, ou `None` quando não há formato pedido.
+    """
     if response_format is None:
         return None
     if "type" in response_format:
@@ -70,11 +92,27 @@ def response_format_body(response_format: dict[str, Any] | None) -> dict[str, An
 
 
 def _data_url(encoded: str) -> str:
+    """Monta a URL de dados de uma imagem base64.
+
+    Args:
+        encoded: imagem em base64.
+
+    Returns:
+        A URL de dados com o tipo de mídia deduzido.
+    """
     mime = "image/jpeg" if encoded.startswith("/9j/") else "image/png"
     return f"data:{mime};base64,{encoded}"
 
 
 def openai_message(message) -> dict:
+    """Converte uma mensagem do Callidus no formato de mensagem da OpenAI.
+
+    Args:
+        message: mensagem do histórico.
+
+    Returns:
+        O dicionário aceito pela API, com as imagens como partes de conteúdo quando houver.
+    """
     payload: dict[str, Any] = {"role": message.role, "content": message.content}
     if getattr(message, "tool_calls", None):
         payload["tool_calls"] = message.tool_calls
@@ -90,6 +128,14 @@ def openai_message(message) -> dict:
 
 
 def parse_tool_calls(message: dict) -> list[ToolCall] | None:
+    """Extrai as chamadas de ferramenta de uma mensagem da OpenAI.
+
+    Args:
+        message: mensagem devolvida pela API.
+
+    Returns:
+        A lista de chamadas, ou `None` quando a mensagem não pede ferramenta.
+    """
     calls: list[ToolCall] = []
     for item in message.get("tool_calls") or []:
         function = item.get("function") or {}
@@ -131,6 +177,23 @@ class OpenAICompatibleProvider(LLMProvider):
         name: str | None = None,
         models_cache_ttl: float = 0.0,
     ) -> None:
+        """Configura o provedor e resolve a URL base e os cabeçalhos de autenticação.
+
+        Args:
+            base_url: URL base do serviço; por padrão, a URL declarada pela subclasse.
+            model: modelo padrão usado quando o run não escolhe um.
+            api_key: credencial enviada no cabeçalho de autenticação.
+            headers: cabeçalhos adicionais enviados em cada requisição.
+            timeout: tempo limite das requisições, em segundos.
+            max_retries: número de retentativas em falha transitória.
+            allow_private_hosts: permite endereços privados (servidores locais).
+            verify_tls: valida o certificado TLS do servidor.
+            name: nome do provedor, quando a instância é registrada sob um identificador próprio.
+            models_cache_ttl: tempo de vida do cache de modelos, em segundos.
+
+        Raises:
+            ProviderError: quando a URL base é vazia.
+        """
         resolved = base_url or self.default_base_url
         if not resolved:
             raise ProviderError(f"URL base é obrigatória para o provedor '{name or self.name}'")
@@ -153,6 +216,11 @@ class OpenAICompatibleProvider(LLMProvider):
             self.name = name
 
     def capabilities(self) -> ProviderCapabilities:
+        """Recursos declarados pelo provedor.
+
+        Returns:
+            As capacidades assumidas pelas APIs compatíveis com OpenAI.
+        """
         return ProviderCapabilities(
             streaming=True,
             tools=True,
@@ -165,11 +233,26 @@ class OpenAICompatibleProvider(LLMProvider):
         )
 
     def _client(self) -> httpx.AsyncClient:
+        """Cliente HTTP configurado para o provedor.
+
+        Returns:
+            Um `httpx.AsyncClient` com os mesmos parâmetros de transporte da configuração.
+        """
         return httpx.AsyncClient(**client_kwargs(self._http))
 
     async def list_models(self, *, force: bool = False) -> list[str]:
         """Modelos disponíveis no serviço. Com `models_cache_ttl` a lista é cacheada em memória,
-        para não consultar o catálogo a cada inferência."""
+        para não consultar o catálogo a cada inferência.
+
+        Args:
+            force: quando `True`, ignora o cache e consulta o serviço.
+
+        Returns:
+            A lista de identificadores de modelo.
+
+        Raises:
+            ProviderError: quando o serviço não pode ser consultado.
+        """
         if not force and self._models_cache is not None:
             age = time.monotonic() - self._models_cached_at
             if age <= self._models_cache_ttl:
@@ -194,6 +277,14 @@ class OpenAICompatibleProvider(LLMProvider):
 
 
     def _body(self, request: ChatCompletionRequest) -> dict:
+        """Monta o corpo da requisição de inferência no formato da API compatível com OpenAI.
+
+        Args:
+            request: requisição do Callidus.
+
+        Returns:
+            O corpo JSON aceito pela API.
+        """
         body: dict[str, Any] = {
             "model": request.profile.model_id,
             "messages": [openai_message(m) for m in request.messages],
@@ -210,6 +301,17 @@ class OpenAICompatibleProvider(LLMProvider):
         return body
 
     async def _chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+        """Executa uma inferência completa pela API compatível com OpenAI.
+
+        Args:
+            request: requisição do Callidus.
+
+        Returns:
+            A resposta normalizada do provedor.
+
+        Raises:
+            ProviderError: quando a chamada HTTP falha ou o serviço devolve erro.
+        """
         url = f"{self._base_url}/chat/completions"
         body = self._body(request)
         try:
@@ -257,6 +359,18 @@ class OpenAICompatibleProvider(LLMProvider):
     async def _chat_streaming(
         self, request: ChatCompletionRequest, on_delta: Callable[[str], None]
     ) -> ChatCompletionResponse:
+        """Executa uma inferência em streaming pela API compatível com OpenAI.
+
+        Args:
+            request: requisição do Callidus.
+            on_delta: callback que recebe cada fragmento do texto.
+
+        Returns:
+            A resposta completa, montada ao final do stream.
+
+        Raises:
+            ProviderError: quando o stream falha, traz um bloco inválido ou termina antes do fim.
+        """
         url = f"{self._base_url}/chat/completions"
         body = {**self._body(request), "stream": True, "stream_options": {"include_usage": True}}
         parts: list[str] = []

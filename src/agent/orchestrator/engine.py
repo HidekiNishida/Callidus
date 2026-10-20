@@ -1,4 +1,13 @@
-# src/agent/orchestrator/engine.py — esqueleto do ciclo (Fase 4+)
+"""
+Arquivo: src/agent/orchestrator/engine.py
+Nome: engine.py
+Propósito: esqueleto do ciclo (Fase 4+).
+Responsabilidade: camada de aplicação.
+Componentes: OrchestratorEngine.
+Dependências: agent.domain.enums, agent.domain.schemas, agent.services.task_service, __future__, sqlalchemy.orm, uuid.
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -14,6 +23,11 @@ class OrchestratorEngine:
     """Coordenação explícita; expandir com decomposição, ferramentas e verificação."""
 
     def __init__(self, session: Session) -> None:
+        """Prepara o motor sobre a sessão do banco.
+
+        Args:
+            session: sessão usada nas operações de tarefa.
+        """
         self._tasks = TaskService(session)
 
     def tick(self, task_id: uuid.UUID) -> dict:

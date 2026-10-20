@@ -1,7 +1,21 @@
-// web/static/assets/app/components/palette.js — paleta de comandos (⌘K / Ctrl+K)
+/**
+ * Arquivo: web/static/assets/app/components/palette.js
+ * Nome: palette.js
+ * Propósito: paleta de comandos (⌘K / Ctrl+K) com busca e navegação por teclado.
+ * Responsabilidade: frontend/componente — reúne as ações da interface em uma lista filtrável.
+ * Componentes: CommandPalette (componente Vue).
+ * Dependências: `../store.js` (estado e ações), `../ui.js` (ícones).
+ * Observações: os comandos contextuais (renomear, apagar) só entram na lista quando há conversa
+ * ou projeto selecionado.
+ */
 import { state, openView, toast, deleteConversation, deleteProject } from "../store.js";
 import { icon } from "../ui.js";
 
+/**
+ * Paleta de comandos: busca por texto, navegação por setas e execução com Enter.
+ *
+ * @returns {object} Objeto de opções do Vue com `setup()` e `template`.
+ */
 export const CommandPalette = {
   name: "CommandPalette",
   setup() {
@@ -70,15 +84,32 @@ export const CommandPalette = {
       index.value = 0;
     });
 
+    /**
+     * Fecha a paleta de comandos.
+     *
+     * @returns {void}
+     */
     function close() {
       state.paletteOpen = false;
     }
 
+    /**
+     * Executa um comando e fecha a paleta.
+     *
+     * @param {object} item Comando escolhido (ou `null`).
+     * @returns {void}
+     */
     function run(item) {
       close();
       if (item) item.run();
     }
 
+    /**
+     * Trata as teclas da paleta (setas, Enter e Esc).
+     *
+     * @param {KeyboardEvent} event Evento de teclado.
+     * @returns {void}
+     */
     function onKeydown(event) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -95,6 +126,11 @@ export const CommandPalette = {
       }
     }
 
+    /**
+     * Prepara uma conversa nova, limpando o contexto atual.
+     *
+     * @returns {void}
+     */
     function newConversation() {
       openView("chat");
       state.conversation = null;
@@ -102,6 +138,11 @@ export const CommandPalette = {
       toast("Nova conversa — escreva o objetivo abaixo", "ok");
     }
 
+    /**
+     * Alterna o tema claro/escuro e guarda a preferência no navegador.
+     *
+     * @returns {void}
+     */
     function toggleTheme() {
       const next = state.theme === "dark" ? "light" : "dark";
       document.documentElement.dataset.theme = next;

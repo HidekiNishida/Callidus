@@ -1,5 +1,13 @@
-# src/agent/automation/dispatcher.py — o disparo (registro idempotente)
-"""O despachante decide que chegou a hora e **registra** o disparo.
+"""
+Arquivo: src/agent/automation/dispatcher.py
+Nome: dispatcher.py
+Propósito: registrar de forma idempotente os disparos elegíveis de uma automação.
+Responsabilidade: camada de aplicação — criação das linhas de disparo e aplicação da política de disparos perdidos.
+Componentes: Dispatcher, DispatchResult, temporal_key, event_key, manual_key.
+Dependências: agent.automation.contracts, agent.automation.enums, agent.automation.store, agent.persistence.models.
+Observações: a chave de idempotência é única no banco; reprocessar o mesmo disparo não executa duas vezes.
+
+O despachante decide que chegou a hora e **registra** o disparo.
 
 Ele não executa nada: cria a linha de disparo com uma chave de idempotência. Como a
 chave é única no banco, reprocessar o mesmo disparo (reinício do runtime, tique
@@ -33,6 +41,11 @@ class DispatchResult:
     duplicates: int = 0
 
     def as_dict(self) -> dict:
+        """Desfecho do despacho como dicionário serializável.
+
+        Returns:
+            Um dicionário com os disparos criados, os ignorados e os duplicados.
+        """
         return {
             "created": [str(f.id) for f in self.created],
             "skipped": self.skipped,
@@ -41,31 +54,76 @@ class DispatchResult:
 
 
 def temporal_key(automation_id: uuid.UUID, kind: str, moment: datetime) -> str:
-    """Chave de idempotência de um disparo temporal."""
+    """Chave de idempotência de um disparo temporal.
+
+    Args:
+        automation_id: identificador da automação.
+        kind: tipo do disparo (política aplicada).
+        moment: instante agendado.
+
+    Returns:
+        A chave de idempotência.
+    """
     stamp = to_utc(moment).isoformat()
     return f"auto:{automation_id}:{kind}:{stamp}"
 
 
 def event_key(automation_id: uuid.UUID, source: str, event_id: str) -> str:
-    """Chave de idempotência de um disparo por evento."""
+    """Chave de idempotência de um disparo por evento.
+
+    Args:
+        automation_id: identificador da automação.
+        source: origem do evento.
+        event_id: identificador do evento.
+
+    Returns:
+        A chave de idempotência.
+    """
     return f"auto:{automation_id}:event:{source}:{event_id}"
 
 
 def manual_key(automation_id: uuid.UUID, tag: str = "manual") -> str:
+    """Chave de idempotência de um disparo manual, sempre única.
+
+    Args:
+        automation_id: identificador da automação.
+        tag: marca do disparo manual.
+
+    Returns:
+        A chave de idempotência.
+    """
     return f"auto:{automation_id}:{tag}:{uuid.uuid4().hex}"
 
 
 class Dispatcher:
-    """Registra disparos elegíveis."""
+    """Registra disparos elegíveis.
+
+    Atributos:
+        _session: sessão usada nas gravações.
+        _service: serviço das automações, usado para ler o gatilho da definição.
+    """
 
     def __init__(self, session: Session) -> None:
+        """Cria o despachante ligado a uma sessão.
+
+        Args:
+            session: sessão SQLAlchemy a usar.
+        """
         self._session = session
         self._service = AutomationService(session)
 
     # ------------------------------------------------------------ temporal
 
     def dispatch_due(self, automation: AutomationModel, *, now: datetime | None = None) -> DispatchResult:
-        """Registra os disparos vencidos de uma automação temporal."""
+        """Registra os disparos vencidos de uma automação temporal.
+
+        Args:
+            automation: automação cujo gatilho é avaliado.
+            now: instante de referência; por padrão, agora.
+
+        Returns:
+            O desfecho do despacho, com os disparos criados, ignorados e duplicados.
+        """
         moment = to_utc(now or datetime.now(timezone.utc))
         trigger = self._service.trigger_of(automation)
         if trigger.kind.value == "event":
@@ -147,7 +205,15 @@ class Dispatcher:
     def dispatch_event(
         self, automation: AutomationModel, candidate
     ) -> AutomationFiringModel | None:
-        """Registra o disparo de um evento interno (idempotente pelo identificador do evento)."""
+        """Registra o disparo de um evento interno (idempotente pelo identificador do evento).
+
+        Args:
+            automation: automação que escuta o evento.
+            candidate: evento candidato, com origem, tipo, identificador e instante.
+
+        Returns:
+            O disparo criado, ou `None` quando a chave já existia.
+        """
         key = event_key(automation.id, candidate.source, candidate.event_id)
         firing = self._create(
             automation,
@@ -175,7 +241,18 @@ class Dispatcher:
         result: dict | None = None,
         scheduled_for: datetime | None = None,
     ) -> AutomationFiringModel | None:
-        """Disparo manual ("executar agora", "testar"). Sempre único."""
+        """Disparo manual ("executar agora", "testar"). Sempre único.
+
+        Args:
+            automation: automação a disparar.
+            tag: marca do disparo manual.
+            state: estado inicial do disparo.
+            result: conteúdo do resultado inicial.
+            scheduled_for: instante agendado; por padrão, agora.
+
+        Returns:
+            O disparo criado.
+        """
         firing = self._create(
             automation,
             key=manual_key(automation.id, tag),
@@ -196,6 +273,18 @@ class Dispatcher:
         state: str,
         result: dict | None = None,
     ) -> AutomationFiringModel | None:
+        """Cria a linha de disparo, respeitando a chave de idempotência.
+
+        Args:
+            automation: automação disparada.
+            key: chave de idempotência do disparo.
+            scheduled_for: instante agendado.
+            state: estado inicial do disparo.
+            result: conteúdo do resultado inicial.
+
+        Returns:
+            O disparo criado, ou `None` quando a chave já existia.
+        """
         firing = AutomationFiringModel(
             automation_id=automation.id,
             project_id=automation.project_id,
@@ -232,5 +321,12 @@ class Dispatcher:
         return firing
 
     def _advance(self, automation: AutomationModel, last_occurrence: datetime, now: datetime) -> None:
+        """Avança o marcador de última execução e recalcula o próximo disparo.
+
+        Args:
+            automation: automação disparada.
+            last_occurrence: última ocorrência coberta por este despacho.
+            now: instante de referência do recálculo.
+        """
         automation.last_run_at = to_utc(last_occurrence)
         automation.next_run_at = self._service.next_occurrence(automation, after=now)

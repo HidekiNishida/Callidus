@@ -1,5 +1,13 @@
-# src/agent/orchestrator/plan_contract.py — normalização tolerante do plano que o modelo devolve
-"""Contrato tolerante do plano.
+"""
+Arquivo: src/agent/orchestrator/plan_contract.py
+Nome: plan_contract.py
+Propósito: normalização tolerante do plano que o modelo devolve.
+Responsabilidade: camada de aplicação.
+Componentes: normalize_kind, is_final_answer_label, normalize_depends, normalize_covers, normalize_plan_payload.
+Dependências: agent.domain.enums, __future__, typing.
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+
+Contrato tolerante do plano.
 
 Um modelo pequeno rotula as etapas do jeito que entende: `kind: "final_answer"` para a resposta
 final, `depends_on_indices` apontando para o índice errado, `metadata.verification` com um tipo que
@@ -73,6 +81,14 @@ def normalize_kind(raw: Any) -> tuple[TaskKind, str | None]:
 
 
 def is_final_answer_label(raw: Any) -> bool:
+    """Diz se um rótulo de `kind` indica a etapa de resposta final.
+
+    Args:
+        raw: rótulo informado pelo modelo, de qualquer tipo.
+
+    Returns:
+        Verdadeiro quando o rótulo é um dos nomes reconhecidos de resposta final.
+    """
     return str(raw or "").strip().lower() in FINAL_ANSWER_LABELS
 
 

@@ -1,4 +1,13 @@
-# src/agent/orchestrator/planner.py — planner persistente (objetivo + memória canônica)
+"""
+Arquivo: src/agent/orchestrator/planner.py
+Nome: planner.py
+Propósito: planner persistente (objetivo + memória canônica).
+Responsabilidade: camada de aplicação.
+Componentes: ensure_canonical_memory_for_objective.
+Dependências: agent.domain.enums, agent.domain.schemas, agent.persistence.models, agent.services.project_service, __future__, sqlalchemy.orm….
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -16,6 +25,16 @@ def ensure_canonical_memory_for_objective(
     project_id: uuid.UUID,
     root_task: TaskModel,
 ) -> None:
+    """Garante que o objetivo do trabalho fique gravado como memória canônica do projeto.
+
+    Args:
+        session: sessão do banco.
+        project_id: projeto que recebe a memória.
+        root_task: tarefa raiz do objetivo.
+
+    Observações:
+        Além da memória global, a conversa da raiz recebe uma memória própria; a gravação é idempotente, para não duplicar a memória a cada passo.
+    """
     ps = ProjectService(session)
     existing = ps.list_memory(project_id, MemoryKind.CANONICAL)
     if not any(m.title == "Objetivo global" and m.conversation_id is None for m in existing):

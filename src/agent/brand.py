@@ -1,4 +1,12 @@
-# src/agent/brand.py — identidade do produto (nome, símbolo, aliases legados)
+"""
+Arquivo: src/agent/brand.py
+Nome: brand.py
+Propósito: definir a identidade do produto (nome, símbolo, aliases legados).
+Responsabilidade: camada de apresentação — constantes de marca consumidas pela interface e pelas rotas.
+Componentes: BRAND_NAME, BRAND_TAGLINE, caminhos dos assets de marca, aliases legados, is_attachments_dir().
+Dependências: nenhuma.
+Observações: os aliases legados (`.agente`, `agente-inbox://local`) são mantidos por compatibilidade de leitura.
+"""
 from __future__ import annotations
 
 # Nome comercial exibido na interface, na documentação e nos metadados da API.

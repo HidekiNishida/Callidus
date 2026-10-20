@@ -1,4 +1,12 @@
-# src/agent/tools/builtins.py — ferramentas prioritárias
+"""
+Arquivo: src/agent/tools/builtins.py
+Nome: builtins.py
+Propósito: implementar as ferramentas prioritárias do agente sobre o projeto local ou remoto.
+Responsabilidade: camada de apresentação — handlers das ferramentas de arquivo, comando, teste e navegador.
+Componentes: TOOL_CATALOG, register_all e os handlers `_read_file`, `_write_file`, `_edit_file`, `_search_grep`, `_list_dir`, `_glob_files`, `_delete_file`, `_make_dir`, `_move_file`, `_run_command`, `_run_script`, `_run_pytest`, `_git_diff`, `_git_status`, `_browser`, `_remember`, `_system_info`.
+Dependências: agent.observability, agent.security.paths, agent.tools.diffing, agent.tools.registry.
+Observações: quando o projeto tem computador remoto, as ferramentas de arquivo e comando são delegadas ao SSH.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -51,7 +59,14 @@ TOOL_CATALOG = (
 
 
 def _file_event(event_type: str, path: str, diff: dict | None = None, **extra: object) -> None:
-    """Fato do disco, emitido depois da operação ter dado certo. Arquivo sensível sai sem diff."""
+    """Fato do disco, emitido depois da operação ter dado certo. Arquivo sensível sai sem diff.
+
+    Args:
+        event_type: tipo do evento emitido (`file.read`, `file.changed`, etc.).
+        path: caminho do arquivo, relativo ao projeto.
+        diff: diff da alteração, quando houver.
+        extra: campos adicionais enviados no payload.
+    """
     data: dict = {"path": str(path), "call_id": current_call_id(), **extra}
     if diff is not None:
         if is_sensitive_path(str(path)):
@@ -62,14 +77,39 @@ def _file_event(event_type: str, path: str, diff: dict | None = None, **extra: o
 
 
 def _root(ctx: ToolContext) -> Path:
+    """Raiz absoluta do projeto autorizada no contexto.
+
+    Args:
+        ctx: contexto da ferramenta.
+
+    Returns:
+        A raiz do projeto já resolvida.
+    """
     return Path(ctx.project_root).resolve()
 
 
 def _skipped(rel: Path) -> bool:
+    """Indica se um caminho relativo está numa pasta ignorada (cache, dependências, build).
+
+    Args:
+        rel: caminho relativo ao projeto.
+
+    Returns:
+        `True` quando o caminho deve ser ignorado.
+    """
     return any(part in SKIP_DIRS for part in rel.parts)
 
 
 def _resolve(ctx: ToolContext, raw: str) -> tuple[Path | None, dict | None]:
+    """Resolve um caminho dentro da raiz do projeto, devolvendo o erro em vez de levantá-lo.
+
+    Args:
+        ctx: contexto da ferramenta.
+        raw: caminho informado pelo modelo.
+
+    Returns:
+        Tupla com o caminho resolvido (`None` quando inválido) e o resultado de erro.
+    """
     try:
         return resolve_under_root(ctx.project_root, raw), None
     except PathSecurityError as exc:
@@ -77,6 +117,15 @@ def _resolve(ctx: ToolContext, raw: str) -> tuple[Path | None, dict | None]:
 
 
 async def _system_info(ctx: ToolContext, args: dict) -> dict:
+    """Descreve o sistema onde o agente roda: SO, versão, usuário e pasta pessoal.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (não usados).
+
+    Returns:
+        Um dicionário com os dados do sistema e a raiz do projeto.
+    """
     import getpass
     import platform
 
@@ -98,6 +147,15 @@ async def _system_info(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _browser(ctx: ToolContext, args: dict) -> dict:
+    """Executa uma ação de navegador, respeitando o modo configurado no contexto.
+
+    Args:
+        ctx: contexto da ferramenta, com o modo do navegador.
+        args: argumentos da chamada (ação, url, texto, seletor, consulta).
+
+    Returns:
+        O resultado da ação; quando o navegador está desligado, o erro correspondente.
+    """
     from agent.tools.browser import browser_call
 
     mode = ctx.browser_mode or "off"
@@ -114,12 +172,30 @@ async def _browser(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _remember(ctx: ToolContext, args: dict) -> dict:
+    """Grava uma memória do projeto ou da conversa.
+
+    Args:
+        ctx: contexto da ferramenta, com o gravador de memória quando disponível.
+        args: argumentos da chamada (conteúdo, título e escopo).
+
+    Returns:
+        O resultado do gravador; quando não há memória disponível, o erro correspondente.
+    """
     if ctx.memory_saver is None:
         return {"success": False, "error": "memória indisponível neste contexto"}
     return ctx.memory_saver(args)
 
 
 async def _read_file(ctx: ToolContext, args: dict) -> dict:
+    """Lê uma janela de linhas de um arquivo do projeto.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`path`, `offset`, `limit`).
+
+    Returns:
+        O conteúdo lido, o offset, o total de linhas e a marca de truncamento.
+    """
     if getattr(ctx, "remote", None):
         from agent.remote import tools as remote_tools
 
@@ -166,6 +242,15 @@ async def _read_file(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _write_file(ctx: ToolContext, args: dict) -> dict:
+    """Grava um arquivo do projeto, criando as pastas necessárias.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`path`, `content`).
+
+    Returns:
+        O caminho gravado, a quantidade de bytes e o diff da alteração.
+    """
     if getattr(ctx, "remote", None):
         from agent.remote import tools as remote_tools
 
@@ -189,6 +274,15 @@ async def _write_file(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _search_grep(ctx: ToolContext, args: dict) -> dict:
+    """Busca uma expressão regular no conteúdo dos arquivos do projeto.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`pattern`, `path`).
+
+    Returns:
+        A lista de ocorrências, com caminho, linha e trecho; no máximo 100.
+    """
     if getattr(ctx, "remote", None):
         from agent.remote import tools as remote_tools
 
@@ -231,6 +325,14 @@ async def _search_grep(ctx: ToolContext, args: dict) -> dict:
 
 
 def _argv(command: object) -> list[str] | None:
+    """Normaliza o comando pedido em uma lista de argumentos.
+
+    Args:
+        command: comando como texto ou lista.
+
+    Returns:
+        A lista de argumentos, ou `None` quando o comando é inválido.
+    """
     if isinstance(command, str) and command.strip():
         return shlex.split(command)
     if isinstance(command, list) and command and all(isinstance(part, str) for part in command):
@@ -241,6 +343,13 @@ def _argv(command: object) -> list[str] | None:
 
 
 async def _pump(stream: asyncio.StreamReader | None, chunks: list[bytes], batcher: DeltaBatcher) -> None:
+    """Lê um fluxo do processo e alimenta o lote de saída com os trechos decodificados.
+
+    Args:
+        stream: fluxo lido; `None` quando o processo não tem pipe.
+        chunks: acumulador dos bytes brutos lidos.
+        batcher: lote que publica os trechos conforme o intervalo ou o tamanho.
+    """
     if stream is None:
         return
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
@@ -257,13 +366,30 @@ _PYTEST_SUMMARY = re.compile(r"(\d+) (passed|failed|error|errors|skipped)")
 
 
 def _test_counts(stdout: str) -> dict[str, int]:
+    """Conta os testes por desfecho na linha de resumo do pytest.
+
+    Args:
+        stdout: saída padrão do pytest.
+
+    Returns:
+        Um dicionário com a contagem por desfecho (passou, falhou, erro, pulado).
+    """
     tail = stdout.strip().splitlines()[-1] if stdout.strip() else ""
     return {kind.rstrip("s") if kind == "errors" else kind: int(n) for n, kind in _PYTEST_SUMMARY.findall(tail)}
 
 
 async def _run_command(ctx: ToolContext, args: dict, *, kind: str = "command") -> dict:
     """Saída lida aos poucos: cada trecho vai para `command.output` (ou `test.output`) enquanto o processo roda;
-    o resultado devolvido é o mesmo de antes (finais de stdout/stderr, código de saída)."""
+    o resultado devolvido é o mesmo de antes (finais de stdout/stderr, código de saída).
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`command`, `cwd`, `env`, `timeout`).
+        kind: prefixo dos eventos emitidos (`command` ou `test`).
+
+    Returns:
+        O resultado do comando, com código de saída e as caudas de stdout e stderr.
+    """
     if getattr(ctx, "remote", None):
         return await _run_command_remote(ctx, args, kind=kind)
     command = _argv(args.get("command"))
@@ -295,6 +421,7 @@ async def _run_command(ctx: ToolContext, args: dict, *, kind: str = "command") -
         return {"success": False, "error": error, "category": "configuration", "command": command}
 
     def _out(stream: str) -> DeltaBatcher:
+        """Monta a resposta da ferramenta com a saída capturada e o código de saída."""
         return DeltaBatcher(lambda text: emit(f"{kind}.output", {"call_id": call_id, "stream": stream, "text": text}))
 
     out_batch, err_batch = _out("stdout"), _out("stderr")
@@ -338,7 +465,16 @@ async def _run_command(ctx: ToolContext, args: dict, *, kind: str = "command") -
 
 
 async def _run_command_remote(ctx: ToolContext, args: dict, *, kind: str = "command") -> dict:
-    """Comando executado no computador remoto do projeto (SSH), com saída em tempo real."""
+    """Comando executado no computador remoto do projeto (SSH), com saída em tempo real.
+
+    Args:
+        ctx: contexto da ferramenta, com a configuração remota.
+        args: argumentos da chamada (`command`, `cwd`, `timeout`).
+        kind: prefixo dos eventos emitidos (`command` ou `test`).
+
+    Returns:
+        O resultado do comando remoto, com código de saída e as caudas de stdout e stderr.
+    """
     from agent.remote.ssh import RemoteError, SshTransport
 
     command = _argv(args.get("command"))
@@ -359,6 +495,7 @@ async def _run_command_remote(ctx: ToolContext, args: dict, *, kind: str = "comm
     ssh = SshTransport(ctx.remote)
 
     def _out(text: str) -> None:
+        """Monta a resposta da ferramenta com a saída capturada e o código de saída."""
         emit(f"{kind}.output", {"call_id": call_id, "stream": "stdout", "text": text})
 
     try:
@@ -391,6 +528,15 @@ async def _run_command_remote(ctx: ToolContext, args: dict, *, kind: str = "comm
 
 
 async def _git_diff(ctx: ToolContext, args: dict) -> dict:
+    """Mostra o diff do git do projeto.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`stat`, `staged`, `path`).
+
+    Returns:
+        A saída do `git diff`, com a marca de truncamento quando passa de 12000 caracteres.
+    """
     root = str(_root(ctx))
     cmd = ["git", "-C", root, "diff"]
     if args.get("stat"):
@@ -411,6 +557,15 @@ async def _git_diff(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _git_status(ctx: ToolContext, args: dict) -> dict:
+    """Mostra o estado curto do git do projeto.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (não usados).
+
+    Returns:
+        A saída do `git status --short` e o erro, quando houver.
+    """
     proc = subprocess.run(
         ["git", "-C", str(_root(ctx)), "status", "--short"],
         capture_output=True,
@@ -425,6 +580,15 @@ async def _git_status(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _list_dir(ctx: ToolContext, args: dict) -> dict:
+    """Lista o conteúdo de uma pasta do projeto.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`path`, `recursive`).
+
+    Returns:
+        A lista de entradas, com caminho e tipo; no máximo 200.
+    """
     if getattr(ctx, "remote", None):
         from agent.remote import tools as remote_tools
 
@@ -449,6 +613,15 @@ async def _list_dir(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _glob_files(ctx: ToolContext, args: dict) -> dict:
+    """Encontra arquivos do projeto por padrão glob.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`pattern`).
+
+    Returns:
+        A lista de caminhos encontrados, com a marca de truncamento no limite de 200.
+    """
     if getattr(ctx, "remote", None):
         from agent.remote import tools as remote_tools
 
@@ -471,6 +644,15 @@ async def _glob_files(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _edit_file(ctx: ToolContext, args: dict) -> dict:
+    """Substitui um trecho de um arquivo do projeto.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`path`, `old_string`, `new_string`, `replace_all`).
+
+    Returns:
+        O caminho editado, a quantidade de substituições e o diff da alteração.
+    """
     if getattr(ctx, "remote", None):
         from agent.remote import tools as remote_tools
 
@@ -515,6 +697,15 @@ async def _edit_file(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _delete_file(ctx: ToolContext, args: dict) -> dict:
+    """Apaga um arquivo do projeto.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`path`).
+
+    Returns:
+        O caminho removido.
+    """
     if getattr(ctx, "remote", None):
         from agent.remote import tools as remote_tools
 
@@ -530,6 +721,15 @@ async def _delete_file(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _make_dir(ctx: ToolContext, args: dict) -> dict:
+    """Cria uma pasta no projeto.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`path`).
+
+    Returns:
+        O caminho criado.
+    """
     if getattr(ctx, "remote", None):
         from agent.remote import tools as remote_tools
 
@@ -546,6 +746,15 @@ async def _make_dir(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _move_file(ctx: ToolContext, args: dict) -> dict:
+    """Move ou renomeia um arquivo do projeto.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`from`, `to`).
+
+    Returns:
+        Os caminhos de origem e destino.
+    """
     if getattr(ctx, "remote", None):
         from agent.remote import tools as remote_tools
 
@@ -570,7 +779,14 @@ async def _move_file(ctx: ToolContext, args: dict) -> dict:
 
 
 def python_for(project_root: str) -> str:
-    """Interpretador do projeto: o venv dele se existir, senão o que roda o agente."""
+    """Interpretador do projeto: o venv dele se existir, senão o que roda o agente.
+
+    Args:
+        project_root: raiz do projeto.
+
+    Returns:
+        O caminho do interpretador Python a usar.
+    """
     root = Path(project_root)
     for venv in (".venv", "venv"):
         for rel in ("bin/python", "Scripts/python.exe"):
@@ -581,7 +797,15 @@ def python_for(project_root: str) -> str:
 
 
 async def _run_script(ctx: ToolContext, args: dict) -> dict:
-    """Executa um arquivo Python dentro do projeto. Testes em tests/ rodam com o pacote no PYTHONPATH."""
+    """Executa um arquivo Python dentro do projeto. Testes em tests/ rodam com o pacote no PYTHONPATH.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`path`, `timeout`).
+
+    Returns:
+        O resultado da execução do script, com código de saída e saída capturada.
+    """
     raw = args.get("path")
     if not raw or not isinstance(raw, str):
         return {"success": False, "error": "path obrigatório"}
@@ -607,7 +831,15 @@ async def _run_script(ctx: ToolContext, args: dict) -> dict:
 
 async def _run_pytest(ctx: ToolContext, args: dict) -> dict:
     """Sem gravar bytecode do projeto: um `.pyc` gravado aqui poderia, depois de o arquivo ser reescrito
-    com o mesmo tamanho no mesmo segundo, ser testado no lugar da versão nova."""
+    com o mesmo tamanho no mesmo segundo, ser testado no lugar da versão nova.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`path`, `timeout`).
+
+    Returns:
+        O resultado da execução do pytest, com código de saída e contagem dos testes.
+    """
     target = args.get("path", ".")
     try:
         target_path = resolve_under_root(ctx.project_root, target)
@@ -628,7 +860,11 @@ async def _run_pytest(ctx: ToolContext, args: dict) -> dict:
 
 
 def _drop_stale_bytecode(path: Path) -> None:
-    """O `.pyc` é validado por data em segundos e tamanho; ao reescrever um `.py`, o cache dele sai."""
+    """O `.pyc` é validado por data em segundos e tamanho; ao reescrever um `.py`, o cache dele sai.
+
+    Args:
+        path: arquivo reescrito; o cache só é removido para arquivos Python.
+    """
     if path.suffix != ".py":
         return
     for cached in (path.parent / "__pycache__").glob(f"{path.stem}.*.pyc"):
@@ -636,6 +872,11 @@ def _drop_stale_bytecode(path: Path) -> None:
 
 
 def register_all(registry: ToolRegistry) -> None:
+    """Registra no registry todas as ferramentas prioritárias.
+
+    Args:
+        registry: registro onde as specs e os handlers são cadastrados.
+    """
     specs = [
         ToolSpec(id="read_file", description="Lê arquivo dentro do projeto", input_schema={"path": "str"}),
         ToolSpec(

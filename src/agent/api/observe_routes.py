@@ -1,4 +1,13 @@
-# src/agent/api/observe_routes.py — histórico, foto do estado e transmissão SSE de uma run
+"""
+Arquivo: src/agent/api/observe_routes.py
+Nome: observe_routes.py
+Propósito: histórico, foto do estado e transmissão SSE de uma run.
+Responsabilidade: camada de apresentação/transport.
+Componentes: run_events, run_observe, sse_stream, run_stream.
+Dependências: agent.api.deps, agent.observability.bus, agent.observability.snapshot, agent.persistence.models, __future__, asyncio….
+Observações: a rota valida, delega e serializa — a regra de negócio vive no serviço.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -25,10 +34,34 @@ _REORDER_WINDOW = 200
 
 
 class _Disconnectable(Protocol):
-    async def is_disconnected(self) -> bool: ...
+    """Contrato mínimo de um cliente HTTP que pode sinalizar desconexão.
+
+    Observações:
+        Existe para que a transmissão SSE possa ser testada sem um servidor HTTP real.
+    """
+
+    async def is_disconnected(self) -> bool:
+        """Informa se o cliente abandonou a conexão.
+
+        Returns:
+            Verdadeiro quando a conexão foi encerrada pelo cliente.
+        """
+        ...
 
 
 def _run_or_404(session: Session, run_id: uuid.UUID) -> ExecutionRunModel:
+    """Carrega uma run ou responde 404.
+
+    Args:
+        session: sessão do banco da requisição.
+        run_id: identificador da run solicitada.
+
+    Returns:
+        O registro da run.
+
+    Raises:
+        HTTPException: com status 404 quando a run não existe.
+    """
     run = session.get(ExecutionRunModel, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="run não encontrada")
@@ -61,11 +94,33 @@ def run_events(
 
 @router.get("/runs/{run_id}/observe")
 def run_observe(run_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    """Devolve a foto atual do estado de uma run.
+
+    Args:
+        run_id: identificador da run observada.
+        session: sessão do banco da requisição.
+
+    Returns:
+        O retrato da run com tarefas, estados e contagens persistidas.
+
+    Raises:
+        HTTPException: com status 404 quando a run não existe.
+    """
     _run_or_404(session, run_id)
     return run_snapshot(session, run_id)
 
 
 def _sse(data: dict[str, Any], *, event: str | None = None, seq: int | None = None) -> str:
+    """Serializa um envelope de evento no formato SSE.
+
+    Args:
+        data: conteúdo JSON do evento.
+        event: nome do evento, quando houver.
+        seq: identificador de sequência, quando o evento for persistido.
+
+    Returns:
+        O bloco de linhas SSE terminado por linha em branco.
+    """
     lines = []
     if event:
         lines.append(f"event: {event}")
@@ -76,11 +131,30 @@ def _sse(data: dict[str, Any], *, event: str | None = None, seq: int | None = No
 
 
 def _page(factory: sessionmaker[Session], run_id: uuid.UUID, after: int) -> dict[str, Any]:
+    """Lê uma página do histórico persistido de eventos em uma sessão própria.
+
+    Args:
+        factory: fábrica de sessões do banco.
+        run_id: identificador da run consultada.
+        after: último `seq` já consumido.
+
+    Returns:
+        A página de eventos com o indicador de haver mais registros.
+    """
     with factory() as session:
         return events_page(session, run_id, after=after, limit=500)
 
 
 def _status(factory: sessionmaker[Session], run_id: uuid.UUID) -> str | None:
+    """Consulta o estado corrente de uma run em uma sessão própria.
+
+    Args:
+        factory: fábrica de sessões do banco.
+        run_id: identificador da run consultada.
+
+    Returns:
+        O estado da run, ou `None` quando a run não existe mais.
+    """
     with factory() as session:
         run = session.get(ExecutionRunModel, run_id)
         return None if run is None else run.status
@@ -107,6 +181,14 @@ async def sse_stream(
     started_at = time.monotonic()
 
     async def replay(since: int) -> AsyncIterator[str]:
+        """Relê o histórico persistido a partir de um `seq` e emite o que falta.
+
+        Args:
+            since: último `seq` já consumido; a leitura começa depois dele.
+
+        Yields:
+            Blocos SSE dos eventos persistidos que ainda não foram enviados.
+        """
         nonlocal cursor, ended
         while True:
             page = await asyncio.to_thread(_page, factory, run_id, since)

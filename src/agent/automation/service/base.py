@@ -1,5 +1,13 @@
-# src/agent/automation/service/base.py — contrato dos adaptadores de inicialização nativa
-"""Cada sistema operacional tem o seu jeito de iniciar um processo no arranque e de
+"""
+Arquivo: src/agent/automation/service/base.py
+Nome: base.py
+Propósito: definir o contrato dos adaptadores de inicialização nativa do runtime.
+Responsabilidade: camada de infraestrutura — interface comum e apoio aos adaptadores por sistema operacional.
+Componentes: ServiceOptions, ServiceStatus, ServiceAdapter, default_options.
+Dependências: subprocess, shutil, pathlib.
+Observações: a instalação por usuário é preferida; garantia em nível de sistema é informada com clareza.
+
+Cada sistema operacional tem o seu jeito de iniciar um processo no arranque e de
 recuperá-lo depois de uma falha. O **núcleo** do Callidus é o mesmo; o que muda fica
 nestes adaptadores.
 
@@ -51,6 +59,11 @@ class ServiceStatus:
     error: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
+        """Situação do serviço como dicionário serializável.
+
+        Returns:
+            Um dicionário com os campos do status.
+        """
         return {
             "installed": self.installed,
             "active": self.active,
@@ -67,27 +80,86 @@ class ServiceAdapter:
     platform_name: str = "desconhecido"
 
     def available(self) -> bool:
-        """Este adaptador funciona nesta máquina?"""
+        """Este adaptador funciona nesta máquina?
+
+        Returns:
+            `True` quando o adaptador pode ser usado nesta plataforma.
+
+        Raises:
+            NotImplementedError: quando o adaptador não foi implementado.
+        """
         raise NotImplementedError
 
     def install(self, options: ServiceOptions) -> dict[str, Any]:
+        """Instala o serviço nativo.
+
+        Args:
+            options: opções de como o serviço deve chamar o runtime.
+
+        Returns:
+            O resultado da instalação.
+
+        Raises:
+            NotImplementedError: quando o adaptador não foi implementado.
+        """
         raise NotImplementedError
 
     def uninstall(self) -> dict[str, Any]:
+        """Remove o serviço nativo.
+
+        Returns:
+            O resultado da remoção.
+
+        Raises:
+            NotImplementedError: quando o adaptador não foi implementado.
+        """
         raise NotImplementedError
 
     def start(self) -> dict[str, Any]:
+        """Inicia o serviço.
+
+        Returns:
+            O resultado do início.
+
+        Raises:
+            NotImplementedError: quando o adaptador não foi implementado.
+        """
         raise NotImplementedError
 
     def stop(self) -> dict[str, Any]:
+        """Para o serviço.
+
+        Returns:
+            O resultado da parada.
+
+        Raises:
+            NotImplementedError: quando o adaptador não foi implementado.
+        """
         raise NotImplementedError
 
     def status(self) -> ServiceStatus:
+        """Situação do serviço.
+
+        Returns:
+            O status do serviço.
+
+        Raises:
+            NotImplementedError: quando o adaptador não foi implementado.
+        """
         raise NotImplementedError
 
     # ── apoio ────────────────────────────────────────────────────────────
 
     def _run(self, args: list[str], *, timeout: float = 60.0) -> tuple[int, str, str]:
+        """Executa um comando do sistema operacional.
+
+        Args:
+            args: comando e argumentos.
+            timeout: tempo limite da execução, em segundos.
+
+        Returns:
+            Tupla com o código de saída, a saída padrão e a saída de erro.
+        """
         try:
             proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
         except (OSError, subprocess.SubprocessError) as exc:
@@ -95,14 +167,31 @@ class ServiceAdapter:
         return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
     def _which(self, executable: str) -> str | None:
+        """Localiza um executável no `PATH`.
+
+        Args:
+            executable: nome do executável.
+
+        Returns:
+            O caminho absoluto, ou `None` quando ele não existe.
+        """
         return shutil.which(executable)
 
     def _home(self) -> Path:
+        """Pasta pessoal do usuário.
+
+        Returns:
+            O caminho da pasta pessoal.
+        """
         return Path(os.path.expanduser("~"))
 
 
 def default_options() -> ServiceOptions:
-    """Opções padrão: executa o supervisor a partir do pacote instalado."""
+    """Opções padrão: executa o supervisor a partir do pacote instalado.
+
+    Returns:
+        As opções de serviço com o comando, a pasta de trabalho e o log já resolvidos.
+    """
     settings_env: dict[str, str] = {}
     try:
         from agent.config import get_settings

@@ -1,4 +1,12 @@
-# src/agent/skills/selector.py — Seleção dinâmica e econômica de Skills sob demanda
+"""
+Arquivo: src/agent/skills/selector.py
+Nome: selector.py
+Propósito: selecionar, sob demanda e com economia de contexto, as Skills relevantes para uma tarefa.
+Responsabilidade: camada de aplicação — matching entre objetivo, estratégia e catálogo de skills.
+Componentes: SkillSelector, _overlaps.
+Dependências: agent.skills.discovery, agent.skills.models.
+Observações: critérios de não-ativação têm precedência: uma skill proibida nunca entra no prompt.
+"""
 from __future__ import annotations
 
 import re
@@ -56,6 +64,11 @@ class SkillSelector:
     """
 
     def __init__(self, registry: SkillRegistry | None = None) -> None:
+        """Cria o seletor sobre um registro de skills.
+
+        Args:
+            registry: registro consultado; quando ausente, usa o registro do processo.
+        """
         self.registry = registry or get_skill_registry()
 
     def select(
@@ -66,7 +79,17 @@ class SkillSelector:
         available_tools: Sequence[str] | None = None,
         max_skills: int = 2,
     ) -> list[SkillMatch]:
-        """Seleciona até `max_skills` competências relevantes para o objetivo."""
+        """Seleciona até `max_skills` competências relevantes para o objetivo.
+
+        Args:
+            objective: objetivo da tarefa.
+            task_kind: tipo da tarefa, usado no matching por tipo.
+            available_tools: ferramentas disponíveis, usadas no matching de compatibilidade.
+            max_skills: número máximo de skills devolvidas.
+
+        Returns:
+            A lista de Correspondências, da melhor pontuação para a pior.
+        """
         if not objective or max_skills <= 0:
             return []
 
@@ -133,6 +156,15 @@ class SkillSelector:
 
         A especialidade líder da estratégia entra com peso máximo; as especialidades
         revisoras completam o time, sempre respeitando o limite de skills.
+
+        Args:
+            strategy: estratégia profissional da tarefa.
+            task_kind: tipo da tarefa, usado no matching por tipo.
+            available_tools: ferramentas disponíveis, usadas no matching de compatibilidade.
+            max_skills: número máximo de skills devolvidas.
+
+        Returns:
+            A lista de correspondências, ordenada pela pontuação.
         """
         objective = str(getattr(strategy, "original_request", "") or "")
         lead = str(getattr(strategy, "lead_specialty", "") or "")
@@ -170,7 +202,16 @@ class SkillSelector:
         return chosen[:max_skills]
 
     def _prohibited(self, skill: SkillSpec, lower_obj: str, words: set[str]) -> bool:
-        """Aplica os critérios de não-ativação da Skill ao objetivo."""
+        """Aplica os critérios de não-ativação da Skill ao objetivo.
+
+        Args:
+            skill: skill avaliada.
+            lower_obj: objetivo em minúsculas.
+            words: palavras do objetivo.
+
+        Returns:
+            `True` quando a skill não deve ser usada nesta tarefa.
+        """
         if not skill.prohibited_criteria:
             return False
         read_only_intent = bool(words & _READ_WORDS) and not (words & _ACTION_WORDS)
@@ -191,7 +232,15 @@ class SkillSelector:
         *,
         max_chars: int = 2500,
     ) -> str:
-        """Gera bloco de texto formatado com as instruções das Skills selecionadas."""
+        """Gera bloco de texto formatado com as instruções das Skills selecionadas.
+
+        Args:
+            matches: correspondências a renderizar.
+            max_chars: tamanho máximo do bloco gerado.
+
+        Returns:
+            O bloco de instruções, ou string vazia quando não há skills a renderizar.
+        """
         if not matches or max_chars <= 0:
             return ""
 
@@ -220,7 +269,15 @@ class SkillSelector:
 
 
 def _overlaps(phrase: str, lower_obj: str) -> bool:
-    """True quando ao menos uma palavra significativa da frase aparece no objetivo."""
+    """True quando ao menos uma palavra significativa da frase aparece no objetivo.
+
+    Args:
+        phrase: frase do critério de ativação.
+        lower_obj: objetivo em minúsculas.
+
+    Returns:
+        `True` quando há sobreposição entre a frase e o objetivo.
+    """
     words = [w for w in re.findall(r"\w+", phrase.lower()) if len(w) > 3]
     if not words:
         return False

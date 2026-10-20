@@ -1,4 +1,12 @@
-# src/agent/observability/batching.py — agrupa fragmentos de texto antes de publicar
+"""
+Arquivo: src/agent/observability/batching.py
+Nome: batching.py
+Propósito: agrupar fragmentos de texto antes de publicá-los no stream.
+Responsabilidade: camada de aplicação — agrupamento por tamanho ou intervalo dos deltas do modelo.
+Componentes: DeltaBatcher.
+Dependências: asyncio, agent.config (intervalo e tamanho padrão dos lotes).
+Observações: `flush()` no fim da operação garante que nenhum fragmento fica para trás.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -8,6 +16,7 @@ from functools import lru_cache
 
 @lru_cache(maxsize=1)
 def _defaults() -> tuple[int, int]:
+    """Devolve os limites padrão de agrupamento de fragmentos."""
     from agent.config import get_settings
 
     s = get_settings()
@@ -26,6 +35,7 @@ class DeltaBatcher:
         interval_ms: int | None = None,
         max_chars: int | None = None,
     ) -> None:
+        """Monta o agrupador com os limites de tempo e tamanho."""
         d_interval, d_chars = _defaults()
         self._publish = publish
         self._interval = (d_interval if interval_ms is None else interval_ms) / 1000
@@ -37,6 +47,14 @@ class DeltaBatcher:
         self.chars = 0
 
     def add(self, text: str) -> None:
+        """Acumula um fragmento e publica o lote quando o limite de tamanho é atingido.
+
+        Args:
+            text: fragmento recebido do modelo.
+
+        Observações:
+            Sem laço de eventos em execução, o lote é publicado imediatamente.
+        """
         if not text:
             return
         self._buf.append(text)
@@ -51,6 +69,11 @@ class DeltaBatcher:
                 self.flush()
 
     def flush(self) -> None:
+        """Publica imediatamente o texto acumulado e cancela o temporizador pendente.
+
+        Observações:
+            Chamado ao final da operação para que nenhum fragmento fique retido.
+        """
         if self._timer is not None:
             self._timer.cancel()
             self._timer = None

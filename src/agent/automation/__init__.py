@@ -1,5 +1,13 @@
-# src/agent/automation/__init__.py — runtime de automações persistentes
-"""Automações persistentes, autônomas e multiplataforma.
+"""
+Arquivo: src/agent/automation/__init__.py
+Nome: __init__.py
+Propósito: expor o runtime de automações persistentes, autônomas e multiplataforma.
+Responsabilidade: camada de aplicação — fachada pública do pacote `agent.automation`.
+Componentes: AutomationDefinition, AutomationExecutor, AutomationService, AutomationSupervisor, Dispatcher, build_supervisor e os enums do domínio de automação.
+Dependências: agent.automation.contracts, agent.automation.dispatcher, agent.automation.enums, agent.automation.executor, agent.automation.store, agent.automation.supervisor.
+Observações: o runtime é o mesmo na API e no supervisor nativo; só o arranque muda.
+
+Automações persistentes, autônomas e multiplataforma.
 
 Quatro responsabilidades, separadas de propósito:
 

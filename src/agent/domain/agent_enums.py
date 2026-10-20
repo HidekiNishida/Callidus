@@ -1,5 +1,13 @@
-# src/agent/domain/agent_enums.py — enums da hierarquia de agentes
-"""Estados do agente lógico, da execução e da consulta.
+"""
+Arquivo: src/agent/domain/agent_enums.py
+Nome: agent_enums.py
+Propósito: definir os enums da hierarquia de agentes (agente lógico, execução e consulta).
+Responsabilidade: camada de domínio — vocabulário de estados da hierarquia de agentes.
+Componentes: AgentStatus, ExecutionStatus, QueryStatus, LIVE_EXECUTION_STATUSES, CLOSED_EXECUTION_STATUSES, RELEASED_EXECUTION_STATUSES.
+Dependências: enum (stdlib).
+Observações: as coleções de status separam execuções vivas, encerradas e liberadas com checkpoint.
+
+Estados do agente lógico, da execução e da consulta.
 
 Três conceitos, três Conjuntos de estados:
 

@@ -1,5 +1,13 @@
-# src/agent/automation/actions/base.py — contrato das ações e registro de novos tipos
-"""Ação: a parte da automação que decide *o que fazer* quando o horário chega.
+"""
+Arquivo: src/agent/automation/actions/base.py
+Nome: base.py
+Propósito: definir o contrato das ações de automação e o registro de novos tipos.
+Responsabilidade: camada de domínio — protocolo da ação, contexto, resultado e registro extensível.
+Componentes: ActionContext, ActionResult, Action, ActionFactory, register_action, action_factories, build_action.
+Dependências: agent.automation.contracts, agent.automation.enums, sqlalchemy.
+Observações: novos tipos de ação entram por registro, sem tocar na lógica central.
+
+Ação: a parte da automação que decide *o que fazer* quando o horário chega.
 
 Uma ação não sabe de gatilho, e o gatilho não sabe de ação. A execução recebe o
 contexto pronto (dependências verificadas, destino resolvido) e devolve um resultado
@@ -68,7 +76,9 @@ class Action(Protocol):
 
     kind: ActionKind
 
-    async def execute(self, ctx: ActionContext) -> ActionResult: ...
+    async def execute(self, ctx: ActionContext) -> ActionResult:
+        """Executa a ação aprovada e devolve o resultado (saída, código de saída e erro)."""
+        ...
 
 
 ActionFactory = Callable[[ActionSpec], Action]
@@ -77,15 +87,36 @@ _REGISTRY: dict[str, ActionFactory] = {}
 
 
 def register_action(kind: str, factory: ActionFactory) -> None:
-    """Registra (ou substitui) um tipo de ação."""
+    """Registra (ou substitui) um tipo de ação.
+
+    Args:
+        kind: identificador do tipo de ação.
+        factory: fábrica que constrói a ação a partir da especificação.
+    """
     _REGISTRY[str(kind)] = factory
 
 
 def action_factories() -> dict[str, ActionFactory]:
+    """Fábricas de ação registradas.
+
+    Returns:
+        Uma cópia do registro de fábricas.
+    """
     return dict(_REGISTRY)
 
 
 def build_action(spec: ActionSpec) -> Action:
+    """Instancia a ação de uma especificação.
+
+    Args:
+        spec: especificação da ação.
+
+    Returns:
+        A ação pronta para executar.
+
+    Raises:
+        ValueError: quando o tipo de ação não está registrado.
+    """
     factory = _REGISTRY.get(str(spec.kind))
     if factory is None:
         raise ValueError(f"tipo de ação desconhecido: {spec.kind}")

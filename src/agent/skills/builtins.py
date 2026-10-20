@@ -1,11 +1,23 @@
-# src/agent/skills/builtins.py — Catálogo de Skills profissionais nativas do Agente
+"""
+Arquivo: src/agent/skills/builtins.py
+Nome: builtins.py
+Propósito: definir o catálogo de Skills profissionais nativas do Agente.
+Responsabilidade: camada de domínio — competências padrão disponíveis mesmo sem catálogo em disco.
+Componentes: get_builtin_skills.
+Dependências: agent.skills.models.
+Observações: as skills embutidas garantem operação offline; o catálogo em disco tem precedência sobre elas.
+"""
 from __future__ import annotations
 
 from agent.skills.models import SkillSpec
 
 
 def get_builtin_skills() -> list[SkillSpec]:
-    """Retorna as Skills profissionais essenciais nativas do agente."""
+    """Retorna as Skills profissionais essenciais nativas do agente.
+
+    Returns:
+        A lista de skills embutidas, prontas para o registro.
+    """
     return [
         SkillSpec(
             id="software_engineering",

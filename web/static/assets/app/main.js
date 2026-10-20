@@ -1,4 +1,12 @@
-// web/static/assets/app/main.js — bootstrap da interface (Vue 3)
+/**
+ * Arquivo: web/static/assets/app/main.js
+ * Nome: main.js
+ * Propósito: bootstrap da interface (Vue 3) — monta o componente raiz e registra a aplicação.
+ * Responsabilidade: frontend/bootstrap — liga os componentes, os modais e os atalhos globais.
+ * Componentes: App (componente raiz), NAV_ITEMS, handlers de modais (projeto, pasta, remoto), atalhos.
+ * Dependências: `./store.js`, `./api.js`, `./ui.js` e os componentes em `./components/`.
+ * Observações: expõe `window.__callidus` para inspeção e automação de verificações visuais.
+ */
 import { api } from "./api.js";
 import {
   state,
@@ -32,6 +40,7 @@ import { AutomationsView } from "./components/automations.js";
 
 const { createApp, reactive, ref, computed, onMounted, onBeforeUnmount } = Vue;
 
+/** Telas da navegação inferior. */
 const NAV_ITEMS = [
   { id: "chat", label: "Conversa", icon: "chat" },
   { id: "live", label: "Execução", icon: "chart" },
@@ -40,6 +49,13 @@ const NAV_ITEMS = [
   { id: "settings", label: "Ajustes", icon: "cog" },
 ];
 
+/**
+ * Componente raiz da interface: layout, navegação, modais e atalhos globais.
+ *
+ * @returns {object} Objeto de opções do Vue com `setup()` e `template`.
+ * Observações: os modais (novo projeto, seletor de pasta, computador remoto) compartilham o
+ * mesmo estado `modal`, aberto por `modal.kind`.
+ */
 const App = {
   components: {
     Sidebar,
@@ -100,11 +116,25 @@ const App = {
       disconnectStream();
     });
 
+    /**
+     * Descobre se o foco está em um campo de digitação.
+     *
+     * @param {KeyboardEvent} event Evento de teclado.
+     * @returns {boolean} `true` quando o usuário está digitando em um campo.
+     */
     function isTyping(event) {
       const tag = event.target?.tagName;
       return tag === "INPUT" || tag === "TEXTAREA" || event.target?.isContentEditable;
     }
 
+    /**
+     * Trata os atalhos globais de teclado.
+     *
+     * @param {KeyboardEvent} event Evento de teclado.
+     * @returns {void}
+     * Observações: ⌘K abre a paleta, ⌘B a barra lateral, ⌘J o campo de objetivo, "/" foca o
+     * campo de objetivo e Esc fecha painéis e diálogos.
+     */
     function onGlobalKey(event) {
       const meta = event.metaKey || event.ctrlKey;
       if (meta && event.key.toLowerCase() === "k") {
@@ -134,12 +164,23 @@ const App = {
       }
     }
 
+    /**
+     * Abre o modal de novo projeto, limpando os campos anteriores.
+     *
+     * @returns {Promise<void>}
+     */
     async function newProject() {
       modal.kind = "project";
       modal.name = "";
       modal.rootPath = "";
     }
 
+    /**
+     * Cria o projeto pedido no modal e o deixa selecionado.
+     *
+     * @returns {Promise<void>}
+     * Observações: avisa o usuário por `toast` quando o nome falta ou a criação falha.
+     */
     async function createProject() {
       if (!modal.name.trim()) {
         toast("Dê um nome ao projeto", "error");
@@ -159,6 +200,11 @@ const App = {
       }
     }
 
+    /**
+     * Abre o seletor de pasta para o projeto atual.
+     *
+     * @returns {Promise<void>}
+     */
     async function openFolder() {
       modal.kind = "folder";
       modal.purpose = "project-folder";
@@ -166,6 +212,11 @@ const App = {
       await browse(modal.path);
     }
 
+    /**
+     * Abre o seletor de pasta para escolher a pasta de um projeto novo.
+     *
+     * @returns {Promise<void>}
+     */
     async function pickFolderForProject() {
       modal.kind = "folder";
       modal.purpose = "new-project";
@@ -173,6 +224,12 @@ const App = {
       await browse(modal.path);
     }
 
+    /**
+     * Abre o modal de computador remoto com a configuração do projeto.
+     *
+     * @param {object} payload Objeto com `project` e `config`.
+     * @returns {Promise<void>}
+     */
     async function openRemote(payload) {
       modal.kind = "remote";
       modal.remoteProject = payload.project;
@@ -180,6 +237,12 @@ const App = {
       modal.remoteResult = null;
     }
 
+    /**
+     * Grava a configuração do computador remoto mostrada no modal.
+     *
+     * @returns {Promise<void>}
+     * Observações: exige o host; o estado `remoteBusy` desabilita os botões durante a gravação.
+     */
     async function saveRemoteConfig() {
       const project = modal.remoteProject;
       if (!project) return;
@@ -207,6 +270,11 @@ const App = {
       }
     }
 
+    /**
+     * Testa a conexão com o computador remoto e guarda o resultado no modal.
+     *
+     * @returns {Promise<void>}
+     */
     async function checkRemote() {
       const project = modal.remoteProject;
       if (!project) return;
@@ -220,6 +288,11 @@ const App = {
       }
     }
 
+    /**
+     * Remove a configuração do computador remoto, voltando para a máquina local.
+     *
+     * @returns {Promise<void>}
+     */
     async function removeRemote() {
       const project = modal.remoteProject;
       if (!project) return;
@@ -231,6 +304,12 @@ const App = {
       }
     }
 
+    /**
+     * Cria uma pasta dentro do diretório aberto no seletor.
+     *
+     * @returns {Promise<void>}
+     * Observações: o nome vem do campo "nova pasta"; um nome vazio não faz nada.
+     */
     async function createFolder() {
       const name = (modal.newFolder || "").trim();
       if (!name) return;
@@ -248,6 +327,14 @@ const App = {
       }
     }
 
+    /**
+     * Lista o conteúdo de uma pasta no seletor.
+     *
+     * @param {string} path Caminho da pasta a listar ("" = pasta do usuário).
+     * @returns {Promise<void>}
+     * Observações: uma pasta fora do alcance da navegação volta para a pasta do usuário,
+     * com aviso ao usuário.
+     */
     async function browse(path) {
       try {
         const data = await api(`/fs/browse${path ? `?path=${encodeURIComponent(path)}` : ""}`);
@@ -264,6 +351,13 @@ const App = {
       }
     }
 
+    /**
+     * Aplica a pasta escolhida no seletor, conforme o propósito do modal.
+     *
+     * @returns {Promise<void>}
+     * Observações: move o projeto, escolhe a pasta de um projeto novo ou troca a pasta do
+     * projeto atual.
+     */
     async function useFolder() {
       if (modal.kind === "move-folder" && modal.project) {
         const project = modal.project;
@@ -294,6 +388,12 @@ const App = {
       }
     }
 
+    /**
+     * Abre o seletor de pasta para mover um projeto existente.
+     *
+     * @param {object} project Projeto a mover.
+     * @returns {Promise<void>}
+     */
     async function moveFolderTo(project) {
       modal.kind = "move-folder";
       modal.purpose = "move-folder";
@@ -302,6 +402,11 @@ const App = {
       await browse(modal.path);
     }
 
+    /**
+     * Renomeia a conversa atual, perguntando o novo nome ao usuário.
+     *
+     * @returns {Promise<void>}
+     */
     async function renameConversation() {
       if (!state.conversation) return;
       const title = window.prompt("Novo nome", state.conversation.title || "");

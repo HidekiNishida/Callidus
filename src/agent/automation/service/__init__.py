@@ -1,5 +1,13 @@
-# src/agent/automation/service/__init__.py — adaptadores de inicialização nativa
-"""Escolhe o adaptador compatível com a máquina e expõe os três.
+"""
+Arquivo: src/agent/automation/service/__init__.py
+Nome: __init__.py
+Propósito: expor os adaptadores de inicialização nativa do runtime de automações.
+Responsabilidade: camada de infraestrutura — escolha do adaptador compatível com a máquina.
+Componentes: ServiceAdapter, ServiceOptions, ServiceStatus, LaunchdAdapter, SystemdAdapter, WindowsTaskAdapter, current_adapter, adapters_status, default_options.
+Dependências: agent.automation.service.base, agent.automation.service.launchd, agent.automation.service.systemd, agent.automation.service.windows.
+Observações: o núcleo do Callidus é o mesmo em toda parte; só a inicialização nativa muda.
+
+Escolhe o adaptador compatível com a máquina e expõe os três.
 
 O núcleo do Callidus é o mesmo em toda parte; só a inicialização nativa muda.
 """

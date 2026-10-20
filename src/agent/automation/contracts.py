@@ -1,5 +1,13 @@
-# src/agent/automation/contracts.py — contrato validado da definição da automação
-"""Os contratos pydantic que dão forma à automação.
+"""
+Arquivo: src/agent/automation/contracts.py
+Nome: contracts.py
+Propósito: definir e validar o contrato da definição de uma automação.
+Responsabilidade: camada de domínio — modelos pydantic do documento que descreve a automação.
+Componentes: TriggerSpec, CallidusAction, ScriptAction, ActionSpec, StartStrategy, DependencySpec, PermissionSpec, RecoveryPolicy, AutomationDefinition, parse_action, dump_action, CONTRACT_VERSION.
+Dependências: pydantic, agent.automation.enums.
+Observações: a versão do contrato permite ler o que foi gravado por versões anteriores.
+
+Os contratos pydantic que dão forma à automação.
 
 Uma automação aprovada é um documento: gatilho, ação, dependências, permissões e
 política de recuperação. O documento é validado na entrada e gravado em JSON no
@@ -48,11 +56,27 @@ class TriggerSpec(BaseModel):
     @field_validator("timezone")
     @classmethod
     def _fuso_valido(cls, value: str) -> str:
+        """Valida o fuso informado no gatilho.
+
+        Args:
+            value: nome do fuso.
+
+        Returns:
+            O fuso validado.
+
+        Raises:
+            ValueError: quando o fuso não existe.
+        """
         from agent.automation.timezones import resolve_timezone
 
         return resolve_timezone(value)
 
     def model_post_init(self, _context: Any) -> None:  # noqa: D401
+        """Confere que os campos exigidos pelo tipo de gatilho estão presentes.
+
+        Raises:
+            ValueError: quando falta o campo exigido pelo tipo escolhido.
+        """
         if self.kind is TriggerKind.ONCE and self.run_at is None:
             raise ValueError("gatilho 'once' exige run_at")
         if self.kind is TriggerKind.CRON and not (self.cron or "").strip():
@@ -103,6 +127,14 @@ class ScriptAction(BaseModel):
     @field_validator("command")
     @classmethod
     def _comando_lista(cls, value: list[str]) -> list[str]:
+        """Normaliza o comando da ação de script em uma lista de textos não vazios.
+
+        Args:
+            value: comando informado.
+
+        Returns:
+            A lista normalizada.
+        """
         return [str(item) for item in value if str(item).strip()]
 
 
@@ -113,12 +145,29 @@ _ACTION_ADAPTER = TypeAdapter(ActionSpec)
 
 
 def parse_action(data: Any) -> CallidusAction | ScriptAction:
-    """Valida um dicionário de ação (JSON persistido ou payload da API)."""
+    """Valida um dicionário de ação (JSON persistido ou payload da API).
+
+    Args:
+        data: documento da ação.
+
+    Returns:
+        A ação validada, conforme o discriminador `kind`.
+
+    Raises:
+        ValidationError: quando o documento não corresponde a nenhum tipo de ação.
+    """
     return _ACTION_ADAPTER.validate_python(data)
 
 
 def dump_action(action: CallidusAction | ScriptAction) -> dict:
-    """Serializa a ação para JSON (persistência)."""
+    """Serializa a ação para JSON (persistência).
+
+    Args:
+        action: ação a serializar.
+
+    Returns:
+        O documento JSON da ação.
+    """
     return _ACTION_ADAPTER.dump_python(action, mode="json")
 
 
@@ -150,6 +199,11 @@ class DependencySpec(BaseModel):
     start: StartStrategy | None = None
 
     def label(self) -> str:
+        """Rótulo legível da dependência, para mensagens e evidências.
+
+        Returns:
+            O nome informado ou, na falta dele, o tipo da dependência.
+        """
         return self.name or self.kind.value
 
 
@@ -212,6 +266,17 @@ class AutomationDefinition(BaseModel):
     @field_validator("timezone")
     @classmethod
     def _fuso_valido(cls, value: str) -> str:
+        """Valida o fuso informado na definição.
+
+        Args:
+            value: nome do fuso.
+
+        Returns:
+            O fuso validado.
+
+        Raises:
+            ValueError: quando o fuso não existe.
+        """
         from agent.automation.timezones import resolve_timezone
 
         return resolve_timezone(value)

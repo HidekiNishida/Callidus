@@ -1,4 +1,12 @@
-# src/agent/guides/discover.py — guias que os agentes de código leem no repositório
+"""
+Arquivo: src/agent/guides/discover.py
+Nome: discover.py
+Propósito: descobrir no repositório os guias que os agentes de código leem (AGENTS.md, CLAUDE.md, regras, skills).
+Responsabilidade: camada de aplicação — varredura do projeto por instruções reutilizáveis.
+Componentes: GuideHit, discover_guides, guide_digest, reply_capabilities, capability_line, ROOT_FILES.
+Dependências: pathlib, re.
+Observações: a varredura é limitada por arquivo e no total, e ignora pastas de dependências e build.
+"""
 from __future__ import annotations
 
 import re
@@ -26,6 +34,14 @@ SKIP = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist"}
 
 @dataclass
 class GuideHit:
+    """Guia encontrado no projeto, com sua origem e o trecho lido.
+
+    Atributos:
+        kind: tipo do guia (`agents`, `claude`, `cursor-rule`, `skill`, `readme`).
+        path: caminho relativo do arquivo dentro do projeto.
+        text: conteúdo lido, já truncado.
+    """
+
     kind: str
     path: str
     text: str
@@ -48,6 +64,14 @@ def reply_capabilities(model_id: str) -> dict[str, bool]:
 
 
 def capability_line(model_id: str) -> str:
+    """Descrição em texto dos formatos de resposta aceitos pelo modelo.
+
+    Args:
+        model_id: identificador do modelo.
+
+    Returns:
+        Uma linha legível descrevendo os formatos e o suporte a visão.
+    """
     caps = reply_capabilities(model_id)
     names = [name for name, ok in caps.items() if ok and name != "vision"]
     vision = "pode ver imagens anexadas" if caps["vision"] else "não vê imagem; use o caminho do arquivo"
@@ -55,6 +79,15 @@ def capability_line(model_id: str) -> str:
 
 
 def discover_guides(project_root: str | Path, objective: str = "") -> list[GuideHit]:
+    """Varre o projeto em busca de guias e regras que valem para a tarefa.
+
+    Args:
+        project_root: raiz do projeto a varrer.
+        objective: objetivo da etapa; quando cita uma pasta, o `AGENTS.md` dela é incluído.
+
+    Returns:
+        A lista de guias encontrados, respeitando os limites por arquivo e no total.
+    """
     root = Path(project_root).expanduser().resolve()
     if not root.is_dir():
         return []
@@ -110,6 +143,15 @@ def discover_guides(project_root: str | Path, objective: str = "") -> list[Guide
 
 
 def guide_digest(project_root: str | Path, objective: str = "") -> str:
+    """Resumo em texto dos guias do projeto, pronto para entrar no prompt.
+
+    Args:
+        project_root: raiz do projeto a varrer.
+        objective: objetivo da etapa, usado para considerar guias de subpastas citadas.
+
+    Returns:
+        O digest formatado, ou um aviso de que nenhum guia foi encontrado.
+    """
     hits = discover_guides(project_root, objective)
     if not hits:
         return "(nenhum AGENTS.md, CLAUDE.md, GEMINI.md, regra de editor ou SKILL.md na raiz)"
@@ -120,10 +162,32 @@ def guide_digest(project_root: str | Path, objective: str = "") -> str:
 
 
 def _read(root: Path, rel: str, kind: str, limit: int = PER_FILE) -> GuideHit | None:
+    """Lê um guia de caminho fixo dentro da raiz.
+
+    Args:
+        root: raiz do projeto.
+        rel: caminho relativo do arquivo.
+        kind: tipo do guia.
+        limit: tamanho máximo do texto lido.
+
+    Returns:
+        O guia encontrado, ou `None` quando o arquivo não existe ou está fora do escopo.
+    """
     return _clip(root, root / rel, kind, limit=limit)
 
 
 def _clip(root: Path, path: Path, kind: str, limit: int = PER_FILE) -> GuideHit | None:
+    """Lê e recorta um guia, respeitando a raiz e as pastas ignoradas.
+
+    Args:
+        root: raiz do projeto.
+        path: caminho do arquivo a ler.
+        kind: tipo do guia.
+        limit: tamanho máximo do texto lido.
+
+    Returns:
+        O guia encontrado, ou `None` quando o arquivo está fora da raiz, é ignorado ou está vazio.
+    """
     try:
         resolved = path.resolve()
     except OSError:
@@ -148,6 +212,14 @@ def _clip(root: Path, path: Path, kind: str, limit: int = PER_FILE) -> GuideHit 
 
 
 def _strip_front_matter(text: str) -> str:
+    """Remove o bloco de metadados inicial de um arquivo Markdown.
+
+    Args:
+        text: conteúdo do arquivo.
+
+    Returns:
+        O conteúdo sem o front matter; o texto original quando não há front matter.
+    """
     if not text.startswith("---"):
         return text
     end = text.find("\n---", 3)
@@ -157,6 +229,16 @@ def _strip_front_matter(text: str) -> str:
 
 
 def _scoped(root: Path, folder: str, suffixes: tuple[str, ...]) -> list[Path]:
+    """Lista os arquivos de uma pasta de regras, com os sufixos aceitos.
+
+    Args:
+        root: raiz do projeto.
+        folder: pasta relativa a listar.
+        suffixes: extensões aceitas.
+
+    Returns:
+        Até quatro caminhos ordenados por nome.
+    """
     base = root / folder
     if not base.is_dir():
         return []
@@ -174,6 +256,14 @@ def _scoped(root: Path, folder: str, suffixes: tuple[str, ...]) -> list[Path]:
 
 
 def _skills(root: Path) -> list[GuideHit]:
+    """Coleta as skills declaradas no repositório.
+
+    Args:
+        root: raiz do projeto.
+
+    Returns:
+        A lista de skills encontradas, com nome e descrição resumidos.
+    """
     hits: list[GuideHit] = []
     for folder in ("skills", ".agents/skills", ".cursor/skills"):
         base = root / folder
@@ -199,6 +289,15 @@ def _skills(root: Path) -> list[GuideHit]:
 
 
 def _skill_meta(raw: str, fallback: str) -> tuple[str, str]:
+    """Extrai nome e descrição do front matter de uma skill.
+
+    Args:
+        raw: conteúdo do `SKILL.md`.
+        fallback: nome usado quando o arquivo não declara `name`.
+
+    Returns:
+        Tupla com o nome e a descrição (truncada) da skill.
+    """
     name = fallback
     description = "fluxo reutilizável"
     block = raw

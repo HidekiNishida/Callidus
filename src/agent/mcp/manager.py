@@ -1,4 +1,12 @@
-# src/agent/mcp/manager.py — gerenciamento MCP (config, descoberta, execução stdio)
+"""
+Arquivo: src/agent/mcp/manager.py
+Nome: manager.py
+Propósito: gerenciar a configuração, a descoberta e a execução das ferramentas MCP.
+Responsabilidade: camada de aplicação — ciclo de vida dos servidores MCP e das ferramentas registradas.
+Componentes: McpManager.
+Dependências: agent.mcp.config_models, agent.mcp.stdio_transport.
+Observações: uma falha de um servidor não impede a descoberta dos demais; o erro é registrado e devolvido.
+"""
 from __future__ import annotations
 
 import json
@@ -13,7 +21,21 @@ logger = logging.getLogger(__name__)
 
 
 class McpManager:
+    """Gerencia os servidores MCP configurados e as ferramentas que eles expõem.
+
+    Atributos:
+        _config_path: arquivo de configuração MCP consultado no arranque e no recarregamento.
+        _servers: servidores declarados na configuração.
+        _tools: ferramentas conhecidas, indexadas pelo identificador.
+        _auto_discover: quando `True`, a descoberta roda automaticamente.
+    """
+
     def __init__(self, config_path: Path) -> None:
+        """Cria o gerenciador e carrega a configuração.
+
+        Args:
+            config_path: caminho do arquivo de configuração MCP.
+        """
         self._config_path = config_path
         self._servers: list[McpServerConfig] = []
         self._tools: dict[str, dict[str, Any]] = {}
@@ -21,6 +43,11 @@ class McpManager:
         self.reload()
 
     def reload(self) -> None:
+        """Recarrega a configuração MCP, descartando servidores e ferramentas anteriores.
+
+        Observações:
+            Um arquivo ausente deixa o gerenciador vazio, sem erro.
+        """
         self._servers = []
         self._tools = {}
         self._auto_discover = True
@@ -34,12 +61,27 @@ class McpManager:
             self._tools[tool["id"]] = tool
 
     def list_servers(self) -> list[McpServerConfig]:
+        """Servidores declarados na configuração.
+
+        Returns:
+            Uma cópia da lista de servidores.
+        """
         return list(self._servers)
 
     def list_tools(self) -> list[dict[str, Any]]:
+        """Ferramentas MCP conhecidas.
+
+        Returns:
+            Uma cópia da lista de ferramentas registradas.
+        """
         return list(self._tools.values())
 
     async def discover(self) -> dict[str, Any]:
+        """Descobre as ferramentas expostas pelos servidores habilitados.
+
+        Returns:
+            Um dicionário com a contagem de ferramentas descobertas, as ferramentas e os erros por servidor.
+        """
         discovered: list[dict[str, Any]] = []
         errors: list[dict[str, str]] = []
         for server in self._servers:
@@ -56,6 +98,14 @@ class McpManager:
         return {"discovered": len(discovered), "tools": discovered, "errors": errors}
 
     def _parse_tool_id(self, tool_id: str) -> tuple[str, str] | None:
+        """Separa o identificador `mcp:<servidor>:<ferramenta>`.
+
+        Args:
+            tool_id: identificador da ferramenta.
+
+        Returns:
+            Tupla com servidor e ferramenta, ou `None` quando o identificador não é do formato MCP.
+        """
         if not tool_id.startswith("mcp:"):
             return None
         parts = tool_id.split(":", 2)
@@ -64,6 +114,15 @@ class McpManager:
         return parts[1], parts[2]
 
     async def call_tool(self, tool_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Executa uma ferramenta MCP pelo identificador informado.
+
+        Args:
+            tool_id: identificador da ferramenta (`mcp:<servidor>:<ferramenta>` ou id registrado).
+            arguments: argumentos passados à ferramenta.
+
+        Returns:
+            O resultado da chamada; em caso de falha, um dicionário com `success` falso e o erro.
+        """
         parsed = self._parse_tool_id(tool_id)
         if parsed is not None:
             server_id, tool_name = parsed

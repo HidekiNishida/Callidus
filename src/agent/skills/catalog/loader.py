@@ -1,10 +1,18 @@
-# src/agent/skills/catalog/loader.py — Carrega Skills do catálogo em Markdown (fonte de verdade)
-#
-# O catálogo `skills/` do repositório é a fonte de verdade das competências profissionais:
-# cada arquivo `.md` descreve critérios de ativação, proibições, procedimentos, regras de
-# validação, riscos, ferramentas autorizadas e palavras-chave. Este módulo converte esses
-# arquivos em `SkillSpec`, de modo que a mesma definição sirva para descoberta, seleção
-# sob demanda e injeção no prompt.
+"""
+Arquivo: src/agent/skills/catalog/loader.py
+Nome: loader.py
+Propósito: carregar as Skills do catálogo em Markdown, que é a fonte de verdade das competências.
+Responsabilidade: camada de aplicação — leitura de frontmatter e seções do Markdown para `SkillSpec`.
+Componentes: default_catalog_dir, catalog_dir, parse_frontmatter, parse_skill_markdown, load_catalog.
+Dependências: agent.skills.models.
+Observações: um arquivo quebrado do catálogo nunca derruba a execução do agente.
+
+O catálogo `skills/` do repositório é a fonte de verdade das competências profissionais:
+cada arquivo `.md` descreve critérios de ativação, proibições, procedimentos, regras de
+validação, riscos, ferramentas autorizadas e palavras-chave. Este módulo converte esses
+arquivos em `SkillSpec`, de modo que a mesma definição sirva para descoberta, seleção
+sob demanda e injeção no prompt.
+"""
 from __future__ import annotations
 
 import logging
@@ -68,7 +76,14 @@ def default_catalog_dir() -> Path | None:
 
 
 def catalog_dir(project_root: str | Path | None = None) -> Path | None:
-    """Resolve o catálogo a usar: o do projeto, se existir; senão o do repositório."""
+    """Resolve o catálogo a usar: o do projeto, se existir; senão o do repositório.
+
+    Args:
+        project_root: raiz do projeto, cujo diretório `skills/` tem precedência.
+
+    Returns:
+        O caminho do catálogo, ou `None` quando não há nenhum disponível.
+    """
     if project_root:
         candidate = Path(project_root).resolve() / "skills"
         if candidate.is_dir():
@@ -77,6 +92,14 @@ def catalog_dir(project_root: str | Path | None = None) -> Path | None:
 
 
 def _split_list(value: str) -> list[str]:
+    """Converte um valor inline de frontmatter em lista de itens.
+
+    Args:
+        value: texto do valor, com ou sem colchetes.
+
+    Returns:
+        A lista de itens, sem aspas.
+    """
     value = value.strip()
     if value.startswith("[") and value.endswith("]"):
         value = value[1:-1]
@@ -88,6 +111,12 @@ def parse_frontmatter(text: str) -> tuple[dict[str, object], str]:
 
     Suporta escalares (`chave: valor`) e listas, tanto inline (`chave: [a, b]`) quanto
     em bloco (`chave:` seguido de linhas `- item`).
+
+    Args:
+        text: conteúdo completo do arquivo Markdown.
+
+    Returns:
+        Tupla com os campos do frontmatter e o corpo restante.
     """
     match = _FRONTMATTER_RE.match(text)
     if not match:
@@ -122,6 +151,14 @@ def parse_frontmatter(text: str) -> tuple[dict[str, object], str]:
 
 
 def _as_list(value: object) -> list[str]:
+    """Normaliza um valor de frontmatter em lista de textos não vazios.
+
+    Args:
+        value: valor lido do frontmatter.
+
+    Returns:
+        A lista de itens; vazia quando o valor é ausente.
+    """
     if value is None:
         return []
     if isinstance(value, list):
@@ -131,6 +168,14 @@ def _as_list(value: object) -> list[str]:
 
 
 def _section_key(header: str) -> str | None:
+    """Identifica o campo do `SkillSpec` correspondente a um cabeçalho de seção.
+
+    Args:
+        header: texto do cabeçalho Markdown, sem os `#`.
+
+    Returns:
+        O nome do campo, ou `None` quando a seção não é reconhecida.
+    """
     key = header.strip().lower().rstrip(":")
     key = re.sub(r"^\d+\.\s*", "", key)
     if key in _LIST_SECTIONS:
@@ -142,7 +187,15 @@ def _section_key(header: str) -> str | None:
 
 
 def parse_skill_markdown(text: str, *, source_path: str | Path | None = None) -> SkillSpec:
-    """Converte um arquivo Markdown de Skill em `SkillSpec` completo."""
+    """Converte um arquivo Markdown de Skill em `SkillSpec` completo.
+
+    Args:
+        text: conteúdo do arquivo Markdown.
+        source_path: caminho do arquivo de origem, usado no identificador e nos metadados.
+
+    Returns:
+        A `SkillSpec` correspondente ao arquivo.
+    """
     front, body = parse_frontmatter(text)
     fields: dict[str, list[str]] = {}
     description = str(front.get("description") or "").strip()
@@ -207,6 +260,13 @@ def load_catalog(directory: str | Path | None = None, *, strict: bool = True) ->
     descartadas e logadas). Saída: lista de `SkillSpec` lidos do catálogo.
 
     Um arquivo quebrado do catálogo nunca derruba a execução do agente.
+
+    Args:
+        directory: diretório do catálogo; quando ausente, usa o catálogo do repositório.
+        strict: quando `True`, skills com contrato inválido são descartadas.
+
+    Returns:
+        A lista de skills lidas do catálogo.
     """
     if directory is None:
         directory = default_catalog_dir()

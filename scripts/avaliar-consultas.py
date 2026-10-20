@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""scripts/avaliar-consultas.py — qualidade do casamento lexical das consultas.
+"""
+Arquivo: scripts/avaliar-consultas.py
+Nome: avaliar-consultas.py
+Propósito: avaliar, com gabarito, a qualidade do casamento lexical das consultas sob demanda.
+Responsabilidade: camada de script — mede acertos, falsos positivos e falsos negativos do casamento entre pergunta e estado persistido.
+Componentes: gabarito de quatro classes de pergunta, montagem do estado persistido, execução das consultas e relatório por classe.
+Dependências: agent.services (query_service, agent_service, project_service, task_service), agent.persistence.database, agent.config.Settings.
+Observações: trabalha em banco temporário próprio, não usa rede nem credencial e não altera dados do usuário.
+
+
+qualidade do casamento lexical das consultas.
 
 Mede, com gabarito, o quanto o Callidus acerta ao responder uma pergunta a partir do
 estado persistido de um agente. O gabarito tem quatro classes de pergunta:
@@ -80,6 +90,7 @@ GABARITO = [
 
 
 def montar_estado(tmp: Path):
+    """Cria o projeto, a árvore de tarefas e os agentes, e persiste as descobertas usadas no gabarito."""
     settings = Settings(data_dir=tmp / "data")
     factory = build_session_factory(init_db(settings=settings))
     session = factory()
@@ -104,6 +115,7 @@ def montar_estado(tmp: Path):
 
 
 async def main() -> int:
+    """Executa o gabarito contra o serviço de consultas e imprime o relatório de acertos."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="saída em JSON")
     args = parser.parse_args()

@@ -1,4 +1,12 @@
-# src/agent/services/task_service.py — CRUD de tarefas, dependências e transições
+"""
+Arquivo: src/agent/services/task_service.py
+Nome: task_service.py
+Propósito: manter as tarefas do projeto: criação, consulta, dependências e transições de estado.
+Responsabilidade: camada de aplicação — operações de tarefas e registro dos fatos correspondentes.
+Componentes: TaskService, TaskNotFoundError, DependencyError.
+Dependências: agent.domain.enums, agent.domain.schemas, agent.domain.state_machine, agent.persistence.models.
+Observações: as transições são validadas pela máquina de estados; dependência circular é recusada.
+"""
 from __future__ import annotations
 
 import uuid
@@ -30,18 +38,42 @@ _STATUS_EVENT: dict[TaskStatus, str] = {
 
 
 class TaskNotFoundError(LookupError):
-    pass
+    """Tarefa inexistente ou que não pertence ao projeto em uso."""
 
 
 class DependencyError(ValueError):
-    pass
+    """Dependência inválida entre tarefas (projeto diferente, auto dependência ou ciclo)."""
 
 
 class TaskService:
+    """Operações sobre as tarefas de um projeto.
+
+    Atributos:
+        _session: sessão usada nas leituras, gravações e no registro de eventos.
+    """
+
     def __init__(self, session: Session) -> None:
+        """Cria o serviço ligado a uma sessão.
+
+        Args:
+            session: sessão SQLAlchemy a usar.
+        """
         self._session = session
 
     def create_task(self, project_id: uuid.UUID, data: TaskCreate) -> TaskModel:
+        """Cria uma tarefa dentro do projeto.
+
+        Args:
+            project_id: projeto dono da tarefa.
+            data: dados da tarefa, incluindo pai, conversa e ramo.
+
+        Returns:
+            A tarefa criada, já registrada no log de eventos.
+
+        Raises:
+            LookupError: quando o projeto não existe.
+            TaskNotFoundError: quando o pai ou a conversa não pertencem ao projeto.
+        """
         project = self._session.get(ProjectModel, project_id)
         if project is None:
             raise LookupError(f"Projeto não encontrado: {project_id}")
@@ -92,16 +124,48 @@ class TaskService:
         return task
 
     def list_tasks(self, project_id: uuid.UUID) -> list[TaskModel]:
+        """Tarefas de um projeto, na ordem de execução.
+
+        Args:
+            project_id: projeto consultado.
+
+        Returns:
+            A lista de tarefas do projeto.
+        """
         stmt = select(TaskModel).where(TaskModel.project_id == project_id).order_by(TaskModel.sort_order)
         return list(self._session.scalars(stmt).all())
 
     def get_task(self, task_id: uuid.UUID) -> TaskModel:
+        """Tarefa por identificador.
+
+        Args:
+            task_id: identificador da tarefa.
+
+        Returns:
+            A tarefa encontrada.
+
+        Raises:
+            TaskNotFoundError: quando a tarefa não existe.
+        """
         task = self._session.get(TaskModel, task_id)
         if task is None:
             raise TaskNotFoundError(str(task_id))
         return task
 
     def update_status(self, task_id: uuid.UUID, update: TaskStatusUpdate) -> TaskModel:
+        """Move a tarefa para um novo estado, validando a transição.
+
+        Args:
+            task_id: identificador da tarefa a mover.
+            update: novo estado e o motivo (opcional) da mudança.
+
+        Returns:
+            A tarefa atualizada, com o fato registrado no log de eventos.
+
+        Raises:
+            TaskNotFoundError: quando a tarefa não existe.
+            InvalidTransitionError: quando a transição pedida não é válida.
+        """
         task = self.get_task(task_id)
         current = TaskStatus(task.status)
         target = update.status
@@ -133,6 +197,19 @@ class TaskService:
         return task
 
     def add_dependency(self, task_id: uuid.UUID, data: TaskDependencyCreate) -> TaskDependencyModel:
+        """Registra a dependência de uma tarefa em outra.
+
+        Args:
+            task_id: tarefa que passa a depender.
+            data: tarefa de que ela depende.
+
+        Returns:
+            A dependência registrada.
+
+        Raises:
+            TaskNotFoundError: quando alguma das tarefas não existe.
+            DependencyError: quando a dependência é inválida ou cria ciclo.
+        """
         task = self.get_task(task_id)
         dep = self.get_task(data.depends_on_task_id)
         if task.project_id != dep.project_id:
@@ -154,6 +231,14 @@ class TaskService:
         return row
 
     def dependencies_satisfied(self, task_id: uuid.UUID) -> bool:
+        """Indica se todas as dependências da tarefa já foram satisfeitas.
+
+        Args:
+            task_id: identificador da tarefa.
+
+        Returns:
+            `True` quando a tarefa pode seguir; dependências opcionais que falharam não bloqueiam.
+        """
         stmt = select(TaskDependencyModel).where(TaskDependencyModel.task_id == task_id)
         deps = list(self._session.scalars(stmt).all())
         for d in deps:
@@ -167,6 +252,14 @@ class TaskService:
         return True
 
     def promote_ready_if_dependencies_met(self, task_id: uuid.UUID) -> TaskModel | None:
+        """Promove a tarefa a `READY` quando ela está planejada e sem dependências pendentes.
+
+        Args:
+            task_id: identificador da tarefa.
+
+        Returns:
+            A tarefa promovida, ou `None` quando a promoção não se aplica.
+        """
         task = self.get_task(task_id)
         if task.status != TaskStatus.PENDING.value and task.status != TaskStatus.PLANNING.value:
             return None
@@ -177,7 +270,15 @@ class TaskService:
         return None
 
     def _creates_cycle(self, task_id: uuid.UUID, new_dep: uuid.UUID) -> bool:
-        """DFS: existe caminho de new_dep até task_id nas dependências existentes?"""
+        """DFS: existe caminho de new_dep até task_id nas dependências existentes?
+
+        Args:
+            task_id: tarefa que passaria a depender.
+            new_dep: dependência proposta.
+
+        Returns:
+            `True` quando a dependência criaria um ciclo.
+        """
         edges: dict[uuid.UUID, list[uuid.UUID]] = {}
         stmt = select(TaskDependencyModel)
         for row in self._session.scalars(stmt).all():
@@ -205,6 +306,15 @@ class TaskService:
         payload: dict | None,
         run_id: uuid.UUID | None = None,
     ) -> None:
+        """Registra um fato da tarefa no log de eventos.
+
+        Args:
+            project_id: projeto dono da tarefa.
+            task_id: tarefa relacionada, quando houver.
+            event_type: tipo do evento.
+            payload: conteúdo do evento.
+            run_id: run em curso, quando houver.
+        """
         self._session.add(
             EventLogModel(
                 project_id=project_id,

@@ -1,4 +1,12 @@
-# src/agent/context/budget.py — orçamento de contexto por chamada
+"""
+Arquivo: src/agent/context/budget.py
+Nome: budget.py
+Propósito: aplicar o orçamento de contexto por chamada, definindo o que entra no prompt do modelo.
+Responsabilidade: camada de aplicação — seleção e ordem dos componentes sob um limite de tokens.
+Componentes: ContextComponent, BudgetResult, ContextBudgetError, estimate_tokens, compact_text, assemble_messages.
+Dependências: agent.providers.base.
+Observações: componentes obrigatórios nunca são descartados; se não couberem, o erro manda decompor a tarefa.
+"""
 from __future__ import annotations
 
 import re
@@ -9,6 +17,15 @@ from agent.providers.base import ChatMessage, ModelProfile
 
 @dataclass
 class ContextComponent:
+    """Trecho de contexto candidato a entrar no prompt.
+
+    Atributos:
+        name: nome do componente (aparece no prompt e no diagnóstico).
+        text: conteúdo do componente.
+        priority: prioridade de manutenção; maior é preservado por mais tempo.
+        required: quando `True`, o componente nunca é descartado.
+    """
+
     name: str
     text: str
     priority: int = 50
@@ -17,6 +34,15 @@ class ContextComponent:
 
 @dataclass
 class BudgetResult:
+    """Resultado da montagem do contexto: mensagens, custo estimado e componentes descartados.
+
+    Atributos:
+        messages: mensagens prontas para o modelo.
+        estimated_tokens: custo estimado do prompt montado.
+        dropped: nomes dos componentes que não couberam no orçamento.
+        strategy_notes: observações sobre as decisões de montagem.
+    """
+
     messages: list[ChatMessage]
     estimated_tokens: int
     dropped: list[str] = field(default_factory=list)
@@ -27,6 +53,7 @@ class ContextBudgetError(ValueError):
     """Partes obrigatórias não cabem no orçamento. Leva o custo de cada componente para diagnóstico."""
 
     def __init__(self, budget: int, required_tokens: int, breakdown: list[dict]) -> None:
+        """Monta o resultado do orçamento com as mensagens e o consumo estimado."""
         super().__init__(
             f"Componentes obrigatórios excedem o orçamento ({required_tokens} > {budget} tokens); decomponha a tarefa"
         )
@@ -65,6 +92,20 @@ def assemble_messages(
     *,
     safety_margin: int = 256,
 ) -> BudgetResult:
+    """Monta as mensagens do prompt respeitando o orçamento do perfil do modelo.
+
+    Args:
+        profile: perfil do modelo, com limite de contexto e orçamentos de entrada e saída.
+        components: componentes candidatos, com prioridade e obrigatoriedade.
+        safety_margin: margem reservada para a folga entre entrada e saída.
+
+    Returns:
+        O `BudgetResult` com as mensagens, o custo estimado e o que foi descartado.
+
+    Raises:
+        ValueError: quando o orçamento derivado do perfil é inválido.
+        ContextBudgetError: quando os componentes obrigatórios não cabem no orçamento.
+    """
     budget = min(profile.input_budget, profile.context_limit - profile.output_reserve - safety_margin)
     if budget <= 0:
         raise ValueError("Orçamento de contexto inválido para o perfil do modelo")

@@ -1,4 +1,12 @@
-# src/agent/skills/models.py — Contrato formal e modelos de dados para Skills
+"""
+Arquivo: src/agent/skills/models.py
+Nome: models.py
+Propósito: definir o contrato formal e os modelos de dados das Skills do Agente.
+Responsabilidade: camada de domínio — modelo de competência reutilizável e seu matching.
+Componentes: SkillSpec, SkillMatch.
+Dependências: dataclasses.
+Observações: uma skill válida tem identificador, nome, descrição e ao menos procedimentos ou critérios de ativação.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,7 +15,15 @@ from typing import Any
 
 @dataclass(frozen=True)
 class SkillMatch:
-    """Resultado do matching entre uma tarefa e uma Skill."""
+    """Resultado do matching entre uma tarefa e uma Skill.
+
+    Atributos:
+        skill_id: identificador da skill casa.
+        skill_name: nome legível da skill.
+        score: pontuação do casamento.
+        reasons: motivos que explicaram a escolha.
+    """
+
     skill_id: str
     skill_name: str
     score: float
@@ -21,7 +37,24 @@ class SkillSpec:
     Representa uma competência reutilizável contendo instruções, condições de ativação,
     regras de não-uso, procedimentos passo a passo, ferramentas autorizadas e
     critérios de validação.
+
+    Atributos:
+        id: identificador único da skill.
+        name: nome legível.
+        description: finalidade da competência.
+        version: versão do contrato da skill.
+        activation_criteria: condições em que a skill se aplica.
+        prohibited_criteria: condições em que a skill não deve ser usada.
+        required_tools: ferramentas que a skill espera poder usar.
+        procedures: passos a seguir na aplicação da skill.
+        validation_rules: critérios de validação do resultado.
+        risk_factors: riscos a controlar durante a aplicação.
+        examples: exemplos de uso.
+        keywords: palavras que ajudam o matching.
+        applies_to_kinds: tipos de tarefa aos quais a skill se aplica.
+        metadata: metadados livres.
     """
+
     id: str
     name: str
     description: str
@@ -38,7 +71,11 @@ class SkillSpec:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def validate(self) -> list[str]:
-        """Valida a integridade do contrato da Skill. Retorna lista de erros."""
+        """Valida a integridade do contrato da Skill.
+
+        Returns:
+            A lista de erros encontrados; vazia quando o contrato é válido.
+        """
         errors: list[str] = []
         if not self.id or not self.id.strip():
             errors.append("Skill sem 'id' válido")
@@ -51,10 +88,22 @@ class SkillSpec:
         return errors
 
     def is_valid(self) -> bool:
+        """Indica se o contrato da Skill é válido.
+
+        Returns:
+            `True` quando não há erros de validação.
+        """
         return len(self.validate()) == 0
 
     def render_prompt_instructions(self, max_chars: int = 1500) -> str:
-        """Gera o bloco condensado de instruções da Skill para injeção no prompt de execução."""
+        """Gera o bloco condensado de instruções da Skill para injeção no prompt de execução.
+
+        Args:
+            max_chars: tamanho máximo do bloco gerado.
+
+        Returns:
+            As instruções em texto, condensadas quando ultrapassam o limite.
+        """
         parts = [f"### Skill: {self.name} (`{self.id}`)"]
         if self.description:
             parts.append(f"**Finalidade:** {self.description}")

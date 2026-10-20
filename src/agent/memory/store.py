@@ -1,4 +1,12 @@
-# src/agent/memory/store.py — resumo na criação e recorte na leitura
+"""
+Arquivo: src/agent/memory/store.py
+Nome: store.py
+Propósito: resumir a memória na criação e recortá-la na leitura, conforme o objetivo da etapa.
+Responsabilidade: camada de aplicação — indexação, seleção e fragmentação do texto de memória.
+Componentes: summarize_text, decompose_for_use, structure_memory, choose_memory_index, fragments_for_prompt, extract_memory_request.
+Dependências: re.
+Observações: o texto completo da memória nunca entra no prompt sem passar pelo recorte por orçamento.
+"""
 from __future__ import annotations
 
 import re
@@ -78,6 +86,14 @@ def structure_memory(text: str) -> dict:
 
 
 def _tokens(text: str) -> set[str]:
+    """Conjunto de palavras de quatro letras ou mais, em minúsculas.
+
+    Args:
+        text: texto de entrada.
+
+    Returns:
+        O conjunto de tokens normalizados.
+    """
     return {token.lower() for token in re.findall(r"\w{4,}", text or "")}
 
 

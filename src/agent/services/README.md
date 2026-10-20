@@ -12,8 +12,8 @@ Camada de aplicação sobre o ORM: CRUD, transições, worker autônomo, schedul
 | [`run_service.py`](run_service.py) | `RunService` | CRUD runs + `start_run` + `pause_run` + `resume_run` + `cancel_run` |
 | [`attempt_service.py`](attempt_service.py) | `AttemptService` | `record` (dedup via `prompt_fp`), `count_attempts`, `attempts_exhausted`, `repeated_output_detected`, `fingerprint` |
 | [`contract_service.py`](contract_service.py) | `ContractService` | `get`/`upsert_with_impact` contratos + `validate_for_run` (inputs/outputs/invariants) |
-| [`memory_store.py`](memory_store.py) | — | `extract_memory_request` (detecta "lembre-se") + `memory_saver` para tool `remember` |
-| [`knowledge/graph_service.py`](knowledge/graph_service.py) | `KnowledgeGraphService` | `reindex` (AST), `search`, `neighbors`, `touch_file` |
+| [`memory/store.py`](../memory/store.py) | — | `extract_memory_request` (detecta "lembre-se") + `memory_saver` para tool `remember` |
+| [`knowledge/graph_service.py`](../knowledge/graph_service.py) | `KnowledgeGraphService` | `reindex` (AST), `search`, `neighbors`, `touch_file` |
 | [`metrics_service.py`](metrics_service.py) | `MetricsService` | `project_metrics` (tasks por status, tokens, tentativas, evidências) + `run_metrics` |
 | [`autonomous_worker.py`](autonomous_worker.py) | `autonomous_loop`, `start_background_worker`, `stop_background_worker`, `enable_autonomous_on_run` | **Loop background**: a cada 2s, `step()` runs `ACTIVE` + `autonomous=true` |
 | [`scheduler.py`](scheduler.py) | `start_scheduler`, `stop_scheduler`, `schedule_enabled_on_run`, `schedule_disabled_on_run` | **Fachada do agendamento** — delega ao núcleo [`agent.automation`](/src/agent/automation/README.md) (definição, disparo idempotente, dependências, execução, supervisor). O protótipo de APScheduler foi removido: criava `ExecutionRunModel` sem `root_task_id` e nunca era iniciado pela API |

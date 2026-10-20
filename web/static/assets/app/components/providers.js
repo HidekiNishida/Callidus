@@ -1,7 +1,16 @@
-// web/static/assets/app/components/providers.js — configuração de provedores pela interface
+/**
+ * Arquivo: web/static/assets/app/components/providers.js
+ * Nome: providers.js
+ * Propósito: configuração de provedores pela interface.
+ * Responsabilidade: frontend/componente — lista, cria, edita e remove provedores e credenciais.
+ * Componentes: ProvidersView (componente Vue), TYPES, emptyForm().
+ * Dependências: `../store.js` (estado e ações de provedor), `../ui.js` (ícones).
+ * Observações: a credencial é gravada em arquivo protegido pelo servidor — nunca no repositório.
+ */
 import { state, saveProviderConfig, removeProvider, setProviderSecret, clearProviderSecret, testProvider, loadModels, toast } from "../store.js";
 import { icon } from "../ui.js";
 
+/** Tipos de provedor suportados, com URL padrão e dica de uso. */
 const TYPES = [
   { id: "ollama", label: "Ollama (local ou remoto)", url: "http://127.0.0.1:11434", hint: "Servidor Ollama. Remoto: aponte a URL do VPS." },
   { id: "llamacpp", label: "llama.cpp (llama-server)", url: "http://127.0.0.1:8080", hint: "Servidor llama.cpp. Não precisa baixar o GGUF local." },
@@ -13,6 +22,11 @@ const TYPES = [
   { id: "mock", label: "Mock", url: "", hint: "Sem rede, para testes." },
 ];
 
+/**
+ * Cria um formulário de provedor vazio, com os padrões da interface.
+ *
+ * @returns {object} Um formulário novo (o chamador deve copiá-lo, não reutilizá-lo).
+ */
 const emptyForm = () => ({
   name: "",
   type: "ollama",
@@ -28,6 +42,11 @@ const emptyForm = () => ({
   headers: {},
 });
 
+/**
+ * Tela de provedores: catálogo ao lado e formulário de edição.
+ *
+ * @returns {object} Objeto de opções do Vue com `setup()` e `template`.
+ */
 export const ProvidersView = {
   name: "ProvidersView",
   setup() {
@@ -38,10 +57,20 @@ export const ProvidersView = {
     const saving = Vue.ref(false);
     const models = Vue.computed(() => state.providerModels[form.name] || []);
 
+    /**
+     * Devolve a descrição do tipo escolhido no formulário.
+     *
+     * @returns {object} O item de `TYPES` correspondente, ou o primeiro.
+     */
     function typeInfo() {
       return TYPES.find((item) => item.id === form.type) || TYPES[0];
     }
 
+    /**
+     * Limpa o formulário e volta ao modo de criação.
+     *
+     * @returns {void}
+     */
     function startNew() {
       Object.assign(form, emptyForm());
       editing.value = false;
@@ -49,6 +78,12 @@ export const ProvidersView = {
       state.selectedTaskId = null;
     }
 
+    /**
+     * Carrega um provedor existente no formulário.
+     *
+     * @param {string} name Nome do provedor.
+     * @returns {void}
+     */
     function edit(name) {
       const spec = state.providerConfig?.providers?.[name] || {};
       Object.assign(form, {
@@ -68,11 +103,21 @@ export const ProvidersView = {
       secretInput.value = "";
     }
 
+    /**
+     * Ajusta a URL base quando o tipo do provedor muda.
+     *
+     * @returns {void}
+     */
     function onTypeChange() {
       const info = typeInfo();
       form.base_url = info.url;
     }
 
+    /**
+     * Converte o formulário em uma entrada de configuração de provedor.
+     *
+     * @returns {object} A entrada, sem campos vazios.
+     */
     function entryFromForm() {
       const entry = {
         type: form.type,
@@ -90,6 +135,12 @@ export const ProvidersView = {
       return entry;
     }
 
+    /**
+     * Grava o provedor em edição e, se houver, a credencial digitada.
+     *
+     * @returns {Promise<void>}
+     * Observações: os demais provedores são preservados, sem o bloco `secret`.
+     */
     async function save() {
       const name = (form.name || "").trim();
       if (!name) {
@@ -122,6 +173,12 @@ export const ProvidersView = {
       }
     }
 
+    /**
+     * Remove um provedor, com a credencial gravada.
+     *
+     * @param {string} name Nome do provedor.
+     * @returns {Promise<void>}
+     */
     async function remove(name) {
       if (!window.confirm(`Remover o provedor “${name}”? A credencial gravada vai junto.`)) return;
       try {
@@ -133,6 +190,12 @@ export const ProvidersView = {
       }
     }
 
+    /**
+     * Define um provedor como o padrão da interface.
+     *
+     * @param {string} name Nome do provedor.
+     * @returns {Promise<void>}
+     */
     async function makeDefault(name) {
       try {
         const current = {};
@@ -148,6 +211,12 @@ export const ProvidersView = {
       }
     }
 
+    /**
+     * Testa a conexão com um provedor e avisa o usuário com o resultado.
+     *
+     * @param {string} name Nome do provedor.
+     * @returns {Promise<void>}
+     */
     async function test(name) {
       const result = await testProvider(name);
       if (result.ok) {
@@ -157,6 +226,12 @@ export const ProvidersView = {
       }
     }
 
+    /**
+     * Busca a lista de modelos do provedor e sugere o primeiro, se nenhum estiver escolhido.
+     *
+     * @param {string} name Nome do provedor.
+     * @returns {Promise<void>}
+     */
     async function fetchModels(name) {
       const found = await loadModels(name);
       if (!found.length) {
@@ -167,6 +242,12 @@ export const ProvidersView = {
       toast(`${found.length} modelos encontrados`, "ok");
     }
 
+    /**
+     * Apaga a credencial gravada do provedor.
+     *
+     * @param {string} name Nome do provedor.
+     * @returns {Promise<void>}
+     */
     async function clearSecret(name) {
       try {
         await clearProviderSecret(name);

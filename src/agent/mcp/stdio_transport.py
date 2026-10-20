@@ -1,4 +1,12 @@
-# src/agent/mcp/stdio_transport.py — transporte MCP stdio via SDK oficial
+"""
+Arquivo: src/agent/mcp/stdio_transport.py
+Nome: stdio_transport.py
+Propósito: conversar com servidores MCP via stdio usando o SDK oficial.
+Responsabilidade: camada de infraestrutura — listar e invocar as ferramentas de um servidor MCP.
+Componentes: list_server_tools, invoke_tool.
+Dependências: mcp (SDK oficial), agent.mcp.config_models.
+Observações: cada operação abre e fecha a sessão do servidor; o processo é encerrado ao final.
+"""
 from __future__ import annotations
 
 import logging
@@ -13,6 +21,17 @@ logger = logging.getLogger(__name__)
 
 
 def _parameters(server: McpServerConfig) -> StdioServerParameters:
+    """Monta os parâmetros de inicialização do processo do servidor MCP.
+
+    Args:
+        server: configuração do servidor.
+
+    Returns:
+        Os parâmetros de stdio aceitos pelo SDK.
+
+    Raises:
+        ValueError: quando a configuração não traz comando executável.
+    """
     if not server.command:
         raise ValueError("comando MCP vazio")
     return StdioServerParameters(
@@ -23,6 +42,14 @@ def _parameters(server: McpServerConfig) -> StdioServerParameters:
 
 
 async def list_server_tools(server: McpServerConfig) -> list[dict[str, Any]]:
+    """Lista as ferramentas expostas por um servidor MCP.
+
+    Args:
+        server: configuração do servidor.
+
+    Returns:
+        A lista de ferramentas, cada uma com identificador, servidor, nome, descrição e schema.
+    """
     params = _parameters(server)
     tools: list[dict[str, Any]] = []
     async with stdio_client(params) as streams:
@@ -48,6 +75,16 @@ async def invoke_tool(
     tool_name: str,
     arguments: dict[str, Any],
 ) -> dict[str, Any]:
+    """Invoca uma ferramenta de um servidor MCP.
+
+    Args:
+        server: configuração do servidor.
+        tool_name: nome da ferramenta no servidor.
+        arguments: argumentos passados à ferramenta.
+
+    Returns:
+        O resultado com sucesso, marcação de erro, conteúdo textual e resultado estruturado.
+    """
     params = _parameters(server)
     async with stdio_client(params) as streams:
         async with ClientSession(streams[0], streams[1]) as session:

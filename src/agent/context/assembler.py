@@ -1,4 +1,12 @@
-# src/agent/context/assembler.py — montagem de contexto por operação
+"""
+Arquivo: src/agent/context/assembler.py
+Nome: assembler.py
+Propósito: montar os componentes de contexto de uma operação do agente.
+Responsabilidade: camada de aplicação — definição do que compõe o prompt de cada operação.
+Componentes: build_operation_context.
+Dependências: agent.context.budget, agent.providers.base.
+Observações: a compactação nunca altera `arquivos-alvo`, que precisa casar com o disco.
+"""
 from __future__ import annotations
 
 from agent.context.budget import ContextComponent, BudgetResult, assemble_messages, compact_text

@@ -1,4 +1,13 @@
-# src/agent/orchestrator/atomizer.py — decisão de atomização recursiva e adaptativa
+"""
+Arquivo: src/agent/orchestrator/atomizer.py
+Nome: atomizer.py
+Propósito: decisão de atomização recursiva e adaptativa.
+Responsabilidade: camada de aplicação.
+Componentes: complexity_score, should_decompose_further, depth_guard, adaptive_decompose_operation, micro_decompose_operation.
+Dependências: agent.domain.enums, agent.orchestrator.decomposition, __future__, re, typing.
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import re
@@ -9,6 +18,17 @@ from agent.orchestrator.decomposition import DecompositionResult, SubTaskSpec
 
 
 def complexity_score(*, objective: str, metadata: dict | None, kind: str, attempt_count: int) -> int:
+    """Dá uma nota de complexidade à etapa, para decidir se ela ainda deve ser dividida.
+
+    Args:
+        objective: texto do objetivo da etapa.
+        metadata: metadados da etapa, que revelam operação de modelo, atomização pedida e quantidade de chaves.
+        kind: tipo da tarefa.
+        attempt_count: número de tentativas já feitas na etapa.
+
+    Returns:
+        A pontuação acumulada; quanto maior, mais complexa a etapa parece.
+    """
     score = 0
     meta = metadata or {}
     score += min(len(objective) // 40, 5)

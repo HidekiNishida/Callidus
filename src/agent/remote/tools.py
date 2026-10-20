@@ -1,4 +1,12 @@
-# src/agent/remote/tools.py — ferramentas do agente rodando no computador remoto
+"""
+Arquivo: src/agent/remote/tools.py
+Nome: tools.py
+Propósito: expor as ferramentas do agente que operam no computador remoto do projeto.
+Responsabilidade: camada de apresentação — ferramentas que traduzem chamadas do modelo em ações via SSH.
+Componentes: read_file, write_file, list_dir, edit_file, delete_file, make_dir, move_file, glob_files, search_grep.
+Dependências: agent.remote.ssh, agent.tools.diffing.
+Observações: todo caminho passa pela trava de segurança e precisa ficar dentro do projeto remoto.
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -22,6 +30,15 @@ def _guard(ctx: Any, path: str) -> dict | None:
 
 
 async def read_file(ctx: Any, args: dict) -> dict:
+    """Lê uma janela de linhas de um arquivo remoto.
+
+    Args:
+        ctx: contexto da ferramenta, com a configuração remota do projeto.
+        args: argumentos da chamada (`path`, `offset`, `limit`).
+
+    Returns:
+        O conteúdo lido, o offset, o total de linhas e a marca de truncamento.
+    """
     path = str(args.get("path") or "")
     bad = _guard(ctx, path)
     if bad:
@@ -64,6 +81,15 @@ async def read_file(ctx: Any, args: dict) -> dict:
 
 
 async def write_file(ctx: Any, args: dict) -> dict:
+    """Grava um arquivo remoto, criando as pastas intermediárias.
+
+    Args:
+        ctx: contexto da ferramenta, com a configuração remota do projeto.
+        args: argumentos da chamada (`path`, `content`).
+
+    Returns:
+        O caminho gravado e a quantidade de bytes escritos.
+    """
     path = str(args.get("path") or "")
     bad = _guard(ctx, path)
     if bad:
@@ -81,6 +107,15 @@ async def write_file(ctx: Any, args: dict) -> dict:
 
 
 async def list_dir(ctx: Any, args: dict) -> dict:
+    """Lista o conteúdo de uma pasta remota.
+
+    Args:
+        ctx: contexto da ferramenta, com a configuração remota do projeto.
+        args: argumentos da chamada (`path`).
+
+    Returns:
+        A lista de entradas encontradas na pasta.
+    """
     path = str(args.get("path") or ".")
     bad = _guard(ctx, path)
     if bad:
@@ -99,6 +134,15 @@ async def list_dir(ctx: Any, args: dict) -> dict:
 
 
 async def edit_file(ctx: Any, args: dict) -> dict:
+    """Substitui um trecho de um arquivo remoto.
+
+    Args:
+        ctx: contexto da ferramenta, com a configuração remota do projeto.
+        args: argumentos da chamada (`path`, `old_string`, `new_string`, `replace_all`).
+
+    Returns:
+        O caminho editado, a quantidade de substituições e o diff unificado.
+    """
     path = str(args.get("path") or "")
     old = args.get("old_string", args.get("old", args.get("search")))
     new = args.get("new_string", args.get("new"))
@@ -135,6 +179,15 @@ async def edit_file(ctx: Any, args: dict) -> dict:
 
 
 async def delete_file(ctx: Any, args: dict) -> dict:
+    """Remove um arquivo ou pasta remoto.
+
+    Args:
+        ctx: contexto da ferramenta, com a configuração remota do projeto.
+        args: argumentos da chamada (`path`).
+
+    Returns:
+        O caminho removido.
+    """
     path = str(args.get("path") or "")
     bad = _guard(ctx, path)
     if bad:
@@ -148,6 +201,15 @@ async def delete_file(ctx: Any, args: dict) -> dict:
 
 
 async def make_dir(ctx: Any, args: dict) -> dict:
+    """Cria uma pasta remota.
+
+    Args:
+        ctx: contexto da ferramenta, com a configuração remota do projeto.
+        args: argumentos da chamada (`path`).
+
+    Returns:
+        O caminho criado.
+    """
     path = str(args.get("path") or "")
     if not path:
         return {"success": False, "error": "path obrigatório"}
@@ -163,6 +225,15 @@ async def make_dir(ctx: Any, args: dict) -> dict:
 
 
 async def move_file(ctx: Any, args: dict) -> dict:
+    """Move ou renomeia um caminho remoto.
+
+    Args:
+        ctx: contexto da ferramenta, com a configuração remota do projeto.
+        args: argumentos da chamada (`from`, `to`).
+
+    Returns:
+        Os caminhos de origem e destino.
+    """
     src = args.get("from") or args.get("source") or args.get("path")
     dst = args.get("to") or args.get("dest") or args.get("destination")
     if not isinstance(src, str) or not isinstance(dst, str):
@@ -183,6 +254,15 @@ async def move_file(ctx: Any, args: dict) -> dict:
 
 
 async def glob_files(ctx: Any, args: dict) -> dict:
+    """Busca arquivos remotos pelo nome.
+
+    Args:
+        ctx: contexto da ferramenta, com a configuração remota do projeto.
+        args: argumentos da chamada (`pattern`).
+
+    Returns:
+        A lista de caminhos encontrados, limitada a 2000 entradas.
+    """
     pattern = args.get("pattern") or args.get("glob") or ""
     if not isinstance(pattern, str) or not pattern:
         return {"success": False, "error": "pattern obrigatório"}
@@ -203,6 +283,15 @@ async def glob_files(ctx: Any, args: dict) -> dict:
 
 
 async def search_grep(ctx: Any, args: dict) -> dict:
+    """Busca um padrão no conteúdo dos arquivos remotos.
+
+    Args:
+        ctx: contexto da ferramenta, com a configuração remota do projeto.
+        args: argumentos da chamada (`pattern`).
+
+    Returns:
+        A lista de caminhos que contêm o padrão, limitada a 2000 entradas.
+    """
     pattern = str(args.get("pattern") or args.get("query") or "")
     if not pattern:
         return {"success": False, "error": "pattern obrigatório"}

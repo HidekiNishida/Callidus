@@ -1,4 +1,13 @@
-# src/agent/orchestrator/requirements.py — requisitos do objetivo original, cobertura por tarefa e estado por evidência
+"""
+Arquivo: src/agent/orchestrator/requirements.py
+Nome: requirements.py
+Propósito: requisitos do objetivo original, cobertura por tarefa e estado por evidência.
+Responsabilidade: camada de aplicação.
+Componentes: evidence_kind, derive_requirements, normalize_requirement, root_of, ensure_requirements, load_requirements….
+Dependências: agent.domain.enums, agent.orchestrator.consolidation, agent.persistence.models, agent.services.contract_service, agent.verification.fingerprint, __future__….
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import re
@@ -32,6 +41,14 @@ _NEGATED_CLAUSE = re.compile(r"\b(?:n[ãa]o|sem|nunca)\b[^.;,]{0,40}", re.IGNORE
 
 
 def _items(text: str | None) -> list[str]:
+    """Extrai os itens enumerados de um texto.
+
+    Args:
+        text: texto do objetivo ou dos critérios de aceite.
+
+    Returns:
+        A lista dos itens encontrados, um por linha.
+    """
     return [m.group(1) for line in (text or "").splitlines() if (m := _ITEM.match(line))]
 
 
@@ -70,6 +87,18 @@ def derive_requirements(objective: str, acceptance_criteria: str | None = None) 
 
 
 def normalize_requirement(raw: dict[str, Any], index: int) -> dict[str, Any]:
+    """Normaliza um requisito vindo do contrato para o formato interno.
+
+    Args:
+        raw: requisito como gravado.
+        index: posição do requisito, usada para gerar o identificador quando ele não tem um.
+
+    Returns:
+        O requisito com identificador, descrição, aplicabilidade, critério e tipo de evidência válidos.
+
+    Observações:
+        Valores fora do contrato são ajustados em vez de rejeitados: um requisito malformado não pode derrubar o plano inteiro.
+    """
     description = str(raw.get("description") or raw.get("text") or "").strip()
     applicability = raw.get("applicability") or (MANDATORY if raw.get("mandatory", True) else "informativo")
     return {
@@ -85,6 +114,18 @@ def normalize_requirement(raw: dict[str, Any], index: int) -> dict[str, Any]:
 
 
 def root_of(session: Session, task: TaskModel) -> TaskModel:
+    """Sobe na árvore até encontrar a tarefa raiz do objetivo.
+
+    Args:
+        session: sessão do banco.
+        task: tarefa de onde a subida começa.
+
+    Returns:
+        A raiz da árvore de tarefas.
+
+    Observações:
+        O laço é protegido contra ciclos de parentagem, para não entrar em laço infinito.
+    """
     seen: set[uuid.UUID] = set()
     while task.parent_id and task.parent_id not in seen:
         seen.add(task.id)
@@ -136,6 +177,15 @@ def normalize_covers(raw: Any) -> list[dict[str, Any]] | None:
 
 
 def siblings_declare_covers(session: Session, task: TaskModel) -> bool:
+    """Diz se alguma irmã da tarefa declara cobertura de requisitos.
+
+    Args:
+        session: sessão do banco.
+        task: tarefa avaliada.
+
+    Returns:
+        Verdadeiro quando outra tarefa com o mesmo pai declara a cobertura; a raiz nunca tem irmãs.
+    """
     if task.parent_id is None:
         return False
     rows = session.scalars(select(TaskModel).where(TaskModel.parent_id == task.parent_id)).all()
@@ -159,6 +209,15 @@ def effective_covers(session: Session, task: TaskModel, reqs: list[dict[str, Any
 
 
 def _subtree(session: Session, root: TaskModel) -> list[TaskModel]:
+    """Recolhe a tarefa raiz e todos os seus descendentes.
+
+    Args:
+        session: sessão do banco.
+        root: raiz da árvore de tarefas.
+
+    Returns:
+        As tarefas da subárvore.
+    """
     tasks = list(session.scalars(select(TaskModel).where(TaskModel.project_id == root.project_id)).all())
     ids = {root.id}
     changed = True
@@ -172,11 +231,28 @@ def _subtree(session: Session, root: TaskModel) -> list[TaskModel]:
 
 
 def _passed_current(session: Session, task_id: uuid.UUID) -> list[EvidenceModel]:
+    """Lista as evidências que passaram e que ainda valem para o estado atual dos arquivos.
+
+    Args:
+        session: sessão do banco.
+        task_id: identificador da tarefa consultada.
+
+    Returns:
+        As evidências aprovadas cujo artefato não mudou desde a medição.
+    """
     rows = session.scalars(select(EvidenceModel).where(EvidenceModel.task_id == task_id)).all()
     return [r for r in rows if r.passed is True and is_current((r.detail_json or {}).get("artifacts"))]
 
 
 def _answered(task: TaskModel) -> bool:
+    """Diz se a tarefa já produziu uma resposta final com conteúdo.
+
+    Args:
+        task: tarefa avaliada.
+
+    Returns:
+        Verdadeiro quando o resultado consolidado traz uma resposta final não vazia.
+    """
     result = task.consolidated_result_json or {}
     return bool(result.get("final_answer") and str(result.get("markdown") or "").strip())
 

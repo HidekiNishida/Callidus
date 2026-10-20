@@ -1,5 +1,21 @@
-// web/static/assets/app/api.js — cliente HTTP e stream SSE do Callidus
+/**
+ * Arquivo: web/static/assets/app/api.js
+ * Nome: api.js
+ * Propósito: cliente HTTP e stream SSE do Callidus.
+ * Responsabilidade: frontend/transport — fala com a API local e traduz as respostas em objetos.
+ * Componentes: api(), cleanError(), openRunStream().
+ * Dependências: fetch e EventSource do navegador; rotas /api do servidor.
+ * Observações: o erro carrega a mensagem original da resposta; a credencial nunca é exibida.
+ */
 
+/**
+ * Executa uma requisição JSON na API e devolve o corpo desserializado.
+ *
+ * @param {string} path Caminho da rota (ex.: `/projects`).
+ * @param {object} [opts] Opções passadas ao `fetch` (method, body, headers).
+ * @returns {Promise<any|null>} O JSON da resposta, ou `null` quando o status é 204.
+ * @throws {Error} Com a mensagem extraída do corpo da resposta de erro.
+ */
 export async function api(path, opts = {}) {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },
@@ -13,6 +29,13 @@ export async function api(path, opts = {}) {
   return res.json();
 }
 
+/**
+ * Extrai uma mensagem legível de um corpo de erro da API.
+ *
+ * @param {string} text Corpo bruto da resposta de erro.
+ * @returns {string} A mensagem do campo `detail` (string ou lista de erros por campo),
+ *   ou o texto original quando a resposta não é JSON.
+ */
 function cleanError(text) {
   try {
     const parsed = JSON.parse(text);
@@ -34,7 +57,14 @@ function cleanError(text) {
   return String(text || "erro desconhecido").slice(0, 300);
 }
 
-/** Stream SSE de uma run. Devolve um objeto com `close()`. */
+/**
+ * Abre o stream SSE de uma run e repassa cada evento aos handlers informados.
+ *
+ * @param {string} runId Identificador da run.
+ * @param {object} [handlers] Handlers opcionais: onEvent, onLive, onEnd, onResync, onError.
+ * @returns {{close: function(): void}} Handle com `close()`, que encerra o stream.
+ * Observações: eventos com payload inválido são ignorados; o stream fecha sozinho no evento `end`.
+ */
 export function openRunStream(runId, handlers = {}) {
   const source = new EventSource(`/runs/${runId}/stream`);
   source.onmessage = (event) => {

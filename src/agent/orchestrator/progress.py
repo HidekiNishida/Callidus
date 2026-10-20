@@ -1,4 +1,13 @@
-# src/agent/orchestrator/progress.py — progresso verificável: estado persistido, não número de chamadas
+"""
+Arquivo: src/agent/orchestrator/progress.py
+Nome: progress.py
+Propósito: progresso verificável: estado persistido, não número de chamadas.
+Responsabilidade: camada de aplicação.
+Componentes: subtree, progress_state, made_progress.
+Dependências: agent.domain.enums, agent.orchestrator.consolidation, agent.persistence.models, __future__, sqlalchemy, sqlalchemy.orm….
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -12,6 +21,15 @@ from agent.persistence.models import TaskModel
 
 
 def subtree(session: Session, root_id: uuid.UUID) -> list[TaskModel]:
+    """Recolhe a tarefa raiz e todos os seus descendentes.
+
+    Args:
+        session: sessão do banco.
+        root_id: identificador da raiz da árvore.
+
+    Returns:
+        As tarefas da subárvore, ou uma lista vazia quando a raiz não existe.
+    """
     root = session.get(TaskModel, root_id)
     if root is None:
         return []

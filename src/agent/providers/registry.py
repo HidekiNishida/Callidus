@@ -1,4 +1,12 @@
-# src/agent/providers/registry.py — configuração declarativa de provedores e fábrica de instâncias
+"""
+Arquivo: src/agent/providers/registry.py
+Nome: registry.py
+Propósito: carregar a configuração declarativa de provedores e fabricar as instâncias correspondentes.
+Responsabilidade: camada de aplicação — catálogo de provedores, interpolação de ambiente e construção.
+Componentes: ProviderSpec, ProviderCatalog, load_catalog, catalog_for_settings, build_provider, build_provider_by_name, build_builtin_provider, resolve_api_key, interpolate_text, parse_document.
+Dependências: agent.config, agent.providers.base e as implementações concretas de provedor.
+Observações: nenhuma credencial é impressa ou logada; o catálogo é cacheado por arquivo e mtime.
+"""
 from __future__ import annotations
 
 import json
@@ -41,7 +49,25 @@ _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 
 class ProviderSpec(BaseModel):
-    """Descrição de um provedor no arquivo de configuração."""
+    """Descrição de um provedor no arquivo de configuração.
+
+    Atributos:
+        type: tipo do provedor (ollama, llamacpp, openai_compatible, openrouter, anthropic, gemini, mock).
+        base_url: URL base do serviço.
+        model: modelo padrão do provedor.
+        api_key_env: nome da variável de ambiente com a credencial.
+        api_key: credencial literal na configuração.
+        api_key_file: arquivo com a credencial.
+        timeout: tempo limite das requisições, em segundos.
+        headers: cabeçalhos adicionais enviados em cada requisição.
+        generation: parâmetros de geração do modelo.
+        stream: indica se o provedor transmite a resposta em fragmentos.
+        referer / title: cabeçalhos de identificação do OpenRouter.
+        allow_private_hosts: permite endereços privados.
+        verify_tls: valida o certificado TLS do servidor.
+        max_retries: número de retentativas em falha transitória.
+        models_cache_ttl: tempo de vida do cache de modelos, em segundos.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -64,6 +90,11 @@ class ProviderSpec(BaseModel):
 
     @property
     def kind(self) -> str:
+        """Tipo do provedor normalizado em minúsculas.
+
+        Returns:
+            O tipo declarado na configuração, em minúsculas.
+        """
         return (self.type or "").strip().lower()
 
 
@@ -71,11 +102,21 @@ def interpolate_text(text: str) -> str:
     """Substitui `${VAR}` e `${VAR:-padrão}` pelo valor do ambiente.
 
     Variável ausente sem padrão é erro de configuração (o nome aparece; o valor, nunca).
+
+    Args:
+        text: texto com as referências a variáveis.
+
+    Returns:
+        O texto com as variáveis substituídas.
+
+    Raises:
+        ProviderConfigError: quando uma variável sem padrão não está definida.
     """
     if not isinstance(text, str) or "${" not in text:
         return text
 
     def replace(match: re.Match[str]) -> str:
+        """Substitui a configuração de um provedor, preservando a credencial."""
         name = match.group(1)
         default = match.group(2)
         value = os.environ.get(name)
@@ -89,6 +130,14 @@ def interpolate_text(text: str) -> str:
 
 
 def _interpolate(value: Any) -> Any:
+    """Aplica a interpolação de ambiente em toda a estrutura da configuração.
+
+    Args:
+        value: trecho da configuração (texto, mapa ou lista).
+
+    Returns:
+        A estrutura com as referências a variáveis substituídas.
+    """
     if isinstance(value, str):
         return interpolate_text(value)
     if isinstance(value, dict):
@@ -99,7 +148,18 @@ def _interpolate(value: Any) -> Any:
 
 
 def parse_document(text: str, path: Path) -> dict[str, Any]:
-    """Lê YAML ou JSON conforme a extensão do arquivo."""
+    """Lê YAML ou JSON conforme a extensão do arquivo.
+
+    Args:
+        text: conteúdo do arquivo de configuração.
+        path: caminho do arquivo, usado na mensagem de erro e para decidir o formato.
+
+    Returns:
+        O mapa de configuração lido.
+
+    Raises:
+        ProviderConfigError: quando o arquivo é inválido ou não contém um mapa.
+    """
     suffix = path.suffix.lower()
     if suffix in {".yaml", ".yml"}:
         try:
@@ -125,14 +185,36 @@ def parse_document(text: str, path: Path) -> dict[str, Any]:
 
 
 class ProviderCatalog:
-    """Provedores nomeados, carregados de um arquivo de configuração."""
+    """Provedores nomeados, carregados de um arquivo de configuração.
+
+    Atributos:
+        _providers: especificações dos provedores, indexadas pelo nome.
+        _default: nome do provedor padrão, quando declarado.
+    """
 
     def __init__(self, providers: dict[str, ProviderSpec], default_provider: str | None = None) -> None:
+        """Cria o catálogo a partir de especificações já validadas.
+
+        Args:
+            providers: especificações indexadas pelo nome do provedor.
+            default_provider: nome do provedor padrão.
+        """
         self._providers = dict(providers)
         self._default = default_provider
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> ProviderCatalog:
+        """Constrói o catálogo a partir do mapa lido do arquivo de configuração.
+
+        Args:
+            data: mapa de configuração já interpolado ou a interpolar.
+
+        Returns:
+            O catálogo validado.
+
+        Raises:
+            ProviderConfigError: quando a estrutura, um provedor ou o padrão informado é inválido.
+        """
         raw = _interpolate(data or {})
         if not isinstance(raw, dict):
             raise ProviderConfigError("configuração de provedores inválida: esperado um mapa")
@@ -166,15 +248,44 @@ class ProviderCatalog:
 
     @property
     def default_provider(self) -> str | None:
+        """Nome do provedor padrão declarado na configuração.
+
+        Returns:
+            O nome do provedor padrão, ou `None` quando não há padrão.
+        """
         return self._default
 
     def names(self) -> list[str]:
+        """Nomes dos provedores do catálogo.
+
+        Returns:
+            A lista de nomes, na ordem de declaração.
+        """
         return list(self._providers)
 
     def get(self, name: str) -> ProviderSpec | None:
+        """Especificação de um provedor, quando existe.
+
+        Args:
+            name: nome do provedor.
+
+        Returns:
+            A `ProviderSpec`, ou `None` quando o nome não está no catálogo.
+        """
         return self._providers.get(name)
 
     def spec(self, name: str) -> ProviderSpec:
+        """Especificação de um provedor, com erro explícito quando o nome não existe.
+
+        Args:
+            name: nome do provedor.
+
+        Returns:
+            A `ProviderSpec` correspondente.
+
+        Raises:
+            ProviderConfigError: quando o provedor não está no catálogo.
+        """
         spec = self._providers.get(name)
         if spec is None:
             raise ProviderConfigError(
@@ -183,10 +294,33 @@ class ProviderCatalog:
         return spec
 
     def build(self, name: str, settings: Settings) -> Any:
+        """Instancia o provedor nomeado.
+
+        Args:
+            name: nome do provedor.
+            settings: configurações que completam o que a especificação não define.
+
+        Returns:
+            A instância do provedor.
+
+        Raises:
+            ProviderConfigError: quando o provedor não existe ou a configuração é inválida.
+        """
         return build_provider(name, self.spec(name), settings)
 
 
 def load_catalog(path: Path | str) -> ProviderCatalog:
+    """Carrega o catálogo de provedores de um arquivo.
+
+    Args:
+        path: caminho do arquivo de configuração.
+
+    Returns:
+        O catálogo validado.
+
+    Raises:
+        ProviderConfigError: quando o arquivo não existe ou é inválido.
+    """
     file = Path(path)
     if not file.is_file():
         raise ProviderConfigError(f"arquivo de configuração de provedores não encontrado: {file}")
@@ -199,12 +333,29 @@ _CATALOG_CACHE: dict[tuple[str, float], ProviderCatalog] = {}
 
 def config_path_for_settings(settings: Settings) -> Path:
     """Arquivo de provedores em uso: o configurado (`PROVIDERS_CONFIG_PATH`) ou o padrão da
-    pasta de dados (`data/providers.yaml`), que a interface web cria quando necessário."""
+    pasta de dados (`data/providers.yaml`), que a interface web cria quando necessário.
+
+    Args:
+        settings: configurações consultadas.
+
+    Returns:
+        O caminho do arquivo de configuração de provedores.
+    """
     return settings.resolved_provider_config_path()
 
 
 def catalog_for_settings(settings: Settings) -> ProviderCatalog:
-    """Catálogo da configuração apontada nas settings (cacheado por arquivo e mtime)."""
+    """Catálogo da configuração apontada nas settings (cacheado por arquivo e mtime).
+
+    Args:
+        settings: configurações consultadas.
+
+    Returns:
+        O catálogo carregado; vazio quando o arquivo padrão ainda não existe.
+
+    Raises:
+        ProviderConfigError: quando o arquivo configurado explicitamente está ausente ou ilegível.
+    """
     file = config_path_for_settings(settings)
     explicit = settings.provider_config_path is not None
     if not file.is_file():
@@ -225,7 +376,18 @@ def catalog_for_settings(settings: Settings) -> ProviderCatalog:
 
 
 def resolve_api_key(spec: ProviderSpec, name: str) -> str | None:
-    """Chave do ambiente, arquivo de chave ou valor literal da configuração."""
+    """Chave do ambiente, arquivo de chave ou valor literal da configuração.
+
+    Args:
+        spec: especificação do provedor.
+        name: nome do provedor, usado na mensagem de erro.
+
+    Returns:
+        A credencial resolvida, ou `None` quando o provedor não usa credencial.
+
+    Raises:
+        ProviderConfigError: quando a variável de ambiente indicada não está definida.
+    """
     if spec.api_key_env:
         value = os.environ.get(spec.api_key_env)
         if not value:
@@ -239,7 +401,19 @@ def resolve_api_key(spec: ProviderSpec, name: str) -> str | None:
 
 
 def build_provider(name: str, spec: ProviderSpec, settings: Settings) -> Any:
-    """Instancia o provedor descrito pela especificação. Nenhuma credencial é impressa ou logada."""
+    """Instancia o provedor descrito pela especificação. Nenhuma credencial é impressa ou logada.
+
+    Args:
+        name: nome do provedor.
+        spec: especificação lida da configuração.
+        settings: configurações que completam o que a especificação não define.
+
+    Returns:
+        A instância do provedor.
+
+    Raises:
+        ProviderConfigError: quando o tipo é desconhecido ou falta a URL base obrigatória.
+    """
     kind = spec.kind
     timeout = spec.timeout if spec.timeout is not None else settings.provider_timeout_sec
     retries = spec.max_retries if spec.max_retries is not None else settings.provider_max_retries
@@ -347,7 +521,14 @@ def build_provider(name: str, spec: ProviderSpec, settings: Settings) -> Any:
 
 
 def catalog_to_mapping(catalog: ProviderCatalog) -> dict[str, Any]:
-    """Catálogo como mapa (o que vai para o arquivo de configuração)."""
+    """Catálogo como mapa (o que vai para o arquivo de configuração).
+
+    Args:
+        catalog: catálogo a serializar.
+
+    Returns:
+        O mapa com o provedor padrão e as especificações de cada provedor.
+    """
     return {
         "default_provider": catalog.default_provider,
         "providers": {
@@ -357,7 +538,18 @@ def catalog_to_mapping(catalog: ProviderCatalog) -> dict[str, Any]:
 
 
 def save_catalog(catalog: ProviderCatalog, path: Path) -> Path:
-    """Grava o catálogo no arquivo (YAML ou JSON conforme a extensão) e invalida o cache."""
+    """Grava o catálogo no arquivo (YAML ou JSON conforme a extensão) e invalida o cache.
+
+    Args:
+        catalog: catálogo a gravar.
+        path: caminho do arquivo de destino.
+
+    Returns:
+        O caminho do arquivo gravado.
+
+    Raises:
+        ProviderConfigError: quando a escrita em YAML exige PyYAML ausente.
+    """
     file = Path(path)
     file.parent.mkdir(parents=True, exist_ok=True)
     data = catalog_to_mapping(catalog)
@@ -379,7 +571,15 @@ def save_catalog(catalog: ProviderCatalog, path: Path) -> Path:
 BUILTIN_TYPES = {"ollama", "llamacpp", "llama_cpp", "llama.cpp"}
 
 def build_builtin_provider(name: str, settings: Settings) -> Any:
-    """Provedores históricos, configurados por variável de ambiente (sem arquivo de configuração)."""
+    """Provedores históricos, configurados por variável de ambiente (sem arquivo de configuração).
+
+    Args:
+        name: nome do provedor embutido.
+        settings: configurações que fornecem URL e limites.
+
+    Returns:
+        A instância do provedor, ou `None` quando o nome não corresponde a um provedor embutido.
+    """
     kind = (name or "").strip().lower()
     if kind == "ollama":
         return OllamaProvider(
@@ -402,7 +602,18 @@ def build_builtin_provider(name: str, settings: Settings) -> Any:
 
 def build_provider_by_name(name: str, settings: Settings) -> Any:
     """Resolve um nome de provedor: primeiro o catálogo configurado, depois os provedores
-    embutidos (Ollama, llama.cpp) e o mock. `None` quando o nome não existe."""
+    embutidos (Ollama, llama.cpp) e o mock. `None` quando o nome não existe.
+
+    Args:
+        name: nome do provedor pedido.
+        settings: configurações consultadas.
+
+    Returns:
+        A instância do provedor, ou `None` quando o nome não existe.
+
+    Raises:
+        ProviderConfigError: quando a configuração do catálogo é inválida.
+    """
     if not name:
         return None
     if name == "mock":

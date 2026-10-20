@@ -1,5 +1,13 @@
-/** HTML das áreas de acompanhamento, a partir do estado de `observe-core.js`. Puro: recebe estado e opções,
- * devolve strings já escapadas. */
+/**
+ * Arquivo: web/static/assets/app/live-view.js
+ * Nome: live-view.js
+ * Propósito: HTML das áreas de acompanhamento, a partir do estado de `live-state.js`.
+ * Responsabilidade: frontend/apresentação — renderiza o estado do redutor em HTML já escapado.
+ * Componentes: renderHeader(), renderFilters(), renderTree(), renderActivity(), renderOutputs(),
+ *   renderTerminal(), renderTools(), renderFiles(), renderVerification(), renderMetrics(), esc().
+ * Dependências: seletores de `./live-state.js`; nenhuma dependência de DOM.
+ * Observações: é puro — recebe estado e opções, devolve strings já escapadas.
+ */
 import {
   CATEGORIES,
   STATUS_LABEL,
@@ -19,6 +27,12 @@ import {
   visibleEvents,
 } from "./live-state.js";
 
+/**
+ * Escapa um valor para ser inserido em HTML.
+ *
+ * @param {*} value Valor a escapar.
+ * @returns {string} O texto escapado (nulo e indefinido viram string vazia).
+ */
 export function esc(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -58,6 +72,12 @@ const RUN_LABEL = { active: "ativa", paused: "pausada", completed: "concluída",
 const OP_STATUS = { running: "rodando", ok: "ok", failed: "falhou", interrupted: "interrompida" };
 const CATEGORY_LABEL = { run: "Execução", plan: "Plano", task: "Tarefas", agent: "Modelo", tool: "Ferramentas", command: "Comandos", file: "Arquivos", test: "Testes", verification: "Verificação" };
 
+/**
+ * Formata um carimbo de tempo em hora local (pt-BR).
+ *
+ * @param {string} iso Carimbo ISO do servidor.
+ * @returns {string} A hora (hh:mm:ss), ou string vazia quando o carimbo é ausente ou inválido.
+ */
 function clock(iso) {
   if (!iso) return "";
   const d = new Date(parseTs(iso));
@@ -65,6 +85,12 @@ function clock(iso) {
   return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+/**
+ * Formata uma duração em segundos de forma compacta.
+ *
+ * @param {number|null} seconds Duração em segundos.
+ * @returns {string} O texto no formato "1h02m", "2m03s" ou "12s"; "—" quando desconhecida.
+ */
 export function duration(seconds) {
   if (seconds == null) return "—";
   const s = Math.max(0, Math.floor(seconds));
@@ -74,15 +100,36 @@ export function duration(seconds) {
   return h ? `${h}h${String(m).padStart(2, "0")}m` : m ? `${m}m${String(r).padStart(2, "0")}s` : `${r}s`;
 }
 
+/**
+ * Devolve o título da tarefa, se ela existir no estado.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {string} id Id da tarefa.
+ * @returns {string} O título, ou string vazia.
+ */
 function taskTitle(state, id) {
   return id ? state.tasks.get(id)?.title || "" : "";
 }
 
+/**
+ * Monta a etiqueta de status de uma tarefa.
+ *
+ * @param {string} status Status da tarefa.
+ * @param {boolean} [interrupted] Verdadeiro quando a tarefa foi interrompida.
+ * @returns {string} O HTML da etiqueta.
+ */
 function statusBadge(status, interrupted = false) {
   if (interrupted) return `<span class="obs-badge obs-interrupted">interrompida</span>`;
   return `<span class="obs-badge obs-${esc(status)}">${esc(STATUS_LABEL[status] || status || "—")}</span>`;
 }
 
+/**
+ * Renderiza o cabeçalho do acompanhamento: objetivo, status, modo e indicadores.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {number} [now] Momento de referência (ms) para o tempo decorrido.
+ * @returns {string} O HTML do cabeçalho.
+ */
 export function renderHeader(state, now = Date.now()) {
   const h = state.header;
   const current = currentTask(state);
@@ -106,6 +153,13 @@ export function renderHeader(state, now = Date.now()) {
     </div>`;
 }
 
+/**
+ * Renderiza a barra de filtros (categorias, apenas falhas, tarefa e busca por texto).
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} filters Filtros ativos: `categories`, `taskId`, `errorsOnly`, `text`.
+ * @returns {string} O HTML da barra de filtros.
+ */
 export function renderFilters(state, filters) {
   const cats = CATEGORIES.map((c) => {
     const on = !filters.categories.size || filters.categories.has(c);
@@ -118,6 +172,14 @@ export function renderFilters(state, filters) {
     <input type="search" class="obs-search" data-obs-text placeholder="Filtrar texto…" value="${esc(filters.text || "")}" />`;
 }
 
+/**
+ * Renderiza um nó da árvore de tarefas e, quando aberto, os filhos.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} node Nó da árvore (com `task`, `depth`, `children`).
+ * @param {object} opts Opções: `expanded`, `collapsed` e `selected`.
+ * @returns {string} O HTML do nó e da sua subárvore.
+ */
 function treeNode(state, node, opts) {
   const t = node.task;
   const open = opts.expanded.has(t.id) || (!opts.collapsed.has(t.id) && node.depth < 1);
@@ -135,12 +197,26 @@ function treeNode(state, node, opts) {
   return row + kids;
 }
 
+/**
+ * Renderiza a árvore do plano.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} opts Opções: `expanded`, `collapsed` e `selected`.
+ * @returns {string} O HTML da árvore.
+ */
 export function renderTree(state, opts) {
   const roots = buildTree(state);
   if (!roots.length) return `<p class="muted">Sem tarefas.</p>`;
   return roots.map((n) => treeNode(state, n, opts)).join("");
 }
 
+/**
+ * Renderiza o histórico de eventos de uma tarefa.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {string} taskId Id da tarefa.
+ * @returns {string} O HTML da lista de eventos, ou string vazia quando a tarefa não existe.
+ */
 export function renderTaskHistory(state, taskId) {
   const task = state.tasks.get(taskId);
   if (!task) return "";
@@ -150,6 +226,14 @@ export function renderTaskHistory(state, taskId) {
   return `<ol class="obs-history">${items.map((e) => `<li><time>${esc(clock(e.ts))}</time> ${esc(describe(e))}</li>`).join("")}</ol>`;
 }
 
+/**
+ * Renderiza a lista de atividade (eventos) filtrada.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} filters Filtros aplicados.
+ * @param {number} [limit] Número máximo de itens.
+ * @returns {string} O HTML da lista de itens.
+ */
 export function renderActivity(state, filters, limit = 200) {
   const items = visibleEvents(state, filters, limit);
   if (!items.length) return `<li class="muted">Nada para mostrar com esses filtros.</li>`;
@@ -162,6 +246,13 @@ export function renderActivity(state, filters, limit = 200) {
     .join("");
 }
 
+/**
+ * Renderiza as chamadas ao modelo, com status e texto transmitido.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} filters Filtros aplicados.
+ * @returns {string} O HTML dos cartões de saída.
+ */
 export function renderOutputs(state, filters) {
   const items = outputsList(state, filters).slice(-12).reverse();
   if (!items.length) return `<p class="muted">Nenhuma chamada ao modelo nesta janela.</p>`;
@@ -181,6 +272,13 @@ export function renderOutputs(state, filters) {
     .join("");
 }
 
+/**
+ * Renderiza as operações de terminal (comandos e testes) com a sua saída.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} filters Filtros aplicados.
+ * @returns {string} O HTML dos cartões de operação.
+ */
 export function renderTerminal(state, filters) {
   const items = terminalList(state, filters).slice(-15).reverse();
   if (!items.length) return `<p class="muted">Nenhum comando ou teste nesta janela.</p>`;
@@ -198,6 +296,12 @@ export function renderTerminal(state, filters) {
     .join("");
 }
 
+/**
+ * Formata um resumo de ferramenta (mapa de valores) em texto curto.
+ *
+ * @param {object|string|null} summary Resumo informado pelo servidor.
+ * @returns {string} O texto formatado, separado por "·"; string vazia quando não há resumo.
+ */
 export function summaryText(summary) {
   if (summary == null) return "";
   if (typeof summary !== "object") return String(summary);
@@ -207,6 +311,13 @@ export function summaryText(summary) {
     .join(" · ");
 }
 
+/**
+ * Renderiza a lista de chamadas de ferramenta.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} filters Filtros aplicados.
+ * @returns {string} O HTML da lista, ou string vazia quando não há ferramentas.
+ */
 export function renderTools(state, filters) {
   const items = toolList(state, filters).slice(-30).reverse();
   if (!items.length) return "";
@@ -215,6 +326,15 @@ export function renderTools(state, filters) {
     .join("")}</ul>`;
 }
 
+/**
+ * Renderiza os arquivos alterados, com a opção de abrir o diff.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} filters Filtros aplicados.
+ * @param {Set<number>} openSeqs Sequências dos diffs abertos.
+ * @returns {string} O HTML da lista de arquivos.
+ * Observações: arquivos sensíveis nunca trazem o conteúdo do diff.
+ */
 export function renderFiles(state, filters, openSeqs) {
   const items = filesList(state, filters).slice(-60).reverse();
   if (!items.length) return `<p class="muted">Nenhum arquivo criado, alterado ou removido.</p>`;
@@ -234,6 +354,13 @@ export function renderFiles(state, filters, openSeqs) {
     .join("");
 }
 
+/**
+ * Renderiza as verificações executadas e o seu veredito.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} filters Filtros aplicados.
+ * @returns {string} O HTML da lista de verificações.
+ */
 export function renderVerification(state, filters) {
   const items = verificationList(state, filters).slice(-30).reverse();
   if (!items.length) return `<p class="muted">Nenhuma verificação ou teste ainda.</p>`;
@@ -243,6 +370,12 @@ export function renderVerification(state, filters) {
     .join("")}</ul>`;
 }
 
+/**
+ * Renderiza as métricas do stream (envelopes recebidos, duplicados, reconexões, atraso).
+ *
+ * @param {object} state Estado do redutor.
+ * @returns {string} O texto das métricas, separado por "·".
+ */
 export function renderMetrics(state) {
   const m = state.metrics;
   const lat = latency(state);
@@ -261,6 +394,12 @@ export function renderMetrics(state) {
   return parts.filter(Boolean).map(esc).join(" · ");
 }
 
+/**
+ * Renderiza o aviso de operações interrompidas sem conclusão gravada.
+ *
+ * @param {object} state Estado do redutor.
+ * @returns {string} O HTML do aviso, ou string vazia quando não há interrupções.
+ */
 export function renderInterrupted(state) {
   if (!state.interrupted.length) return "";
   const items = state.interrupted

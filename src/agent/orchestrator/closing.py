@@ -1,4 +1,13 @@
-# src/agent/orchestrator/closing.py — verificação e resposta final fecham o plano
+"""
+Arquivo: src/agent/orchestrator/closing.py
+Nome: closing.py
+Propósito: verificação e resposta final fecham o plano.
+Responsabilidade: camada de aplicação.
+Componentes: local_now_line, ensure_closing_stages, compose_final_markdown, compose_incomplete_markdown, usable_reply, usable_markdown….
+Dependências: agent.orchestrator.consolidation, agent.orchestrator.decomposition, agent.persistence.models, __future__, datetime, re….
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import re
@@ -32,6 +41,11 @@ _MONTHS = (
 
 
 def local_now_line() -> str:
+    """Monta a data e a hora atuais em português, no fuso do processo.
+
+    Returns:
+        Uma frase com o dia da semana, a data e a hora.
+    """
     now = datetime.now().astimezone()
     return (
         f"{_WEEKDAYS[now.weekday()]}, {now.day} de {_MONTHS[now.month - 1]} de {now.year}, "
@@ -86,6 +100,16 @@ def ensure_closing_stages(plan: DecompositionResult) -> DecompositionResult:
 
 
 def compose_final_markdown(*, objective: str, stages: list[dict], model_text: str = "") -> str:
+    """Monta a resposta final em Markdown, com as etapas, as fontes e as notas do modelo.
+
+    Args:
+        objective: objetivo do trabalho concluído.
+        stages: etapas executadas, com título, estado e fontes citadas.
+        model_text: observações do modelo sobre o resultado.
+
+    Returns:
+        O texto Markdown da conclusão, incluindo o momento da entrega.
+    """
     rows = ["| Etapa | Estado |", "| --- | --- |"]
     for stage in stages:
         title = str(stage.get("title") or "etapa").replace("|", "/")
@@ -149,6 +173,17 @@ def usable_reply(text: str) -> bool:
 
 
 def usable_markdown(text: str) -> bool:
+    """Diz se um texto tem a forma de um Markdown útil para o usuário.
+
+    Args:
+        text: texto candidato a resposta.
+
+    Returns:
+        Verdadeiro quando o texto é longo o bastante, não é JSON e tem marcas de Markdown.
+
+    Observações:
+        Um JSON de ferramenta não é resposta: tem a forma certa, mas não é texto para o usuário.
+    """
     body = text.strip()
     if len(body) < 40:
         return False
@@ -159,6 +194,14 @@ def usable_markdown(text: str) -> bool:
 
 
 def extract_sources(*chunks: str) -> list[str]:
+    """Recolhe os caminhos de arquivo citados nos trechos informados.
+
+    Args:
+        chunks: textos onde procurar os caminhos.
+
+    Returns:
+        Até doze caminhos distintos, ignorando os prefixos de diff `a/` e `b/`.
+    """
     found: list[str] = []
     for chunk in chunks:
         for match in _PATH.findall(chunk or ""):

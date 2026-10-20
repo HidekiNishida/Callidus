@@ -1,4 +1,12 @@
-// web/static/assets/app/components/automations.js — painel das automações
+/**
+ * Arquivo: web/static/assets/app/components/automations.js
+ * Nome: automations.js
+ * Propósito: painel das automações — criação, listagem, ações e situação do runtime.
+ * Responsabilidade: frontend/componente — monta a definição da automação e comanda o servidor.
+ * Componentes: AutomationsView (componente Vue), emptyForm().
+ * Dependências: `../store.js` (estado e ações de automação).
+ * Observações: a definição é montada no navegador a partir do formulário e enviada ao servidor.
+ */
 import {
   state,
   loadAutomations,
@@ -10,6 +18,11 @@ import {
   toast,
 } from "../store.js";
 
+/**
+ * Cria um formulário de automação vazio, com os padrões da interface.
+ *
+ * @returns {object} Um formulário novo (o chamador deve copiá-lo, não reutilizá-lo).
+ */
 const emptyForm = () => ({
   name: "",
   project_id: "",
@@ -30,6 +43,11 @@ const emptyForm = () => ({
   max_attempts: "3",
 });
 
+/**
+ * Painel das automações: formulário de criação, situação do supervisor e lista com ações.
+ *
+ * @returns {object} Objeto de opções do Vue com `setup()` e `template`.
+ */
 export const AutomationsView = {
   name: "AutomationsView",
   setup() {
@@ -47,6 +65,13 @@ export const AutomationsView = {
       if (!form.project_id && projectId.value) form.project_id = projectId.value;
     });
 
+    /**
+     * Monta a definição da automação a partir do formulário.
+     *
+     * @returns {object} A definição (gatilho, ação, permissões e política de novas tentativas).
+     * Observações: no gatilho "once", a data é convertida para ISO; no gatilho "interval",
+     * o intervalo é convertido para número.
+     */
     function definition() {
       const trigger = { kind: form.trigger_kind, timezone: form.timezone };
       if (form.trigger_kind === "cron") trigger.cron = form.cron;
@@ -80,6 +105,13 @@ export const AutomationsView = {
       };
     }
 
+    /**
+     * Cria a automação do formulário.
+     *
+     * @param {boolean} activate `true` para criar já ativada.
+     * @returns {Promise<void>}
+     * Observações: exige nome e projeto; o formulário é limpo depois de criar.
+     */
     async function submit(activate) {
       if (!form.name.trim()) {
         toast("Dê um nome à automação", "error");
@@ -102,6 +134,14 @@ export const AutomationsView = {
       }
     }
 
+    /**
+     * Executa uma ação sobre a automação (ativar, suspender, rodar, testar, cancelar).
+     *
+     * @param {object} item Automação alvo.
+     * @param {string} action Nome da ação.
+     * @returns {Promise<void>}
+     * Observações: a ação "test" é enviada com `execute: false` para não rodar de fato.
+     */
     async function act(item, action) {
       try {
         await automationAction(item.id, action, action === "test" ? { execute: false } : {});
@@ -112,10 +152,22 @@ export const AutomationsView = {
       }
     }
 
+    /**
+     * Carrega o detalhe de uma automação para o painel de detalhes.
+     *
+     * @param {object} item Automação alvo.
+     * @returns {Promise<void>}
+     */
     async function open(item) {
       detail.value = await loadAutomationDetail(item.id);
     }
 
+    /**
+     * Remove uma automação, após confirmação do usuário.
+     *
+     * @param {object} item Automação alvo.
+     * @returns {Promise<void>}
+     */
     async function remove(item) {
       if (!window.confirm(`Remover a automação "${item.name}"?`)) return;
       try {
@@ -127,10 +179,22 @@ export const AutomationsView = {
       }
     }
 
+    /**
+     * Traduz o estado da automação para o rótulo em português.
+     *
+     * @param {string} value Estado informado pelo servidor.
+     * @returns {string} O rótulo, ou o valor original quando não é conhecido.
+     */
     function stateLabel(value) {
       return { enabled: "ativa", suspended: "suspensa", disabled: "desativada" }[value] || value;
     }
 
+    /**
+     * Formata um carimbo de data e hora para exibição local.
+     *
+     * @param {string} value Carimbo ISO do servidor.
+     * @returns {string} A data e hora, "—" quando ausente, ou o valor original quando inválido.
+     */
     function when(value) {
       if (!value) return "—";
       try {

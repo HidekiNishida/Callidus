@@ -1,5 +1,13 @@
-# src/agent/services/agent_service.py — agentes lógicos: ciclo de vida e estado persistente
-"""Serviço do agente lógico: identidade, papel, execuções e checkpoints.
+"""
+Arquivo: src/agent/services/agent_service.py
+Nome: agent_service.py
+Propósito: manter o agente lógico: identidade, papel, execuções, checkpoints e descobertas.
+Responsabilidade: camada de aplicação — ciclo de vida dos agentes e do estado recuperável.
+Componentes: AgentService, AgentNotFoundError, AgentDepthError, DiscardBlockedError.
+Dependências: agent.domain.agent_enums, agent.domain.agent_lifecycle, agent.persistence.models.
+Observações: suspender move o estado para o checkpoint; descartar libera o estado, mas preserva resultados e evidências.
+
+Serviço do agente lógico: identidade, papel, execuções e checkpoints.
 
 O Callidus separa três coisas que antes apareciam misturadas:
 
@@ -65,10 +73,23 @@ class DiscardBlockedError(RuntimeError):
 
 
 def _utcnow_iso() -> str:
+    """Instante atual em UTC, no formato ISO 8601.
+
+    Returns:
+        A representação textual do instante atual.
+    """
     return datetime.now(timezone.utc).isoformat()
 
 
 def _role_for_kind(kind: str) -> str:
+    """Papel do agente derivado do tipo da tarefa.
+
+    Args:
+        kind: tipo da tarefa (`objective`, `subsystem` ou `operation`).
+
+    Returns:
+        O papel correspondente (`orchestrator`, `lead` ou `worker`).
+    """
     return {
         TaskKind.OBJECTIVE.value: "orchestrator",
         TaskKind.SUBSYSTEM.value: "lead",
@@ -77,28 +98,74 @@ def _role_for_kind(kind: str) -> str:
 
 
 class AgentService:
-    """Operações sobre agentes lógicos e suas execuções."""
+    """Operações sobre agentes lógicos e suas execuções.
+
+    Atributos:
+        _session: sessão usada nas leituras e gravações.
+        _settings: configurações, com o limite de profundidade de delegação.
+    """
 
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
+        """Cria o serviço ligado a uma sessão.
+
+        Args:
+            session: sessão SQLAlchemy a usar.
+            settings: configurações a usar; quando ausentes, são lidas do ambiente.
+        """
         self._session = session
         self._settings = settings or get_settings()
 
     # ------------------------------------------------------------------ leitura
 
     def get(self, agent_id: uuid.UUID) -> AgentModel:
+        """Agente por identificador.
+
+        Args:
+            agent_id: identificador do agente.
+
+        Returns:
+            O agente encontrado.
+
+        Raises:
+            AgentNotFoundError: quando o agente não existe.
+        """
         agent = self._session.get(AgentModel, agent_id)
         if agent is None:
             raise AgentNotFoundError(f"Agente não encontrado: {agent_id}")
         return agent
 
     def find(self, agent_id: uuid.UUID) -> AgentModel | None:
+        """Agente por identificador, sem erro quando não existe.
+
+        Args:
+            agent_id: identificador do agente.
+
+        Returns:
+            O agente, ou `None` quando não há agente com esse identificador.
+        """
         return self._session.get(AgentModel, agent_id)
 
     def agent_for_task(self, task_id: uuid.UUID) -> AgentModel | None:
+        """Agente associado a uma tarefa.
+
+        Args:
+            task_id: identificador da tarefa.
+
+        Returns:
+            O agente da tarefa, ou `None` quando a tarefa ainda não tem agente.
+        """
         stmt = select(AgentModel).where(AgentModel.task_id == task_id)
         return self._session.scalars(stmt).first()
 
     def children(self, agent_id: uuid.UUID) -> list[AgentModel]:
+        """Delegados diretos de um agente.
+
+        Args:
+            agent_id: identificador do agente.
+
+        Returns:
+            A lista de filhos, na ordem de criação.
+        """
         stmt = (
             select(AgentModel)
             .where(AgentModel.parent_id == agent_id)
@@ -136,6 +203,14 @@ class AgentService:
         return list(reversed(chain))
 
     def executions(self, agent_id: uuid.UUID) -> list[AgentExecutionModel]:
+        """Execuções de um agente, da mais antiga para a mais recente.
+
+        Args:
+            agent_id: identificador do agente.
+
+        Returns:
+            A lista de execuções do agente.
+        """
         stmt = (
             select(AgentExecutionModel)
             .where(AgentExecutionModel.agent_id == agent_id)
@@ -168,6 +243,19 @@ class AgentService:
         A hierarquia de agentes acompanha a hierarquia de tarefas: o pai lógico de uma
         tarefa filha é o agente da tarefa pai. Chamadas repetidas devolvem o mesmo
         agente — a identidade é estável.
+
+        Args:
+            task_id: identificador da tarefa que o agente executa.
+            parent_agent_id: agente delegante, quando informado.
+            role: papel do agente; por padrão, deduzido do tipo da tarefa.
+            instructions: instruções próprias do agente.
+
+        Returns:
+            O agente da tarefa, existente ou recém-criado.
+
+        Raises:
+            AgentNotFoundError: quando a tarefa não existe.
+            AgentDepthError: quando a delegação ultrapassa o limite de profundidade.
         """
         existing = self.agent_for_task(task_id)
         if existing is not None:
@@ -202,6 +290,18 @@ class AgentService:
     # --------------------------------------------------------------- transições
 
     def _set_agent_status(self, agent: AgentModel, target: AgentStatus) -> AgentModel:
+        """Move o agente para um novo estado, validando a transição.
+
+        Args:
+            agent: agente a mover.
+            target: estado pretendido.
+
+        Returns:
+            O agente, já com o novo estado.
+
+        Raises:
+            InvalidAgentTransition: quando a transição não é válida.
+        """
         current = AgentStatus(agent.status)
         if current == target:
             return agent
@@ -212,6 +312,19 @@ class AgentService:
     def _set_execution_status(
         self, execution: AgentExecutionModel, target: ExecutionStatus, error: str | None = None
     ) -> AgentExecutionModel:
+        """Move a execução para um novo estado, validando a transição.
+
+        Args:
+            execution: execução a mover.
+            target: estado pretendido.
+            error: mensagem de erro, quando houver.
+
+        Returns:
+            A execução, já com o novo estado.
+
+        Raises:
+            InvalidAgentTransition: quando a transição não é válida.
+        """
         current = ExecutionStatus(execution.status)
         if current != target:
             validate_execution_transition(current, target)
@@ -237,6 +350,18 @@ class AgentService:
         Reaproveita a execução recuperável (suspensa, falhada ou em espera) e cria uma
         nova quando a anterior já terminou: a execução antiga continua no histórico —
         o que ela encontrou não se perde.
+
+        Args:
+            agent_id: identificador do agente.
+            task_id: tarefa executada nesta execução.
+            run_id: run ao qual a execução pertence.
+            checkpoint: estado a gravar no checkpoint da execução.
+
+        Returns:
+            A execução aberta, reutilizada ou nova.
+
+        Raises:
+            AgentNotFoundError: quando o agente não existe.
         """
         agent = self.get(agent_id)
         execution = self.current_execution(agent_id)
@@ -280,6 +405,17 @@ class AgentService:
 
         O agente continua existindo e continua consultável; o que se libera é a
         execução. Nada é apagado.
+
+        Args:
+            agent_id: identificador do agente.
+            reason: motivo da suspensão, guardado no checkpoint.
+            checkpoint: estado operacional a persistir.
+
+        Returns:
+            A execução suspensa.
+
+        Raises:
+            AgentNotFoundError: quando o agente não tem execução ativa.
         """
         agent = self.get(agent_id)
         execution = self.current_execution(agent_id)
@@ -315,7 +451,17 @@ class AgentService:
         return execution
 
     def resume(self, agent_id: uuid.UUID) -> AgentExecutionModel:
-        """Retoma a execução suspensa a partir do estado persistido."""
+        """Retoma a execução suspensa a partir do estado persistido.
+
+        Args:
+            agent_id: identificador do agente.
+
+        Returns:
+            A execução retomada.
+
+        Raises:
+            AgentNotFoundError: quando não há execução recuperável ou ela já foi encerrada.
+        """
         agent = self.get(agent_id)
         execution = self.current_execution(agent_id)
         if execution is None:
@@ -353,7 +499,17 @@ class AgentService:
         return execution
 
     def wait_for_child(self, agent_id: uuid.UUID) -> AgentExecutionModel:
-        """A execução fica esperando uma resposta de descendente."""
+        """A execução fica esperando uma resposta de descendente.
+
+        Args:
+            agent_id: identificador do agente.
+
+        Returns:
+            A execução em espera.
+
+        Raises:
+            AgentNotFoundError: quando o agente não tem execução ativa.
+        """
         agent = self.get(agent_id)
         execution = self.current_execution(agent_id)
         if execution is None:
@@ -366,6 +522,18 @@ class AgentService:
     def complete_execution(
         self, agent_id: uuid.UUID, *, result: dict[str, Any] | None = None
     ) -> AgentExecutionModel:
+        """Encerra a execução como concluída, gravando o resultado no checkpoint.
+
+        Args:
+            agent_id: identificador do agente.
+            result: dados do resultado, gravados no checkpoint.
+
+        Returns:
+            A execução concluída.
+
+        Raises:
+            AgentNotFoundError: quando o agente não tem execução ativa.
+        """
         agent = self.get(agent_id)
         execution = self.current_execution(agent_id)
         if execution is None:
@@ -380,6 +548,18 @@ class AgentService:
         return execution
 
     def fail_execution(self, agent_id: uuid.UUID, error: str) -> AgentExecutionModel:
+        """Encerra a execução como falhada, guardando a causa.
+
+        Args:
+            agent_id: identificador do agente.
+            error: mensagem do erro.
+
+        Returns:
+            A execução que falhou.
+
+        Raises:
+            AgentNotFoundError: quando o agente não tem execução ativa.
+        """
         agent = self.get(agent_id)
         execution = self.current_execution(agent_id)
         if execution is None:
@@ -390,6 +570,18 @@ class AgentService:
         return execution
 
     def cancel_execution(self, agent_id: uuid.UUID, *, reason: str = "") -> AgentExecutionModel:
+        """Cancela a execução em andamento.
+
+        Args:
+            agent_id: identificador do agente.
+            reason: motivo do cancelamento.
+
+        Returns:
+            A execução cancelada.
+
+        Raises:
+            AgentNotFoundError: quando o agente não tem execução ativa.
+        """
         agent = self.get(agent_id)
         execution = self.current_execution(agent_id)
         if execution is None:
@@ -408,7 +600,19 @@ class AgentService:
         *,
         merge: bool = True,
     ) -> AgentExecutionModel:
-        """Grava o estado operacional da execução (etapa, plano, pendências, erros)."""
+        """Grava o estado operacional da execução (etapa, plano, pendências, erros).
+
+        Args:
+            agent_id: identificador do agente.
+            payload: estado a gravar.
+            merge: quando `True`, combina com o checkpoint existente.
+
+        Returns:
+            A execução cujo checkpoint foi gravado.
+
+        Raises:
+            AgentNotFoundError: quando o agente não existe.
+        """
         agent = self.get(agent_id)
         execution = self.current_execution(agent_id)
         if execution is None:
@@ -431,6 +635,11 @@ class AgentService:
         (uma lista enorme de artefatos, um texto colado), o que sobra é a essência —
         etapa, plano, pendências — e os valores longos são truncados. Descobrir o resto
         é o que a consulta ao agente faz, sob demanda.
+        Args:
+            checkpoint: checkpoint a limitar.
+
+        Returns:
+            O checkpoint limitado ao tamanho configurado, com a marca `truncated` quando corta.
         """
         limit = max(1000, int(self._settings.max_agent_checkpoint_chars))
         bounded: dict[str, Any] = {}
@@ -456,6 +665,14 @@ class AgentService:
         return bounded
 
     def checkpoint(self, agent_id: uuid.UUID) -> dict[str, Any]:
+        """Checkpoint atual do agente.
+
+        Args:
+            agent_id: identificador do agente.
+
+        Returns:
+            O checkpoint da execução viva ou, na falta, o último gravado nos metadados.
+        """
         execution = self.current_execution(agent_id)
         if execution is not None and execution.checkpoint_json:
             return dict(execution.checkpoint_json)
@@ -481,6 +698,19 @@ class AgentService:
         Descoberta é informação com valor de evidência: o que foi observado, em que
         arquivo, com que prova. É isso que permite responder a uma consulta depois,
         sem reexecutar o trabalho.
+
+        Args:
+            agent_id: identificador do agente.
+            text: descrição da descoberta.
+            evidence: provas que sustentam a descoberta.
+            artifacts: arquivos envolvidos.
+            kind: categoria da descoberta.
+
+        Returns:
+            A descoberta gravada.
+
+        Raises:
+            AgentNotFoundError: quando o agente não existe.
         """
         agent = self.get(agent_id)
         metadata = dict(agent.metadata_json or {})
@@ -499,6 +729,14 @@ class AgentService:
         return entry
 
     def findings(self, agent_id: uuid.UUID) -> list[dict[str, Any]]:
+        """Descobertas registradas pelo agente.
+
+        Args:
+            agent_id: identificador do agente.
+
+        Returns:
+            A lista de descobertas; vazia quando o agente não existe.
+        """
         agent = self.find(agent_id)
         if agent is None:
             return []
@@ -509,6 +747,12 @@ class AgentService:
 
         É o momento em que o filho "devolve" ao pai: o pai recebe um resumo curto
         (o que a consolidação já produz) e a evidência fica consultável sob demanda.
+
+        Args:
+            task_id: identificador da tarefa concluída.
+
+        Returns:
+            A descoberta criada, ou uma lista vazia quando não havia resultado a importar.
         """
         agent = self.agent_for_task(task_id)
         if agent is None:
@@ -564,6 +808,19 @@ class AgentService:
         recuperáveis pelo histórico do agente. Por isso o efeito fica registrado com
         a informação de que ele precisa ser verificado antes de ser repetido — evita
         que a retomada repita algo que já aconteceu.
+
+        Args:
+            agent_id: identificador do agente.
+            description: descrição do efeito.
+            effect_id: identificador do efeito, único entre os do agente.
+            resumable: quando `True`, o efeito pode ser repetido sem verificação.
+            verify_hint: dica de como verificar o efeito.
+
+        Returns:
+            O efeito registrado.
+
+        Raises:
+            AgentNotFoundError: quando o agente não existe.
         """
         agent = self.get(agent_id)
         metadata = dict(agent.metadata_json or {})
@@ -584,13 +841,28 @@ class AgentService:
         return entry
 
     def external_effects(self, agent_id: uuid.UUID) -> list[dict[str, Any]]:
+        """Efeitos externos registrados pelo agente.
+
+        Args:
+            agent_id: identificador do agente.
+
+        Returns:
+            A lista de efeitos; vazia quando o agente não existe.
+        """
         agent = self.find(agent_id)
         if agent is None:
             return []
         return list((agent.metadata_json or {}).get("external_effects") or [])
 
     def effects_requiring_verification(self, agent_id: uuid.UUID) -> list[dict[str, Any]]:
-        """Efeitos externos que precisam ser verificados antes de a ação ser repetida."""
+        """Efeitos externos que precisam ser verificados antes de a ação ser repetida.
+
+        Args:
+            agent_id: identificador do agente.
+
+        Returns:
+            A lista dos efeitos ainda não verificados e não recuperáveis.
+        """
         return [
             effect
             for effect in self.external_effects(agent_id)
@@ -598,6 +870,18 @@ class AgentService:
         ]
 
     def mark_effect_verified(self, agent_id: uuid.UUID, effect_id: str) -> dict[str, Any] | None:
+        """Marca um efeito externo como verificado.
+
+        Args:
+            agent_id: identificador do agente.
+            effect_id: identificador do efeito.
+
+        Returns:
+            O efeito marcado, ou `None` quando não existe com esse identificador.
+
+        Raises:
+            AgentNotFoundError: quando o agente não existe.
+        """
         agent = self.get(agent_id)
         metadata = dict(agent.metadata_json or {})
         effects = list(metadata.get("external_effects") or [])
@@ -615,7 +899,17 @@ class AgentService:
     # -------------------------------------------------------------- descarte
 
     def discard_checks(self, agent_id: uuid.UUID) -> dict[str, Any]:
-        """Verifica o que impede descartar o agente agora."""
+        """Verifica o que impede descartar o agente agora.
+
+        Args:
+            agent_id: identificador do agente.
+
+        Returns:
+            Um dicionário com consultas pendentes, descendentes vivos, dependências bloqueadas e artefatos.
+
+        Raises:
+            AgentNotFoundError: quando o agente não existe.
+        """
         agent = self.get(agent_id)
         pending_queries = list(
             self._session.scalars(
@@ -674,6 +968,19 @@ class AgentService:
 
         Descartar nunca apaga tarefa, evidência ou artefato: o resultado pode ser
         necessário para a tarefa principal ou para outros agentes.
+
+        Args:
+            agent_id: identificador do agente.
+            purge: quando `True`, apaga também as linhas persistidas do agente.
+            reason: motivo do descarte.
+            force: quando `True`, descarta mesmo com verificações pendentes.
+
+        Returns:
+            Um dicionário com o identificador do agente, o que foi preservado e as verificações feitas.
+
+        Raises:
+            AgentNotFoundError: quando o agente não existe.
+            DiscardBlockedError: quando há consultas, descendentes ou dependências pendentes.
         """
         agent = self.get(agent_id)
         checks = self.discard_checks(agent_id)

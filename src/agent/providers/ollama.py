@@ -1,4 +1,12 @@
-# src/agent/providers/ollama.py — integração HTTP com Ollama (local ou remoto)
+"""
+Arquivo: src/agent/providers/ollama.py
+Nome: ollama.py
+Propósito: integrar o agente com o Ollama local ou remoto pela API nativa.
+Responsabilidade: camada de infraestrutura — inferência, streaming e listagem de modelos no Ollama.
+Componentes: OllamaProvider, chat_body, inference_failure_text.
+Dependências: agent.providers.base, agent.providers.http, httpx.
+Observações: a API nativa do Ollama é usada (`/api/tags` e `/api/chat`), não a compatível com OpenAI.
+"""
 from __future__ import annotations
 
 import json
@@ -19,6 +27,14 @@ from agent.providers.http import HttpClientConfig, client_kwargs, get_json, post
 
 
 def _ollama_message(message) -> dict:
+    """Converte uma mensagem do Callidus no formato de mensagem do Ollama.
+
+    Args:
+        message: mensagem do histórico.
+
+    Returns:
+        O dicionário aceito pela API do Ollama.
+    """
     payload = {"role": message.role, "content": message.content}
     if message.images:
         payload["images"] = message.images
@@ -48,6 +64,14 @@ def _ollama_tool_call(call: dict) -> dict:
 
 
 def inference_failure_text(exc: Exception) -> str:
+    """Texto curto e legível para uma falha de inferência.
+
+    Args:
+        exc: exceção levantada durante a chamada ao Ollama.
+
+    Returns:
+        A descrição da falha, com "tempo esgotado" quando o caso é de timeout.
+    """
     detail = str(exc).strip()
     name = exc.__class__.__name__.lower()
     if "timeout" in name or "timed out" in detail.lower():
@@ -56,11 +80,27 @@ def inference_failure_text(exc: Exception) -> str:
 
 
 def _reasoning_model(model_id: str) -> bool:
+    """Indica se o modelo expõe o canal de raciocínio do Ollama.
+
+    Args:
+        model_id: identificador do modelo.
+
+    Returns:
+        `True` quando o modelo aceita a opção `think`.
+    """
     low = model_id.lower()
     return any(token in low for token in ("qwen3", "gpt-oss", "deepseek", "reason"))
 
 
 def chat_body(request: ChatCompletionRequest) -> dict:
+    """Monta o corpo da requisição de inferência no formato da API do Ollama.
+
+    Args:
+        request: requisição do Callidus.
+
+    Returns:
+        O corpo JSON aceito pelo `/api/chat`.
+    """
     options = dict(request.profile.generation or {})
     think = options.pop("think", False)
     body = {
@@ -89,6 +129,14 @@ def chat_body(request: ChatCompletionRequest) -> dict:
 
 
 def _tool_calls(message: dict) -> list[ToolCall] | None:
+    """Extrai as chamadas de ferramenta de uma mensagem do Ollama.
+
+    Args:
+        message: mensagem devolvida pelo Ollama.
+
+    Returns:
+        A lista de chamadas, ou `None` quando a mensagem não pede ferramenta.
+    """
     raw = message.get("tool_calls") or []
     calls: list[ToolCall] = []
     for item in raw:
@@ -127,6 +175,21 @@ class OllamaProvider(LLMProvider):
         verify_tls: bool = True,
         default_model: str | None = None,
     ) -> None:
+        """Configura o provedor com a URL do servidor Ollama.
+
+        Args:
+            base_url: URL base do servidor Ollama.
+            timeout: tempo limite das requisições, em segundos.
+            api_key: credencial opcional, quando o servidor exige uma.
+            headers: cabeçalhos adicionais enviados em cada requisição.
+            max_retries: número de retentativas em falha transitória.
+            allow_private_hosts: permite endereços privados (servidores locais).
+            verify_tls: valida o certificado TLS do servidor.
+            default_model: modelo padrão usado quando o run não escolhe um.
+
+        Raises:
+            ProviderConfigError: quando a URL base é inválida.
+        """
         self._http = HttpClientConfig(
             base_url=base_url,
             timeout=timeout,
@@ -141,6 +204,11 @@ class OllamaProvider(LLMProvider):
         self.default_model = default_model
 
     def capabilities(self) -> ProviderCapabilities:
+        """Recursos declarados pelo provedor.
+
+        Returns:
+            As capacidades da API do Ollama.
+        """
         return ProviderCapabilities(
             streaming=True,
             tools=True,
@@ -153,9 +221,22 @@ class OllamaProvider(LLMProvider):
         )
 
     def _client(self) -> httpx.AsyncClient:
+        """Cliente HTTP configurado para o provedor.
+
+        Returns:
+            Um `httpx.AsyncClient` com os mesmos parâmetros de transporte da configuração.
+        """
         return httpx.AsyncClient(**client_kwargs(self._http))
 
     async def list_models(self) -> list[str]:
+        """Lista os modelos instalados no servidor Ollama.
+
+        Returns:
+            A lista de nomes de modelo.
+
+        Raises:
+            ProviderError: quando o servidor não pode ser consultado.
+        """
         url = f"{self._base_url}/api/tags"
         try:
             async with self._client() as client:
@@ -173,6 +254,17 @@ class OllamaProvider(LLMProvider):
 
 
     async def _chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+        """Executa uma inferência completa pela API do Ollama.
+
+        Args:
+            request: requisição do Callidus.
+
+        Returns:
+            A resposta normalizada do provedor.
+
+        Raises:
+            ProviderError: quando a chamada HTTP falha.
+        """
         url = f"{self._base_url}/api/chat"
         body = chat_body(request)
 
@@ -210,7 +302,18 @@ class OllamaProvider(LLMProvider):
         self, request: ChatCompletionRequest, on_delta: Callable[[str], None]
     ) -> ChatCompletionResponse:
         """`/api/chat` com `stream: true`: uma linha JSON por fragmento; a última (`done`) traz uso de tokens
-        e `done_reason`. A resposta devolvida é a mesma que `chat` daria (conteúdo inteiro + uso)."""
+        e `done_reason`. A resposta devolvida é a mesma que `chat` daria (conteúdo inteiro + uso).
+
+        Args:
+            request: requisição do Callidus.
+            on_delta: callback que recebe cada fragmento do texto.
+
+        Returns:
+            A resposta completa, montada ao final do stream.
+
+        Raises:
+            ProviderError: quando o stream falha, traz uma linha inválida ou termina sem a mensagem final.
+        """
         url = f"{self._base_url}/api/chat"
         body = chat_body(request)
         body["stream"] = True

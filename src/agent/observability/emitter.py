@@ -1,4 +1,12 @@
-# src/agent/observability/emitter.py — contexto de observação, emissão tipada e publicação após commit
+"""
+Arquivo: src/agent/observability/emitter.py
+Nome: emitter.py
+Propósito: emitir os eventos de execução, ligando-os à run e à tarefa do contexto corrente.
+Responsabilidade: camada de aplicação — contexto de observação, emissão tipada e publicação após o commit.
+Componentes: Observation, observe, scoped, set_task, current, emit, install e os listeners SQLAlchemy.
+Dependências: agent.observability.bus, agent.observability.contracts, agent.observability.sanitize, agent.persistence.models, sqlalchemy.
+Observações: eventos persistidos só são publicados depois do commit; fragmentos são publicados na hora.
+"""
 from __future__ import annotations
 
 import itertools
@@ -34,6 +42,16 @@ _order = itertools.count()
 
 @dataclass
 class Observation:
+    """Contexto de observação: a run, a tarefa e o agente aos quais os eventos pertencem.
+
+    Atributos:
+        session: sessão usada para persistir os eventos.
+        run_id: run à qual os eventos são atribuídos.
+        project_id: projeto da run, quando conhecido.
+        task_id: tarefa corrente; pode ser ajustada durante a execução.
+        agent: nome do agente emissor (por padrão, o orquestrador).
+    """
+
     session: Session
     run_id: uuid.UUID
     project_id: uuid.UUID | None = None
@@ -45,6 +63,11 @@ _CURRENT: ContextVar[Observation | None] = ContextVar("agent_observation", defau
 
 
 def current() -> Observation | None:
+    """Contexto de observação ativo, quando existe.
+
+    Returns:
+        A `Observation` corrente, ou `None` fora de um bloco `observe`.
+    """
     return _CURRENT.get()
 
 
@@ -94,6 +117,7 @@ def scoped(*, task_id: Any = _UNSET, agent: str | None = None) -> Iterator[Obser
 
 @lru_cache(maxsize=1)
 def _limits() -> tuple[int, int]:
+    """Devolve os limites de texto por tipo de evento."""
     from agent.config import get_settings
 
     s = get_settings()
@@ -101,11 +125,28 @@ def _limits() -> tuple[int, int]:
 
 
 def _limit_for(event_type: str) -> int:
+    """Limite de truncamento aplicável a um tipo de evento.
+
+    Args:
+        event_type: identificador do evento.
+
+    Returns:
+        O limite de caracteres do payload; a resposta final do modelo usa o limite maior.
+    """
     text_limit, output_limit = _limits()
     return output_limit if event_type == "agent.output.completed" or event_type not in EVENT_SPECS else text_limit
 
 
 def _max_seq(session: Session, run_id: uuid.UUID) -> int:
+    """Maior número de sequência já gravado para uma run.
+
+    Args:
+        session: sessão de leitura.
+        run_id: identificador da run.
+
+    Returns:
+        A sequência máxima persistida; zero quando a run ainda não tem eventos.
+    """
     with session.no_autoflush:
         return int(
             session.execute(select(func.max(EventLogModel.seq)).where(EventLogModel.run_id == run_id)).scalar() or 0
@@ -113,6 +154,15 @@ def _max_seq(session: Session, run_id: uuid.UUID) -> int:
 
 
 def _parent_of(session: Session, task_id: uuid.UUID | None) -> uuid.UUID | None:
+    """Tarefa pai de uma tarefa, para Allowlist do envelope.
+
+    Args:
+        session: sessão de leitura.
+        task_id: identificador da tarefa; `None` devolve `None`.
+
+    Returns:
+        O identificador da tarefa pai, ou `None` quando a tarefa não existe ou é raiz.
+    """
     if task_id is None:
         return None
     with session.no_autoflush:
@@ -170,10 +220,21 @@ def emit(
 
 
 def _on_init(target: EventLogModel, _args: Any, _kwargs: Any) -> None:
+    """Marca a ordem de criação da linha para preservar a sequência de emissão."""
     target._obs_order = next(_order)
 
 
 def _before_flush(session: Session, _ctx: Any, _instances: Any) -> None:
+    """Prepara as linhas de evento antes do flush: run, agente, pai, sequência e sanitização.
+
+    Args:
+        session: sessão que está sendo gravada.
+        _ctx: contexto do evento SQLAlchemy (não usado).
+        _instances: instâncias do flush (não usado).
+
+    Observações:
+        Linhas sem `run_id` só são completadas quando pertencem à sessão em observação.
+    """
     rows = [o for o in session.new if isinstance(o, EventLogModel) and o.seq is None]
     if not rows:
         return
@@ -206,12 +267,26 @@ def _before_flush(session: Session, _ctx: Any, _instances: Any) -> None:
 
 
 def _after_flush(session: Session, _ctx: Any) -> None:
+    """Converte as linhas gravadas em envelopes, aguardando a publicação após o commit.
+
+    Args:
+        session: sessão que foi gravada.
+        _ctx: contexto do evento SQLAlchemy (não usado).
+    """
     rows = session.info.pop(_PENDING_ROWS, None)
     if rows:
         session.info.setdefault(_PENDING_ENVS, []).extend(envelope_from_row(r) for r in rows)
 
 
 def _after_commit(session: Session) -> None:
+    """Publica no barramento os envelopes dos eventos efetivamente confirmados.
+
+    Args:
+        session: sessão cujo commit acabou de ocorrer.
+
+    Observações:
+        Publicar só após o commit evita que o cliente veja um evento que foi desfeito.
+    """
     envs = session.info.pop(_PENDING_ENVS, None)
     if envs:
         bus = get_bus()
@@ -220,6 +295,12 @@ def _after_commit(session: Session) -> None:
 
 
 def _after_soft_rollback(session: Session, previous_transaction: Any) -> None:
+    """Descarta os envelopes pendentes quando a transação externa é desfeita.
+
+    Args:
+        session: sessão envolvida no rollback.
+        previous_transaction: transação abandonada; um rollback interno é ignorado.
+    """
     if getattr(previous_transaction, "parent", None) is not None:
         return
     session.info.pop(_PENDING_ROWS, None)

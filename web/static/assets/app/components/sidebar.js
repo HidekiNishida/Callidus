@@ -1,7 +1,17 @@
-// web/static/assets/app/components/sidebar.js
+/**
+ * Arquivo: web/static/assets/app/components/sidebar.js
+ * Nome: sidebar.js
+ * Propósito: barra lateral com a lista de conversas e projetos.
+ * Responsabilidade: frontend/componente — navega entre conversas e projetos e permite removê-los.
+ * Componentes: Sidebar (componente Vue), STATUS_DOT.
+ * Dependências: `../store.js` (estado e ações), `../ui.js` (ícones e tempo relativo).
+ * Observações: a busca filtra projetos e conversas por nome; a cor do ponto indica o estado
+ * da conversa.
+ */
 import { state, selectProject, selectConversation, deleteConversation, deleteProject, conversationStatus, toast } from "../store.js";
 import { icon, ago } from "../ui.js";
 
+/** Classe CSS do ponto de estado de cada conversa. */
 const STATUS_DOT = {
   working: "dot-live",
   attention: "dot-err",
@@ -9,6 +19,12 @@ const STATUS_DOT = {
   idle: "dot-idle",
 };
 
+/**
+ * Barra lateral: lista conversas e projetos, com busca, seleção e remoção.
+ *
+ * @returns {object} Objeto de opções do Vue com `setup()` e `template`.
+ * @emits {new-project} Pede a abertura do modal de novo projeto.
+ */
 export const Sidebar = {
   name: "Sidebar",
   emits: ["new-project"],

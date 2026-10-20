@@ -1,5 +1,13 @@
-# src/agent/api/automation_routes.py — API das automações
-"""Rotas das automações: criar, consultar, editar, ativar, suspender, executar uma
+"""
+Arquivo: src/agent/api/automation_routes.py
+Nome: automation_routes.py
+Propósito: API das automações.
+Responsabilidade: camada de apresentação/transport.
+Componentes: AutomationIn, AutomationPatch, TestIn, validate_automation, create_automation, list_automations….
+Dependências: agent.api.deps, agent.automation.contracts, agent.automation.dependencies, agent.automation.dispatcher, agent.automation.enums, agent.automation.executor….
+Observações: a rota valida, delega e serializa — a regra de negócio vive no serviço.
+
+Rotas das automações: criar, consultar, editar, ativar, suspender, executar uma
 vez, testar, cancelar e remover.
 
 A API não executa a automação por conta própria: ela registra o pedido e o runtime
@@ -45,17 +53,37 @@ class AutomationIn(BaseModel):
 
 
 class AutomationPatch(BaseModel):
+    """Mudanças parciais de uma automação existente.
+
+    Atributos:
+        changes: pares de campo e valor novo aceitos pelo serviço de automações.
+    """
     changes: dict[str, Any] = Field(default_factory=dict)
 
 
 class TestIn(BaseModel):
     # `false`: só verifica prontidão (dependências e destino) sem executar a ação.
+    """Opções do teste controlado de uma automação.
+
+    Atributos:
+        execute: quando verdadeiro, o teste dispara a ação; quando falso, apenas verifica a prontidão.
+        force: permite o disparo mesmo com a definição desabilitada.
+    """
     execute: bool = False
     # Dispara mesmo assim que a definição esteja desabilitada.
     force: bool = False
 
 
 def _present(session: Session, row: AutomationModel) -> dict[str, Any]:
+    """Serializa uma automação persistida no formato entregue à interface.
+
+    Args:
+        session: sessão do banco da requisição.
+        row: registro da automação.
+
+    Returns:
+        Um dicionário com a definição, o estado e os próximos marcos de tempo da automação.
+    """
     return {
         "id": str(row.id),
         "project_id": str(row.project_id),
@@ -85,6 +113,14 @@ def _present(session: Session, row: AutomationModel) -> dict[str, Any]:
 
 
 def _present_firing(row: AutomationFiringModel) -> dict[str, Any]:
+    """Serializa um disparo de automação no formato entregue à interface.
+
+    Args:
+        row: registro do disparo.
+
+    Returns:
+        Um dicionário com o estado, as tentativas e o resultado do disparo.
+    """
     return {
         "id": str(row.id),
         "automation_id": str(row.automation_id),
@@ -118,10 +154,30 @@ def _readable_errors(exc: ValidationError) -> list[dict]:
 
 
 def _service(session: Session) -> AutomationService:
+    """Cria o serviço de automações sobre a sessão da requisição.
+
+    Args:
+        session: sessão do banco da requisição.
+
+    Returns:
+        O serviço de automações ligado à sessão informada.
+    """
     return AutomationService(session)
 
 
 def _load(session: Session, automation_id: uuid.UUID) -> AutomationModel:
+    """Carrega uma automação ou responde 404.
+
+    Args:
+        session: sessão do banco da requisição.
+        automation_id: identificador da automação solicitada.
+
+    Returns:
+        O registro da automação.
+
+    Raises:
+        HTTPException: com status 404 quando a automação não existe.
+    """
     try:
         return _service(session).get(automation_id)
     except AutomationNotFound as exc:
@@ -166,6 +222,16 @@ def list_automations(
     state: str | None = None,
     session: Session = Depends(db_session),
 ) -> list[dict]:
+    """Lista as automações visíveis, opcionalmente filtradas.
+
+    Args:
+        project_id: quando informado, restringe a listagem ao projeto.
+        state: quando informado, restringe a listagem ao estado da automação.
+        session: sessão do banco da requisição.
+
+    Returns:
+        As automações correspondentes ao filtro, serializadas.
+    """
     rows = _service(session).list(project_id, state=state)
     return [_present(session, row) for row in rows]
 
@@ -197,6 +263,18 @@ def supervisor_diagnose(settings: Settings = Depends(read_settings)) -> dict:
 
 @router.get("/{automation_id}")
 def get_automation(automation_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    """Detalha uma automação com seus disparos recentes e eventos.
+
+    Args:
+        automation_id: identificador da automação solicitada.
+        session: sessão do banco da requisição.
+
+    Returns:
+        A automação serializada, com os últimos disparos e os eventos do tipo `automation.%`.
+
+    Raises:
+        HTTPException: com status 404 quando a automação não existe.
+    """
     row = _load(session, automation_id)
     payload = _present(session, row)
     firings = list(
@@ -234,6 +312,19 @@ def update_automation(
     body: AutomationPatch,
     session: Session = Depends(db_session),
 ) -> dict:
+    """Aplica mudanças parciais em uma automação.
+
+    Args:
+        automation_id: identificador da automação alterada.
+        body: pares de campo e valor novo.
+        session: sessão do banco da requisição.
+
+    Returns:
+        A automação já atualizada, serializada.
+
+    Raises:
+        HTTPException: com status 404 quando a automação não existe e com status 422 quando a mudança viola o contrato.
+    """
     _load(session, automation_id)
     try:
         row = _service(session).update(automation_id, body.changes)
@@ -244,6 +335,18 @@ def update_automation(
 
 @router.delete("/{automation_id}")
 def delete_automation(automation_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    """Remove uma automação.
+
+    Args:
+        automation_id: identificador da automação removida.
+        session: sessão do banco da requisição.
+
+    Returns:
+        A confirmação da remoção com o identificador da automação.
+
+    Raises:
+        HTTPException: com status 404 quando a automação não existe.
+    """
     _load(session, automation_id)
     _service(session).delete(automation_id)
     return {"deleted": True, "id": str(automation_id)}
@@ -251,18 +354,54 @@ def delete_automation(automation_id: uuid.UUID, session: Session = Depends(db_se
 
 @router.post("/{automation_id}/enable")
 def enable_automation(automation_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    """Reativa uma automação suspensa ou desabilitada.
+
+    Args:
+        automation_id: identificador da automação alterada.
+        session: sessão do banco da requisição.
+
+    Returns:
+        A automação no estado habilitado, serializada.
+
+    Raises:
+        HTTPException: com status 404 quando a automação não existe.
+    """
     row = _load(session, automation_id)
     return _present(session, _service(session).set_state(row.id, AutomationState.ENABLED))
 
 
 @router.post("/{automation_id}/suspend")
 def suspend_automation(automation_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    """Suspende uma automação, pausando os disparos futuros.
+
+    Args:
+        automation_id: identificador da automação alterada.
+        session: sessão do banco da requisição.
+
+    Returns:
+        A automação no estado suspenso, serializada.
+
+    Raises:
+        HTTPException: com status 404 quando a automação não existe.
+    """
     row = _load(session, automation_id)
     return _present(session, _service(session).set_state(row.id, AutomationState.SUSPENDED))
 
 
 @router.post("/{automation_id}/disable")
 def disable_automation(automation_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    """Desabilita uma automação de forma permanente, até nova reativação.
+
+    Args:
+        automation_id: identificador da automação alterada.
+        session: sessão do banco da requisição.
+
+    Returns:
+        A automação no estado desabilitado, serializada.
+
+    Raises:
+        HTTPException: com status 404 quando a automação não existe.
+    """
     row = _load(session, automation_id)
     return _present(session, _service(session).set_state(row.id, AutomationState.DISABLED))
 
@@ -273,6 +412,19 @@ def list_firings(
     limit: int = 50,
     session: Session = Depends(db_session),
 ) -> list[dict]:
+    """Lista os disparos de uma automação, do mais recente para o mais antigo.
+
+    Args:
+        automation_id: identificador da automação consultada.
+        limit: número máximo de disparos devolvidos, limitado ao intervalo de 1 a 500.
+        session: sessão do banco da requisição.
+
+    Returns:
+        Os disparos da automação, serializados.
+
+    Raises:
+        HTTPException: com status 404 quando a automação não existe.
+    """
     _load(session, automation_id)
     rows = list(
         session.scalars(

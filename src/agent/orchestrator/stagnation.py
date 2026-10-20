@@ -1,4 +1,13 @@
-# src/agent/orchestrator/stagnation.py — repetição por assinatura normalizada, diagnóstico e limites do run
+"""
+Arquivo: src/agent/orchestrator/stagnation.py
+Nome: stagnation.py
+Propósito: repetição por assinatura normalizada, diagnóstico e limites do run.
+Responsabilidade: camada de aplicação.
+Componentes: normalize_error, error_signature, strategy_signature, repeated_failures, diagnose, limits_for….
+Dependências: agent.config, agent.orchestrator.progress, agent.persistence.models, __future__, datetime, hashlib….
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -35,6 +44,14 @@ def normalize_error(text: str) -> str:
 
 
 def _digest(data: Any) -> str:
+    """Calcula a impressão digital curta de um conteúdo qualquer.
+
+    Args:
+        data: estrutura a resumir; valores não serializáveis são convertidos em texto.
+
+    Returns:
+        O resumo hexadecimal de dezesseis caracteres.
+    """
     return hashlib.sha1(json.dumps(data, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()[:16]
 
 
@@ -144,6 +161,17 @@ def limits_for(settings: Settings, config: dict[str, Any]) -> dict[str, int]:
 
 
 def _naive(value: datetime | None) -> datetime | None:
+    """Converte um instante para UTC sem informação de fuso.
+
+    Args:
+        value: instante a converter; pode ser `None`.
+
+    Returns:
+        O instante em UTC sem fuso, ou `None` quando a entrada era `None`.
+
+    Observações:
+        A comparação entre instantes gravados no banco exige a mesma base de fuso para todos.
+    """
     if value is None:
         return None
     return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
@@ -212,6 +240,15 @@ def limit_reached(session: Session, run: ExecutionRunModel, limits: dict[str, in
 
 
 def next_action_for_limit(run_id: uuid.UUID, hit: dict[str, Any]) -> str:
+    """Diz o que fazer quando um limite operacional é atingido.
+
+    Args:
+        run_id: identificador da run, usado na orientação de retomada.
+        hit: descrição do limite atingido, com chave, valor e máximo.
+
+    Returns:
+        Uma orientação em texto para o usuário, dirigido ao caminho de retomada da run.
+    """
     if hit["limit"] == "steps_without_progress":
         return (
             "Veja as pendências e o último erro; ajuste a orientação ou corrija a causa e retome "

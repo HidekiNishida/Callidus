@@ -1,4 +1,12 @@
-# src/agent/services/attachments.py — texto, imagem e documento colados no chat
+"""
+Arquivo: src/agent/services/attachments.py
+Nome: attachments.py
+Propósito: materializar os anexos colados no chat (texto, imagem e documento) dentro do projeto.
+Responsabilidade: camada de aplicação — gravação dos anexos e devolução de suas referências.
+Componentes: materialize_attachments, attachment_note.
+Dependências: agent.brand, agent.security.paths.
+Observações: os anexos ficam em `.callidus/anexos/`; a pasta legada é mantida quando já tem arquivos.
+"""
 from __future__ import annotations
 
 import base64
@@ -17,6 +25,15 @@ _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def _safe_name(name: str, fallback: str) -> str:
+    """Normaliza o nome do anexo para um nome de arquivo seguro.
+
+    Args:
+        name: nome informado pelo usuário.
+        fallback: nome usado quando o informado não serve.
+
+    Returns:
+        O nome normalizado, limitado a 80 caracteres.
+    """
     base = Path(name or "").name
     base = _SAFE.sub("-", base).strip(".-") or fallback
     return base[:80]
@@ -37,7 +54,19 @@ def _attachments_folder(project_root: str, task_id: str) -> str:
 
 
 def materialize_attachments(project_root: str, task_id: str, items: list) -> list[dict]:
-    """Grava os anexos em `.callidus/anexos/` e devolve só referências, sem o conteúdo."""
+    """Grava os anexos em `.callidus/anexos/` e devolve só referências, sem o conteúdo.
+
+    Args:
+        project_root: raiz do projeto onde os anexos são gravados.
+        task_id: identificador da tarefa, usado na pasta dos anexos.
+        items: anexos informados (texto, base64 ou arquivo).
+
+    Returns:
+        A lista de referências gravadas, com nome, tipo, mime, caminho e tamanho.
+
+    Raises:
+        ValueError: quando há anexos demais, conteúdo ausente, base64 inválido ou limite estourado.
+    """
     if not isinstance(items, list) or not items:
         return []
     if len(items) > MAX_ATTACHMENTS:
@@ -86,6 +115,14 @@ def materialize_attachments(project_root: str, task_id: str, items: list) -> lis
 
 
 def attachment_note(refs: list[dict]) -> str:
+    """Nota que descreve os anexos gravados, para entrar no contexto da etapa.
+
+    Args:
+        refs: referências dos anexos gravados.
+
+    Returns:
+        O texto da nota, uma linha por anexo.
+    """
     lines = [
         NOTE_HEADER,
         "Arquivos gravados no projeto. Leia com read_file. Não trate como código do produto até o pedido pedir.",

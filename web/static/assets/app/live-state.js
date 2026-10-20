@@ -1,7 +1,15 @@
-/** Estado da tela de acompanhamento de uma run: puro (sem DOM), alimentado pela foto do servidor
- * (`/runs/{id}/observe`) e pelos envelopes do SSE (`/runs/{id}/stream`). Nada aqui decide o estado real:
- * tarefas e status vêm do servidor; o navegador só agrega para exibir. */
+/**
+ * Arquivo: web/static/assets/app/live-state.js
+ * Nome: live-state.js
+ * Propósito: estado da tela de acompanhamento de uma run, alimentado pela foto do servidor e pelos envelopes do SSE.
+ * Responsabilidade: frontend/estado — agrega o que o servidor informa para exibir; não decide o estado real.
+ * Componentes: createState(), applyEvent(), applyLive(), seletores (buildTree, visibleEvents, …), describe().
+ * Dependências: rota `/runs/{id}/observe` (foto inicial) e `/runs/{id}/stream` (envelopes); nenhum DOM.
+ * Observações: nada aqui decide o estado real: tarefas e status vêm do servidor; o navegador só agrega
+ * para exibir. Os limites de `LIMITS` mantêm o consumo de memória do navegador sob controle.
+ */
 
+/** Limites de retenção do estado no navegador (eventos, saídas, textos,terminal, arquivos). */
 export const LIMITS = {
   events: 2000,
   taskHistory: 200,
@@ -34,23 +42,57 @@ export const STATUS_LABEL = {
 
 export const CATEGORIES = ["run", "plan", "task", "agent", "tool", "command", "file", "test", "verification"];
 
+/**
+ * Extrai a categoria (prefixo antes do ponto) do tipo de um envelope.
+ *
+ * @param {string} type Tipo do envelope (ex.: `tool.completed`).
+ * @returns {string} A categoria (ex.: `tool`) ou string vazia.
+ */
 export function category(type) {
   return String(type || "").split(".", 1)[0];
 }
 
+/**
+ * Mantém a lista no tamanho máximo, descartando os itens mais antigos.
+ *
+ * @param {Array} list Lista a ser limitada (alterada no lugar).
+ * @param {number} max Número máximo de itens mantidos.
+ * @returns {Array} A própria lista, já truncada.
+ */
 function cap(list, max) {
   if (list.length > max) list.splice(0, list.length - max);
   return list;
 }
 
+/**
+ * Mantém apenas a cauda do texto, descartando o início quando o limite é excedido.
+ *
+ * @param {string} text Texto acumulado.
+ * @param {number} max Número máximo de caracteres mantidos.
+ * @returns {string} O texto truncado pela direita.
+ */
 function tailText(text, max) {
   return text.length > max ? text.slice(text.length - max) : text;
 }
 
+/**
+ * Cria as métricas zeradas do acompanhamento.
+ *
+ * @returns {object} Contadores de envelopes recebidos, persistidos, duplicados, atrasados, etc.
+ */
 function emptyMetrics() {
   return { received: 0, persisted: 0, ephemeral: 0, duplicates: 0, stale: 0, resyncs: 0, reconnects: 0, latencies: [], maxLatencyMs: 0, droppedEvents: 0 };
 }
 
+/**
+ * Monta o estado inicial do acompanhamento a partir da foto do servidor.
+ *
+ * @param {object} snapshot Foto devolvida por `/runs/{id}/observe`.
+ * @param {number} [now] Momento de referência (ms) usado como base do tempo decorrido.
+ * @returns {object} O estado do redutor, já com o histórico da foto aplicado.
+ * Observações: operações interrompidas são marcadas como tal; as métricas são reiniciadas ao fim
+ * para que só a sessão ao vivo seja contabilizada.
+ */
 export function createState(snapshot, now = Date.now()) {
   const header = snapshot.header || {};
   const state = {
@@ -96,14 +138,37 @@ export function createState(snapshot, now = Date.now()) {
   return state;
 }
 
+/**
+ * Cria a entrada de uma operação de terminal (ferramenta, comando ou teste).
+ *
+ * @param {string} kind Tipo da operação.
+ * @param {string} callId Identificador da chamada.
+ * @param {string|null} taskId Tarefa dona da operação.
+ * @param {number} seq Sequência do envelope que abriu a operação.
+ * @returns {object} A entrada, já com status "running".
+ */
 function newOp(kind, callId, taskId, seq) {
   return { kind, call_id: callId, task_id: taskId || null, tool: null, command: null, status: "running", output: "", exit_code: null, duration_ms: null, counts: null, error: null, seq: seq || 0, started_seq: seq || 0, ts: null };
 }
 
+/**
+ * Cria a entrada de uma chamada ao modelo.
+ *
+ * @param {string} id Identificador da saída.
+ * @param {object} env Envelope que originou a chamada.
+ * @returns {object} A entrada, já com status "waiting" e sem texto.
+ */
 function newOutput(id, env) {
   return { output_id: id, task_id: env.task_id || null, agent: env.agent || null, provider: null, model: null, streaming: null, purpose: null, status: "waiting", text: "", received: 0, gap: false, seq: env.seq || 0, started_seq: env.seq || 0, ts: env.ts || null, error: null, chars: null, duration_ms: null };
 }
 
+/**
+ * Insere o envelope na lista mantendo a ordem crescente de `seq`.
+ *
+ * @param {Array} list Lista de envelopes (alterada no lugar).
+ * @param {object} env Envelope a inserir.
+ * @returns {void}
+ */
 function insertSorted(list, env) {
   if (!list.length || list[list.length - 1].seq < env.seq) {
     list.push(env);
@@ -126,6 +191,14 @@ export function parseTs(iso) {
   return Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(text) ? text : `${text}Z`);
 }
 
+/**
+ * Registra a latência entre o carimbo do servidor e a chegada do envelope.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} env Envelope recebido.
+ * @param {number} now Momento de chegada (ms).
+ * @returns {void}
+ */
 function recordLatency(state, env, now) {
   const ts = parseTs(env.ts);
   if (Number.isNaN(ts)) return;
@@ -135,8 +208,19 @@ function recordLatency(state, env, now) {
   state.metrics.maxLatencyMs = Math.max(state.metrics.maxLatencyMs, ms);
 }
 
-/** Aplica um envelope. Persistidos são deduplicados por `seq`; fragmentos (sem persistência) só valem se forem
- * mais novos que o que a saída/operação já tem. Retorna false quando o envelope foi descartado. */
+/**
+ * Aplica um envelope ao estado, distribuindo-o pelo tipo de evento.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} env Envelope do stream.
+ * @param {object} [options] Opções.
+ * @param {boolean} [options.replay] Verdadeiro na reexibição do histórico (não conta métricas).
+ * @param {number} [options.now] Momento de chegada (ms).
+ * @returns {boolean} `true` quando o envelope foi aplicado, `false` quando foi descartado
+ *   (duplicado, de outra run ou atrasado).
+ * Observações: persistidos são deduplicados por `seq`; fragmentos (sem persistência) só valem se forem
+ * mais novos que o que a saída/operação já tem.
+ */
 export function applyEvent(state, env, { replay = false, now = Date.now() } = {}) {
   if (!env || !env.type || env.run_id && state.runId && env.run_id !== state.runId) return false;
   const persisted = env.persisted !== false;
@@ -172,6 +256,16 @@ export function applyEvent(state, env, { replay = false, now = Date.now() } = {}
   return handled;
 }
 
+/**
+ * Distribui o envelope ao redutor específico da sua categoria.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} env Envelope do stream.
+ * @param {object} options Opções internas.
+ * @param {boolean} options.fresh Verdadeiro quando o envelope é mais novo que a foto inicial.
+ * @param {boolean} options.persisted Verdadeiro quando o envelope foi persistido pelo servidor.
+ * @returns {boolean} `true` quando o evento foi consumido, `false` quando foi descartado.
+ */
 function reduce(state, env, { fresh, persisted }) {
   const d = env.data || {};
   const type = env.type;
@@ -198,17 +292,39 @@ function reduce(state, env, { fresh, persisted }) {
   return true;
 }
 
+/**
+ * Procura, de trás para frente, o último item que satisfaz o predicado.
+ *
+ * @param {Array} list Lista a percorrer.
+ * @param {function(object): boolean} pred Predicado de seleção.
+ * @returns {object|null} O item encontrado, ou `null`.
+ */
 function findLast(list, pred) {
   for (let i = list.length - 1; i >= 0; i -= 1) if (pred(list[i])) return list[i];
   return null;
 }
 
+/**
+ * Normaliza o critério de uma verificação para texto legível.
+ *
+ * @param {string|object|null} value Critério declarado pelo verificador.
+ * @returns {string|null} O texto do critério, ou `null` quando não há critério.
+ */
 function criterionText(value) {
   if (value == null || value === "") return null;
   if (typeof value === "string") return value;
   return value.description || value.command || value.type || JSON.stringify(value);
 }
 
+/**
+ * Aplica eventos de execução (progresso, status, pausa, término).
+ *
+ * @param {object} state Estado do redutor.
+ * @param {string} type Tipo do envelope.
+ * @param {object} d Dados do envelope.
+ * @param {boolean} fresh Verdadeiro quando o envelope é mais novo que a foto inicial.
+ * @returns {boolean} Sempre `true` — eventos de execução não são descartados.
+ */
 function reduceRun(state, type, d, fresh) {
   if (!fresh) return true;
   if (type === "run.progress" && d.state) state.header.progress = { ...d.state };
@@ -230,6 +346,15 @@ function reduceRun(state, type, d, fresh) {
   return true;
 }
 
+/**
+ * Aplica eventos de tarefa (criação, mudança de status, bloqueio, falha).
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} env Envelope do stream.
+ * @param {object} d Dados do envelope.
+ * @param {boolean} fresh Verdadeiro quando o envelope é mais novo que a foto inicial.
+ * @returns {boolean} Sempre `true` — a atualização da tarefa é idempotente.
+ */
 function reduceTask(state, env, d, fresh) {
   if (env.type === "plan.updated") return true;
   if (!env.task_id) return true;
@@ -252,6 +377,15 @@ function reduceTask(state, env, d, fresh) {
   return true;
 }
 
+/**
+ * Aplica eventos do modelo (chamada, fragmentos de texto, conclusão ou falha).
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} env Envelope do stream.
+ * @param {object} d Dados do envelope.
+ * @param {boolean} persisted Verdadeiro quando o envelope foi persistido pelo servidor.
+ * @returns {boolean} `false` quando o fragmento é atrasado e foi descartado.
+ */
 function reduceAgent(state, env, d, persisted) {
   const id = d.output_id;
   if (!id) return true;
@@ -314,6 +448,12 @@ function reduceAgent(state, env, d, persisted) {
   return true;
 }
 
+/**
+ * Descarta as saídas mais antigas (já concluídas) quando o limite é excedido.
+ *
+ * @param {object} state Estado do redutor.
+ * @returns {void}
+ */
 function trimOutputs(state) {
   if (state.outputs.size <= LIMITS.outputs) return;
   for (const [id, out] of state.outputs) {
@@ -322,6 +462,16 @@ function trimOutputs(state) {
   }
 }
 
+/**
+ * Aplica eventos de terminal (ferramenta, comando ou teste) e seu texto de saída.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} env Envelope do stream.
+ * @param {object} d Dados do envelope.
+ * @param {string} kind Categoria da operação.
+ * @param {boolean} persisted Verdadeiro quando o envelope foi persistido pelo servidor.
+ * @returns {boolean} `false` quando o fragmento é atrasado e foi descartado.
+ */
 function reduceOp(state, env, d, kind, persisted) {
   const id = d.call_id;
   if (!id) return true;
@@ -366,6 +516,12 @@ function reduceOp(state, env, d, kind, persisted) {
   return true;
 }
 
+/**
+ * Descarta as operações mais antigas (já encerradas) quando o limite é excedido.
+ *
+ * @param {object} state Estado do redutor.
+ * @returns {void}
+ */
 function trimOps(state) {
   if (state.ops.size <= LIMITS.terminal) return;
   for (const [key, op] of state.ops) {
@@ -374,7 +530,13 @@ function trimOps(state) {
   }
 }
 
-/** `live` do servidor (texto parcial acumulado em memória): só substitui o que estiver mais atrasado. */
+/**
+ * Aplica o retrato `live` do servidor: só substitui o que estiver mais atrasado.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} live Retrato com as saídas e operações em andamento.
+ * @returns {void}
+ */
 export function applyLive(state, live) {
   for (const o of live.outputs || []) {
     let out = state.outputs.get(o.output_id);
@@ -408,17 +570,37 @@ export function applyLive(state, live) {
   }
 }
 
+/**
+ * Registra o estado da conexão do stream.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {string} connection Novo estado ("connecting", "live", "reconnecting", "ended").
+ * @returns {void}
+ */
 export function markConnection(state, connection) {
   if (connection === "reconnecting" && state.connection !== "reconnecting") state.metrics.reconnects += 1;
   state.connection = connection;
 }
 
+/**
+ * Conta uma ressincronização pedida pelo servidor.
+ *
+ * @param {object} state Estado do redutor.
+ * @returns {void}
+ */
 export function markResync(state) {
   state.metrics.resyncs += 1;
 }
 
 // ---------- seletores ----------
 
+/**
+ * Devolve a tarefa que está em andamento agora (a de maior prioridade).
+ *
+ * @param {object} state Estado do redutor.
+ * @returns {object|null} A tarefa atual, ou `null` quando nenhuma está em andamento.
+ * Observações: a tarefa raiz da run não é considerada "em andamento" para o usuário.
+ */
 export function currentTask(state) {
   for (const status of CURRENT_ORDER) {
     for (const t of state.tasks.values()) if (t.status === status && t.id !== state.run.root_task_id) return t;
@@ -426,23 +608,50 @@ export function currentTask(state) {
   return null;
 }
 
+/**
+ * Calcula quanto tempo a execução já durou.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {number} [now] Momento de referência (ms).
+ * @returns {number|null} Os segundos decorridos, ou `null` quando o servidor não informou o total.
+ */
 export function elapsedSeconds(state, now = Date.now()) {
   if (state.elapsedBase == null) return null;
   if (state.ended || state.header.mode === "paused") return state.elapsedBase;
   return state.elapsedBase + Math.max(0, Math.floor((now - state.loadedAt) / 1000));
 }
 
+/**
+ * Resume a latência observada entre o fato e a chegada do evento.
+ *
+ * @param {object} state Estado do redutor.
+ * @returns {{avg: number, max: number, last: number}|null} Média, máximo e última amostra, ou
+ *   `null` quando ainda não há amostras.
+ */
 export function latency(state) {
   const xs = state.metrics.latencies;
   if (!xs.length) return null;
   return { avg: Math.round(xs.reduce((a, b) => a + b, 0) / xs.length), max: state.metrics.maxLatencyMs, last: xs[xs.length - 1] };
 }
 
+/**
+ * Ordena tarefas por ordem de plano e, em empate, por título.
+ *
+ * @param {object} a Primeira tarefa.
+ * @param {object} b Segunda tarefa.
+ * @returns {number} Valor negativo, zero ou positivo, como em `Array.prototype.sort`.
+ */
 function sortTasks(a, b) {
   return (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.title).localeCompare(String(b.title));
 }
 
-/** Árvore hierárquica a partir das tarefas reais. `done/total` contam folhas assentadas sob cada nó. */
+/**
+ * Monta a árvore hierárquica de tarefas a partir do parent_id de cada uma.
+ *
+ * @param {object} state Estado do redutor.
+ * @returns {Array} As raízes, cada uma com `task`, `depth`, `children`, `done` e `total`.
+ * Observações: `done`/`total` contam as folhas assentadas sob cada nó.
+ */
 export function buildTree(state) {
   const children = new Map();
   for (const t of state.tasks.values()) {
@@ -468,6 +677,13 @@ export function buildTree(state) {
   return (children.get(null) || []).sort(sortTasks).map((t) => build(t, 0));
 }
 
+/**
+ * Coleta os ids de uma tarefa e de todos os seus descendentes.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {string} rootId Id da tarefa raiz.
+ * @returns {Set<string>} Os ids da subárvore, incluindo a própria raiz.
+ */
 export function subtreeIds(state, rootId) {
   const ids = new Set([rootId]);
   let grew = true;
@@ -485,7 +701,16 @@ export function subtreeIds(state, rootId) {
 
 const ERROR_TYPES = /\.(failed|blocked|cancelled)$/;
 
-/** Filtros: `categories` (Set; vazio = todas), `taskId` (inclui descendentes), `text`, `errorsOnly`. */
+/**
+ * Decide se um item passa pelos filtros da interface.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} item Item avaliado (envelope, saída, operação, arquivo ou verificação).
+ * @param {object} [filters] Filtros: `categories` (Set; vazio = todas), `taskId` (inclui descendentes),
+ *   `text` e `errorsOnly`.
+ * @param {Set<string>|null} [scope] Subárvore já calculada (evita recalcular por item).
+ * @returns {boolean} `true` quando o item deve ser exibido.
+ */
 export function matches(state, item, filters = {}, scope = null) {
   if (filters.taskId) {
     const ids = scope || subtreeIds(state, filters.taskId);
@@ -501,6 +726,14 @@ export function matches(state, item, filters = {}, scope = null) {
   return true;
 }
 
+/**
+ * Lista os eventos visíveis, do mais recente para o mais antigo.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} [filters] Filtros aplicados (ver `matches`).
+ * @param {number} [limit] Número máximo de eventos devolvidos.
+ * @returns {Array} Os eventos que passam pelos filtros.
+ */
 export function visibleEvents(state, filters = {}, limit = 300) {
   const scope = filters.taskId ? subtreeIds(state, filters.taskId) : null;
   const out = [];
@@ -511,29 +744,72 @@ export function visibleEvents(state, filters = {}, limit = 300) {
   return out;
 }
 
+/**
+ * Restringe uma lista de itens à subárvore escolhida no filtro.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} filters Filtros ativos.
+ * @param {Array} items Lista a filtrar.
+ * @returns {Array} Os itens dentro da subárvore (a lista original quando não há filtro de tarefa).
+ */
 function scoped(state, filters, items) {
   if (!filters.taskId) return items;
   const ids = subtreeIds(state, filters.taskId);
   return items.filter((x) => x.task_id && ids.has(x.task_id));
 }
 
+/**
+ * Lista as chamadas ao modelo, da mais antiga para a mais recente.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} [filters] Filtros aplicados.
+ * @returns {Array} As saídas visíveis.
+ */
 export function outputsList(state, filters = {}) {
   return scoped(state, filters, [...state.outputs.values()]).sort((a, b) => a.started_seq - b.started_seq);
 }
 
+/**
+ * Lista as operações de terminal (comandos e testes) visíveis.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} [filters] Filtros aplicados.
+ * @returns {Array} As operações visíveis, da mais antiga para a mais recente.
+ */
 export function terminalList(state, filters = {}) {
   const ops = [...state.ops.values()].filter((op) => op.kind !== "tool" || op.output);
   return scoped(state, filters, ops).sort((a, b) => a.started_seq - b.started_seq);
 }
 
+/**
+ * Lista as chamadas de ferramenta visíveis.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} [filters] Filtros aplicados.
+ * @returns {Array} As ferramentas visíveis, da mais antiga para a mais recente.
+ */
 export function toolList(state, filters = {}) {
   return scoped(state, filters, [...state.ops.values()].filter((op) => op.kind === "tool")).sort((a, b) => a.started_seq - b.started_seq);
 }
 
+/**
+ * Lista os arquivos criados, alterados ou removidos.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} [filters] Filtros aplicados.
+ * @returns {Array} Os arquivos visíveis.
+ */
 export function filesList(state, filters = {}) {
   return scoped(state, filters, state.files);
 }
 
+/**
+ * Lista as verificações e os testes executados, unificando as duas fontes.
+ *
+ * @param {object} state Estado do redutor.
+ * @param {object} [filters] Filtros aplicados.
+ * @returns {Array} As verificações visíveis, ordenadas por sequência.
+ */
 export function verificationList(state, filters = {}) {
   const tests = [...state.ops.values()]
     .filter((op) => op.kind === "test")
@@ -541,6 +817,12 @@ export function verificationList(state, filters = {}) {
   return scoped(state, filters, [...state.verifications, ...tests]).sort((a, b) => a.seq - b.seq);
 }
 
+/**
+ * Formata as contagens de um teste (ex.: `12 passed, 2 failed`).
+ *
+ * @param {object|null} counts Contagens informadas pelo verificador.
+ * @returns {string} O texto formatado, ou string vazia quando não há contagens.
+ */
 export function countsText(counts) {
   if (!counts) return "";
   return Object.entries(counts)
@@ -549,6 +831,12 @@ export function countsText(counts) {
     .join(", ");
 }
 
+/**
+ * Formata o progresso do plano (quantas tarefas estão em cada estado).
+ *
+ * @param {object} [progress] Progresso informado pelo servidor.
+ * @returns {string} A descrição do progresso, separada por "·".
+ */
 export function progressText(progress = {}) {
   const parts = [`${progress.verified || 0} verificadas`, `${progress.pending || 0} pendentes`];
   if (progress.failed) parts.push(`${progress.failed} com falha`);
@@ -556,6 +844,12 @@ export function progressText(progress = {}) {
   return parts.join(" · ");
 }
 
+/**
+ * Traduz um envelope do stream em uma frase legível para o usuário.
+ *
+ * @param {object} env Envelope do stream.
+ * @returns {string} A descrição do evento.
+ */
 export function describe(env) {
   const d = env.data || {};
   switch (env.type) {

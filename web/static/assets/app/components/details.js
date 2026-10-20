@@ -1,4 +1,12 @@
-// web/static/assets/app/components/details.js
+/**
+ * Arquivo: web/static/assets/app/components/details.js
+ * Nome: details.js
+ * Propósito: painel lateral de detalhes da tarefa selecionada (plano, tentativas, diff, contexto, métricas).
+ * Responsabilidade: frontend/componente — mostra a árvore do plano e as abas de inspeção.
+ * Componentes: DetailsPanel (componente Vue), TABS.
+ * Dependências: `../store.js` (estado, árvore e carregadores), `../ui.js` (ícones e rótulos).
+ * Observações: as abas que precisam de dados do servidor carregam sob demanda, ao serem abertas.
+ */
 import {
   state,
   roots,
@@ -13,6 +21,7 @@ import {
 } from "../store.js";
 import { icon, stamp, statusLabel } from "../ui.js";
 
+/** Abas do painel de detalhes. */
 const TABS = [
   { id: "detail", label: "Detalhe", icon: "file" },
   { id: "attempts", label: "Tentativas", icon: "refresh" },
@@ -24,6 +33,11 @@ const TABS = [
   { id: "tools", label: "Ferramentas", icon: "wrench" },
 ];
 
+/**
+ * Painel de detalhes: árvore do plano e abas de inspeção da tarefa selecionada.
+ *
+ * @returns {object} Objeto de opções do Vue com `setup()` e `template`.
+ */
 export const DetailsPanel = {
   name: "DetailsPanel",
   setup() {
@@ -56,6 +70,13 @@ export const DetailsPanel = {
     const contract = Vue.computed(() => state.inspector?.contract || null);
     const feed = Vue.computed(() => state.streamEvents.slice(-60).reverse());
 
+    /**
+     * Troca de aba e carrega os dados que a aba precisa.
+     *
+     * @param {string} id Id da aba ("detail", "attempts", "evidence", "diff", "context", "metrics",
+     *   "graph" ou "tools").
+     * @returns {Promise<void>}
+     */
     async function selectTab(id) {
       state.detailsTab = id;
       if (id === "diff") await loadDiff();

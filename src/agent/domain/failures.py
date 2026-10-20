@@ -1,4 +1,12 @@
-# src/agent/domain/failures.py — taxonomia de falhas do orquestrador
+"""
+Arquivo: src/agent/domain/failures.py
+Nome: failures.py
+Propósito: classificar as falhas do orquestrador por categoria e causa, e produzir o contexto de retry.
+Responsabilidade: camada de domínio — taxonomia de falhas e pistas para a próxima tentativa.
+Componentes: FailureCategory, FailureCause, Failure, retry_hint, describe_failures, classify_tool_result, classify_provider_error, looks_truncated, classify_model_output, classify_context_error, classify_verification.
+Dependências: dataclasses, enum (stdlib).
+Observações: a categoria define a política (repetir, mudar a estratégia, bloquear); a causa é o registro concreto.
+"""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -49,6 +57,14 @@ class FailureCause(StrEnum):
 
 @dataclass(frozen=True)
 class Failure:
+    """Falha categorizada de uma tentativa: o que fazer a seguir e por que falhou.
+
+    Atributos:
+        category: política a aplicar (recuperável, mudar estratégia, dependência bloqueada, etc.).
+        cause: causa concreta registrada em log, métricas e contexto da próxima tentativa.
+        detail: texto livre com o detalhe da falha (mensagem original, trecho da saída).
+    """
+
     category: FailureCategory
     cause: FailureCause
     detail: str = ""
@@ -59,6 +75,11 @@ class Failure:
         return self.category == FailureCategory.RECOVERABLE
 
     def as_dict(self) -> dict[str, Any]:
+        """Falha como dicionário serializável, com categoria e causa no valor textual.
+
+        Returns:
+            Um dicionário com as chaves `category`, `cause` e `detail`.
+        """
         data = asdict(self)
         data["category"] = self.category.value
         data["cause"] = self.cause.value
@@ -66,6 +87,14 @@ class Failure:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> Failure | None:
+        """Reconstrói a falha a partir de um dicionário, ignorando registros inválidos.
+
+        Args:
+            data: dicionário previamente produzido por `as_dict`.
+
+        Returns:
+            A `Failure` correspondente, ou `None` quando os dados são ausentes ou inconsistentes.
+        """
         if not data:
             return None
         try:

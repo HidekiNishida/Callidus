@@ -1,5 +1,13 @@
-# src/agent/automation/cli.py — linha de comando do runtime de automações
-"""O mesmo núcleo que a API usa, exposto como comando.
+"""
+Arquivo: src/agent/automation/cli.py
+Nome: cli.py
+Propósito: expor o runtime de automações como linha de comando.
+Responsabilidade: camada de apresentação — comandos de execução e de gestão do serviço nativo.
+Componentes: cmd_run, cmd_install, cmd_uninstall, cmd_start, cmd_stop, cmd_status, cmd_diagnose, cmd_list, build_parser, main.
+Dependências: agent.automation.service, agent.automation.supervisor, agent.automation.store.
+Observações: `run` também sobe o worker autônomo; sem ele, um run registrado nunca executa.
+
+O mesmo núcleo que a API usa, exposto como comando.
 
     callidus-supervisor run          # primeiro plano (é o que o serviço nativo executa)
     callidus-supervisor install      # instala o serviço nativo do sistema operacional
@@ -32,12 +40,23 @@ logger = logging.getLogger("callidus.automation")
 
 
 def _print(payload: Any) -> None:
+    """Imprime um payload em JSON.
+
+    Args:
+        payload: conteúdo a exibir.
+    """
     print(json.dumps(payload, indent=2, ensure_ascii=False, default=str))
 
 
 # ─────────────────────────────────────────────────────────── run
 
 async def _run_forever(settings, interval: float) -> None:
+    """Roda o supervisor e o worker autônomo até receber um sinal de parada.
+
+    Args:
+        settings: configurações do processo.
+        interval: segundos entre tiques do supervisor.
+    """
     from agent.services.autonomous_worker import autonomous_loop
 
     supervisor = build_supervisor(settings)
@@ -45,6 +64,7 @@ async def _run_forever(settings, interval: float) -> None:
     stop = asyncio.Event()
 
     def _request_stop(*_args: Any) -> None:
+        """Envia o pedido de parada do supervisor e devolve a resposta do comando."""
         stop.set()
 
     loop = asyncio.get_running_loop()
@@ -65,6 +85,14 @@ async def _run_forever(settings, interval: float) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    """Roda o supervisor em primeiro plano.
+
+    Args:
+        args: argumentos da linha de comando.
+
+    Returns:
+        O código de saída do processo.
+    """
     from agent.config import get_settings
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -77,6 +105,14 @@ def cmd_run(args: argparse.Namespace) -> int:
 # ─────────────────────────────────────────────────────────── serviço
 
 def cmd_install(args: argparse.Namespace) -> int:
+    """Instala o serviço nativo do sistema operacional.
+
+    Args:
+        args: argumentos da linha de comando (escopo, pasta de dados e comando).
+
+    Returns:
+        `0` quando a instalação deu certo, `1` caso contrário.
+    """
     adapter = current_adapter()
     options = default_options()
     options.scope = args.scope
@@ -92,24 +128,56 @@ def cmd_install(args: argparse.Namespace) -> int:
 
 
 def cmd_uninstall(args: argparse.Namespace) -> int:
+    """Remove o serviço nativo.
+
+    Args:
+        args: argumentos da linha de comando.
+
+    Returns:
+        O código de saída do processo.
+    """
     adapter = current_adapter()
     _print(adapter.uninstall())
     return 0
 
 
 def cmd_start(args: argparse.Namespace) -> int:
+    """Inicia o serviço nativo.
+
+    Args:
+        args: argumentos da linha de comando.
+
+    Returns:
+        O código de saída do processo.
+    """
     adapter = current_adapter()
     _print(adapter.start())
     return 0
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
+    """Para o serviço nativo.
+
+    Args:
+        args: argumentos da linha de comando.
+
+    Returns:
+        O código de saída do processo.
+    """
     adapter = current_adapter()
     _print(adapter.stop())
     return 0
 
 
 def cmd_status(args: argparse.Namespace) -> int:
+    """Mostra a situação do runtime e do serviço nativo.
+
+    Args:
+        args: argumentos da linha de comando.
+
+    Returns:
+        O código de saída do processo.
+    """
     supervisor = build_supervisor()
     adapter = current_adapter()
     payload = {
@@ -122,6 +190,14 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_diagnose(args: argparse.Namespace) -> int:
+    """Mostra o diagnóstico detalhado do runtime.
+
+    Args:
+        args: argumentos da linha de comando.
+
+    Returns:
+        O código de saída do processo.
+    """
     supervisor = build_supervisor()
     payload = supervisor.diagnose()
     payload["service"] = current_adapter().status().as_dict()
@@ -131,6 +207,14 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
 
 
 def cmd_list(args: argparse.Namespace) -> int:
+    """Lista as automações registradas.
+
+    Args:
+        args: argumentos da linha de comando.
+
+    Returns:
+        O código de saída do processo.
+    """
     from agent.automation.store import AutomationService
     from agent.persistence.database import build_session_factory, create_db_engine, init_db
     from agent.config import get_settings
@@ -161,6 +245,11 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Monta o interpretador de argumentos da linha de comando.
+
+    Returns:
+        O interpretador com os subcomandos do runtime.
+    """
     parser = argparse.ArgumentParser(
         prog="callidus-supervisor",
         description="Runtime autônomo de automações do Callidus",
@@ -215,6 +304,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Ponto de entrada da linha de comando.
+
+    Args:
+        argv: argumentos a interpretar; quando ausentes, usa `sys.argv`.
+
+    Returns:
+        O código de saída do processo.
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
     return int(args.func(args) or 0)

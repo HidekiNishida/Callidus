@@ -1,4 +1,12 @@
-# src/agent/services/fs_browse.py — escolha de pasta do projeto
+"""
+Arquivo: src/agent/services/fs_browse.py
+Nome: fs_browse.py
+Propósito: listar e criar pastas para a escolha da pasta de trabalho do projeto.
+Responsabilidade: camada de aplicação — navegação do sistema de arquivos dentro do alcance permitido.
+Componentes: browse_directories, create_directory, pick_folder_native.
+Dependências: pathlib, subprocess.
+Observações: a navegação só alcança a pasta do usuário e as raízes de disco usuais.
+"""
 from __future__ import annotations
 
 import subprocess
@@ -7,6 +15,11 @@ from pathlib import Path
 
 
 def _roots() -> list[Path]:
+    """Raízes que a navegação pode alcançar.
+
+    Returns:
+        A lista de raízes permitidas (pasta do usuário e raízes de disco usuais).
+    """
     home = Path.home().resolve()
     roots = [home]
     for extra in (Path("/Users"), Path("/Volumes"), Path("/home")):
@@ -16,6 +29,14 @@ def _roots() -> list[Path]:
 
 
 def _allowed(path: Path) -> bool:
+    """Indica se um caminho está dentro das raízes permitidas.
+
+    Args:
+        path: caminho a verificar.
+
+    Returns:
+        `True` quando o caminho está sob uma raiz permitida.
+    """
     resolved = path.resolve()
     for root in _roots():
         if resolved == root or root in resolved.parents:
@@ -24,6 +45,17 @@ def _allowed(path: Path) -> bool:
 
 
 def browse_directories(path: str | None = None) -> dict:
+    """Lista as subpastas de um diretório permitido.
+
+    Args:
+        path: pasta a listar; por padrão, a pasta do usuário.
+
+    Returns:
+        Um dicionário com o caminho atual, o caminho pai e as entradas encontradas.
+
+    Raises:
+        ValueError: quando a pasta é inválida ou está fora do alcance permitido.
+    """
     target = Path(path).expanduser() if path else Path.home()
     try:
         target = target.resolve()
@@ -62,6 +94,16 @@ def create_directory(path: str, name: str) -> dict:
     """Cria uma pasta dentro de `path` (que precisa estar no alcance permitido).
 
     Devolve a pasta criada e a listagem atualizada, para o seletor seguir sem recarregar.
+
+    Args:
+        path: pasta base, que precisa estar no alcance permitido.
+        name: nome da pasta a criar.
+
+    Returns:
+        A listagem da pasta base com o campo `created` preenchido.
+
+    Raises:
+        ValueError: quando a base é inválida, o nome não serve ou a pasta já existe.
     """
     base = Path(path).expanduser() if path else Path.home()
     try:
@@ -86,6 +128,14 @@ def create_directory(path: str, name: str) -> dict:
 
 
 def pick_folder_native() -> str:
+    """Abre o seletor de pastas nativo do macOS.
+
+    Returns:
+        O caminho absoluto da pasta escolhida.
+
+    Raises:
+        ValueError: quando o seletor não está disponível, foi cancelado ou escolheu fora do alcance.
+    """
     if sys.platform != "darwin":
         raise ValueError("o seletor nativo só está disponível no macOS")
     proc = subprocess.run(

@@ -1,5 +1,13 @@
-# src/agent/automation/security.py — permissões decididas antes do disparo
-"""As permissões de uma automação são decididas **antes** do disparo e validadas de
+"""
+Arquivo: src/agent/automation/security.py
+Nome: security.py
+Propósito: decidir e validar as permissões de uma automação antes de cada disparo.
+Responsabilidade: camada de aplicação — allowlist de comandos, escopo de caminhos e sanitização da evidência.
+Componentes: PermissionDenied, command_allowed, assert_script_allowed, resolve_workdir, assert_path_allowed, build_env, redact_evidence, which_or_none.
+Dependências: agent.automation.contracts, agent.observability.sanitize, agent.security.paths.
+Observações: uma ação que não passa na validação é bloqueada, nunca replanejada.
+
+As permissões de uma automação são decididas **antes** do disparo e validadas de
 novo a cada execução. O modelo não amplia nada em tempo de execução: uma ação que
 não passa na validação é bloqueada, não replanejada.
 
@@ -27,12 +35,21 @@ class PermissionDenied(ValueError):
     """A execução não está autorizada pela definição aprovada."""
 
     def __init__(self, message: str, *, reason: str = "permission_denied") -> None:
+        """Registra a violação com o caminho e o motivo."""
         super().__init__(message)
         self.reason = reason
 
 
 def command_allowed(command: list[str], permissions: PermissionSpec) -> bool:
-    """O executável (primeiro item) está na allowlist?"""
+    """O executável (primeiro item) está na allowlist?
+
+    Args:
+        command: comando a executar.
+        permissions: permissões aprovadas na definição.
+
+    Returns:
+        `True` quando o executável é permitido.
+    """
     if not command:
         return False
     executable = command[0]
@@ -48,7 +65,15 @@ def command_allowed(command: list[str], permissions: PermissionSpec) -> bool:
 
 
 def assert_script_allowed(command: list[str], permissions: PermissionSpec) -> None:
-    """Valida a autorização de um script antes de executá-lo."""
+    """Valida a autorização de um script antes de executá-lo.
+
+    Args:
+        command: comando a executar.
+        permissions: permissões aprovadas na definição.
+
+    Raises:
+        PermissionDenied: quando a definição não autoriza scripts ou o executável não está na allowlist.
+    """
     if not permissions.allow_scripts:
         raise PermissionDenied(
             "a definição não autoriza execução de scripts", reason="scripts_not_allowed"
@@ -66,7 +91,19 @@ def resolve_workdir(
     project_root: str | Path,
     permissions: PermissionSpec,
 ) -> Path:
-    """Resolve o diretório de trabalho dentro do escopo autorizado."""
+    """Resolve o diretório de trabalho dentro do escopo autorizado.
+
+    Args:
+        cwd: diretório pedido; quando ausente, vale a raiz do projeto.
+        project_root: raiz do projeto.
+        permissions: permissões aprovadas na definição.
+
+    Returns:
+        O caminho absoluto do diretório de trabalho.
+
+    Raises:
+        PermissionDenied: quando o caminho está fora de todos os escopos autorizados.
+    """
     roots = [str(project_root)]
     roots.extend(permissions.allowed_paths or [])
     raw = cwd or str(project_root)
@@ -82,7 +119,19 @@ def resolve_workdir(
 
 
 def assert_path_allowed(path: str | Path, permissions: PermissionSpec, *, project_root: str | Path) -> Path:
-    """Valida um caminho explícito (script, recibo) contra os escopos autorizados."""
+    """Valida um caminho explícito (script, recibo) contra os escopos autorizados.
+
+    Args:
+        path: caminho a validar.
+        permissions: permissões aprovadas na definição.
+        project_root: raiz do projeto.
+
+    Returns:
+        O caminho absoluto validado.
+
+    Raises:
+        PermissionDenied: quando o caminho está fora de todos os escopos autorizados.
+    """
     roots = [str(project_root)]
     roots.extend(permissions.allowed_paths or [])
     for root in roots:
@@ -100,6 +149,13 @@ def build_env(extra: dict[str, str] | None, *, allow_inherit: bool = True) -> di
 
     As chaves do ambiente do processo nunca são gravadas na evidência — o `sanitize`
     descarta `env`/`environ`.
+
+    Args:
+        extra: variáveis adicionais a aplicar.
+        allow_inherit: quando `True`, herda o ambiente do processo.
+
+    Returns:
+        O ambiente resultante da execução.
     """
     env: dict[str, str] = dict(os.environ) if allow_inherit else {}
     for key, value in (extra or {}).items():
@@ -108,9 +164,24 @@ def build_env(extra: dict[str, str] | None, *, allow_inherit: bool = True) -> di
 
 
 def redact_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
-    """Sanitiza a evidência antes de persistir (segredos não entram no banco nem nos logs)."""
+    """Sanitiza a evidência antes de persistir (segredos não entram no banco nem nos logs).
+
+    Args:
+        evidence: evidência bruta da execução.
+
+    Returns:
+        A evidência sanitizada.
+    """
     return sanitize(evidence)
 
 
 def which_or_none(executable: str) -> str | None:
+    """Localiza um executável no `PATH`.
+
+    Args:
+        executable: nome do executável.
+
+    Returns:
+        O caminho absoluto do executável, ou `None` quando ele não existe.
+    """
     return shutil.which(executable)

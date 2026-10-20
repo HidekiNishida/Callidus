@@ -1,5 +1,13 @@
-# src/agent/domain/agent_lifecycle.py — transições válidas do agente e da execução
-"""Máquina de estados da hierarquia de agentes.
+"""
+Arquivo: src/agent/domain/agent_lifecycle.py
+Nome: agent_lifecycle.py
+Propósito: definir e validar as transições válidas do agente lógico e da execução.
+Responsabilidade: camada de domínio — máquina de estados da hierarquia de agentes.
+Componentes: InvalidAgentTransition, AGENT_TRANSITIONS, EXECUTION_TRANSITIONS, TERMINAL_AGENT_STATUSES, TERMINAL_EXECUTION_STATUSES, can_transition_agent, can_transition_execution, validate_agent_transition, validate_execution_transition, transition_agent, transition_execution.
+Dependências: agent.domain.agent_enums.
+Observações: a tarefa tem máquina própria em `agent.domain.state_machine`; um estado inconsistente é erro, nunca corrigido em silêncio.
+
+Máquina de estados da hierarquia de agentes.
 
 O estado da **tarefa** já tem sua máquina em
 [`agent.domain.state_machine`][agent.domain.state_machine]. Aqui ficam os estados do
@@ -23,6 +31,7 @@ class InvalidAgentTransition(ValueError):
     """Transição de estado de agente ou execução não permitida."""
 
     def __init__(self, current: str, target: str) -> None:
+        """Monta o registro de ciclo de vida do agente."""
         super().__init__(f"Transição inválida: {current} → {target}")
         self.current = current
         self.target = target
@@ -149,28 +158,88 @@ TERMINAL_EXECUTION_STATUSES = frozenset(
 
 
 def can_transition_agent(current: AgentStatus, target: AgentStatus) -> bool:
+    """Indica se a mudança de estado do agente lógico é permitida.
+
+    Args:
+        current: estado atual do agente.
+        target: estado pretendido.
+
+    Returns:
+        `True` quando a transição é válida.
+    """
     return target in AGENT_TRANSITIONS.get(current, frozenset())
 
 
 def can_transition_execution(current: ExecutionStatus, target: ExecutionStatus) -> bool:
+    """Indica se a mudança de estado da execução é permitida.
+
+    Args:
+        current: estado atual da execução.
+        target: estado pretendido.
+
+    Returns:
+        `True` quando a transição é válida.
+    """
     return target in EXECUTION_TRANSITIONS.get(current, frozenset())
 
 
 def validate_agent_transition(current: AgentStatus, target: AgentStatus) -> None:
+    """Valida a mudança de estado do agente, levantando erro quando inválida.
+
+    Args:
+        current: estado atual do agente.
+        target: estado pretendido.
+
+    Raises:
+        InvalidAgentTransition: quando a transição não existe na tabela.
+    """
     if not can_transition_agent(current, target):
         raise InvalidAgentTransition(current.value, target.value)
 
 
 def validate_execution_transition(current: ExecutionStatus, target: ExecutionStatus) -> None:
+    """Valida a mudança de estado da execução, levantando erro quando inválida.
+
+    Args:
+        current: estado atual da execução.
+        target: estado pretendido.
+
+    Raises:
+        InvalidAgentTransition: quando a transição não existe na tabela.
+    """
     if not can_transition_execution(current, target):
         raise InvalidAgentTransition(current.value, target.value)
 
 
 def transition_agent(current: AgentStatus, target: AgentStatus) -> AgentStatus:
+    """Devolve o novo estado do agente após validar a transição.
+
+    Args:
+        current: estado atual do agente.
+        target: estado pretendido.
+
+    Returns:
+        O estado de destino, quando a transição é válida.
+
+    Raises:
+        InvalidAgentTransition: quando a transição não é permitida.
+    """
     validate_agent_transition(current, target)
     return target
 
 
 def transition_execution(current: ExecutionStatus, target: ExecutionStatus) -> ExecutionStatus:
+    """Devolve o novo estado da execução após validar a transição.
+
+    Args:
+        current: estado atual da execução.
+        target: estado pretendido.
+
+    Returns:
+        O estado de destino, quando a transição é válida.
+
+    Raises:
+        InvalidAgentTransition: quando a transição não é permitida.
+    """
     validate_execution_transition(current, target)
     return target

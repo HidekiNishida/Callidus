@@ -1,4 +1,12 @@
-// web/static/assets/app/components/settings.js — Ajustes: aparência, execução, projetos e atalhos
+/**
+ * Arquivo: web/static/assets/app/components/settings.js
+ * Nome: settings.js
+ * Propósito: Ajustes: aparência, execução, projetos e atalhos.
+ * Responsabilidade: frontend/componente — configuração da interface e gestão dos projetos.
+ * Componentes: SettingsView (componente Vue), TABS, SHORTCUTS.
+ * Dependências: `../store.js` (estado e ações), `../api.js` (carregamento sob demanda), `../ui.js` (ícones).
+ * Observações: a lista de modelos do provedor é carregada sob demanda, ao abrir a aba.
+ */
 import {
   state,
   setTheme,
@@ -13,6 +21,7 @@ import {
 import { api } from "../api.js";
 import { icon } from "../ui.js";
 
+/** Abas da tela de ajustes. */
 const TABS = [
   { id: "geral", label: "Geral", icon: "cog" },
   { id: "execucao", label: "Execução", icon: "play" },
@@ -21,6 +30,7 @@ const TABS = [
   { id: "sobre", label: "Sobre", icon: "info" },
 ];
 
+/** Atalhos de teclado exibidos na aba de atalhos. */
 const SHORTCUTS = [
   ["⌘K / Ctrl+K", "Abrir a paleta de comandos"],
   ["⌘⇧P / Ctrl+Shift+P", "Paleta de comandos (alternativo)"],
@@ -31,6 +41,14 @@ const SHORTCUTS = [
   ["Shift+Enter", "Quebra de linha no campo de objetivo"],
 ];
 
+/**
+ * Tela de ajustes: aparência, padrões de execução, projetos, atalhos e sobre.
+ *
+ * @returns {object} Objeto de opções do Vue com `setup()` e `template`.
+ * @emits {new-project} Pede a abertura do modal de novo projeto.
+ * @emits {move-folder} Pede a abertura do seletor de pasta para um projeto.
+ * @emits {remote} Pede a abertura do modal de computador remoto.
+ */
 export const SettingsView = {
   name: "SettingsView",
   emits: ["new-project", "move-folder"],
@@ -42,6 +60,11 @@ export const SettingsView = {
 
     const models = Vue.computed(() => state.providerModels[state.provider] || []);
 
+    /**
+     * Garante que a lista de modelos do provedor atual esteja carregada.
+     *
+     * @returns {Promise<void>}
+     */
     async function ensureModels() {
       if (!state.providerModels[state.provider]) {
         await loadProviders();
@@ -52,17 +75,37 @@ export const SettingsView = {
 
     Vue.onMounted(ensureModels);
 
+    /**
+     * Entra no modo de renomear um projeto.
+     *
+     * @param {object} project Projeto a renomear.
+     * @returns {void}
+     */
     function startRename(project) {
       renaming.value = project.id;
       renameValue.value = project.name || "";
     }
 
+    /**
+     * Confirma a renomeação de um projeto.
+     *
+     * @param {object} project Projeto renomeado.
+     * @returns {Promise<void>}
+     * Observações: nomes vazios ou iguais ao atual são ignorados.
+     */
     async function confirmRename(project) {
       const name = renameValue.value.trim();
       renaming.value = null;
       if (name && name !== project.name) await renameProject(project, name);
     }
 
+    /**
+     * Carrega a configuração remota do projeto e pede a abertura do modal.
+     *
+     * @param {object} project Projeto consultado.
+     * @returns {Promise<void>}
+     * @emits {remote} Objeto com `project` e `config`.
+     */
     async function showRemote(project) {
       const saved = await loadRemote(project);
       remotes[project.id] = saved || {
@@ -77,6 +120,13 @@ export const SettingsView = {
       emit("remote", { project, config: remotes[project.id] });
     }
 
+    /**
+     * Pede a abertura do seletor de pasta de um projeto.
+     *
+     * @param {object} project Projeto a mover.
+     * @returns {void}
+     * @emits {move-folder} O projeto a mover.
+     */
     function pickFolder(project) {
       moving.value = project.id;
       emit("move-folder", project);

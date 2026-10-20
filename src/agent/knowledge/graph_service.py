@@ -1,4 +1,12 @@
-# src/agent/knowledge/graph_service.py — grafo persistente do projeto
+"""
+Arquivo: src/agent/knowledge/graph_service.py
+Nome: graph_service.py
+Propósito: manter o grafo persistente de conhecimento do projeto (nós e arestas).
+Responsabilidade: camada de aplicação — indexação, busca e navegação do grafo do projeto.
+Componentes: KnowledgeGraphService.
+Dependências: agent.knowledge.indexer, agent.persistence.models, sqlalchemy.
+Observações: a reindexação substitui o grafo do projeto inteiro e ignora arestas cujo nó não existe.
+"""
 from __future__ import annotations
 
 import uuid
@@ -12,10 +20,30 @@ from agent.persistence.models import KgEdgeModel, KgNodeModel
 
 
 class KnowledgeGraphService:
+    """Serviço do grafo de conhecimento do projeto, persistido em nós e arestas.
+
+    Atributos:
+        _session: sessão SQLAlchemy usada nas leituras e gravações.
+    """
+
     def __init__(self, session: Session) -> None:
+        """Cria o serviço ligado a uma sessão.
+
+        Args:
+            session: sessão SQLAlchemy a usar nas consultas e gravações.
+        """
         self._session = session
 
     def reindex(self, project_id: uuid.UUID, root_path: str) -> dict:
+        """Reindexa o projeto inteiro, substituindo os nós e arestas anteriores.
+
+        Args:
+            project_id: projeto cujo grafo será reconstruído.
+            root_path: raiz do projeto a varrer.
+
+        Returns:
+            Um dicionário com a contagem de nós e arestas gravados.
+        """
         nodes, edges = scan_project(root_path)
         self._session.execute(delete(KgEdgeModel).where(KgEdgeModel.project_id == project_id))
         self._session.execute(delete(KgNodeModel).where(KgNodeModel.project_id == project_id))
@@ -45,6 +73,16 @@ class KnowledgeGraphService:
         return {"nodes": len(nodes), "edges": edge_count}
 
     def neighbors(self, project_id: uuid.UUID, ref: str, depth: int = 1) -> list[dict]:
+        """Nós vizinhos de uma referência, até a profundidade informada.
+
+        Args:
+            project_id: projeto dono do grafo.
+            ref: referência do nó de partida.
+            depth: quantas camadas de vizinhança percorrer.
+
+        Returns:
+            A lista de nós alcançados, começando pelo de partida.
+        """
         stmt = select(KgNodeModel).where(KgNodeModel.project_id == project_id, KgNodeModel.ref == ref)
         start = self._session.scalar(stmt)
         if start is None:
@@ -75,6 +113,16 @@ class KnowledgeGraphService:
         return out
 
     def search(self, project_id: uuid.UUID, query: str, limit: int = 20) -> list[dict]:
+        """Busca nós cujo identificador ou rótulo contenha o termo.
+
+        Args:
+            project_id: projeto dono do grafo.
+            query: termo de busca, comparado sem diferenciar maiúsculas.
+            limit: quantidade máxima de nós devolvidos.
+
+        Returns:
+            A lista de nós encontrados.
+        """
         q = query.lower()
         stmt = select(KgNodeModel).where(KgNodeModel.project_id == project_id).limit(500)
         rows = list(self._session.scalars(stmt).all())
@@ -82,6 +130,16 @@ class KnowledgeGraphService:
         return hits[:limit]
 
     def touch_file(self, project_id: uuid.UUID, root_path: str, rel_path: str) -> None:
+        """Atualiza o grafo após uma alteração em um arquivo Python.
+
+        Args:
+            project_id: projeto dono do grafo.
+            root_path: raiz do projeto.
+            rel_path: caminho do arquivo alterado, relativo à raiz.
+
+        Observações:
+            Arquivos que não existem ou não são Python são ignorados.
+        """
         from agent.knowledge.indexer import _py_symbols
 
         root = Path(root_path).expanduser().resolve()
@@ -95,6 +153,15 @@ class KnowledgeGraphService:
                 self._upsert_node(project_id, sym)
 
     def _upsert_node(self, project_id: uuid.UUID, spec: dict) -> KgNodeModel:
+        """Cria ou reaproveita um nó do grafo a partir de sua especificação.
+
+        Args:
+            project_id: projeto dono do grafo.
+            spec: especificação do nó (`kind`, `ref`, `label` e metadados extras).
+
+        Returns:
+            O nó gravado, existente ou recém-criado.
+        """
         stmt = select(KgNodeModel).where(
             KgNodeModel.project_id == project_id,
             KgNodeModel.kind == spec["kind"],
@@ -115,4 +182,12 @@ class KnowledgeGraphService:
 
     @staticmethod
     def _node_dict(n: KgNodeModel) -> dict:
+        """Converte um nó do banco para o dicionário usado pela API e pelo prompt.
+
+        Args:
+            n: linha do modelo de nó.
+
+        Returns:
+            O dicionário com identificador, tipo, referência, rótulo e metadados.
+        """
         return {"id": str(n.id), "kind": n.kind, "ref": n.ref, "label": n.label, "meta": n.meta_json}

@@ -1,4 +1,13 @@
-# src/agent/orchestrator/resume.py — onde a tarefa parou e o que ainda falta
+"""
+Arquivo: src/agent/orchestrator/resume.py
+Nome: resume.py
+Propósito: onde a tarefa parou e o que ainda falta.
+Responsabilidade: camada de aplicação.
+Componentes: build_resume_brief, apply_resume, resume_root.
+Dependências: agent.domain.enums, agent.domain.schemas, agent.orchestrator.consolidation, agent.persistence.models, agent.services.project_service, __future__….
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -26,6 +35,14 @@ _STOPPED = {
 
 
 def _reason(task: TaskModel) -> str:
+    """Diz por que a tarefa parou.
+
+    Args:
+        task: tarefa parada.
+
+    Returns:
+        O erro registrado, o motivo do bloqueio ou, na falta deles, o estado da tarefa.
+    """
     result = task.consolidated_result_json or {}
     inner = result.get("result") if isinstance(result.get("result"), dict) else result
     if isinstance(inner, dict) and inner.get("error"):
@@ -37,6 +54,18 @@ def _reason(task: TaskModel) -> str:
 
 
 def build_resume_brief(session: Session, root: TaskModel) -> dict:
+    """Monta o resumo do que já foi feito e do que falta para retomar o trabalho.
+
+    Args:
+        session: sessão do banco.
+        root: tarefa raiz do objetivo.
+
+    Returns:
+        Um dicionário com as etapas concluídas, as pendentes, o ponto de parada, o motivo e a instrução corrigida.
+
+    Observações:
+        A instrução corrigida só existe quando a parada exige ação de fora; ela é o que evita refazer o trabalho já feito.
+    """
     kids = children_of(session, root.id)
     done = [task for task in kids if task.status in _DONE]
     pending = [task for task in kids if task.status not in _DONE]
@@ -71,6 +100,19 @@ def build_resume_brief(session: Session, root: TaskModel) -> dict:
 
 
 def apply_resume(session: Session, root: TaskModel, brief: dict) -> ExecutionRunModel | None:
+    """Aplica a retomada: corrige o objetivo e reativa a execução pausada.
+
+    Args:
+        session: sessão do banco.
+        root: tarefa raiz do objetivo.
+        brief: resumo da retomada produzido por `build_resume_brief`.
+
+    Returns:
+        A run reativada, ou `None` quando não há execução pausada para retomar.
+
+    Observações:
+        O objetivo anterior fica guardado nos metadados e a instrução corrigida vira memória contextual da conversa.
+    """
     corrected = brief.get("corrected_instruction")
     if isinstance(corrected, str) and corrected.strip() and corrected.strip() != (root.objective or "").strip():
         meta = dict(root.metadata_json or {})
@@ -107,6 +149,19 @@ def apply_resume(session: Session, root: TaskModel, brief: dict) -> ExecutionRun
 
 
 def resume_root(session: Session, task_id: uuid.UUID, *, apply: bool) -> dict:
+    """Retoma o trabalho a partir da raiz do objetivo.
+
+    Args:
+        session: sessão do banco.
+        task_id: identificador da tarefa a partir da qual a retomada é calculada.
+        apply: quando verdadeiro, aplica a retomada; quando falso, devolve apenas o resumo.
+
+    Returns:
+        O resumo da retomada, com o identificador da run reativada quando houve.
+
+    Raises:
+        LookupError: quando a tarefa indicada não existe.
+    """
     root = session.get(TaskModel, task_id)
     if root is None:
         raise LookupError(str(task_id))

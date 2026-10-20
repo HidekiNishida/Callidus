@@ -1,5 +1,13 @@
-# src/agent/automation/supervisor.py — runtime autônomo das automações
-"""O supervisor mantém as automações vivas **sem a interface**.
+"""
+Arquivo: src/agent/automation/supervisor.py
+Nome: supervisor.py
+Propósito: manter as automações vivas sem a interface, num processo próprio ou dentro da API.
+Responsabilidade: camada de aplicação — ciclo de recuperação, disparo e execução dos disparos.
+Componentes: AutomationSupervisor, SupervisorStats, build_supervisor, find_automation.
+Dependências: agent.automation.dispatcher, agent.automation.executor, agent.automation.store, agent.persistence.database.
+Observações: o supervisor não consome inferência para descobrir trabalho; o que ele consulta é o banco.
+
+O supervisor mantém as automações vivas **sem a interface**.
 
 Ele roda num processo próprio (o `callidus-supervisor`, instalado como serviço
 nativo do sistema) e também dentro da API. As duas rotas usam o mesmo núcleo: o
@@ -50,6 +58,21 @@ _INTERRUPTED = {FiringState.PREPARING.value, FiringState.RUNNING.value}
 
 @dataclass
 class SupervisorStats:
+    """Contadores do runtime de automações.
+
+    Atributos:
+        ticks: quantidade de tiques concluídos.
+        dispatched: disparos criados.
+        executed: disparos concluídos com sucesso.
+        failed: disparos que falharam.
+        blocked: disparos bloqueados ou à espera de dependência.
+        duplicates: disparos descartados por idempotência.
+        recovered: disparos retomados após interrupção.
+        last_tick_at: instante do último tique.
+        last_error: mensagem do último erro.
+        history: resumo dos últimos tiques.
+    """
+
     ticks: int = 0
     dispatched: int = 0
     executed: int = 0
@@ -62,6 +85,11 @@ class SupervisorStats:
     history: list[dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
+        """Contadores como dicionário serializável.
+
+        Returns:
+            Um dicionário com os contadores e o estado do último tique.
+        """
         return {
             "ticks": self.ticks,
             "dispatched": self.dispatched,
@@ -76,7 +104,15 @@ class SupervisorStats:
 
 
 class AutomationSupervisor:
-    """Núcleo do runtime de automações — compartilhado pela API e pelo supervisor nativo."""
+    """Núcleo do runtime de automações — compartilhado pela API e pelo supervisor nativo.
+
+    Atributos:
+        _settings: configurações do processo.
+        _session_factory: fábrica das sessões usadas a cada tique.
+        stats: contadores do runtime.
+        _stop: evento que sinaliza o encerramento do laço.
+        _last_heartbeat: instante do último batimento gravado.
+    """
 
     def __init__(
         self,
@@ -84,6 +120,12 @@ class AutomationSupervisor:
         *,
         session_factory: Any = None,
     ) -> None:
+        """Cria o supervisor.
+
+        Args:
+            settings: configurações a usar; quando ausentes, são lidas do ambiente.
+            session_factory: fábrica de sessões; quando ausente, é criada a partir do banco.
+        """
         self._settings = settings or get_settings()
         self._session_factory = session_factory or build_session_factory(
             create_db_engine(self._settings)
@@ -95,10 +137,22 @@ class AutomationSupervisor:
     # ------------------------------------------------------------ ciclo
 
     def stop(self) -> None:
+        """Pede o encerramento do laço do supervisor.
+
+        Observações:
+            O laço termina no próximo tique; o evento é seguro para uso repetido.
+        """
         self._stop.set()
 
     async def run_forever(self, interval_sec: float = 5.0) -> None:
-        """Laço principal do supervisor."""
+        """Laço principal do supervisor.
+
+        Args:
+            interval_sec: segundos entre tiques.
+
+        Observações:
+            Uma falha em um tique é registrada e absorvida: o supervisor não pode morrer.
+        """
         logger.info("supervisor de automações iniciado")
         while not self._stop.is_set():
             try:
@@ -115,7 +169,11 @@ class AutomationSupervisor:
     # ------------------------------------------------------------ tique
 
     async def tick(self) -> dict[str, Any]:
-        """Um ciclo completo: recuperação → disparo → execução."""
+        """Um ciclo completo: recuperação → disparo → execução.
+
+        Returns:
+            O resumo do tique, ou o erro registrado quando o ciclo falha.
+        """
         session = self._session_factory()
         try:
             summary = await self._tick_with(session)
@@ -136,7 +194,11 @@ class AutomationSupervisor:
             session.close()
 
     def _heartbeat(self, session) -> None:
-        """Grava o batimento do runtime — é o que `status` mostra de outro processo."""
+        """Grava o batimento do runtime — é o que `status` mostra de outro processo.
+
+        Args:
+            session: sessão usada para gravar o fato.
+        """
         self.stats.ticks += 0  # mantém o contador explícito
         now = datetime.now(timezone.utc)
         if self._last_heartbeat and (now - self._last_heartbeat).total_seconds() < 30:
@@ -162,6 +224,14 @@ class AutomationSupervisor:
         session.commit()
 
     async def _tick_with(self, session) -> dict[str, Any]:
+        """Executa as três etapas do tique em uma sessão.
+
+        Args:
+            session: sessão do tique.
+
+        Returns:
+            O resumo com o que foi recuperado, disparado e executado.
+        """
         service = AutomationService(session)
         dispatcher = Dispatcher(session)
         executor = AutomationExecutor(session, self._settings)
@@ -181,7 +251,16 @@ class AutomationSupervisor:
     # ------------------------------------------------------------ recuperação
 
     def _recover(self, session, service: AutomationService, executor: AutomationExecutor) -> int:
-        """Recupera disparos interrompidos por encerramento do processo."""
+        """Recupera disparos interrompidos por encerramento do processo.
+
+        Args:
+            session: sessão do tique.
+            service: serviço das automações.
+            executor: executor, usado na reconciliação dos runs em curso.
+
+        Returns:
+            A quantidade de disparos retomados.
+        """
         recovered = 0
         rows = list(
             session.scalars(
@@ -210,6 +289,17 @@ class AutomationSupervisor:
         dispatcher: Dispatcher,
         now: datetime,
     ) -> dict[str, Any]:
+        """Registra os disparos vencidos e os eventos elegíveis.
+
+        Args:
+            session: sessão do tique.
+            service: serviço das automações.
+            dispatcher: despachante que registra os disparos.
+            now: instante de referência do tique.
+
+        Returns:
+            Um dicionário com os disparos criados e os duplicados.
+        """
         created: list[str] = []
         duplicates = 0
         for automation in service.enabled():
@@ -242,6 +332,16 @@ class AutomationSupervisor:
     # ------------------------------------------------------------ execução
 
     async def _execute(self, session, executor: AutomationExecutor, now: datetime) -> list[dict]:
+        """Executa os disparos prontos e reconcilia os que ficaram rodando.
+
+        Args:
+            session: sessão do tique.
+            executor: executor dos disparos.
+            now: instante de referência do tique.
+
+        Returns:
+            A lista de desfechos dos disparos executados.
+        """
         outcomes: list[dict] = []
         limit = int(getattr(self._settings, "automation_max_executions_per_tick", 20) or 20)
         rows = list(
@@ -308,7 +408,11 @@ class AutomationSupervisor:
     # ------------------------------------------------------------ diagnóstico
 
     def status(self) -> dict[str, Any]:
-        """Situação do runtime: automações, disparos e contadores."""
+        """Situação do runtime: automações, disparos e contadores.
+
+        Returns:
+            O dicionário com o estado do runtime e o próximo disparo previsto.
+        """
         session = self._session_factory()
         try:
             automations = list(session.scalars(select(AutomationModel)).all())
@@ -340,7 +444,14 @@ class AutomationSupervisor:
             session.close()
 
     def _read_heartbeat(self, session) -> dict[str, Any] | None:
-        """Batimento gravado pelo runtime em execução (visível de outro processo)."""
+        """Batimento gravado pelo runtime em execução (visível de outro processo).
+
+        Args:
+            session: sessão de leitura.
+
+        Returns:
+            O payload do batimento, ou `None` quando nenhum foi gravado.
+        """
         row = session.scalars(
             select(EventLogModel)
             .where(EventLogModel.event_type == "automation.heartbeat")
@@ -354,7 +465,11 @@ class AutomationSupervisor:
         return payload
 
     def diagnose(self) -> dict[str, Any]:
-        """Diagnóstico detalhado: automações vencidas, dependências e disparos pendentes."""
+        """Diagnóstico detalhado: automações vencidas, dependências e disparos pendentes.
+
+        Returns:
+            O dicionário com as automações, seus próximos disparos e os disparos pendentes.
+        """
         session = self._session_factory()
         try:
             service = AutomationService(session)
@@ -418,11 +533,27 @@ class AutomationSupervisor:
 
 
 def build_supervisor(settings: Settings | None = None) -> AutomationSupervisor:
-    """Supervisor com o banco inicializado (cria as tabelas que faltarem)."""
+    """Supervisor com o banco inicializado (cria as tabelas que faltarem).
+
+    Args:
+        settings: configurações a usar; quando ausentes, são lidas do ambiente.
+
+    Returns:
+        O supervisor pronto para rodar.
+    """
     settings = settings or get_settings()
     engine = init_db(create_db_engine(settings), settings)
     return AutomationSupervisor(settings, session_factory=build_session_factory(engine))
 
 
 def find_automation(session, automation_id: uuid.UUID) -> AutomationModel | None:
+    """Procura uma automação pelo identificador.
+
+    Args:
+        session: sessão de leitura.
+        automation_id: identificador da automação.
+
+    Returns:
+        A automação, ou `None` quando ela não existe.
+    """
     return session.get(AutomationModel, automation_id)

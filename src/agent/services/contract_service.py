@@ -1,4 +1,12 @@
-# src/agent/services/contract_service.py — contratos explícitos entre tarefas
+"""
+Arquivo: src/agent/services/contract_service.py
+Nome: contract_service.py
+Propósito: manter os contratos explícitos entre tarefas (entradas, saídas, invariantes e aceite).
+Responsabilidade: camada de aplicação — gravação, validação e impacto dos contratos das tarefas.
+Componentes: ContractService.
+Dependências: agent.persistence.models, sqlalchemy.
+Observações: o contrato de uma tarefa é único; gravar de novo atualiza apenas os campos informados.
+"""
 from __future__ import annotations
 
 import uuid
@@ -10,7 +18,18 @@ from agent.persistence.models import KgNodeModel, TaskContractModel, TaskModel
 
 
 class ContractService:
+    """Serviço dos contratos das tarefas, gravados em `task_contracts`.
+
+    Atributos:
+        _session: sessão usada nas leituras e gravações.
+    """
+
     def __init__(self, session: Session) -> None:
+        """Cria o serviço ligado a uma sessão.
+
+        Args:
+            session: sessão SQLAlchemy a usar.
+        """
         self._session = session
 
     def upsert(
@@ -22,6 +41,21 @@ class ContractService:
         invariants: list | None = None,
         acceptance: dict | None = None,
     ) -> TaskContractModel:
+        """Grava ou atualiza o contrato de uma tarefa.
+
+        Args:
+            task_id: identificador da tarefa dona do contrato.
+            inputs: entradas esperadas.
+            outputs: saídas prometidas.
+            invariants: invariantes que a tarefa deve respeitar.
+            acceptance: critérios de aceite.
+
+        Returns:
+            O contrato gravado.
+
+        Raises:
+            LookupError: quando a tarefa não existe.
+        """
         task = self._session.get(TaskModel, task_id)
         if task is None:
             raise LookupError(str(task_id))
@@ -41,7 +75,14 @@ class ContractService:
         return row
 
     def validate_for_run(self, task_id: uuid.UUID) -> tuple[bool, list[str]]:
-        """Verifica se contrato mínimo existe quando a tarefa exige integração."""
+        """Verifica se contrato mínimo existe quando a tarefa exige integração.
+
+        Args:
+            task_id: identificador da tarefa validada.
+
+        Returns:
+            Tupla com o resultado da validação e a lista de problemas encontrados.
+        """
         task = self._session.get(TaskModel, task_id)
         if task is None:
             return False, ["tarefa inexistente"]
@@ -54,9 +95,25 @@ class ContractService:
         return True, []
 
     def get(self, task_id: uuid.UUID) -> TaskContractModel | None:
+        """Contrato de uma tarefa.
+
+        Args:
+            task_id: identificador da tarefa.
+
+        Returns:
+            O contrato, ou `None` quando a tarefa ainda não tem contrato.
+        """
         return self._session.scalar(select(TaskContractModel).where(TaskContractModel.task_id == task_id))
 
     def file_refs_from_contract(self, row: TaskContractModel) -> list[str]:
+        """Arquivos citados no contrato da tarefa.
+
+        Args:
+            row: contrato consultado.
+
+        Returns:
+            A lista de caminhos citados nas entradas, saídas e aceite.
+        """
         refs: list[str] = []
         for blob in (row.outputs_json, row.inputs_json, row.acceptance_json):
             if not isinstance(blob, dict):
@@ -70,6 +127,15 @@ class ContractService:
         return refs
 
     def find_impacted_tasks(self, project_id: uuid.UUID, file_refs: list[str]) -> list[uuid.UUID]:
+        """Tarefas do projeto afetadas pelos arquivos citados no contrato.
+
+        Args:
+            project_id: projeto varrido.
+            file_refs: caminhos citados no contrato.
+
+        Returns:
+            Os identificadores das tarefas impactadas.
+        """
         if not file_refs:
             return []
         stmt = select(TaskModel).where(TaskModel.project_id == project_id)
@@ -101,6 +167,21 @@ class ContractService:
         invariants: list | None = None,
         acceptance: dict | None = None,
     ) -> dict:
+        """Grava o contrato e devolve as tarefas impactadas pelos arquivos citados.
+
+        Args:
+            task_id: identificador da tarefa dona do contrato.
+            inputs: entradas esperadas.
+            outputs: saídas prometidas.
+            invariants: invariantes que a tarefa deve respeitar.
+            acceptance: critérios de aceite.
+
+        Returns:
+            Um dicionário com o identificador do contrato e as tarefas impactadas.
+
+        Raises:
+            LookupError: quando a tarefa não existe.
+        """
         task = self._session.get(TaskModel, task_id)
         if task is None:
             raise LookupError(str(task_id))

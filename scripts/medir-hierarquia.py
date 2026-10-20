@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""scripts/medir-hierarquia.py — mede o ganho das consultas sob demanda.
+"""
+Arquivo: scripts/medir-hierarquia.py
+Nome: medir-hierarquia.py
+Propósito: medir o ganho das consultas sob demanda em relação ao relatório consolidado.
+Responsabilidade: camada de script — compara, no mesmo cenário, o contexto levado ao pai pelo relatório completo e pela consulta dirigida.
+Componentes: montagem da hierarquia, medição do caminho relatório, medição do caminho consulta e medição da consulta sem evidência.
+Dependências: agent.services (query_service, agent_service, project_service, task_service, executor), agent.persistence (database, models), agent.config.Settings.
+Observações: reprodutível: não usa rede, não usa credencial e trabalha em um banco temporário.
+
+
+mede o ganho das consultas sob demanda.
 
 Compara, **no mesmo cenário**, duas maneiras de o pai obter a informação do filho:
 
@@ -98,6 +108,7 @@ def montar_cenario(tmp: Path, niveis: int):
 
 
 async def main() -> int:
+    """Executa os três caminhos de medição e imprime o comparativo."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--niveis", type=int, default=3, help="profundidade da hierarquia")
     parser.add_argument("--json", action="store_true", help="saída em JSON")

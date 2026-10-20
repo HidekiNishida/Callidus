@@ -1,4 +1,12 @@
-# src/agent/verification/runner.py — verificações determinísticas
+"""
+Arquivo: src/agent/verification/runner.py
+Nome: runner.py
+Propósito: executar as verificações determinísticas do contrato de uma tarefa.
+Responsabilidade: camada de aplicação — execução dos verificadores e emissão dos eventos correspondentes.
+Componentes: run_verification, VerificationResult, VERIFIER_TYPES, syntax_problem.
+Dependências: agent.observability, agent.security.paths, agent.tools.registry.
+Observações: o contrato de verificadores é fechado; um verificador inexistente falha na execução, não depois.
+"""
 from __future__ import annotations
 
 import ast
@@ -36,6 +44,15 @@ VERIFIER_TYPES = frozenset(
 
 @dataclass
 class VerificationResult:
+    """Veredito de uma verificação.
+
+    Atributos:
+        verifier: tipo do verificador executado.
+        passed: `True` aprovado, `False` reprovado, `None` inconclusivo.
+        summary: resumo textual do resultado.
+        detail: detalhe estruturado da execução (saída, erros, exit code).
+    """
+
     verifier: str
     passed: bool | None
     summary: str
@@ -49,6 +66,17 @@ async def run_verification(
     tool_args: dict[str, Any] | None = None,
     approved: bool = False,
 ) -> VerificationResult:
+    """Executa a verificação pedida e emite os eventos de início e de desfecho.
+
+    Args:
+        project_root: raiz do projeto avaliado.
+        spec: especificação da verificação (tipo, caminho, critério).
+        tool_args: argumentos da ferramenta usados na verificação.
+        approved: quando `True`, as ferramentas que pedem aprovação são executadas mesmo assim.
+
+    Returns:
+        O veredito da verificação, com resumo e detalhe.
+    """
     vtype = str(spec.get("type") or spec.get("verification") or "unknown")
     criterion = {k: spec[k] for k in ("path", "contains", "command") if k in spec}
     emit("verification.started", {"verifier": vtype, "criterion": criterion}, commit=True)
@@ -73,6 +101,20 @@ async def _verify(
     tool_args: dict[str, Any] | None,
     approved: bool,
 ) -> VerificationResult:
+    """Executa o verificador correspondente ao tipo pedido.
+
+    Args:
+        project_root: raiz do projeto avaliado.
+        spec: especificação da verificação.
+        tool_args: argumentos da ferramenta usados na verificação.
+        approved: quando `True`, as ferramentas que pedem aprovação são executadas mesmo assim.
+
+    Returns:
+        O veredito da verificação.
+
+    Observações:
+        `stages` e `acceptance_manual` são inconclusivos: dependem de um estado que só o orquestrador tem.
+    """
     vtype = spec.get("type") or spec.get("verification")
     ctx = ToolContext(project_root=project_root)
     tools = build_default_registry()
@@ -235,6 +277,14 @@ def syntax_problem(path: str, content: str) -> str | None:
 
 
 def _no_tests_collected(out: dict[str, Any]) -> bool:
+    """Indica que o pytest rodou mas não coletou teste algum.
+
+    Args:
+        out: saída da execução do pytest.
+
+    Returns:
+        `True` quando nenhum teste foi coletado.
+    """
     if out.get("exit_code") == 5:
         return True
     text = f"{out.get('stdout') or ''}\n{out.get('stderr') or ''}".lower()
@@ -242,6 +292,14 @@ def _no_tests_collected(out: dict[str, Any]) -> bool:
 
 
 def _has_non_python_deliverable(root: str) -> bool:
+    """Indica se o projeto tem entregável fora do código Python.
+
+    Args:
+        root: raiz do projeto.
+
+    Returns:
+        `True` quando existe ao menos um arquivo de entrega (HTML, CSS, Markdown, etc.).
+    """
     base = Path(root)
     if not base.is_dir():
         return False

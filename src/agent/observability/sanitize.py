@@ -1,4 +1,12 @@
-# src/agent/observability/sanitize.py — remove segredos e limita o tamanho do que vai para eventos
+"""
+Arquivo: src/agent/observability/sanitize.py
+Nome: sanitize.py
+Propósito: remover segredos e limitar o tamanho do conteúdo que vai para os eventos.
+Responsabilidade: camada de aplicação — sanitização e truncamento dos payloads publicados.
+Componentes: REDACTED, is_sensitive_path, redact_text, truncate, sanitize.
+Dependências: re, pathlib.
+Observações: a sanitização é aplicada a todo evento persistido ou efêmero antes da publicação.
+"""
 from __future__ import annotations
 
 import re
@@ -75,12 +83,29 @@ def is_sensitive_path(path: str | None) -> bool:
 
 
 def redact_text(text: str) -> str:
+    """Substitui segredos reconhecíveis no texto por um marcador.
+
+    Args:
+        text: texto a inspecionar.
+
+    Returns:
+        O texto com as credenciais encontradas substituídas por `[redigido]`.
+    """
     for pattern, repl in _PATTERNS:
         text = pattern.sub(repl, text)
     return text
 
 
 def truncate(text: str, limit: int) -> str:
+    """Corta o texto ao limite, preservando o início e o fim e marcando o trecho omitido.
+
+    Args:
+        text: texto original.
+        limit: tamanho máximo do resultado; valores não positivos desativam o corte.
+
+    Returns:
+        O texto truncado, ou o original quando já cabe no limite.
+    """
     if limit <= 0 or len(text) <= limit:
         return text
     est_marker = f"\n…[{len(text) - limit} caracteres omitidos]…\n"

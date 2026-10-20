@@ -1,4 +1,12 @@
-# src/agent/domain/schemas.py — contratos Pydantic (API e fronteiras)
+"""
+Arquivo: src/agent/domain/schemas.py
+Nome: schemas.py
+Propósito: definir os contratos Pydantic compartilhados pela API e pelas fronteiras internas.
+Responsabilidade: camada de domínio — modelos de entrada e saída (criação, leitura e atualização).
+Componentes: modelos de projeto, conversa, ramo, tarefa, run, evento, memória e hierarquia de agentes.
+Dependências: pydantic, agent.domain.agent_enums, agent.domain.enums.
+Observações: os modelos `*Read` usam `from_attributes` e são lidos direto dos modelos ORM.
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -11,32 +19,44 @@ from agent.domain.enums import MemoryKind, RunStatus, TaskKind, TaskStatus
 
 
 class ProjectCreate(BaseModel):
+    """Dados de criação de um projeto."""
+
     name: str = Field(min_length=1, max_length=200)
     root_path: str = ""
     description: str | None = None
 
 
 class ProjectUpdate(BaseModel):
+    """Campos de projeto que podem ser alterados depois de criado."""
+
     name: str | None = None
     root_path: str | None = None
 
 
 class ConversationCreate(BaseModel):
+    """Dados de criação de uma conversa."""
+
     title: str | None = None
     locale: str | None = None
 
 
 class ConversationMove(BaseModel):
+    """Movimentação de uma conversa para outro projeto."""
+
     project_id: UUID | None = None
 
 
 class ConversationUpdate(BaseModel):
+    """Campos de conversa que podem ser alterados depois de criada."""
+
     title: str | None = None
     root_path: str | None = None
     clear_root: bool = False
 
 
 class BranchRead(BaseModel):
+    """Ramo de conversa (linha de trabalho isolada) e sua origem."""
+
     id: UUID
     parent_id: UUID | None = None
     fork_task_id: UUID | None = None
@@ -46,11 +66,15 @@ class BranchRead(BaseModel):
 
 
 class ConversationFork(BaseModel):
+    """Pedido de ramificação de uma conversa a partir de uma tarefa."""
+
     task_id: UUID
     objective: str = Field(min_length=1)
 
 
 class ConversationRead(BaseModel):
+    """Conversa lida do banco, com o ramo ativo e a lista de ramos."""
+
     id: UUID
     project_id: UUID | None = None
     workspace_id: UUID | None = None
@@ -67,6 +91,8 @@ class ConversationRead(BaseModel):
 
 
 class ProjectRead(BaseModel):
+    """Projeto lido do banco."""
+
     id: UUID
     name: str
     root_path: str
@@ -79,6 +105,8 @@ class ProjectRead(BaseModel):
 
 
 class TaskCreate(BaseModel):
+    """Dados de criação de uma tarefa."""
+
     title: str = Field(min_length=1, max_length=500)
     objective: str = Field(min_length=1)
     scope: str | None = None
@@ -91,6 +119,8 @@ class TaskCreate(BaseModel):
 
 
 class TaskRead(BaseModel):
+    """Tarefa lida do banco, com estado, ordenação e consumo de tokens."""
+
     id: UUID
     project_id: UUID
     conversation_id: UUID | None = None
@@ -116,20 +146,28 @@ class TaskRead(BaseModel):
 
 
 class TaskStatusUpdate(BaseModel):
+    """Mudança de estado de uma tarefa e o motivo que a justifica."""
+
     status: TaskStatus
     reason: str | None = None
 
 
 class TaskDependencyCreate(BaseModel):
+    """Dependência de uma tarefa em outra."""
+
     depends_on_task_id: UUID
 
 
 class ExecutionRunCreate(BaseModel):
+    """Pedido de criação de um run a partir de uma tarefa raiz."""
+
     root_task_id: UUID
     config: dict | None = None
 
 
 class ExecutionRunRead(BaseModel):
+    """Run lido do banco."""
+
     id: UUID
     project_id: UUID
     root_task_id: UUID
@@ -141,6 +179,8 @@ class ExecutionRunRead(BaseModel):
 
 
 class EventRead(BaseModel):
+    """Evento de execução lido do banco."""
+
     id: UUID
     run_id: UUID | None
     task_id: UUID | None
@@ -152,6 +192,8 @@ class EventRead(BaseModel):
 
 
 class MemoryCreate(BaseModel):
+    """Dados de criação de um registro de memória."""
+
     kind: MemoryKind
     title: str
     content: str
@@ -162,6 +204,8 @@ class MemoryCreate(BaseModel):
 
 
 class MemoryRead(BaseModel):
+    """Registro de memória lido do banco."""
+
     id: UUID
     project_id: UUID
     conversation_id: UUID | None = None

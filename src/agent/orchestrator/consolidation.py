@@ -1,4 +1,13 @@
-# src/agent/orchestrator/consolidation.py — consolidação bottom-up
+"""
+Arquivo: src/agent/orchestrator/consolidation.py
+Nome: consolidation.py
+Propósito: consolidação bottom-up.
+Responsabilidade: camada de aplicação.
+Componentes: verification_spec, latest_verification_failed, verification_evidence_ok, superseded, is_optional, inherits_read_only….
+Dependências: agent.domain.enums, agent.domain.schemas, agent.persistence.models, agent.services.agent_service, agent.services.task_service, agent.verification.fingerprint….
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -96,6 +105,15 @@ def settled(task: TaskModel) -> bool:
 
 
 def children_of(session: Session, parent_id: uuid.UUID) -> list[TaskModel]:
+    """Lista as tarefas filhas de uma tarefa.
+
+    Args:
+        session: sessão do banco.
+        parent_id: identificador da tarefa pai.
+
+    Returns:
+        As tarefas cujo `parent_id` é o informado.
+    """
     stmt = select(TaskModel).where(TaskModel.parent_id == parent_id)
     return list(session.scalars(stmt).all())
 
@@ -142,6 +160,17 @@ _TO_VERIFYING: dict[TaskStatus, list[TaskStatus]] = {
 
 
 def _walk(ts: TaskService, task_id: uuid.UUID, path: list[TaskStatus], reason: str | None = None) -> None:
+    """Percorre uma sequência de estados, aplicando cada um à tarefa.
+
+    Args:
+        ts: serviço de tarefas que faz as transições.
+        task_id: identificador da tarefa movida.
+        path: estados a percorrer, na ordem.
+        reason: motivo registrado nas transições.
+
+    Observações:
+        A máquina de estados valida cada passo; um estado intermediário inválido interrompe o percurso.
+    """
     for status in path:
         ts.update_status(task_id, TaskStatusUpdate(status=status, reason=reason))
 
@@ -247,6 +276,18 @@ def pending_reason(task: TaskModel) -> str:
 
 
 def collect_evidences(session: Session, task_id: uuid.UUID) -> list[dict[str, Any]]:
+    """Recolhe as evidências registradas para uma tarefa, da mais antiga para a mais recente.
+
+    Args:
+        session: sessão do banco.
+        task_id: identificador da tarefa consultada.
+
+    Returns:
+        As evidências com verificador, resultado, resumo e detalhe.
+
+    Observações:
+        A ordem importa: só a evidência mais recente vale como medição corrente da etapa.
+    """
     stmt = (
         select(EvidenceModel)
         .where(EvidenceModel.task_id == task_id)

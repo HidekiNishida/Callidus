@@ -1,5 +1,13 @@
-# src/agent/services/query_service.py — consultas de um agente a outro
-"""Protocolo de consulta entre agentes, em qualquer geração.
+"""
+Arquivo: src/agent/services/query_service.py
+Nome: query_service.py
+Propósito: implementar o protocolo de consulta entre agentes, em qualquer geração.
+Responsabilidade: camada de aplicação — criação, resolução e correlação das consultas.
+Componentes: QueryService, QueryRejectedError.
+Dependências: agent.domain.agent_enums, agent.persistence.models, agent.services.agent_service, agent.providers.base.
+Observações: a resposta persistida é devolvida sem inferência; só a falta de informação ativa o filho.
+
+Protocolo de consulta entre agentes, em qualquer geração.
 
 O problema que este módulo resolve: quando o filho termina, o pai precisa de uma
 *resposta*, não do *histórico* do filho. Relatórios extensos a cada delegação estouram
@@ -81,7 +89,14 @@ _ABSENCE_PATTERN = re.compile(
 
 
 def _declara_ausencia(texto: str) -> bool:
-    """O texto diz que não há evidência disponível?"""
+    """O texto diz que não há evidência disponível?
+
+    Args:
+        texto: resposta do agente.
+
+    Returns:
+        `True` quando a resposta declara ausência de informação.
+    """
     return bool(_ABSENCE_PATTERN.search(texto or ""))
 
 
@@ -91,17 +106,39 @@ def _sem_acento(text: str) -> str:
     Sem isso, "cálculo" vira "c" + "lculo" e nunca casa com "cálculo": em português,
     quase toda palavra técnica tem acento. É um defeito silencioso — a consulta apenas
     não encontra a evidência que existe.
+
+    Args:
+        text: texto de entrada.
+
+    Returns:
+        O texto sem diacríticos.
     """
     normalized = unicodedata.normalize("NFKD", text or "")
     return "".join(char for char in normalized if not unicodedata.combining(char))
 
 
 def _tokens(text: str) -> set[str]:
+    """Palavras úteis do texto, sem acentos, sem palavras vazias e sem as curtas demais.
+
+    Args:
+        text: texto de entrada.
+
+    Returns:
+        O conjunto de tokens significativos.
+    """
     words = _WORD_RE.findall(_sem_acento(text).lower())
     return {w for w in words if len(w) > 2 and w not in QUESTION_STOPWORDS}
 
 
 def _normalize(text: str) -> str:
+    """Normaliza o texto para comparação lexical.
+
+    Args:
+        text: texto de entrada.
+
+    Returns:
+        O texto sem acentos, em minúsculas e apenas com palavras.
+    """
     return " ".join(_WORD_RE.findall(_sem_acento(text).lower()))
 
 
@@ -110,7 +147,13 @@ class QueryRejectedError(ValueError):
 
 
 class QueryService:
-    """Consultas entre agentes: criação, resolução e correlação de respostas."""
+    """Consultas entre agentes: criação, resolução e correlação de respostas.
+
+    Atributos:
+        _session: sessão usada nas leituras e gravações.
+        _settings: configurações, com os limites do protocolo.
+        _agents: serviço dos agentes, usado para validar e rotear a consulta.
+    """
 
     def __init__(
         self,
@@ -119,6 +162,13 @@ class QueryService:
         *,
         agent_service: AgentService | None = None,
     ) -> None:
+        """Cria o serviço ligado a uma sessão.
+
+        Args:
+            session: sessão SQLAlchemy a usar.
+            settings: configurações a usar; quando ausentes, são lidas do ambiente.
+            agent_service: serviço dos agentes; quando ausente, é criado com a mesma sessão.
+        """
         self._session = session
         self._settings = settings or get_settings()
         self._agents = agent_service or AgentService(session, self._settings)
@@ -142,6 +192,20 @@ class QueryService:
         - o alvo existe e não é ancestral do solicitante (consulta circular);
         - o solicitante não tem mais consultas pendentes que o limite permita;
         - perguntas relacionadas podem ser agrupadas em uma só consulta.
+
+        Args:
+            requester_agent_id: agente que pergunta.
+            target_agent_id: agente perguntado.
+            question: a pergunta, ou a lista de perguntas agrupadas.
+            task_id: tarefa associada à consulta.
+            correlation_id: identificador de correlação; por padrão, é gerado.
+            max_attempts: limite de tentativas da consulta.
+
+        Returns:
+            A consulta registrada, pendente.
+
+        Raises:
+            QueryRejectedError: quando a consulta viola uma regra do protocolo.
         """
         requester = self._agents.get(requester_agent_id)
         target = self._agents.get(target_agent_id)
@@ -181,12 +245,31 @@ class QueryService:
     # -------------------------------------------------------------- leitura
 
     def get(self, query_id: uuid.UUID) -> AgentQueryModel:
+        """Consulta por identificador.
+
+        Args:
+            query_id: identificador da consulta.
+
+        Returns:
+            A consulta encontrada.
+
+        Raises:
+            AgentNotFoundError: quando a consulta não existe.
+        """
         query = self._session.get(AgentQueryModel, query_id)
         if query is None:
             raise AgentNotFoundError(f"Consulta não encontrada: {query_id}")
         return query
 
     def pending_for(self, agent_id: uuid.UUID) -> list[AgentQueryModel]:
+        """Consultas pendentes dirigidas a um agente.
+
+        Args:
+            agent_id: identificador do agente alvo.
+
+        Returns:
+            A lista de consultas pendentes ou roteadas, da mais antiga para a mais recente.
+        """
         stmt = (
             select(AgentQueryModel)
             .where(
@@ -200,6 +283,14 @@ class QueryService:
         return list(self._session.scalars(stmt).all())
 
     def queries_of(self, agent_id: uuid.UUID) -> list[AgentQueryModel]:
+        """Consultas em que um agente participa, como solicitante ou alvo.
+
+        Args:
+            agent_id: identificador do agente.
+
+        Returns:
+            A lista de consultas, da mais antiga para a mais recente.
+        """
         stmt = (
             select(AgentQueryModel)
             .where(
@@ -229,6 +320,13 @@ class QueryService:
         foram…" se a palavra "testes" bastasse — e isso é inventar resposta. Com o
         limite, a pergunta cai no caminho de inferência, que é o lugar honesto para
         uma pergunta ambígua.
+
+        Args:
+            question: pergunta feita ao agente.
+            findings: descobertas persistidas do agente.
+
+        Returns:
+            A descoberta pertinente, com o campo `_match_strength`, ou `None`.
         """
         q_tokens = _tokens(question)
         if not q_tokens:
@@ -260,6 +358,12 @@ class QueryService:
 
         A busca é direcionada: primeiro o alvo, depois a descendência, em ordem de
         profundidade. O primeiro agente com evidência pertinente responde.
+
+        Args:
+            query: consulta a responder.
+
+        Returns:
+            A resposta montada a partir do estado persistido, ou `None` quando nada responde.
         """
         questions = list(query.questions_json or [])
         combined = " ".join(questions)
@@ -286,6 +390,13 @@ class QueryService:
         O contexto é limitado de propósito: o pai não precisa do histórico do filho,
         só do que sustenta a resposta. O que ficou de fora continua no estado
         persistido e pode ser consultado em outra rodada.
+
+        Args:
+            agent: agente consultado.
+            limit: tamanho máximo do contexto, em caracteres.
+
+        Returns:
+            O contexto do agente, em texto.
         """
         return self._context_for_agents([agent], limit=limit)
 
@@ -296,6 +407,13 @@ class QueryService:
 
         A atribuição importa: o pai precisa saber de quem veio a evidência, e a
         verificação de lastro compara a resposta com exatamente este contexto.
+
+        Args:
+            agents: agentes cujo estado é resumido.
+            limit: tamanho máximo do contexto, em caracteres.
+
+        Returns:
+            O contexto em texto, com um bloco por agente.
         """
         blocks: list[str] = []
         for candidate in agents:
@@ -330,6 +448,13 @@ class QueryService:
 
         A busca lexical desce pela hierarquia; o caminho de inferência precisa ver o
         mesmo material — senão o modelo responde sem a evidência que existe no neto.
+
+        Args:
+            agent: agente raiz da subárvore.
+            limit: tamanho máximo do contexto, em caracteres.
+
+        Returns:
+            O contexto do agente e de sua descendência, em texto.
         """
         return self._context_for_agents(
             [agent, *self._agents.descendants(agent.id)], limit=limit
@@ -346,6 +471,17 @@ class QueryService:
 
         A resposta é sempre persistida e correlacionada à consulta — uma resposta nunca
         fica associated a outra tarefa.
+
+        Args:
+            query_id: identificador da consulta.
+            provider: provedor usado quando for preciso inferir.
+            profile: perfil do modelo usado na inferência.
+
+        Returns:
+            A consulta resolvida, com o estado e a resposta.
+
+        Raises:
+            AgentNotFoundError: quando a consulta não existe.
         """
         query = self.get(query_id)
         if query.status == QueryStatus.ANSWERED.value:
@@ -401,6 +537,13 @@ class QueryService:
         resposta que não compartilha nenhum conteúdo com o estado do agente é marcada
         como **não fundamentada**. A resposta não é descartada — ela é marcada, porque
         o pai precisa saber se pode confiar.
+
+        Args:
+            answer: resposta produzida pela inferência.
+            agent: agente consultado.
+
+        Returns:
+            Tupla com o indicativo de fundamentação e a lista de incertezas.
         """
         answer_tokens = _tokens(answer)
         if not answer_tokens:
@@ -419,7 +562,16 @@ class QueryService:
         provider: LLMProvider,
         profile: ModelProfile,
     ) -> dict[str, Any]:
-        """Reativa o agente consultado e responde com uma inferência pelo executor compartilhado."""
+        """Reativa o agente consultado e responde com uma inferência pelo executor compartilhado.
+
+        Args:
+            query: consulta a responder.
+            provider: provedor chamado.
+            profile: perfil do modelo.
+
+        Returns:
+            A resposta da inferência, ou `None` quando o modelo devolveu texto vazio.
+        """
         agent = self._agents.get(query.target_agent_id)
         execution = self._agents.current_execution(agent.id)
         if execution is not None and execution.status == ExecutionStatus.SUSPENDED.value:
@@ -476,7 +628,13 @@ class QueryService:
         }
 
     def _remember_inference(self, agent: AgentModel, content: str, fundamentada: bool) -> None:
-        """Guarda a resposta sintetizada como descoberta do agente consultado."""
+        """Guarda a resposta sintetizada como descoberta do agente consultado.
+
+        Args:
+            agent: agente consultado.
+            content: resposta sintetizada.
+            fundamentada: indica se a resposta encontra respaldo no estado persistido.
+        """
         try:
             self._agents.record_finding(
                 agent.id,
@@ -499,7 +657,22 @@ class QueryService:
         uncertainty: list[str] | None = None,
         answered_by_agent_id: uuid.UUID | None = None,
     ) -> AgentQueryModel:
-        """Registra a resposta de um agente a uma consulta (caminho sem inferência)."""
+        """Registra a resposta de um agente a uma consulta (caminho sem inferência).
+
+        Args:
+            query_id: identificador da consulta.
+            answer: texto da resposta.
+            evidence: provas que sustentam a resposta.
+            artifacts: arquivos envolvidos.
+            uncertainty: pontos de incerteza da resposta.
+            answered_by_agent_id: agente que respondeu.
+
+        Returns:
+            A consulta respondida.
+
+        Raises:
+            AgentNotFoundError: quando a consulta não existe.
+        """
         query = self.get(query_id)
         payload = {
             "answer": answer,
@@ -521,6 +694,18 @@ class QueryService:
         return query
 
     def cancel(self, query_id: uuid.UUID, *, reason: str = "") -> AgentQueryModel:
+        """Cancela uma consulta pendente.
+
+        Args:
+            query_id: identificador da consulta.
+            reason: motivo do cancelamento.
+
+        Returns:
+            A consulta cancelada.
+
+        Raises:
+            AgentNotFoundError: quando a consulta não existe.
+        """
         query = self.get(query_id)
         query.status = QueryStatus.CANCELLED.value
         query.error_message = reason[:500]

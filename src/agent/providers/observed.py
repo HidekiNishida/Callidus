@@ -1,4 +1,12 @@
-# src/agent/providers/observed.py — chamada ao modelo acompanhada em tempo real
+"""
+Arquivo: src/agent/providers/observed.py
+Nome: observed.py
+Propósito: envolver a chamada ao modelo para que ela seja acompanhada em tempo real pelos eventos.
+Responsabilidade: camada de aplicação — emissão dos eventos de início, fragmentos e desfecho da inferência.
+Componentes: observed_chat.
+Dependências: agent.observability, agent.observability.batching, agent.providers.base.
+Observações: provedor sem streaming não inventa fragmentos: marca `streaming: false` e publica a resposta inteira.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -22,7 +30,20 @@ async def observed_chat(
     """Chama o modelo emitindo `agent.started`, fragmentos (`agent.output.delta`) quando o provedor transmite de
     verdade, e `agent.output.completed` com a resposta inteira, ou `agent.output.failed` em erro/cancelamento.
     Provedor sem streaming: `streaming: false` e estado `waiting_full_response`; nenhum fragmento é inventado.
-    Fora de uma run, só chama o provedor."""
+    Fora de uma run, só chama o provedor.
+
+    Args:
+        provider: provedor que faz a inferência.
+        request: requisição do Callidus.
+        purpose: finalidade da chamada, usada nos eventos.
+        stream: quando `True`, usa streaming se o provedor oferecer.
+
+    Returns:
+        A resposta do provedor.
+
+    Raises:
+        Exception: qualquer erro do provedor é propagado depois de emitir o evento de falha.
+    """
     if current() is None:
         return await provider.chat(request)
     streaming = bool(stream and getattr(provider, "supports_streaming", False))
@@ -39,6 +60,11 @@ async def observed_chat(
     offset = 0
 
     def publish(text: str) -> None:
+        """Publica um fragmento do texto recebido, com o deslocamento acumulado.
+
+        Args:
+            text: trecho recebido do modelo.
+        """
         nonlocal offset
         emit("agent.output.delta", {"output_id": output_id, "text": text, "offset": offset})
         offset += len(text)
@@ -46,10 +72,21 @@ async def observed_chat(
     batcher = DeltaBatcher(publish)
 
     def on_delta(piece: str) -> None:
+        """Acumula um fragmento e agenda sua publicação em lote.
+
+        Args:
+            piece: trecho recebido do modelo.
+        """
         received.append(piece)
         batcher.add(piece)
 
     def failed(error: str, *, cancelled: bool = False) -> None:
+        """Publica o desfecho de falha, preservando o texto parcial recebido.
+
+        Args:
+            error: mensagem do erro.
+            cancelled: quando `True`, marca a falha como cancelamento.
+        """
         batcher.flush()
         partial = "".join(received)
         emit(

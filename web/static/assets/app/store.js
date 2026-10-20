@@ -1,4 +1,13 @@
-// web/static/assets/app/store.js — estado reativo e ações da interface
+/**
+ * Arquivo: web/static/assets/app/store.js
+ * Nome: store.js
+ * Propósito: estado reativo da interface e as ações que o alteram.
+ * Responsabilidade: frontend/estado — concentra o estado compartilhado e fala com a API em nome dos componentes.
+ * Componentes: state (reativo), ações de projeto/conversa/tarefa/run, provedores, automações e conexões de stream.
+ * Dependências: `./api.js` (HTTP), `./live-state.js` (redutor), `./live-stream.js` (SSE), `./ui.js` (atividade).
+ * Observações: o estado é a fonte da verdade do navegador; o servidor continua sendo a fonte da verdade
+ * da execução. As ações do store avisam o usuário por `toast` em vez de lançar erros.
+ */
 import { api } from "./api.js";
 import { describeActivity } from "./ui.js";
 import { applyEvent, applyLive, createState, markConnection, markResync } from "./live-state.js";
@@ -6,6 +15,7 @@ import { createStream } from "./live-stream.js";
 
 const { reactive } = Vue;
 
+/** Estado reativo compartilhado por todos os componentes. */
 export const state = reactive({
   view: "chat",
   theme: localStorage.getItem("callidus-theme") || "dark",
@@ -77,6 +87,14 @@ let taskTimer = null;
 /** Estado do redutor de acompanhamento (tarefas, saídas, arquivos, verificações). */
 state.liveState = { data: null, version: 0 };
 
+/**
+ * Mostra uma mensagem temporária para o usuário.
+ *
+ * @param {string} message Texto da mensagem.
+ * @param {string} [type] Tipo do aviso ("info", "ok" ou "error").
+ * @returns {void}
+ * Observações: a mensagem se remove sozinha depois de alguns segundos.
+ */
 export function toast(message, type = "info") {
   const id = Date.now() + Math.random();
   state.toasts.push({ id, message, type });
@@ -86,20 +104,42 @@ export function toast(message, type = "info") {
   }, 4200);
 }
 
+/**
+ * Descobre o espaço de trabalho (projeto) em que a interface está trabalhando.
+ *
+ * @returns {string|null} O id do projeto, o da conversa, ou `null` quando não há contexto.
+ */
 export function workspaceId() {
   return state.selectedProject?.id || state.conversation?.workspace_id || null;
 }
 
+/**
+ * Lista as tarefas raiz (mensagens) do contexto atual.
+ *
+ * @returns {Array} As tarefas sem pai, da conversa selecionada.
+ */
 export function roots() {
   return state.tasks.filter(
     (task) => !task.parent_id && (!state.conversation || task.conversation_id === state.conversation.id),
   );
 }
 
+/**
+ * Lista as subtarefas de uma tarefa raiz.
+ *
+ * @param {string} rootId Id da tarefa raiz.
+ * @returns {Array} As tarefas cujo pai é a raiz informada.
+ */
 export function childrenOf(rootId) {
   return state.tasks.filter((task) => task.parent_id === rootId);
 }
 
+/**
+ * Coleta os ids de uma tarefa e de todos os seus descendentes.
+ *
+ * @param {string} rootId Id da tarefa raiz.
+ * @returns {Set<string>} Os ids da subárvore, incluindo a própria raiz.
+ */
 export function descendantIds(rootId) {
   const ids = new Set([rootId]);
   let grew = true;
@@ -115,19 +155,36 @@ export function descendantIds(rootId) {
   return ids;
 }
 
+/**
+ * Troca o tema da interface e o guarda no navegador.
+ *
+ * @param {string} theme Nome do tema ("dark" ou "light").
+ * @returns {void}
+ */
 export function setTheme(theme) {
   state.theme = theme;
   localStorage.setItem("callidus-theme", theme);
   document.documentElement.dataset.theme = theme;
 }
 
+/**
+ * Troca a densidade da interface e a guarda no navegador.
+ *
+ * @param {string} density Nome da densidade ("confortavel" ou "compacta").
+ * @returns {void}
+ */
 export function setDensity(density) {
   state.density = density;
   localStorage.setItem("callidus-density", density);
   document.documentElement.dataset.density = density;
 }
 
-/** Ajusta o estado quando a janela muda de tamanho (desktop ⇄ tablet/mobile). */
+/**
+ * Ajusta o estado quando a janela muda de tamanho (desktop ⇄ tablet/mobile).
+ *
+ * @returns {void}
+ * Observações: em telas estreitas a barra lateral e o painel de detalhes começam fechados.
+ */
 export function watchViewport() {
   if (typeof window === "undefined") return;
   const query = window.matchMedia("(max-width: 1179px)");
@@ -142,12 +199,24 @@ export function watchViewport() {
   apply();
 }
 
+/**
+ * Troca a tela visível e fecha os painéis abertos.
+ *
+ * @param {string} view Id da tela ("chat", "live", "providers", "automations" ou "settings").
+ * @returns {void}
+ */
 export function openView(view) {
   state.view = view;
   state.railOpen = false;
   state.paletteOpen = false;
 }
 
+/**
+ * Carrega o estado inicial da interface (projetos, conversas, padrões e provedores).
+ *
+ * @returns {Promise<void>}
+ * Observações: falhas de leitura são absorvidas — a interface abre mesmo sem algum recurso.
+ */
 export async function bootstrap() {
   setTheme(state.theme);
   const [projects, loose, defaults, health] = await Promise.all([
@@ -170,11 +239,24 @@ export async function bootstrap() {
   void health;
 }
 
+/**
+ * Lê a configuração do computador remoto de um projeto.
+ *
+ * @param {object} project Projeto consultado.
+ * @returns {Promise<object|null>} A configuração salva, ou `null` quando o projeto usa a máquina local.
+ */
 export async function loadRemote(project) {
   const data = await api(`/projects/${project.id}/remote`).catch(() => ({ remote: null }));
   return data.remote || null;
 }
 
+/**
+ * Grava a configuração do computador remoto de um projeto.
+ *
+ * @param {object} project Projeto configurado.
+ * @param {object} config Configuração (host, port, user, key_path, root, shell, timeout).
+ * @returns {Promise<object>} A configuração salva.
+ */
 export async function saveRemote(project, config) {
   const data = await api(`/projects/${project.id}/remote`, {
     method: "PUT",
@@ -184,11 +266,23 @@ export async function saveRemote(project, config) {
   return data.remote;
 }
 
+/**
+ * Remove a configuração do computador remoto, voltando para a máquina local.
+ *
+ * @param {object} project Projeto alterado.
+ * @returns {Promise<void>}
+ */
 export async function clearRemote(project) {
   await api(`/projects/${project.id}/remote`, { method: "DELETE" });
   toast("Projeto voltou para a máquina local", "ok");
 }
 
+/**
+ * Testa a conexão com o computador remoto de um projeto.
+ *
+ * @param {object} project Projeto testado.
+ * @returns {Promise<{ok: boolean, detail?: string}>} O resultado do teste; nunca lança.
+ */
 export async function testRemote(project) {
   const data = await api(`/projects/${project.id}/remote/test`, { method: "POST" }).catch((err) => ({
     ok: false,
@@ -197,6 +291,14 @@ export async function testRemote(project) {
   return data;
 }
 
+/**
+ * Renomeia um projeto e recarrega a lista.
+ *
+ * @param {object} project Projeto renomeado.
+ * @param {string} name Novo nome.
+ * @returns {Promise<void>}
+ * Observações: nomes vazios são ignorados; falhas aparecem como aviso.
+ */
 export async function renameProject(project, name) {
   const clean = (name || "").trim();
   if (!clean) return;
@@ -212,6 +314,13 @@ export async function renameProject(project, name) {
   }
 }
 
+/**
+ * Troca a pasta de um projeto e recarrega a lista.
+ *
+ * @param {object} project Projeto alterado.
+ * @param {string} rootPath Novo caminho da pasta.
+ * @returns {Promise<void>}
+ */
 export async function moveProject(project, rootPath) {
   try {
     await api(`/projects/${project.id}`, { method: "PATCH", body: JSON.stringify({ root_path: rootPath }) });
@@ -225,6 +334,13 @@ export async function moveProject(project, rootPath) {
   }
 }
 
+/**
+ * Remove um projeto, com as conversas e tarefas que ele guarda.
+ *
+ * @param {object} project Projeto removido.
+ * @returns {Promise<any|false>} A resposta da API, ou `false` quando a remoção foi cancelada ou falhou.
+ * Observações: os arquivos da pasta NÃO são apagados.
+ */
 export async function deleteProject(project) {
   const label = project.name || "projeto";
   if (!window.confirm(`Remover o projeto “${label}”? Conversas, tarefas e memórias dele vão junto. Os arquivos da pasta NÃO são apagados.`)) {
@@ -247,7 +363,12 @@ export async function deleteProject(project) {
   }
 }
 
-/** Estado por conversa: trabalhando, concluída ou parada — usado na cor da lista. */
+/**
+ * Estado por conversa: trabalhando, concluída ou parada — usado na cor da lista.
+ *
+ * @param {object} conversation Conversa avaliada.
+ * @returns {string} "working", "attention", "done" ou "idle".
+ */
 export function conversationStatus(conversation) {
   if (!conversation) return "idle";
   const tasks = state.tasks.filter((task) => task.conversation_id === conversation.id);
@@ -260,6 +381,12 @@ export function conversationStatus(conversation) {
   return "idle";
 }
 
+/**
+ * Carrega o catálogo de provedores e a configuração gravada.
+ *
+ * @returns {Promise<void>}
+ * Observações: falhas de leitura são absorvidas e deixam a lista vazia.
+ */
 export async function loadProviders() {
   const [catalog, config] = await Promise.all([
     api("/providers").catch(() => ({ providers: [], default_provider: null })),
@@ -273,6 +400,12 @@ export async function loadProviders() {
   });
 }
 
+/**
+ * Seleciona um projeto e recarrega suas conversas e tarefas.
+ *
+ * @param {object} project Projeto selecionado.
+ * @returns {Promise<void>}
+ */
 export async function selectProject(project) {
   state.selectedProject = project;
   state.conversation = null;
@@ -286,6 +419,12 @@ export async function selectProject(project) {
   await refreshTasks();
 }
 
+/**
+ * Seleciona uma conversa e recarrega suas tarefas.
+ *
+ * @param {object} conversation Conversa selecionada.
+ * @returns {Promise<void>}
+ */
 export async function selectConversation(conversation) {
   state.conversation = conversation;
   state.selectedTaskId = null;
@@ -300,6 +439,12 @@ export async function selectConversation(conversation) {
   await refreshTasks();
 }
 
+/**
+ * Apaga uma conversa, com o histórico dela.
+ *
+ * @param {object} conversation Conversa apagada.
+ * @returns {Promise<boolean>} `true` quando apagou, `false` quando foi cancelada ou falhou.
+ */
 export async function deleteConversation(conversation) {
   if (!window.confirm(`Apagar a conversa “${conversation.title || "sem título"}”? O histórico dela vai junto.`)) {
     return false;
@@ -324,6 +469,12 @@ export async function deleteConversation(conversation) {
   }
 }
 
+/**
+ * Recarrega a lista de tarefas do contexto atual.
+ *
+ * @returns {Promise<void>}
+ * Observações: quando a tarefa selecionada some, a primeira da lista passa a ser a selecionada.
+ */
 export async function refreshTasks() {
   if (state.conversation) {
     state.tasks = await api(`/conversations/${state.conversation.id}/tasks`).catch(() => []);
@@ -337,6 +488,12 @@ export async function refreshTasks() {
   }
 }
 
+/**
+ * Atualiza a execução em andamento a partir da lista de runs do workspace.
+ *
+ * @param {string} [runId] Id da run desejada; sem ele, escolhe a run ativa (ou a última).
+ * @returns {Promise<void>}
+ */
 export async function refreshRun(runId) {
   const workspace = workspaceId();
   if (!workspace) return;
@@ -346,6 +503,11 @@ export async function refreshRun(runId) {
   state.currentRun = active;
 }
 
+/**
+ * Monta a configuração enviada ao servidor ao criar uma run.
+ *
+ * @returns {object} Provedor, modelo e opções de execução escolhidas na interface.
+ */
 export function runConfig() {
   return {
     provider: state.provider,
@@ -356,6 +518,13 @@ export function runConfig() {
   };
 }
 
+/**
+ * Envia o objetivo digitado: cria a conversa e a tarefa e inicia a execução.
+ *
+ * @returns {Promise<void>}
+ * Observações: com uma execução em andamento, a mensagem é agendada em `state.queued` e entra
+ * assim que a run terminar.
+ */
 export async function sendMessage() {
   const typed = state.objective.trim();
   if (!typed || state.sending) return;
@@ -422,6 +591,12 @@ export async function sendMessage() {
   }
 }
 
+/**
+ * Cria a run da tarefa selecionada e começa a acompanhá-la.
+ *
+ * @returns {Promise<void>}
+ * Observações: habilita o modo autônomo no servidor e dispara o primeiro passo.
+ */
 export async function startRun() {
   if (state.running || state.currentRun?.status === "ACTIVE") {
     toast("Já existe uma execução em andamento", "error");
@@ -453,6 +628,11 @@ export async function startRun() {
   }
 }
 
+/**
+ * Avança a execução em um único passo e atualiza a lista de tarefas.
+ *
+ * @returns {Promise<void>}
+ */
 export async function stepRun() {
   if (!state.currentRun) return;
   await api(`/runs/${state.currentRun.id}/step`, { method: "POST" }).catch((err) => toast(err.message, "error"));
@@ -460,6 +640,12 @@ export async function stepRun() {
   await loadInspector(state.selectedTaskId);
 }
 
+/**
+ * Deixa o servidor conduzir os passos até o fim da execução.
+ *
+ * @returns {Promise<void>}
+ * Observações: ao terminar, atualiza a run e envia a mensagem que ficou na fila.
+ */
 export async function autoRun() {
   if (!state.currentRun) return;
   const runId = state.currentRun.id;
@@ -478,7 +664,11 @@ export async function autoRun() {
   }
 }
 
-/** Envia a mensagem que ficou na fila (a execução anterior acabou). */
+/**
+ * Envia a mensagem que ficou na fila (a execução anterior acabou).
+ *
+ * @returns {Promise<void>}
+ */
 export async function flushQueue() {
   if (!state.queued) return;
   const pending = state.queued;
@@ -488,22 +678,45 @@ export async function flushQueue() {
   await sendMessage();
 }
 
+/**
+ * Cancela a mensagem agendada.
+ *
+ * @returns {void}
+ */
 export function cancelQueued() {
   state.queued = null;
   toast("Mensagem agendada cancelada", "info");
 }
 
+/**
+ * Liga ou desliga o modo de execução automática e guarda a preferência no navegador.
+ *
+ * @param {boolean} value `true` para deixar o agente seguir sozinho.
+ * @returns {void}
+ */
 export function setAutoMode(value) {
   state.autoMode = Boolean(value);
   localStorage.setItem("callidus-auto", state.autoMode ? "on" : "off");
 }
 
+/**
+ * Pausa a execução em andamento.
+ *
+ * @returns {Promise<void>}
+ */
 export async function pauseRun() {
   if (!state.currentRun) return;
   await api(`/runs/${state.currentRun.id}/pause`, { method: "POST" }).catch((err) => toast(err.message, "error"));
   await refreshTasks();
 }
 
+/**
+ * Retoma a execução pausada da mensagem (tarefa raiz) informada.
+ *
+ * @param {string} rootTaskId Id da tarefa raiz da mensagem.
+ * @returns {Promise<void>}
+ * Observações: usa `retry_blocked=true` para devolver as etapas bloqueadas ao planejamento.
+ */
 export async function resumeRun(rootTaskId) {
   // A execução pausada é a da mensagem (tarefa raiz) — não a última da lista.
   const workspace = workspaceId();
@@ -533,6 +746,11 @@ export async function resumeRun(rootTaskId) {
   }
 }
 
+/**
+ * Cancela a execução em andamento e desconecta o stream.
+ *
+ * @returns {Promise<void>}
+ */
 export async function cancelRun() {
   if (!state.currentRun) return;
   stopTaskPolling();
@@ -542,6 +760,13 @@ export async function cancelRun() {
   await refreshTasks();
 }
 
+/**
+ * Conecta o stream SSE de uma run ao redutor local.
+ *
+ * @param {string} runId Id da run.
+ * @returns {Promise<void>}
+ * Observações: carrega a foto inicial (`/runs/{id}/observe`) e substitui o stream anterior.
+ */
 export async function connectStream(runId) {
   disconnectStream();
   state.outputs = [];
@@ -584,7 +809,11 @@ export async function connectStream(runId) {
   });
 }
 
-/** While the run is active, the task list is refreshed so the plan tags follow along. */
+/**
+ * Enquanto a run está ativa, a lista de tarefas é atualizada para acompanhar o plano.
+ *
+ * @returns {void}
+ */
 function startTaskPolling() {
   stopTaskPolling();
   taskTimer = setInterval(() => {
@@ -596,6 +825,11 @@ function startTaskPolling() {
   }, 2500);
 }
 
+/**
+ * Interrompe a atualização periódica da lista de tarefas.
+ *
+ * @returns {void}
+ */
 function stopTaskPolling() {
   if (taskTimer) {
     clearInterval(taskTimer);
@@ -603,6 +837,11 @@ function stopTaskPolling() {
   }
 }
 
+/**
+ * Desconecta o stream da run e cancela as tarefas periódicas.
+ *
+ * @returns {void}
+ */
 export function disconnectStream() {
   if (stream) {
     if (typeof stream.stop === "function") stream.stop();
@@ -615,6 +854,12 @@ export function disconnectStream() {
   }
 }
 
+/**
+ * Seleciona a tarefa inspecionada e abre o painel de detalhes.
+ *
+ * @param {string} taskId Id da tarefa.
+ * @returns {Promise<void>}
+ */
 export async function selectTask(taskId) {
   state.selectedTaskId = taskId;
   state.detailsOpen = true;
@@ -624,6 +869,13 @@ export async function selectTask(taskId) {
 // Token do inspetor: uma resposta lenta de uma tarefa antiga não pode sobrescrever a atual.
 let inspectorToken = 0;
 
+/**
+ * Carrega os detalhes de uma tarefa (tentativas, evidências, snapshots e contrato).
+ *
+ * @param {string} taskId Id da tarefa.
+ * @returns {Promise<void>}
+ * Observações: uma resposta obsoleta (de uma tarefa já trocada) é descartada pelo token.
+ */
 export async function loadInspector(taskId) {
   const token = ++inspectorToken;
   if (!taskId) {
@@ -641,6 +893,11 @@ export async function loadInspector(taskId) {
   state.inspector = { task, attempts, evidences, snapshots, contract };
 }
 
+/**
+ * Carrega o diff do projeto selecionado.
+ *
+ * @returns {Promise<void>}
+ */
 export async function loadDiff() {
   const project = state.selectedProject;
   if (!project) return;
@@ -648,6 +905,11 @@ export async function loadDiff() {
   state.diffText = diff?.diff || diff?.text || "";
 }
 
+/**
+ * Carrega as métricas do workspace em andamento.
+ *
+ * @returns {Promise<void>}
+ */
 export async function loadMetrics() {
   const workspace = workspaceId();
   if (!workspace) return;
@@ -655,6 +917,12 @@ export async function loadMetrics() {
   state.metricsText = JSON.stringify(metrics, null, 2);
 }
 
+/**
+ * Pesquisa no grafo de conhecimento do projeto selecionado.
+ *
+ * @param {string} [query] Termo pesquisado.
+ * @returns {Promise<void>}
+ */
 export async function loadGraph(query = "") {
   const project = state.selectedProject;
   if (!project) return;
@@ -662,17 +930,33 @@ export async function loadGraph(query = "") {
   state.graphText = JSON.stringify(result, null, 2);
 }
 
+/**
+ * Carrega a lista de ferramentas disponíveis no servidor.
+ *
+ * @returns {Promise<void>}
+ */
 export async function loadTools() {
   const tools = await api("/tools").catch(() => null);
   state.toolsText = JSON.stringify(tools, null, 2);
 }
 
+/**
+ * Pede ao servidor a descoberta de servidores MCP.
+ *
+ * @returns {Promise<void>}
+ * Observações: o resultado fica em `state.mcpText`; a falha vira conteúdo, não exceção.
+ */
 export async function discoverMcp() {
   const result = await api("/mcp/discover", { method: "POST" }).catch((err) => ({ error: err.message }));
   state.mcpText = JSON.stringify(result, null, 2);
 }
 
-/** Raiz (tarefa de topo) de uma tarefa: a atividade pertence à mensagem, não à folha. */
+/**
+ * Raiz (tarefa de topo) de uma tarefa: a atividade pertence à mensagem, não à folha.
+ *
+ * @param {string} taskId Id da tarefa.
+ * @returns {string|null} O id da tarefa raiz, ou `null` quando não há id informado.
+ */
 export function rootIdOf(taskId) {
   if (!taskId) return null;
   const byId = new Map(state.tasks.map((task) => [task.id, task]));
@@ -685,7 +969,14 @@ export function rootIdOf(taskId) {
   return current?.id || taskId;
 }
 
-/** Entradas de atividade do chat: pensamento, ferramentas, comandos, leituras e escritas. */
+/**
+ * Entradas de atividade do chat: pensamento, ferramentas, comandos, leituras e escritas.
+ *
+ * @param {object} envelope Envelope do stream.
+ * @returns {void}
+ * Observações: a entrada em andamento (mesma chamada de ferramenta/comando) é atualizada
+ * no lugar, em vez de duplicada.
+ */
 function pushActivity(envelope) {
   const entry = describeActivity(envelope);
   if (!entry) return;
@@ -714,6 +1005,12 @@ function pushActivity(envelope) {
   if (feed.length > 120) feed.splice(0, feed.length - 120);
 }
 
+/**
+ * Lista os modelos de um provedor e guarda o resultado em cache.
+ *
+ * @param {string} [providerName] Provedor consultado; sem ele, usa o provedor atual.
+ * @returns {Promise<Array<string>>} Os modelos, ou lista vazia quando o provedor não responde.
+ */
 export async function loadModels(providerName) {
   const name = providerName || state.provider;
   if (!name) return [];
@@ -723,6 +1020,12 @@ export async function loadModels(providerName) {
   return models;
 }
 
+/**
+ * Testa a conexão com um provedor e guarda o resultado da saúde.
+ *
+ * @param {string} name Nome do provedor.
+ * @returns {Promise<{ok: boolean, detail?: string}>} O resultado do teste; nunca lança.
+ */
 export async function testProvider(name) {
   state.providerHealth = { ...state.providerHealth, [name]: { checking: true } };
   const data = await api(`/providers/${encodeURIComponent(name)}/test`, { method: "POST" }).catch((err) => ({
@@ -733,6 +1036,12 @@ export async function testProvider(name) {
   return data;
 }
 
+/**
+ * Grava a configuração de provedores.
+ *
+ * @param {object} payload Objeto com `default_provider` e `providers`.
+ * @returns {Promise<object>} A configuração salva.
+ */
 export async function saveProviderConfig(payload) {
   const saved = await api("/providers/config", {
     method: "PUT",
@@ -743,6 +1052,12 @@ export async function saveProviderConfig(payload) {
   return saved;
 }
 
+/**
+ * Remove um provedor da configuração.
+ *
+ * @param {string} name Nome do provedor.
+ * @returns {Promise<object>} A configuração salva.
+ */
 export async function removeProvider(name) {
   const saved = await api(`/providers/config/${encodeURIComponent(name)}`, { method: "DELETE" });
   state.providerConfig = saved;
@@ -750,6 +1065,13 @@ export async function removeProvider(name) {
   return saved;
 }
 
+/**
+ * Grava a credencial de um provedor.
+ *
+ * @param {string} name Nome do provedor.
+ * @param {string} secret Chave informada pelo usuário.
+ * @returns {Promise<object>} A configuração salva.
+ */
 export async function setProviderSecret(name, secret) {
   const saved = await api(`/providers/config/${encodeURIComponent(name)}/secret`, {
     method: "PUT",
@@ -760,6 +1082,12 @@ export async function setProviderSecret(name, secret) {
   return saved;
 }
 
+/**
+ * Apaga a credencial gravada de um provedor.
+ *
+ * @param {string} name Nome do provedor.
+ * @returns {Promise<object>} A configuração salva.
+ */
 export async function clearProviderSecret(name) {
   const saved = await api(`/providers/config/${encodeURIComponent(name)}/secret`, { method: "DELETE" });
   state.providerConfig = saved;
@@ -769,6 +1097,12 @@ export async function clearProviderSecret(name) {
 
 // ─────────────────────────────────────────────────────── automações
 
+/**
+ * Carrega a lista de automações, opcionalmente de um projeto só.
+ *
+ * @param {string} [projectId] Projeto filtro.
+ * @returns {Promise<Array<object>>} As automações visíveis.
+ */
 export async function loadAutomations(projectId) {
   const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
   const data = await api(`/automations${query}`).catch(() => []);
@@ -776,12 +1110,25 @@ export async function loadAutomations(projectId) {
   return state.automations;
 }
 
+/**
+ * Carrega o detalhe de uma automação.
+ *
+ * @param {string} id Id da automação.
+ * @returns {Promise<object|null>} A automação detalhada, ou `null` quando não existe.
+ */
 export async function loadAutomationDetail(id) {
   const data = await api(`/automations/${encodeURIComponent(id)}`).catch(() => null);
   if (data) state.automationDetail = data;
   return data;
 }
 
+/**
+ * Cria uma automação a partir de uma definição.
+ *
+ * @param {object} definition Definição completa (gatilho, ação, permissões).
+ * @param {boolean} [activate] `true` para já ativar a automação criada.
+ * @returns {Promise<object>} A automação criada.
+ */
 export async function createAutomation(definition, activate = false) {
   const saved = await api("/automations", {
     method: "POST",
@@ -791,6 +1138,14 @@ export async function createAutomation(definition, activate = false) {
   return saved;
 }
 
+/**
+ * Executa uma ação sobre uma automação (ativar, suspender, rodar, testar, cancelar).
+ *
+ * @param {string} id Id da automação.
+ * @param {string} action Nome da ação.
+ * @param {object} [body] Corpo extra da requisição.
+ * @returns {Promise<object>} A resposta do servidor.
+ */
 export async function automationAction(id, action, body = {}) {
   const saved = await api(`/automations/${encodeURIComponent(id)}/${action}`, {
     method: "POST",
@@ -800,11 +1155,22 @@ export async function automationAction(id, action, body = {}) {
   return saved;
 }
 
+/**
+ * Remove uma automação.
+ *
+ * @param {string} id Id da automação.
+ * @returns {Promise<void>}
+ */
 export async function deleteAutomation(id) {
   await api(`/automations/${encodeURIComponent(id)}`, { method: "DELETE" });
   await loadAutomations();
 }
 
+/**
+ * Carrega a situação do supervisor de automações.
+ *
+ * @returns {Promise<object|null>} O estado do supervisor, ou `null` quando indisponível.
+ */
 export async function loadSupervisorStatus() {
   const data = await api("/automations/supervisor/status").catch(() => null);
   if (data) state.supervisor = data;

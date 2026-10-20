@@ -1,4 +1,12 @@
-# src/agent/observability/bus.py — barramento em memória: sequência por run, anel recente, assinantes e operações ativas
+"""
+Arquivo: src/agent/observability/bus.py
+Nome: bus.py
+Propósito: manter o barramento em memória dos eventos de execução (sequência, anel recente e assinantes).
+Responsabilidade: camada de aplicação — entrega rápida dos eventos e estado volátil do processo.
+Componentes: EventBus, Subscription, _RunState, get_bus, RESYNC.
+Dependências: agent.config (tamanhos do anel e da fila).
+Observações: os fatos persistidos ficam em `event_logs`; aqui só o que ajuda a entregar rápido.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -17,6 +25,16 @@ _OPERATION_TAIL = 20_000
 
 @dataclass(eq=False)
 class Subscription:
+    """Assinatura de uma run: a fila onde os eventos chegam e a contagem do que foi descartado.
+
+    Atributos:
+        run_id: run cujos eventos são entregues nesta assinatura.
+        loop: laço de eventos que executa a entrega (pode ser outro laço que o publicador).
+        queue: fila assíncrona de eventos do assinante.
+        closed: marca a assinatura como encerrada.
+        dropped: quantidade de eventos perdidos por fila cheia.
+    """
+
     run_id: str
     loop: asyncio.AbstractEventLoop
     queue: asyncio.Queue
@@ -26,6 +44,17 @@ class Subscription:
 
 @dataclass
 class _RunState:
+    """Estado volátil de uma run: sequência, anel de eventos, saídas e operações abertas.
+
+    Atributos:
+        seq: último número de sequência atribuído.
+        ring: anel dos últimos eventos publicados.
+        outputs: saídas de modelo ainda em curso.
+        operations: ferramentas, comandos e testes ainda em curso.
+        published: total de eventos publicados.
+        ephemeral: total de eventos efêmeros publicados.
+    """
+
     seq: int = 0
     ring: deque = field(default_factory=deque)
     outputs: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -35,6 +64,17 @@ class _RunState:
 
 
 def _append(current: str, text: str, keep: int, *, tail: bool) -> str:
+    """Concatena texto mantendo o tamanho máximo desejado.
+
+    Args:
+        current: texto já acumulado.
+        text: trecho novo a acrescentar.
+        keep: tamanho máximo do resultado.
+        tail: quando `True`, conserva o final do texto; quando `False`, o início.
+
+    Returns:
+        O texto resultante, truncado conforme a política.
+    """
     joined = current + text
     if len(joined) <= keep:
         return joined
@@ -46,6 +86,7 @@ class EventBus:
     rápido (anel com os últimos eventos, inclusive fragmentos) e o texto parcial do que ainda está rodando."""
 
     def __init__(self, *, ring_size: int = 3_000, queue_size: int = 1_000, max_runs: int = 64) -> None:
+        """Monta o barramento de eventos com o ring buffer e as filas de assinantes."""
         self._lock = threading.RLock()
         self._runs: OrderedDict[str, _RunState] = OrderedDict()
         self._subs: dict[str, set[Subscription]] = {}
@@ -55,12 +96,32 @@ class EventBus:
         self.max_runs = max_runs
 
     def _state(self, run_id: str) -> _RunState | None:
+        """Estado volátil de uma run, marca como recente para adiar sua descarte.
+
+        Args:
+            run_id: identificador da run.
+
+        Returns:
+            O estado da run, ou `None` quando a run não está no processo.
+        """
         st = self._runs.get(run_id)
         if st is not None:
             self._runs.move_to_end(run_id)
         return st
 
     def _ensure(self, run_id: str, initial: Callable[[], int]) -> _RunState:
+        """Estado da run, criando-o quando ainda não existe no processo.
+
+        Args:
+            run_id: identificador da run.
+            initial:_callback que lê o maior `seq` já gravado no banco.
+
+        Returns:
+            O estado volátil da run.
+
+        Observações:
+            Runs sem assinantes são descartadas quando o limite `max_runs` é ultrapassado.
+        """
         st = self._state(run_id)
         if st is None:
             st = _RunState(seq=int(initial() or 0), ring=deque(maxlen=self.ring_size))
@@ -81,11 +142,27 @@ class EventBus:
             return st.seq
 
     def last_seq(self, run_id: str) -> int | None:
+        """Último número de sequência atribuído a uma run.
+
+        Args:
+            run_id: identificador da run.
+
+        Returns:
+            O número da sequência, ou `None` quando a run não está no processo.
+        """
         with self._lock:
             st = self._runs.get(run_id)
             return None if st is None else st.seq
 
     def publish(self, env: dict[str, Any]) -> None:
+        """Publica um evento: guarda no anel e entrega aos assinantes da run.
+
+        Args:
+            env: envelope do evento, já no formato de entrega.
+
+        Observações:
+            Assinante com fila cheia é marcado para ressincronização pelo banco.
+        """
         run_id = env["run_id"]
         with self._lock:
             st = self._state(run_id)
@@ -103,6 +180,16 @@ class EventBus:
                 self.unsubscribe(sub)
 
     def _deliver(self, sub: Subscription, env: dict[str, Any]) -> None:
+        """Entrega um evento na fila do assinante, no laço de eventos da assinatura.
+
+        Args:
+            sub: assinatura destinatária.
+            env: envelope do evento.
+
+        Observações:
+            Fila cheia significa assinante lento: o que ficou na fila é descartado e
+            a ressincronização pelo banco é pedida.
+        """
         if sub.closed:
             return
         if sub.queue.full():
@@ -115,12 +202,26 @@ class EventBus:
         sub.queue.put_nowait(env)
 
     def subscribe(self, run_id: str, loop: asyncio.AbstractEventLoop | None = None) -> Subscription:
+        """Assina os eventos de uma run.
+
+        Args:
+            run_id: identificador da run a assinar.
+            loop: laço de eventos que receberá a entrega; por padrão, o laço atual.
+
+        Returns:
+            A assinatura criada, que deve ser cancelada com `unsubscribe`.
+        """
         sub = Subscription(run_id=run_id, loop=loop or asyncio.get_running_loop(), queue=asyncio.Queue(self.queue_size))
         with self._lock:
             self._subs.setdefault(run_id, set()).add(sub)
         return sub
 
     def unsubscribe(self, sub: Subscription) -> None:
+        """Cancela uma assinatura, fechando-a e removendo-a do barramento.
+
+        Args:
+            sub: assinatura a cancelar.
+        """
         sub.closed = True
         with self._lock:
             subs = self._subs.get(sub.run_id)
@@ -130,12 +231,29 @@ class EventBus:
                     self._subs.pop(sub.run_id, None)
 
     def subscriber_count(self, run_id: str | None = None) -> int:
+        """Quantidade de assinantes ativos.
+
+        Args:
+            run_id: run específica; quando ausente, conta todas as runs.
+
+        Returns:
+            O número de assinantes.
+        """
         with self._lock:
             if run_id is not None:
                 return len(self._subs.get(run_id, ()))
             return sum(len(s) for s in self._subs.values())
 
     def recent(self, run_id: str, after_seq: int = 0) -> list[dict[str, Any]]:
+        """Eventos do anel posteriores a uma sequência.
+
+        Args:
+            run_id: identificador da run.
+            after_seq: sequência exclusiva; só eventos com `seq` maior são devolvidos.
+
+        Returns:
+            A lista de envelopes, do mais antigo ao mais recente.
+        """
         with self._lock:
             st = self._runs.get(run_id)
             if st is None:
@@ -156,10 +274,23 @@ class EventBus:
             }
 
     def step_started(self, run_id: str) -> None:
+        """Registra que um passo do orquestrador começou nesta run.
+
+        Args:
+            run_id: identificador da run.
+        """
         with self._lock:
             self._steps[run_id] = self._steps.get(run_id, 0) + 1
 
     def step_finished(self, run_id: str) -> None:
+        """Registra que um passo do orquestrador terminou nesta run.
+
+        Args:
+            run_id: identificador da run.
+
+        Observações:
+            O contador nunca fica negativo; ao zerar, a entrada da run é removida.
+        """
         with self._lock:
             left = self._steps.get(run_id, 0) - 1
             if left > 0:
@@ -173,6 +304,11 @@ class EventBus:
             return self._steps.get(run_id, 0)
 
     def reset(self) -> None:
+        """Limpa todo o estado volátil do barramento e encerra as assinaturas.
+
+        Observações:
+            Usado no arranque e nos testes; nada disso afeta os eventos já persistidos.
+        """
         with self._lock:
             self._steps.clear()
             self._runs.clear()
@@ -183,6 +319,15 @@ class EventBus:
 
     @staticmethod
     def _track(st: _RunState, env: dict[str, Any]) -> None:
+        """Atualiza as saídas e operações em curso a partir de um evento publicado.
+
+        Args:
+            st: estado volátil da run.
+            env: envelope do evento recém-publicado.
+
+        Observações:
+            Eventos de conclusão removem a entrada correspondente; o fim de uma run limpa tudo.
+        """
         t = env["type"]
         d = env.get("data") or {}
         if t == "agent.started":
@@ -240,6 +385,14 @@ _BUS_LOCK = threading.Lock()
 
 
 def get_bus() -> EventBus:
+    """Barramento de eventos do processo, criado na primeira chamada.
+
+    Returns:
+        A instância única do `EventBus`, dimensionada pelas configurações de stream.
+
+    Observações:
+        A criação é protegida por lock; o barramento é volátil e reinicia com o processo.
+    """
     global _BUS
     if _BUS is None:
         with _BUS_LOCK:

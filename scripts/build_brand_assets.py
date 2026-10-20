@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Gera os assets web da marca Callidus a partir dos SVG de `media/`.
+"""
+Arquivo: scripts/build_brand_assets.py
+Nome: build_brand_assets.py
+Propósito: gerar os assets web da marca Callidus a partir dos SVG de media/.
+Responsabilidade: camada de script — extrai as formas dos SVG de origem e escreve versões normalizadas em web/static/assets/brand/.
+Componentes: extração de formas do SVG, conversão de polígono em caminho, escrita do SVG final, símbolo, wordmark, lockups e favicon.
+Dependências: os SVG de media/ e a biblioteca padrão do Python (re, pathlib).
+Observações: escreve apenas em web/static/assets/brand/ e não altera os arquivos de origem.
+
+
+Gera os assets web da marca Callidus a partir dos SVG de `media/`.
 
 Os arquivos de `media/` vêm do CorelDRAW: `viewBox` em centésimos de
 milímetro, cores em classes CSS (`.fil0` = #F6F4F4, `.fil1` = #668DF7) e
@@ -42,6 +52,7 @@ def to_path(tag: str, cls: str, data: str) -> str:
 
 
 def write_svg(name: str, view_box: tuple[float, float, float, float], body: str, title: str = "Callidus") -> None:
+    """Grava o SVG final com o viewBox, o tamanho e o título informados."""
     x, y, w, h = view_box
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / name).write_text(
@@ -53,6 +64,7 @@ def write_svg(name: str, view_box: tuple[float, float, float, float], body: str,
 
 
 def main() -> None:
+    """Extrai as formas dos quatro SVG de origem e escreve os assets finais da marca."""
     logo = shapes((MEDIA / "Callidus Logo.svg").read_text(encoding="utf-8"))
     name = shapes((MEDIA / "Callidus Name.svg").read_text(encoding="utf-8"))
     horiz = shapes((MEDIA / "Callidus Name + Logo Horizontal.svg").read_text(encoding="utf-8"))

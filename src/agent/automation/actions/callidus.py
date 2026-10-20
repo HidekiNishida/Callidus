@@ -1,5 +1,13 @@
-# src/agent/automation/actions/callidus.py — ação Callidus (trabalho do agente)
-"""Cria (ou retoma) um trabalho pelos serviços existentes do Callidus.
+"""
+Arquivo: src/agent/automation/actions/callidus.py
+Nome: callidus.py
+Propósito: implementar a ação Callidus, que cria (ou retoma) um trabalho do agente.
+Responsabilidade: camada de aplicação — execução da automação pelos serviços existentes do Callidus.
+Componentes: CallidusActionRunner, TERMINAL_RUN_STATES.
+Dependências: agent.automation.actions.base, agent.services.run_service, agent.services.task_service.
+Observações: criar o run não é concluir a automação; sem espera, o disparo fica `running` até a reconciliação.
+
+Cria (ou retoma) um trabalho pelos serviços existentes do Callidus.
 
 O caminho é o mesmo de um run disparado pela interface:
 
@@ -38,14 +46,31 @@ TERMINAL_RUN_STATES = {
 
 
 class CallidusActionRunner:
-    """Ação Callidus."""
+    """Ação Callidus.
+
+    Atributos:
+        _spec: especificação da ação (objetivo, modelo, espera e modo de objetivo).
+    """
 
     kind = ActionKind.CALLIDUS
 
     def __init__(self, spec: CallidusAction) -> None:
+        """Cria a ação a partir da sua especificação.
+
+        Args:
+            spec: especificação da ação.
+        """
         self._spec = spec
 
     async def execute(self, ctx: ActionContext) -> ActionResult:
+        """Cria a tarefa raiz, inicia o run e o entrega ao worker autônomo.
+
+        Args:
+            ctx: contexto da ação, com o destino, as dependências e o evento.
+
+        Returns:
+            O resultado da ação, com a evidência do run criado.
+        """
         session = ctx.session
         spec = self._spec
 
@@ -161,6 +186,12 @@ class CallidusActionRunner:
           conversa **não** mudam a automação aprovada.
         - `latest`: o objetivo atual da tarefa/conversa ligada — só quando o usuário
           pediu explicitamente.
+
+        Args:
+            ctx: contexto da ação, com o objetivo congelado e o modo configurado.
+
+        Returns:
+            O objetivo da execução, ou `None` quando não há objetivo definido.
         """
         spec = self._spec
         mode = ctx.target.get("objective_mode") or spec.objective_mode
@@ -186,6 +217,15 @@ class CallidusActionRunner:
     async def _wait_for_run(
         self, ctx: ActionContext, run_id: str
     ) -> tuple[str, dict[str, Any]] | None:
+        """Espera o run chegar a um estado terminal.
+
+        Args:
+            ctx: contexto da ação, com a sessão e o tempo limite.
+            run_id: identificador do run a acompanhar.
+
+        Returns:
+            Tupla com o estado final e o relatório consolidado, ou `None` em tempo esgotado.
+        """
         timeout = float(
             self._spec.wait_timeout_sec
             or self._spec.timeout_sec
@@ -209,6 +249,14 @@ class CallidusActionRunner:
 
 
 def _uuid_or_none(value: str | None) -> uuid.UUID | None:
+    """Converte um texto em UUID, tolerando ausência e valor inválido.
+
+    Args:
+        value: valor de entrada.
+
+    Returns:
+        O UUID correspondente, ou `None` quando o valor está ausente ou é inválido.
+    """
     if not value:
         return None
     try:

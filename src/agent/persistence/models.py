@@ -1,4 +1,12 @@
-# src/agent/persistence/models.py — modelos SQLAlchemy
+"""
+Arquivo: src/agent/persistence/models.py
+Nome: models.py
+Propósito: definir os modelos SQLAlchemy que mapeiam o estado canônico do Callidus no SQLite.
+Responsabilidade: camada de infraestrutura — esquema relacional do agente, das execuções e das automações.
+Componentes: Base e os modelos Project, Conversation, Task, Branch, ExecutionRun, Automation, AutomationFiring, AutomationEvent, OperationAttempt, EventLog, MemoryRecord, KgNode, KgEdge, TaskContract, ContextSnapshot, Evidence, Agent, AgentExecution, AgentQuery.
+Dependências: sqlalchemy, agent.domain.agent_enums, agent.domain.enums.
+Observações: o SQLite é a fonte da verdade; o formato das evidências e do histórico de tentativas é contrato.
+"""
 from __future__ import annotations
 
 import uuid
@@ -13,14 +21,21 @@ from agent.domain.enums import MemoryKind, RunStatus, TaskKind, TaskStatus
 
 
 def utcnow() -> datetime:
+    """Instante atual em UTC, usado como valor padrão das colunas de tempo.
+
+    Returns:
+        O datetime atual com fuso horário UTC.
+    """
     return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
-    pass
+    """Base declarativa de todos os modelos do Callidus."""
 
 
 class ProjectModel(Base):
+    """Projeto do usuário: a pasta de trabalho onde as tarefas são executadas."""
+
     __tablename__ = "projects"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -51,6 +66,8 @@ class ProjectRemoteModel(Base):
 
 
 class ConversationModel(Base):
+    """Conversa do usuário: a linha de tempo que agrupa tarefas, memórias e ramos."""
+
     __tablename__ = "conversations"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -66,6 +83,8 @@ class ConversationModel(Base):
 
 
 class TaskModel(Base):
+    """Tarefa do agente: objetivo, escopo, estado e resultado consolidado."""
+
     __tablename__ = "tasks"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -96,6 +115,8 @@ class TaskModel(Base):
 
 
 class BranchModel(Base):
+    """Ramo de conversa: linha de trabalho isolada, nascida de uma bifurcagem de tarefa."""
+
     __tablename__ = "branches"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -106,6 +127,8 @@ class BranchModel(Base):
 
 
 class TaskDependencyModel(Base):
+    """Dependência entre tarefas: a tarefa só roda depois da tarefa de que depende."""
+
     __tablename__ = "task_dependencies"
     __table_args__ = (UniqueConstraint("task_id", "depends_on_task_id", name="uq_task_dep"),)
 
@@ -115,6 +138,8 @@ class TaskDependencyModel(Base):
 
 
 class ExecutionRunModel(Base):
+    """Run de execução: a unidade de orquestração que percorre a árvore de tarefas."""
+
     __tablename__ = "execution_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -129,6 +154,12 @@ class ExecutionRunModel(Base):
 
 
 class ScheduledRunModel(Base):
+    """Agendamento legado (tabela `scheduled_runs`), migrado para automações.
+
+    A tabela é preservada para inspeção; a migração é idempotente e cria no máximo
+    uma automação por linha antiga.
+    """
+
     __tablename__ = "scheduled_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -265,6 +296,8 @@ class AutomationEventModel(Base):
 
 
 class OperationAttemptModel(Base):
+    """Tentativa de operação: chamada de modelo, de ferramenta ou de verificação, com o registro do pedido e da resposta."""
+
     __tablename__ = "operation_attempts"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -280,6 +313,8 @@ class OperationAttemptModel(Base):
 
 
 class EventLogModel(Base):
+    """Evento persistido do run, com a sequência que permite a ressincronização do stream."""
+
     __tablename__ = "event_logs"
     __table_args__ = (Index("ix_event_logs_run_seq", "run_id", "seq"),)
 
@@ -297,6 +332,8 @@ class EventLogModel(Base):
 
 
 class MemoryRecordModel(Base):
+    """Registro de memória do projeto, versionado e com resumo e outline para o prompt."""
+
     __tablename__ = "memory_records"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -317,6 +354,8 @@ class MemoryRecordModel(Base):
 
 
 class KgNodeModel(Base):
+    """Nó do grafo de conhecimento do projeto (arquivo, símbolo ou documento)."""
+
     __tablename__ = "kg_nodes"
     __table_args__ = (UniqueConstraint("project_id", "kind", "ref", name="uq_kg_node_ref"),)
 
@@ -330,6 +369,8 @@ class KgNodeModel(Base):
 
 
 class KgEdgeModel(Base):
+    """Aresta do grafo de conhecimento, com a relação entre dois nós do projeto."""
+
     __tablename__ = "kg_edges"
     __table_args__ = (UniqueConstraint("project_id", "src_id", "dst_id", "rel", name="uq_kg_edge"),)
 
@@ -341,6 +382,8 @@ class KgEdgeModel(Base):
 
 
 class TaskContractModel(Base):
+    """Contrato de entradas e saídas esperado de uma tarefa."""
+
     __tablename__ = "task_contracts"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -353,6 +396,8 @@ class TaskContractModel(Base):
 
 
 class ContextSnapshotModel(Base):
+    """Instantâneo do contexto usado por uma tarefa: componentes, notas de estratégia e referências."""
+
     __tablename__ = "context_snapshots"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -367,6 +412,8 @@ class ContextSnapshotModel(Base):
 
 
 class EvidenceModel(Base):
+    """Evidência de verificação: verificador, resultado (aprovado, reprovado ou inconclusivo) e detalhe."""
+
     __tablename__ = "evidences"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

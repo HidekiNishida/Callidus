@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Faz `import agent` funcionar num venv, apesar do Python 3.14.
+"""
+Arquivo: scripts/fix-python314-editable.py
+Nome: fix-python314-editable.py
+Propósito: fazer o import do pacote agent funcionar num venv apesar do Python 3.14.
+Responsabilidade: camada de script — prepara o site-packages com um .pth e um link simbólico para o pacote em src/.
+Componentes: localização do site-packages, remoção da flag UF_HIDDEN, escrita do .pth, criação do link simbólico e limpeza do .pth antigo.
+Dependências: site, os, stat e o interpretador Python do virtualenv.
+Observações: age apenas sobre o site-packages do venv; uma instalação real do pacote não é modificada.
+
+
+Faz `import agent` funcionar num venv, apesar do Python 3.14.
 
 Dois problemas se combinam aqui:
 
@@ -34,6 +44,7 @@ LEGACY_PTH_NAME = "agente-local-src.pth"
 
 
 def _site_packages() -> Path:
+    """Devolve o caminho do site-packages do virtualenv em uso."""
     paths = site.getsitepackages()
     if not paths:
         paths = [p for p in sys.path if p.endswith("site-packages")]
@@ -55,6 +66,7 @@ def _unhide(path: Path) -> None:
 
 
 def _write_pth(site_packages: Path) -> Path:
+    """Grava o .pth com o caminho de src/ e devolve o arquivo criado."""
     target = site_packages / PTH_NAME
     target.write_text(str(SRC) + "\n", encoding="utf-8")
     _unhide(target)
@@ -76,6 +88,7 @@ def _write_symlink(site_packages: Path) -> Path:
 
 
 def main() -> None:
+    """Prepara o site-packages para que o pacote em src/ seja importável."""
     if not (SRC / "agent").is_dir():
         raise SystemExit(f"pacote não encontrado em {SRC}")
     site_packages = _site_packages()

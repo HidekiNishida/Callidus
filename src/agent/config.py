@@ -1,4 +1,12 @@
-# src/agent/config.py — configuração via ambiente
+"""
+Arquivo: src/agent/config.py
+Nome: config.py
+Propósito: carregar a configuração do Callidus a partir do ambiente e do arquivo `.env`.
+Responsabilidade: camada de configuração — parâmetros de ambiente, limites operacionais e caminhos de dados.
+Componentes: Settings (modelo BaseSettings), get_settings().
+Dependências: pydantic, pydantic-settings.
+Observações: em testes, o banco é redirecionado para um SQLite temporário para não tocar o agent.db real.
+"""
 import os
 from pathlib import Path
 
@@ -7,6 +15,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Configuração do Callidus lida do ambiente e do arquivo `.env`.
+
+    Atributos:
+        data_dir: pasta raiz dos dados locais (banco, provedores, segredos).
+        database_url: URL explícita do banco; quando ausente, é derivada de `data_dir`.
+        default_provider / default_model_id: provedor e modelo usados quando a tarefa não os especifica.
+        provider_timeout_sec / provider_max_retries / provider_allow_private_hosts / provider_verify_tls:
+            política comum aos provedores HTTP.
+        max_* e *_timeout_sec: limites operacionais (passos, tentativas, chamadas, tempo) do orquestrador.
+        stream_* e event_*: limites de transporte e de truncamento dos eventos de observabilidade.
+
+    Observações:
+        Os limites protegem contra ciclos e rajadas; não definem o trabalho a ser feito.
+    """
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -106,6 +128,15 @@ class Settings(BaseSettings):
     automation_max_executions_per_tick: int = 20
 
     def resolved_database_url(self) -> str:
+        """URL do banco SQLite em uso, respeitando o isolamento dos testes.
+
+        Returns:
+            A URL SQLAlchemy do banco, já absoluta.
+
+        Observações:
+            Sob pytest, grava em um banco temporário (ou em `CALLIDUS_TEST_DATABASE_URL`);
+            fora dos testes, usa `database_url` ou `data_dir/agent.db`.
+        """
         # Pytest carrega o .env do projeto; sem isso os testes gravam no agent.db real.
         # O banco de teste é separado do banco de uso: escrever no agent.db real mistura
         # conversas de teste com as do usuário e destrói a trilha de auditoria.
@@ -141,6 +172,14 @@ class Settings(BaseSettings):
 
 
 def get_settings() -> Settings:
+    """Instância única de `Settings` com os caminhos derivados já preenchidos.
+
+    Returns:
+        As configurações carregadas, com `mcp_config_path` resolvido a partir de `data_dir`.
+
+    Observações:
+        A função não memoiza: cada chamada relê o ambiente, o que mantém os testes isolados.
+    """
     s = Settings()
     if s.mcp_config_path is None:
         s.mcp_config_path = s.data_dir / "mcp.json"

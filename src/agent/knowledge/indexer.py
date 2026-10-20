@@ -1,4 +1,12 @@
-# src/agent/knowledge/indexer.py — indexação incremental de arquivos/símbolos
+"""
+Arquivo: src/agent/knowledge/indexer.py
+Nome: indexer.py
+Propósito: indexar arquivos e símbolos do projeto para o grafo de conhecimento.
+Responsabilidade: camada de infraestrutura — varredura do projeto e extração de símbolos por AST.
+Componentes: scan_project, grep_symbols_in_objective.
+Dependências: ast, pathlib, re.
+Observações: a varredura é limitada por número de arquivos e ignora dependências e caches.
+"""
 from __future__ import annotations
 
 import ast
@@ -7,6 +15,15 @@ from pathlib import Path
 
 
 def _py_import_edges(path: Path, root: Path) -> list[dict]:
+    """Arestas de importação de um módulo Python.
+
+    Args:
+        path: arquivo Python a analisar.
+        root: raiz do projeto, usada para o caminho relativo.
+
+    Returns:
+        A lista de arestas `imports`; arquivos com erro de sintaxe não geram arestas.
+    """
     rel = str(path.relative_to(root))
     edges: list[dict] = []
     try:
@@ -26,6 +43,15 @@ def _py_import_edges(path: Path, root: Path) -> list[dict]:
 
 
 def _py_symbols(path: Path, root: Path) -> list[dict]:
+    """Símbolos (funções e classes) definidos em um arquivo Python.
+
+    Args:
+        path: arquivo Python a analisar.
+        root: raiz do projeto, usada para o caminho relativo.
+
+    Returns:
+        A lista de símbolos; quando o arquivo não define nenhum, um nó do próprio arquivo.
+    """
     rel = str(path.relative_to(root))
     out: list[dict] = []
     try:
@@ -88,4 +114,12 @@ def scan_project(root_path: str, *, max_files: int = 500) -> tuple[list[dict], l
 
 
 def grep_symbols_in_objective(objective: str) -> list[str]:
+    """Palavras que parecem identificadores dentro do objetivo da etapa.
+
+    Args:
+        objective: texto do objetivo.
+
+    Returns:
+        A lista de candidatos a símbolo, na ordem em que aparecem.
+    """
     return re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", objective)

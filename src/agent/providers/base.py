@@ -1,4 +1,12 @@
-# src/agent/providers/base.py — contrato de provedores de inferência
+"""
+Arquivo: src/agent/providers/base.py
+Nome: base.py
+Propósito: definir o contrato comum dos provedores de inferência do Callidus.
+Responsabilidade: camada de domínio — tipos de mensagens, requisição, resposta, capacidades e erros.
+Componentes: ChatMessage, ToolCall, ProviderCapabilities, ProviderHealth, ModelProfile, ChatCompletionRequest, ChatCompletionResponse, LLMProvider e a taxonomia de ProviderError.
+Dependências: pydantic.
+Observações: recurso ausente é declarado, nunca simulado; a exclusividade de inferência é garantida pelo executor.
+"""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -9,6 +17,16 @@ from pydantic import BaseModel, Field
 
 
 class ChatMessage(BaseModel):
+    """Mensagem do histórico de conversa enviada ao modelo.
+
+    Atributos:
+        role: papel da mensagem (`system`, `user`, `assistant`, `tool`).
+        content: texto da mensagem.
+        images: imagens anexadas, em base64, quando o modelo aceita visão.
+        tool_calls: chamadas de ferramenta pedidas pelo assistente.
+        tool_call_id: identificador da chamada a que esta mensagem responde.
+    """
+
     role: str
     content: str
     images: list[str] | None = None
@@ -42,6 +60,16 @@ class ProviderCapabilities(BaseModel):
 
 
 class ProviderHealth(BaseModel):
+    """Diagnóstico de conectividade de um provedor.
+
+    Atributos:
+        provider: nome do provedor avaliado.
+        ok: indica se o servidor respondeu.
+        detail: detalhe do resultado ou da falha.
+        models: modelos listados pelo servidor.
+        latency_ms: latência da verificação, em milissegundos.
+    """
+
     provider: str
     ok: bool
     detail: str = ""
@@ -50,6 +78,18 @@ class ProviderHealth(BaseModel):
 
 
 class ModelProfile(BaseModel):
+    """Perfil do modelo usado para dimensionar o contexto e as requisições.
+
+    Atributos:
+        model_id: identificador do modelo.
+        context_limit: janela de contexto total do modelo.
+        input_budget: orçamento de tokens reserved para a entrada.
+        output_reserve: tokens reservados para a resposta.
+        supports_tools: indica se o modelo aceita chamadas de ferramenta.
+        supports_vision: indica se o modelo aceita imagens.
+        generation: parâmetros extras de geração (temperatura, top_p, etc.).
+    """
+
     model_id: str
     context_limit: int = 8192
     input_budget: int = 6000
@@ -60,6 +100,17 @@ class ModelProfile(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
+    """Requisição de inferência enviada ao provedor.
+
+    Atributos:
+        messages: histórico da conversa.
+        profile: perfil do modelo que vai responder.
+        response_format: formato de resposta pedido (ex.: JSON schema).
+        stream: indica se o cliente quer os fragmentos durante a geração.
+        tools: ferramentas oferecidas, no formato OpenAI.
+        tool_choice: política de escolha de ferramenta.
+    """
+
     messages: list[ChatMessage]
     profile: ModelProfile
     response_format: dict[str, Any] | None = None
@@ -71,6 +122,19 @@ class ChatCompletionRequest(BaseModel):
 
 
 class ChatCompletionResponse(BaseModel):
+    """Resposta de inferência devolvida pelo provedor.
+
+    Atributos:
+        content: texto da resposta.
+        raw: corpo bruto devolvido pela API do provedor.
+        prompt_tokens_estimate: estimativa de tokens da entrada.
+        completion_tokens_estimate: estimativa de tokens da saída.
+        tool_calls: chamadas de ferramenta pedidas pelo modelo.
+        finish_reason: motivo de término informado pelo provedor.
+        model: modelo que respondeu.
+        reasoning: canal de raciocínio do modelo, quando existe.
+    """
+
     content: str
     raw: dict[str, Any] | None = None
     prompt_tokens_estimate: int | None = None
@@ -116,6 +180,7 @@ class ProviderResponseError(ProviderError):
 
 
 class LLMProvider(ABC):
+    """Contrato do provedor de inferência: `chat`, `stream` e as capacidades declaradas."""
     name: str
     # Só é `True` em provedores que recebem a resposta em fragmentos do servidor (`chat_streaming`).
     supports_streaming: bool = False
@@ -128,6 +193,14 @@ class LLMProvider(ABC):
 
     @abstractmethod
     async def list_models(self) -> list[str]:
+        """Lista os modelos disponíveis no servidor.
+
+        Returns:
+            A lista de identificadores de modelo.
+
+        Raises:
+            ProviderError: quando o servidor não pode ser consultado.
+        """
         raise NotImplementedError
 
     async def chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
@@ -154,7 +227,17 @@ class LLMProvider(ABC):
 
     @abstractmethod
     async def _chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
-        """Implementação da inferência pelo provedor. Sempre chamada por `chat`."""
+        """Implementação da inferência pelo provedor. Sempre chamada por `chat`.
+
+        Args:
+            request: requisição de inferência.
+
+        Returns:
+            A resposta do provedor.
+
+        Raises:
+            ProviderError: quando a inferência falha.
+        """
         raise NotImplementedError
 
     async def chat_streaming(
@@ -181,7 +264,18 @@ class LLMProvider(ABC):
     async def _chat_streaming(
         self, request: ChatCompletionRequest, on_delta: Callable[[str], None]
     ) -> ChatCompletionResponse:
-        """Implementação do streaming pelo provedor. Sempre chamada por `chat_streaming`."""
+        """Implementação do streaming pelo provedor. Sempre chamada por `chat_streaming`.
+
+        Args:
+            request: requisição de inferência.
+            on_delta: callback que recebe cada fragmento do texto.
+
+        Returns:
+            A resposta completa ao final do streaming.
+
+        Raises:
+            ProviderNotSupportedError: quando o provedor não transmite a resposta em fragmentos.
+        """
         raise ProviderNotSupportedError(f"O provedor '{self.name}' não transmite a resposta em fragmentos.")
 
 

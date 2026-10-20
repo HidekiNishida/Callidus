@@ -1,5 +1,13 @@
-# src/agent/automation/executor.py — execução do disparo e reconciliação
-"""O executor transforma um disparo registrado em trabalho executado.
+"""
+Arquivo: src/agent/automation/executor.py
+Nome: executor.py
+Propósito: transformar um disparo registrado em trabalho executado e reconciliar o estado.
+Responsabilidade: camada de aplicação — execução da ação, política de recuperação e fechamento do disparo.
+Componentes: AutomationExecutor, ExecutionOutcome, TERMINAL_RUN_STATES.
+Dependências: agent.automation.actions, agent.automation.dependencies, agent.automation.security, agent.persistence.models.
+Observações: registrar o disparo não é concluir a automação; a reconciliação fecha o estado do run.
+
+O executor transforma um disparo registrado em trabalho executado.
 
 Ordem: dependências → ação → evidência → estado.
 
@@ -51,6 +59,16 @@ TERMINAL_RUN_STATES = {
 
 @dataclass
 class ExecutionOutcome:
+    """Desfecho da execução de um disparo.
+
+    Atributos:
+        firing_id: identificador do disparo executado.
+        state: estado final do disparo.
+        ok: indica se a execução foi bem-sucedida.
+        detail: resumo do desfecho.
+        retry_at: instante da próxima tentativa, quando houve reagendamento.
+    """
+
     firing_id: uuid.UUID
     state: str
     ok: bool
@@ -59,15 +77,34 @@ class ExecutionOutcome:
 
 
 class AutomationExecutor:
-    """Executa disparos de automação."""
+    """Executa disparos de automação.
+
+    Atributos:
+        _session: sessão usada nas leituras, gravações e no registro de eventos.
+        _settings: configurações do processo.
+    """
 
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
+        """Cria o executor ligado a uma sessão.
+
+        Args:
+            session: sessão SQLAlchemy a usar.
+            settings: configurações a usar; quando ausentes, são lidas do ambiente.
+        """
         self._session = session
         self._settings = settings or get_settings()
 
     # ------------------------------------------------------------ contexto
 
     def _target_info(self, automation: AutomationModel) -> dict[str, Any]:
+        """Resolve o destino da automação: local ou remoto, com suas permissões.
+
+        Args:
+            automation: automação a executar.
+
+        Returns:
+            O dicionário de destino entregue à ação.
+        """
         project = self._session.get(ProjectModel, automation.project_id)
         permissions = PermissionSpec.model_validate(automation.permissions_json or {})
         remote_cfg = None
@@ -89,6 +126,14 @@ class AutomationExecutor:
     # ------------------------------------------------------------ execução
 
     async def execute(self, firing: AutomationFiringModel) -> ExecutionOutcome:
+        """Executa um disparo: dependências, ação, evidência e estado.
+
+        Args:
+            firing: disparo a executar.
+
+        Returns:
+            O desfecho da execução, com o estado final e a próxima tentativa, quando houve.
+        """
         automation = self._session.get(AutomationModel, firing.automation_id)
         if automation is None:
             firing.state = FiringState.CANCELLED.value
@@ -246,7 +291,11 @@ class AutomationExecutor:
     # -------------------------------------------------------- reconciliação
 
     def reconcile(self) -> list[ExecutionOutcome]:
-        """Fecha os disparos que ficaram rodando, olhando o estado real do run."""
+        """Fecha os disparos que ficaram rodando, olhando o estado real do run.
+
+        Returns:
+            A lista dos desfechos reconciliados.
+        """
         outcomes: list[ExecutionOutcome] = []
         rows = list(
             self._session.scalars(
@@ -295,6 +344,15 @@ class AutomationExecutor:
     # ------------------------------------------------------------- apoio
 
     def _next_attempt(self, policy: RecoveryPolicy, attempt: int) -> datetime:
+        """Instante da próxima tentativa, com backoff exponencial limitado.
+
+        Args:
+            policy: política de recuperação da automação.
+            attempt: número da tentativa que acabou de falhar.
+
+        Returns:
+            O instante, em UTC, da próxima tentativa.
+        """
         delay = float(policy.backoff_sec or 10.0) * (
             float(policy.backoff_multiplier or 2.0) ** max(0, attempt - 1)
         )
@@ -308,6 +366,14 @@ class AutomationExecutor:
         event_type: str,
         payload: dict,
     ) -> None:
+        """Registra um fato da automação no log de eventos.
+
+        Args:
+            automation: automação dona do disparo.
+            firing: disparo relacionado.
+            event_type: tipo do evento.
+            payload: conteúdo do evento.
+        """
         self._session.add(
             EventLogModel(
                 project_id=automation.project_id,
@@ -324,6 +390,14 @@ class AutomationExecutor:
 
 
 def _seconds(value: float):
+    """Converte segundos em um intervalo de tempo.
+
+    Args:
+        value: quantidade de segundos.
+
+    Returns:
+        O `timedelta` correspondente.
+    """
     from datetime import timedelta
 
     return timedelta(seconds=value)

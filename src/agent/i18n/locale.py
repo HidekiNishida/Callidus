@@ -1,4 +1,12 @@
-# src/agent/i18n/locale.py — idioma do pedido e tradução de exibição
+"""
+Arquivo: src/agent/i18n/locale.py
+Nome: locale.py
+Propósito: detectar o idioma do pedido e traduzir as frases do orquestrador exibidas na interface.
+Responsabilidade: camada de aplicação — detecção de idioma e tradução por glossário controlado.
+Componentes: detect_language, language_instruction, translate.
+Dependências: re.
+Observações: a tradução é best-effort por glossário; identificadores e trechos técnicos ficam como estão.
+"""
 from __future__ import annotations
 
 import re
@@ -174,6 +182,14 @@ def detect_language(text: str) -> str:
 
 
 def language_instruction(code: str) -> str:
+    """Instrução que pede ao modelo escrever no idioma do pedido.
+
+    Args:
+        code: código do idioma (`pt`, `en` ou `es`).
+
+    Returns:
+        A instrução correspondente; para códigos desconhecidos, a instrução em português.
+    """
     return {
         "pt": "Escreva títulos, objetivos e a resposta final em português, o idioma do pedido.",
         "en": "Write titles, objectives and the final answer in English, the language of the request.",
@@ -182,6 +198,16 @@ def language_instruction(code: str) -> str:
 
 
 def _apply_glossary(text: str, source: str, target: str) -> str:
+    """Traduz o texto pelo glossário e pela tabela de verbos.
+
+    Args:
+        text: texto a traduzir.
+        source: idioma de origem.
+        target: idioma de destino.
+
+    Returns:
+        O texto traduzido; quando o idioma não é conhecido, o texto original.
+    """
     index = {"pt": 0, "en": 1, "es": 2}
     if source not in index or target not in index:
         return text

@@ -1,5 +1,13 @@
-# src/agent/services/executor.py — executor compartilhado de inferência
-"""Ponto único de admissão das inferências do processo.
+"""
+Arquivo: src/agent/services/executor.py
+Nome: executor.py
+Propósito: serializar as inferências do processo até o limite configurado.
+Responsabilidade: camada de aplicação — controle de exclusividade e métricas das chamadas ao modelo.
+Componentes: InferenceExecutor, ExecutionSlot, ExecutorMetrics, get_executor, reset_executor.
+Dependências: agent.config.
+Observações: a exclusividade vale para o processo inteiro; entre processos, ela não existe.
+
+Ponto único de admissão das inferências do processo.
 
 O Callidus foi desenhado para máquinas modestas: manter **um** modelo carregado e, no
 máximo, **uma** inferência ativa é o que torna viável uma hierarquia recursiva de
@@ -62,6 +70,11 @@ class ExecutorMetrics:
     max_active: int = 0
 
     def snapshot(self) -> dict[str, Any]:
+        """Métricas como dicionário, para exibição e diagnóstico.
+
+        Returns:
+            Um dicionário com os contadores e o tempo de espera acumulado.
+        """
         return {
             "inferences_started": self.inferences_started,
             "inferences_completed": self.inferences_completed,
@@ -98,6 +111,14 @@ class InferenceExecutor:
     """
 
     def __init__(self, limit: int = 1) -> None:
+        """Cria o executor com o limite de inferências simultâneas.
+
+        Args:
+            limit: quantidade máxima de inferências ativas no processo.
+
+        Raises:
+            ValueError: quando o limite é menor que 1.
+        """
         if int(limit) < 1:
             raise ValueError("o limite de inferências simultâneas deve ser >= 1")
         self._limit = int(limit)
@@ -111,16 +132,36 @@ class InferenceExecutor:
 
     @property
     def limit(self) -> int:
+        """Limite atual de inferências simultâneas.
+
+        Returns:
+            A quantidade máxima de inferências ativas admitidas.
+        """
         return self._limit
 
     def set_limit(self, limit: int) -> None:
-        """Muda o limite. A nova valer vale para as próximas aquisições."""
+        """Muda o limite. A nova valer vale para as próximas aquisições.
+
+        Args:
+            limit: nova quantidade máxima de inferências ativas.
+
+        Raises:
+            ValueError: quando o limite é menor que 1.
+        """
         if int(limit) < 1:
             raise ValueError("o limite de inferências simultâneas deve ser >= 1")
         with self._lock:
             self._limit = int(limit)
 
     def _waiter(self, loop: Any) -> asyncio.Event:
+        """Evento de espera associado a um laço de eventos.
+
+        Args:
+            loop: laço de eventos que espera.
+
+        Returns:
+            O evento usado para acordar esse laço quando um slot é devolvido.
+        """
         key = id(loop)
         entry = self._waiters.get(key)
         if entry is None or entry[0] is not loop:
@@ -137,7 +178,16 @@ class InferenceExecutor:
                 continue
 
     async def acquire(self, *, purpose: str = "", provider: str = "", model: str = "") -> ExecutionSlot:
-        """Toma o slot de inferência. O chamador é responsável por `release()`."""
+        """Toma o slot de inferência. O chamador é responsável por `release()`.
+
+        Args:
+            purpose: finalidade da inferência, para as métricas.
+            provider: nome do provedor chamado.
+            model: identificador do modelo chamado.
+
+        Returns:
+            O slot admitido, com o tempo de espera registrado.
+        """
         loop = asyncio.get_running_loop()
         started = time.monotonic()
         contended = False
@@ -173,6 +223,10 @@ class InferenceExecutor:
 
         É idempotente quando recebe o mesmo `slot`: um `finally` que libera duas vezes
         não corrompe a contagem.
+
+        Args:
+            error: erro que encerrou a inferência, quando houve.
+            slot: slot devolvido, usado para tornar a liberação idempotente.
         """
         if slot is not None and slot.released:
             return
@@ -193,6 +247,11 @@ class InferenceExecutor:
         self._wake_all()
 
     def metrics(self) -> ExecutorMetrics:
+        """Fotografia das métricas do executor.
+
+        Returns:
+            Uma cópia dos contadores, com o número de inferências ativas.
+        """
         with self._metrics_lock:
             snapshot = replace(self._metrics)
         snapshot.active = self._active
@@ -206,7 +265,14 @@ _SETTINGS: Settings | None = None
 
 def get_executor(settings: Settings | None = None) -> InferenceExecutor:
     """Executor compartilhado do processo. Cria no primeiro uso e ajusta o limite quando
-    as configurações mudam (o limite vem de `MAX_CONCURRENT_INFERENCES`)."""
+    as configurações mudam (o limite vem de `MAX_CONCURRENT_INFERENCES`).
+
+    Args:
+        settings: configurações a aplicar; quando ausentes, usa as do ambiente.
+
+    Returns:
+        O executor do processo.
+    """
     global _EXECUTOR, _SETTINGS
     if settings is not None:
         _SETTINGS = settings
@@ -222,7 +288,11 @@ def get_executor(settings: Settings | None = None) -> InferenceExecutor:
 
 
 def reset_executor() -> None:
-    """Descarta o executor do processo (isolamento de testes)."""
+    """Descarta o executor do processo (isolamento de testes).
+
+    Observações:
+        O executor é reconstruído na próxima chamada a `get_executor`.
+    """
     global _EXECUTOR, _SETTINGS
     with _EXECUTOR_LOCK:
         _EXECUTOR = None

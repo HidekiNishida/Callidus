@@ -1,4 +1,12 @@
-# src/agent/services/run_service.py — execuções e tentativas
+"""
+Arquivo: src/agent/services/run_service.py
+Nome: run_service.py
+Propósito: manter as execuções (runs) do projeto: início, pausa, retomada e cancelamento.
+Responsabilidade: camada de aplicação — ciclo de vida dos runs e registro dos fatos correspondentes.
+Componentes: RunService.
+Dependências: agent.domain.enums, agent.domain.schemas, agent.persistence.models, agent.services.agent_service.
+Observações: retomar um run não refaz o que já foi comprovado; os limites recomeçam a contar.
+"""
 from __future__ import annotations
 
 import uuid
@@ -13,10 +21,33 @@ from agent.services.agent_service import AgentService
 
 
 class RunService:
+    """Ciclo de vida das execuções de um projeto.
+
+    Atributos:
+        _session: sessão usada nas leituras, gravações e no registro de eventos.
+    """
+
     def __init__(self, session: Session) -> None:
+        """Cria o serviço ligado a uma sessão.
+
+        Args:
+            session: sessão SQLAlchemy a usar.
+        """
         self._session = session
 
     def start_run(self, project_id: uuid.UUID, data: ExecutionRunCreate) -> ExecutionRunModel:
+        """Inicia um run a partir da tarefa raiz.
+
+        Args:
+            project_id: projeto dono do run.
+            data: tarefa raiz e configuração do run.
+
+        Returns:
+            O run criado, já com o agente lógico da raiz e o fato `run.started` registrado.
+
+        Raises:
+            LookupError: quando a tarefa raiz não pertence ao projeto.
+        """
         task = self._session.get(TaskModel, data.root_task_id)
         if task is None or task.project_id != project_id:
             raise LookupError("Tarefa raiz inválida")
@@ -51,6 +82,14 @@ class RunService:
         return run
 
     def list_runs(self, project_id: uuid.UUID) -> list[ExecutionRunModel]:
+        """Runs de um projeto, do mais recente para o mais antigo.
+
+        Args:
+            project_id: projeto consultado.
+
+        Returns:
+            A lista de runs do projeto.
+        """
         stmt = (
             select(ExecutionRunModel)
             .where(ExecutionRunModel.project_id == project_id)
@@ -59,6 +98,17 @@ class RunService:
         return list(self._session.scalars(stmt).all())
 
     def pause_run(self, run_id: uuid.UUID) -> ExecutionRunModel:
+        """Pausa um run em andamento.
+
+        Args:
+            run_id: identificador do run.
+
+        Returns:
+            O run pausado.
+
+        Raises:
+            LookupError: quando o run não existe.
+        """
         run = self._session.get(ExecutionRunModel, run_id)
         if run is None:
             raise LookupError(str(run_id))
@@ -76,7 +126,19 @@ class RunService:
     def resume_run(self, run_id: uuid.UUID, *, retry_blocked: bool = False) -> ExecutionRunModel:
         """Retoma um run pausado sem refazer o que foi comprovado: volta a ACTIVE, o motivo da pausa vai para
         o histórico `pauses` da raiz e os limites recomeçam a contar do evento `run.resumed`. Com
-        `retry_blocked`, etapas bloqueadas voltam a PLANNING (depois de corrigida a causa de fora)."""
+        `retry_blocked`, etapas bloqueadas voltam a PLANNING (depois de corrigida a causa de fora).
+
+        Args:
+            run_id: identificador do run pausado.
+            retry_blocked: quando `True`, as etapas bloqueadas voltam a `PLANNING`.
+
+        Returns:
+            O run retomado.
+
+        Raises:
+            LookupError: quando o run não existe.
+            ValueError: quando o run não está pausado.
+        """
         from agent.services.task_service import TaskService
 
         run = self._session.get(ExecutionRunModel, run_id)
@@ -118,6 +180,15 @@ class RunService:
         return run
 
     def _under(self, task: TaskModel, root_id: uuid.UUID) -> bool:
+        """Indica se uma tarefa está na subárvore de outra.
+
+        Args:
+            task: tarefa consultada.
+            root_id: identificador da possível raiz.
+
+        Returns:
+            `True` quando a tarefa é a raiz ou está abaixo dela.
+        """
         seen: set[uuid.UUID] = set()
         current: TaskModel | None = task
         while current is not None and current.id not in seen:
@@ -128,6 +199,17 @@ class RunService:
         return False
 
     def cancel_run(self, run_id: uuid.UUID) -> ExecutionRunModel:
+        """Cancela um run em andamento.
+
+        Args:
+            run_id: identificador do run.
+
+        Returns:
+            O run cancelado.
+
+        Raises:
+            LookupError: quando o run não existe.
+        """
         run = self._session.get(ExecutionRunModel, run_id)
         if run is None:
             raise LookupError(str(run_id))

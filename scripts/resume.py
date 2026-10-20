@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Mantém o resume.md sincronizado com a estrutura do projeto.
+"""
+Arquivo: scripts/resume.py
+Nome: resume.py
+Propósito: manter o `resume.md` sincronizado com a estrutura real do projeto.
+Responsabilidade: script de manutenção — inventário estrutural (arquivos, classes, funções) e conferência com o mapa vivo.
+Componentes: `check` (confere), `faltando` (esqueleto do que falta), `carimbar` (grava o inventário), `hook` (hook do Cursor).
+Dependências: ast, json, pathlib, subprocess (somente biblioteca padrão).
+Observações: `carimbar` só grava quando nada está faltando — um inventário carimbado incompleto esconderia a falta.
+
+Mantém o resume.md sincronizado com a estrutura do projeto.
 
 O inventário estrutural (diretórios, arquivos, classes, métodos e funções com
 assinatura) é extraído do código e comparado com:
@@ -39,6 +48,7 @@ HEADING = re.compile(r"^(#{1,6})\s")
 
 @dataclass(frozen=True)
 class Item:
+    """Item do inventário estrutural (arquivo, pasta, símbolo) com a chave de comparação."""
     kind: str  # dir | file | sym
     path: str
     name: str = ""
@@ -46,16 +56,19 @@ class Item:
 
     @property
     def key(self) -> str:
+        """Chave estável do item, usada para comparar inventários."""
         if self.kind == "sym":
             return f"sym:{self.path}::{self.name}{self.signature}"
         return f"{self.kind}:{self.path}"
 
     @property
     def short(self) -> str:
+        """Nome curto do símbolo, sem o qualificador do módulo."""
         return self.name.rsplit(".", 1)[-1]
 
 
 def project_files() -> list[str]:
+    """Lista os arquivos do projeto que entram no inventário."""
     out = subprocess.run(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
         cwd=ROOT,
@@ -67,6 +80,7 @@ def project_files() -> list[str]:
 
 
 def _py_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+    """Monta a assinatura de um símbolo Python a partir da AST."""
     args = ast.unparse(node.args)
     args = re.sub(r"^(self|cls)(, )?", "", args)
     ret = f" -> {ast.unparse(node.returns)}" if node.returns else ""
@@ -74,6 +88,7 @@ def _py_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
 
 
 def python_symbols(path: str, source: str) -> list[Item]:
+    """Extrai as classes e funções de um módulo Python."""
     try:
         tree = ast.parse(source)
     except SyntaxError:
@@ -92,6 +107,7 @@ def python_symbols(path: str, source: str) -> list[Item]:
 
 
 def js_symbols(path: str, source: str) -> list[Item]:
+    """Extrai as funções exportadas de um módulo JavaScript."""
     seen: set[str] = set()
     items: list[Item] = []
     for match in JS_FUNC.finditer(source):
@@ -105,6 +121,7 @@ def js_symbols(path: str, source: str) -> list[Item]:
 
 
 def inventory(files: list[str] | None = None) -> list[Item]:
+    """Monta o inventário estrutural do projeto (pastas, arquivos e símbolos)."""
     files = project_files() if files is None else files
     items: list[Item] = []
     dirs: set[str] = set()
@@ -154,6 +171,7 @@ def file_sections(text: str) -> dict[str, str]:
 
 
 def missing_items(items: list[Item], text: str) -> list[Item]:
+    """Lista os itens do inventário que o `resume.md` ainda não descreve."""
     sections = file_sections(text)
     quoted = set(re.findall(r"`([^`\s]+)`", text))
     missing: list[Item] = []
@@ -173,12 +191,14 @@ def missing_items(items: list[Item], text: str) -> list[Item]:
 
 
 def load_state() -> list[str]:
+    """Lê o inventário carimbado da última revisão."""
     if not STATE.is_file():
         return []
     return json.loads(STATE.read_text(encoding="utf-8")).get("items", [])
 
 
 def report() -> tuple[list[Item], list[str], list[str]]:
+    """Compara o inventário atual com o `resume.md` e com o carimbo anterior."""
     items = inventory()
     text = RESUME.read_text(encoding="utf-8") if RESUME.is_file() else ""
     current = {item.key for item in items}
@@ -189,6 +209,7 @@ def report() -> tuple[list[Item], list[str], list[str]]:
 
 
 def describe(missing: list[Item], added: list[str], removed: list[str], limit: int = 40) -> str:
+    """Formata o relatório de itens faltantes, novos e removidos."""
     lines: list[str] = []
     if missing:
         lines.append(f"Sem descrição no resume.md ({len(missing)}):")
@@ -203,6 +224,7 @@ def describe(missing: list[Item], added: list[str], removed: list[str], limit: i
 
 
 def skeleton(missing: list[Item]) -> str:
+    """Monta o esqueleto Markdown dos itens que faltam descrição."""
     out: list[str] = []
     current = None
     for item in missing:
@@ -219,6 +241,7 @@ def skeleton(missing: list[Item]) -> str:
 
 
 def cmd_check() -> int:
+    """Comando `check`: confere o `resume.md` e devolve código 1 quando há divergência."""
     missing, added, removed = report()
     if not (missing or added or removed):
         print("resume.md em dia.")
@@ -229,12 +252,14 @@ def cmd_check() -> int:
 
 
 def cmd_faltando() -> int:
+    """Comando `faltando`: imprime o esqueleto do que falta descrever."""
     missing, _, _ = report()
     print(skeleton(missing) if missing else "Nada faltando.")
     return 0
 
 
 def cmd_carimbar() -> int:
+    """Comando `carimbar`: grava o inventário atual quando nada falta."""
     items = inventory()
     text = RESUME.read_text(encoding="utf-8") if RESUME.is_file() else ""
     missing = missing_items(items, text)
@@ -250,6 +275,7 @@ def cmd_carimbar() -> int:
 
 
 def cmd_hook() -> int:
+    """Comando `hook`: ponto de entrada do hook de parada do Cursor."""
     try:
         event = json.loads(sys.stdin.read() or "{}")
     except json.JSONDecodeError:
@@ -279,6 +305,7 @@ COMMANDS = {"check": cmd_check, "faltando": cmd_faltando, "carimbar": cmd_carimb
 
 
 def main(argv: list[str]) -> int:
+    """Roteia o comando recebido pela linha de comando."""
     if len(argv) != 1 or argv[0] not in COMMANDS:
         print(__doc__)
         return 2

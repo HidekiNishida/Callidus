@@ -1,10 +1,29 @@
-# src/agent/tools/diffing.py — diff curto para a conversa
+"""
+Arquivo: src/agent/tools/diffing.py
+Nome: diffing.py
+Propósito: produzir o diff unificado curto que acompanha uma alteração na conversa.
+Responsabilidade: camada de apresentação — comparação entre o conteúdo antes e depois da escrita.
+Componentes: unified_diff_text.
+Dependências: difflib.
+Observações: o diff é truncado no limite informado, com a marca de truncamento no resultado.
+"""
 from __future__ import annotations
 
 import difflib
 
 
 def unified_diff_text(path: str, before: str, after: str, *, limit: int = 4000) -> dict:
+    """Monta o diff unificado entre dois conteúdos do mesmo arquivo.
+
+    Args:
+        path: caminho usado nos cabeçalhos do diff.
+        before: conteúdo anterior.
+        after: conteúdo novo.
+        limit: tamanho máximo do diff em caracteres.
+
+    Returns:
+        Um dicionário com o diff, a quantidade de linhas adicionadas e removidas e a marca de truncamento.
+    """
     diff = "\n".join(
         difflib.unified_diff(
             before.splitlines(),

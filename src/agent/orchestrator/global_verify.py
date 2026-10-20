@@ -1,4 +1,13 @@
-# src/agent/orchestrator/global_verify.py — critérios globais de conclusão
+"""
+Arquivo: src/agent/orchestrator/global_verify.py
+Nome: global_verify.py
+Propósito: critérios globais de conclusão.
+Responsabilidade: camada de aplicação.
+Componentes: requirements_report, unmet_requirements, evaluate_global_acceptance, invalidate_latest, reopen_verification_gaps, correct_requirement_gaps….
+Dependências: agent.domain.enums, agent.domain.failures, agent.domain.schemas, agent.orchestrator.consolidation, agent.orchestrator.requirements, agent.persistence.models….
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -24,6 +33,18 @@ from agent.verification.fingerprint import is_current
 
 
 def _subtree_tasks(session: Session, root_id: uuid.UUID) -> list[TaskModel]:
+    """Recolhe a tarefa raiz e todos os seus descendentes.
+
+    Args:
+        session: sessão do banco.
+        root_id: identificador da raiz da árvore.
+
+    Returns:
+        As tarefas que pertencem à subárvore da raiz.
+
+    Observações:
+        A varredura é repetida até não encontrar novos filhos, para alcançar a profundidade toda.
+    """
     all_tasks = list(session.scalars(select(TaskModel)).all())
     ids = {root_id}
     changed = True
@@ -68,10 +89,30 @@ def requirements_report(session: Session, root: TaskModel) -> list[dict]:
 
 
 def unmet_requirements(report: list[dict]) -> list[dict]:
+    """Filtra do relatório os requisitos que ainda não têm comprovação aceitável.
+
+    Args:
+        report: relatório de requisitos do objetivo.
+
+    Returns:
+        Os requisitos cujo estado não é comprovado, não aplicável nem informativo.
+    """
     return [r for r in report if r["status"] not in _ACCEPTABLE]
 
 
 def evaluate_global_acceptance(session: Session, root_id: uuid.UUID) -> tuple[bool, str]:
+    """Julga se o objetivo inteiro pode ser aceito como cumprido.
+
+    Args:
+        session: sessão do banco.
+        root_id: identificador da tarefa raiz do objetivo.
+
+    Returns:
+        Um par com a decisão e o motivo que a justifica.
+
+    Observações:
+        A decisão é conservadora: raiz não concluída, evidência ausente ou desatualizada, consolidação falha ou requisito obrigatório sem comprovação reprovam o aceite.
+    """
     root = session.get(TaskModel, root_id)
     if root is None:
         return False, "root ausente"
@@ -96,6 +137,15 @@ def evaluate_global_acceptance(session: Session, root_id: uuid.UUID) -> tuple[bo
 
 
 def _gap_failure(session: Session, task: TaskModel) -> Failure:
+    """Classifica por que a evidência da tarefa não serve.
+
+    Args:
+        session: sessão do banco.
+        task: tarefa cuja evidência foi avaliada.
+
+    Returns:
+        A falha recuperável correspondente, distinguindo evidência desatualizada de verificação reprovada.
+    """
     evs = collect_evidences(session, task.id)
     last = evs[-1] if evs else None
     detail = (last or {}).get("detail") or {}
@@ -232,6 +282,16 @@ def correct_requirement_gaps(session: Session, root: TaskModel) -> list[uuid.UUI
 
 
 def _reopen(ts: TaskService, task: TaskModel, reason: str) -> None:
+    """Reabre uma tarefa concluída, devolve-a ao planejamento e registra o motivo.
+
+    Args:
+        ts: serviço de tarefas que faz as transições.
+        task: tarefa reaberta.
+        reason: motivo registrado nas transições.
+
+    Observações:
+        Tarefa que não estava concluída é deixada como está: a reabertura só vale para o que já foi aceito.
+    """
     if TaskStatus(task.status) == TaskStatus.COMPLETED:
         ts.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING, reason=reason))
         ts.update_status(task.id, TaskStatusUpdate(status=TaskStatus.PLANNING, reason=reason))

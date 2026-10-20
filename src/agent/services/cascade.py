@@ -1,4 +1,12 @@
-# src/agent/services/cascade.py — remoção em cascata guiada pelo grafo de chaves estrangeiras
+"""
+Arquivo: src/agent/services/cascade.py
+Nome: cascade.py
+Propósito: remover em cascata uma linha e tudo que depende dela, guiado pelo grafo de chaves estrangeiras.
+Responsabilidade: camada de infraestrutura — remoção ordenada e segura das linhas dependentes.
+Componentes: delete_cascade.
+Dependências: agent.persistence.models, sqlalchemy.
+Observações: a ordem topológica garante que filhos sejam apagados antes dos pais.
+"""
 from __future__ import annotations
 
 from collections import deque
@@ -24,7 +32,16 @@ def _children_map() -> dict[str, list[tuple[Any, str]]]:
 
 
 def _scope(session: Session, root_table: str, root_id: Any) -> dict[str, set]:
-    """Conjunto de ids por tabela que descendem da linha raiz."""
+    """Conjunto de ids por tabela que descendem da linha raiz.
+
+    Args:
+        session: sessão usada nas consultas.
+        root_table: tabela da linha raiz.
+        root_id: identificador da linha raiz.
+
+    Returns:
+        Um dicionário de tabela para o conjunto de identificadores alcançados.
+    """
     children = _children_map()
     scope: dict[str, set] = {root_table: {root_id}}
     queue: deque[tuple[str, set]] = deque([(root_table, {root_id})])
@@ -52,6 +69,12 @@ def _deletion_order(scope: dict[str, set]) -> list[str]:
 
     Sem isso, apagar `operation_attempts` antes de `evidences` (que aponta para o
     attempt) viola a FOREIGN KEY.
+
+    Args:
+        scope: tabelas do escopo com seus identificadores.
+
+    Returns:
+        A lista de tabelas na ordem de remoção.
     """
     scoped = set(scope)
     edges: dict[str, set[str]] = {name: set() for name in scoped}
@@ -86,6 +109,14 @@ def delete_cascade(session: Session, root_table: str, root_id: Any) -> dict[str,
 
     Usa o grafo de chaves estrangeiras do modelo, então tabelas novas entram na remoção
     sem precisar de lista manual. Devolve quantas linhas foram removidas por tabela.
+
+    Args:
+        session: sessão usada nas remoções.
+        root_table: tabela da linha raiz.
+        root_id: identificador da linha raiz.
+
+    Returns:
+        Um dicionário de tabela para a quantidade de linhas removidas.
     """
     scope = _scope(session, root_table, root_id)
     removed: dict[str, int] = {}

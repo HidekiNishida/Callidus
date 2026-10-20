@@ -1,5 +1,13 @@
-# src/agent/api/agent_routes.py — interface HTTP da hierarquia de agentes
-"""Endpoints da hierarquia de agentes: consultar, suspender, retomar, descartar e perguntar.
+"""
+Arquivo: src/agent/api/agent_routes.py
+Nome: agent_routes.py
+Propósito: interface HTTP da hierarquia de agentes.
+Responsabilidade: camada de apresentação/transport.
+Componentes: AgentExecutionRead, list_agents, get_agent, agent_executions, suspend_agent, resume_agent….
+Dependências: agent.api.deps, agent.config, agent.domain.agent_enums, agent.domain.schemas, agent.orchestrator.decomposition, agent.orchestrator.runner….
+Observações: a rota valida, delega e serializa — a regra de negócio vive no serviço.
+
+Endpoints da hierarquia de agentes: consultar, suspender, retomar, descartar e perguntar.
 
 A interface expõe as operações que o modelo de agente usa por dentro. O objetivo é
 que a hierarquia seja **observável e controlável** de fora: dá para ver a árvore,
@@ -32,6 +40,22 @@ router = APIRouter()
 
 
 class AgentExecutionRead(BaseModel):
+    """Representação pública de uma execução de agente, serializada para a interface.
+
+    Atributos:
+        id: identificador da execução.
+        agent_id: agente dono da execução.
+        task_id: tarefa associada, quando houver.
+        run_id: run associado, quando houver.
+        status: estado corrente da execução.
+        attempt: número da tentativa em curso.
+        checkpoint_json: estado recuperável da execução, quando persistido.
+        last_error: mensagem do último erro registrado.
+        created_at, updated_at, started_at, finished_at: marcos de tempo da execução.
+
+    Observações:
+        O modelo apenas projeta colunas da tabela de execuções; nenhuma regra de negócio vive aqui.
+    """
     id: uuid.UUID
     agent_id: uuid.UUID
     task_id: uuid.UUID | None
@@ -49,6 +73,15 @@ class AgentExecutionRead(BaseModel):
 
 
 def _agent_read(service: AgentService, agent: AgentModel) -> AgentRead:
+    """Converte um agente persistido na visão pública da interface.
+
+    Args:
+        service: serviço de agentes, usado para consultar execução atual, filhos, achados e checkpoint.
+        agent: registro do agente vindo do banco.
+
+    Returns:
+        A visão do agente com o número de filhos e o estado da execução atual anexados.
+    """
     execution = service.current_execution(agent.id)
     children = service.children(agent.id)
     return AgentRead(
@@ -86,6 +119,18 @@ def list_agents(
 
 @router.get("/agents/{agent_id}", response_model=AgentRead)
 def get_agent(agent_id: uuid.UUID, session: Session = Depends(db_session)) -> AgentRead:
+    """Detalha um agente da hierarquia.
+
+    Args:
+        agent_id: identificador do agente consultado.
+        session: sessão do banco da requisição.
+
+    Returns:
+        A visão pública do agente.
+
+    Raises:
+        HTTPException: com status 404 quando o agente não existe.
+    """
     service = AgentService(session)
     try:
         return _agent_read(service, service.get(agent_id))
@@ -97,6 +142,18 @@ def get_agent(agent_id: uuid.UUID, session: Session = Depends(db_session)) -> Ag
 def agent_executions(
     agent_id: uuid.UUID, session: Session = Depends(db_session)
 ) -> list[AgentExecutionRead]:
+    """Lista o histórico de execuções de um agente.
+
+    Args:
+        agent_id: identificador do agente consultado.
+        session: sessão do banco da requisição.
+
+    Returns:
+        As execuções do agente, da mais recente para a mais antiga.
+
+    Raises:
+        HTTPException: com status 404 quando o agente não existe.
+    """
     service = AgentService(session)
     try:
         service.get(agent_id)
@@ -173,6 +230,18 @@ def discard_agent(
 def agent_queries(
     agent_id: uuid.UUID, session: Session = Depends(db_session)
 ) -> list[AgentQueryRead]:
+    """Lista as consultas dirigidas feitas a um agente.
+
+    Args:
+        agent_id: identificador do agente consultado.
+        session: sessão do banco da requisição.
+
+    Returns:
+        As consultas registradas para o agente.
+
+    Raises:
+        HTTPException: com status 404 quando o agente não existe.
+    """
     service = QueryService(session)
     try:
         AgentService(session).get(agent_id)
@@ -271,6 +340,15 @@ def resource_metrics(
 
 
 def _count_by(rows, attribute: str) -> dict[str, int]:
+    """Conta as linhas agrupadas pelo valor de um atributo.
+
+    Args:
+        rows: linhas a agrupar.
+        attribute: nome do atributo usado como chave de contagem.
+
+    Returns:
+        Um dicionário com a contagem de cada valor distinto; valores ausentes viram a chave vazia.
+    """
     counts: dict[str, int] = {}
     for row in rows:
         key = str(getattr(row, attribute, "") or "")

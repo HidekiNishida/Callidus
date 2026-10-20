@@ -1,4 +1,12 @@
-# src/agent/providers/http.py — transporte HTTP compartilhado pelos provedores
+"""
+Arquivo: src/agent/providers/http.py
+Nome: http.py
+Propósito: fornecer o transporte HTTP compartilhado por todos os provedores de inferência.
+Responsabilidade: camada de infraestrutura — política de conexão, retry, tratamento de erro e streaming.
+Componentes: HttpClientConfig, validate_base_url, client_kwargs, redact, map_http_error, get_json, post_json, stream_lines, sse_payloads.
+Dependências: httpx, agent.providers.base.
+Observações: só falha anterior ao processamento do servidor é repetida; streaming nunca é repetido.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -38,7 +46,15 @@ _SECRET_PATTERNS = (
 
 
 def redact(text: str, secrets: Iterable[str | None] = ()) -> str:
-    """Tira segredos de uma mensagem de log/erro: chaves explícitas e formatos conhecidos."""
+    """Tira segredos de uma mensagem de log/erro: chaves explícitas e formatos conhecidos.
+
+    Args:
+        text: texto a inspecionar.
+        secrets: credenciais conhecidas, substituídas literalmente.
+
+    Returns:
+        O texto sem as credenciais encontradas.
+    """
     out = text or ""
     for secret in secrets:
         if secret and len(secret) >= 6:
@@ -49,6 +65,14 @@ def redact(text: str, secrets: Iterable[str | None] = ()) -> str:
 
 
 def _is_private_address(host: str) -> bool:
+    """Indica se um endereço IP é interno (privado, loopback, link-local, reservado ou multicast).
+
+    Args:
+        host: endereço IP a classificar.
+
+    Returns:
+        `True` quando o endereço não é público.
+    """
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
@@ -65,7 +89,19 @@ def _is_private_address(host: str) -> bool:
 
 def validate_base_url(url: str, *, allow_private_hosts: bool = True) -> str:
     """Valida a URL base de um provedor. Endereços privados só são recusados quando o operador
-    pede (`allow_private_hosts=False`): Ollama e llama.cpp legítimos rodam em `localhost`/LAN."""
+    pede (`allow_private_hosts=False`): Ollama e llama.cpp legítimos rodam em `localhost`/LAN.
+
+    Args:
+        url: URL base informada na configuração.
+        allow_private_hosts: quando `False`, recusa hosts que resolvem para endereços internos.
+
+    Returns:
+        A URL validada, sem barra final.
+
+    Raises:
+        ProviderConfigError: quando a URL é vazia, usa outro esquema, não tem host, embute credencial
+            ou resolve para um endereço interno proibido.
+    """
     raw = (url or "").strip()
     if not raw:
         raise ProviderConfigError("URL base do provedor está vazia")
@@ -108,9 +144,22 @@ class HttpClientConfig:
     auth_scheme: str = "Bearer"
 
     def resolved_base_url(self) -> str:
+        """URL base validada segundo a política de hosts privados.
+
+        Returns:
+            A URL base sem barra final.
+
+        Raises:
+            ProviderConfigError: quando a URL base é inválida.
+        """
         return validate_base_url(self.base_url, allow_private_hosts=self.allow_private_hosts)
 
     def resolved_headers(self) -> dict[str, str]:
+        """Cabeçalhos das requisições, com a credencial aplicada no cabeçalho configurado.
+
+        Returns:
+            O dicionário de cabeçalhos enviado em cada requisição.
+        """
         headers = {"Content-Type": "application/json"}
         headers.update(self.headers or {})
         if self.api_key:
@@ -118,6 +167,11 @@ class HttpClientConfig:
         return headers
 
     def secrets(self) -> list[str]:
+        """Credenciais conhecidas, para serem removidas das mensagens de erro.
+
+        Returns:
+            Lista com a credencial configurada, quando houver.
+        """
         return [self.api_key] if self.api_key else []
 
 
@@ -132,6 +186,15 @@ def client_kwargs(config: HttpClientConfig) -> dict[str, Any]:
 
 
 def _response_excerpt(response: httpx.Response | None, limit: int = 240) -> str:
+    """Trecho inicial do corpo da resposta, para compor mensagens de erro.
+
+    Args:
+        response: resposta HTTP; `None` quando não há corpo disponível.
+        limit: tamanho máximo do trecho.
+
+    Returns:
+        O trecho do corpo, com espaços normalizados.
+    """
     if response is None:
         return ""
     try:
@@ -149,7 +212,17 @@ def map_http_error(
     secrets: Iterable[str | None] = (),
     response: httpx.Response | None = None,
 ) -> ProviderError:
-    """Converte exceção HTTP em erro de provedor com causa explícita (sem vazar credencial)."""
+    """Converte exceção HTTP em erro de provedor com causa explícita (sem vazar credencial).
+
+    Args:
+        exc: exceção levantada pela biblioteca HTTP.
+        label: nome do provedor, usado no prefixo da mensagem.
+        secrets: credenciais a remover da mensagem.
+        response: resposta HTTP associada, quando houver.
+
+    Returns:
+        O erro de provedor correspondente à falha.
+    """
     detail = redact(str(exc), secrets)
     if isinstance(exc, httpx.TimeoutException):
         return ProviderTimeoutError(f"{label}: tempo esgotado ({detail})")
@@ -177,6 +250,14 @@ def map_http_error(
 
 
 def _retryable(exc: ProviderError) -> bool:
+    """Indica se o erro vale uma retentativa.
+
+    Args:
+        exc: erro de provedor mapeado.
+
+    Returns:
+        `True` para conexão recusada e limite de uso, que são falhas transitórias.
+    """
     return isinstance(exc, (ProviderConnectionError, ProviderRateLimitError))
 
 
@@ -188,6 +269,21 @@ async def _with_retry(
     max_retries: int,
     backoff: float,
 ):
+    """Executa uma operação HTTP repetindo apenas falhas transitórias.
+
+    Args:
+        operation: corrotina que executa a requisição.
+        label: nome do provedor, usado no prefixo do erro.
+        secrets: credenciais a remover das mensagens.
+        max_retries: número de retentativas permitidas.
+        backoff: intervalo base entre tentativas, em segundos.
+
+    Returns:
+        O resultado da operação.
+
+    Raises:
+        ProviderError: quando a falha não é repetível ou as tentativas se esgotam.
+    """
     attempts = max(0, int(max_retries)) + 1
     last: ProviderError | None = None
     for attempt in range(attempts):
@@ -212,7 +308,24 @@ async def get_json(
     max_retries: int = 1,
     backoff: float = _RETRY_BACKOFF,
 ) -> Any:
+    """Executa um GET e devolve o corpo JSON.
+
+    Args:
+        client: cliente HTTP a usar.
+        url: URL a consultar.
+        label: nome do provedor, usado no prefixo do erro.
+        secrets: credenciais a remover das mensagens.
+        max_retries: número de retentativas permitidas.
+        backoff: intervalo base entre tentativas, em segundos.
+
+    Returns:
+        O corpo JSON da resposta.
+
+    Raises:
+        ProviderError: quando a requisição falha.
+    """
     async def operation():
+        """Executa a requisição HTTP e devolve a resposta tipada do provedor."""
         resp = await client.get(url)
         resp.raise_for_status()
         return resp.json()
@@ -230,7 +343,25 @@ async def post_json(
     max_retries: int = 1,
     backoff: float = _RETRY_BACKOFF,
 ) -> Any:
+    """Executa um POST e devolve o corpo JSON.
+
+    Args:
+        client: cliente HTTP a usar.
+        url: URL a consultar.
+        body: corpo JSON da requisição.
+        label: nome do provedor, usado no prefixo do erro.
+        secrets: credenciais a remover das mensagens.
+        max_retries: número de retentativas permitidas.
+        backoff: intervalo base entre tentativas, em segundos.
+
+    Returns:
+        O corpo JSON da resposta.
+
+    Raises:
+        ProviderError: quando a requisição falha.
+    """
     async def operation():
+        """Executa a requisição HTTP e devolve a resposta tipada do provedor."""
         resp = await client.post(url, json=body)
         resp.raise_for_status()
         return resp.json()
@@ -247,7 +378,21 @@ async def stream_lines(
     secrets: Iterable[str | None] = (),
 ) -> Iterator[str]:
     """Linhas do corpo de uma resposta em streaming (JSON por linha ou SSE). Sem retry: uma
-    transmissão pela metade não pode ser repetida sem custo duplicado."""
+    transmissão pela metade não pode ser repetida sem custo duplicado.
+
+    Args:
+        client: cliente HTTP a usar.
+        url: URL da requisição.
+        body: corpo JSON da requisição.
+        label: nome do provedor, usado no prefixo do erro.
+        secrets: credenciais a remover das mensagens.
+
+    Yields:
+        Cada linha do corpo da resposta.
+
+    Raises:
+        ProviderError: quando a requisição ou a leitura do corpo falha.
+    """
     try:
         async with client.stream("POST", url, json=body) as resp:
             resp.raise_for_status()
@@ -260,7 +405,14 @@ async def stream_lines(
 
 
 def sse_payloads(lines: Iterable[str]) -> Iterator[str]:
-    """Extrai o payload de eventos SSE (`data: ...`), ignorando comentários e linhas vazias."""
+    """Extrai o payload de eventos SSE (`data: ...`), ignorando comentários e linhas vazias.
+
+    Args:
+        lines: linhas do corpo da resposta.
+
+    Yields:
+        O payload de cada evento SSE.
+    """
     for line in lines:
         text = line.strip()
         if not text or text.startswith(":"):

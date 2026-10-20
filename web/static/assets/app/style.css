@@ -1,5 +1,13 @@
-/* web/static/assets/app/style.css — sistema visual do Callidus (Vue 3) v0.7
-   Tokens → layout responsivo → componentes → motion → responsivo/mobile → acessibilidade */
+/*
+ * Arquivo: web/static/assets/app/style.css
+ * Nome: style.css
+ * Propósito: sistema visual do Callidus (Vue 3).
+ * Responsabilidade: frontend/visual — tokens, layout, componentes, motion e regras responsivas.
+ * Componentes: tokens em :root, tema claro, shell, componentes da SPA, media queries.
+ * Dependências: variáveis CSS; prefers-color-scheme e prefers-reduced-motion.
+ * Observações: a paleta se adapta ao tema claro/escuro; a ordem do arquivo é
+ * tokens → layout responsivo → componentes → motion → responsivo/mobile → acessibilidade.
+ */
 
 :root {
   /* superfícies */

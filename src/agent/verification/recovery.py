@@ -1,9 +1,19 @@
-# src/agent/verification/recovery.py — Ciclo de recuperação da verificação
-#
-# Uma verificação reprovada não é o fim do caminho: o agente diagnostica a falha,
-# decide a correção e re-executa a verificação. Este módulo concentra a taxonomia
-# do diagnóstico (puro e testável) para que o orquestrador aplique o ciclo
-# diagnóstico → correção → re-verificação sem repetirprompt nem mascarar o sintoma.
+"""
+Arquivo: src/agent/verification/recovery.py
+Nome: recovery.py
+Propósito: classificar a causa de uma verificação reprovada e planejar a recuperação.
+Responsabilidade: camada de aplicação — taxonomia do ciclo diagnóstico → correção → re-verificação.
+Componentes: RecoveryDiagnosis, diagnose_verification_failure, plan_recovery, recovery_signature.
+Dependências: dataclasses, re.
+Observações: o diagnóstico é puro e testável; o orquestrador aplica o ciclo sem repetir o prompt nem mascarar o sintoma.
+
+Ciclo de recuperação da verificação
+
+Uma verificação reprovada não é o fim do caminho: o agente diagnostica a falha,
+decide a correção e re-executa a verificação. Este módulo concentra a taxonomia
+do diagnóstico (puro e testável) para que o orquestrador aplique o ciclo
+diagnóstico → correção → re-verificação sem repetirprompt nem mascarar o sintoma.
+"""
 from __future__ import annotations
 
 import re
@@ -37,7 +47,15 @@ _TEST_HINTS = ("assertionerror", "assert ", "failed", "falhou", "failing", "erro
 
 @dataclass
 class RecoveryDiagnosis:
-    """Diagnóstico de uma verificação reprovada e a correção a aplicar."""
+    """Diagnóstico de uma verificação reprovada e a correção a aplicar.
+
+    Atributos:
+        cause: causa reconhecida da reprovação.
+        action: correção correspondente à causa.
+        automatic: quando `True`, a recuperação pode ser tentada sem intervenção do operador.
+        guidance: orientação textual handed ao modelo na próxima tentativa.
+        evidence: trechos da saída do verificador que sustentam o diagnóstico.
+    """
 
     cause: str
     action: str
@@ -46,6 +64,11 @@ class RecoveryDiagnosis:
     evidence: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
+        """Diagnóstico como dicionário serializável.
+
+        Returns:
+            Um dicionário com causa, ação, automatismo, orientação e evidências.
+        """
         return {
             "cause": self.cause,
             "action": self.action,
@@ -56,6 +79,15 @@ class RecoveryDiagnosis:
 
 
 def _haystack(summary: str, detail: dict[str, Any] | None) -> str:
+    """Concatena o resumo e os detalhes relevantes do verificador para a busca de pistas.
+
+    Args:
+        summary: resumo da falha.
+        detail: detalhe estruturado devolvido pelo verificador.
+
+    Returns:
+        O texto combinado, em minúsculas, para comparação com as pistas conhecidas.
+    """
     parts = [summary or ""]
     detail = detail or {}
     for key in ("stdout", "stderr", "error", "reason", "syntax_error", "command"):

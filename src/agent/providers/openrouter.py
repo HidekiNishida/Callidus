@@ -1,4 +1,12 @@
-# src/agent/providers/openrouter.py — OpenRouter (catálogo de modelos de vários autores)
+"""
+Arquivo: src/agent/providers/openrouter.py
+Nome: openrouter.py
+Propósito: integrar o agente com o OpenRouter, catálogo de modelos de vários autores.
+Responsabilidade: camada de infraestrutura — especialização do adaptador compatível com OpenAI.
+Componentes: OpenRouterProvider.
+Dependências: agent.providers.openai_compatible.
+Observações: a lista de modelos é consultada pela API do OpenRouter, nunca fixada no código.
+"""
 from __future__ import annotations
 
 from agent.providers.openai_compatible import OpenAICompatibleProvider
@@ -28,6 +36,21 @@ class OpenRouterProvider(OpenAICompatibleProvider):
         title: str = "Callidus",
         models_cache_ttl: float = 300.0,
     ) -> None:
+        """Configura o provedor com os cabeçalhos opcionais de identificação do OpenRouter.
+
+        Args:
+            base_url: URL base da API; por padrão, a URL pública do OpenRouter.
+            model: modelo padrão usado quando o run não escolhe um.
+            api_key: credencial enviada no cabeçalho de autenticação.
+            headers: cabeçalhos adicionais enviados em cada requisição.
+            timeout: tempo limite das requisições, em segundos.
+            max_retries: número de retentativas em falha transitória.
+            allow_private_hosts: permite endereços privados.
+            verify_tls: valida o certificado TLS do servidor.
+            referer: endereço enviado no cabeçalho `HTTP-Referer`, quando informado.
+            title: título enviado no cabeçalho `X-Title`.
+            models_cache_ttl: tempo de vida do cache de modelos, em segundos.
+        """
         merged: dict[str, str] = {"X-Title": title}
         if referer:
             merged["HTTP-Referer"] = referer

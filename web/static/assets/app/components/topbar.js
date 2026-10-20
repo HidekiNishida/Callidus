@@ -1,4 +1,12 @@
-// web/static/assets/app/components/topbar.js
+/**
+ * Arquivo: web/static/assets/app/components/topbar.js
+ * Nome: topbar.js
+ * Propósito: barra superior com o título do contexto, a troca de telas e os controles de execução.
+ * Responsabilidade: frontend/componente — título, ramos da conversa, execução, tema e painéis.
+ * Componentes: TopBar (componente Vue).
+ * Dependências: `../store.js` (estado e ações), `../ui.js` (ícones), `../api.js` (troca de ramo).
+ * Observações: os botões de execução só ficam ativos quando há uma run em andamento.
+ */
 import {
   state,
   setTheme,
@@ -14,6 +22,17 @@ import {
 import { icon } from "../ui.js";
 import { api } from "../api.js";
 
+/**
+ * Barra superior: título do contexto, seleção de ramo, troca de tela e controles da run.
+ *
+ * @returns {object} Objeto de opções do Vue com `setup()` e `template`.
+ * @emits {toggle-details} Alterna o painel de detalhes.
+ * @emits {new-project} Pede a abertura do modal de novo projeto.
+ * @emits {rename} Pede a renomeação da conversa.
+ * @emits {folder} Pede a escolha da pasta do projeto.
+ * @emits {toggle-rail} Alterna a barra lateral.
+ * @emits {open-palette} Abre a paleta de comandos.
+ */
 export const TopBar = {
   name: "TopBar",
   emits: ["toggle-details", "new-project", "rename", "folder", "toggle-rail", "open-palette"],
@@ -21,6 +40,12 @@ export const TopBar = {
     const busy = Vue.computed(() => Boolean(state.currentRun));
     const branches = Vue.computed(() => state.conversation?.branches || []);
 
+    /**
+     * Ativa um ramo da conversa e recarrega as tarefas.
+     *
+     * @param {string} branchId Id do ramo a ativar.
+     * @returns {Promise<void>}
+     */
     async function activateBranch(branchId) {
       if (!state.conversation || !branchId) return;
       try {

@@ -1,5 +1,13 @@
-# src/agent/services/autonomous_worker.py — execução autônoma em segundo plano
-"""Worker autônomo: descobre runs ativos e os entrega ao escalonador.
+"""
+Arquivo: src/agent/services/autonomous_worker.py
+Nome: autonomous_worker.py
+Propósito: descobrir runs autônomos ativos e entregá-los ao escalonador em segundo plano.
+Responsabilidade: camada de aplicação — laço de descoberta e execução das operações autônomas.
+Componentes: autonomous_loop, build_scheduler, start_background_worker, stop_background_worker, enable_autonomous_on_run.
+Dependências: agent.services.agent_scheduler, agent.services.query_service, agent.persistence.database.
+Observações: nenhuma inferência é feita para descobrir se existe trabalho; a sessão fica aberta só durante a operação.
+
+Worker autônomo: descobre runs ativos e os entrega ao escalonador.
 
 Duas responsabilidades, deliberadamente separadas:
 
@@ -40,15 +48,24 @@ _stop = asyncio.Event()
 
 
 def request_stop() -> None:
+    """Pede o encerramento do laço autônomo."""
     _stop.set()
 
 
 def build_scheduler(settings: Settings | None = None) -> AgentScheduler:
-    """Escalonador do worker, com os tratadores de etapa de run e de consulta."""
+    """Escalonador do worker, com os tratadores de etapa de run e de consulta.
+
+    Args:
+        settings: configurações do processo; quando ausentes, são lidas do ambiente.
+
+    Returns:
+        O escalonador com os tratadores registrados.
+    """
     settings = settings or get_settings()
     scheduler = AgentScheduler(settings)
 
     async def _run_step(operation) -> dict:
+        """Avança um run autônomo e devolve a ação do passo."""
         run_id = uuid.UUID(operation.payload["run_id"])
         engine = create_db_engine(settings)
         factory = build_session_factory(engine)
@@ -65,7 +82,14 @@ def build_scheduler(settings: Settings | None = None) -> AgentScheduler:
             session.close()
 
     async def _answer_query(operation) -> dict:
-        """Resolve uma consulta pendente: estado persistido primeiro, inferência se faltar."""
+        """Resolve uma consulta pendente: estado persistido primeiro, inferência se faltar.
+
+        Args:
+            operation: operação submetida ao escalonador, com o identificador da consulta.
+
+        Returns:
+            Um dicionário com o desfecho da resolução.
+        """
         query_id = uuid.UUID(operation.payload["query_id"])
         engine = create_db_engine(settings)
         factory = build_session_factory(engine)
@@ -103,6 +127,12 @@ async def autonomous_loop(
     interval_sec: float = 2.0,
     scheduler: AgentScheduler | None = None,
 ) -> None:
+    """Laço que descobre trabalho autônomo e o executa uma operação por vez.
+
+    Args:
+        interval_sec: intervalo entre tiques, em segundos.
+        scheduler: escalonador a usar; quando ausente, é construído com as configurações do processo.
+    """
     settings = get_settings()
     engine = create_db_engine(settings)
     factory = build_session_factory(engine)
@@ -145,6 +175,11 @@ async def autonomous_loop(
 
 
 def start_background_worker() -> asyncio.Task:
+    """Inicia o worker autônomo em segundo plano.
+
+    Returns:
+        A tarefa asyncio do laço; a que já estava em execução, se houver.
+    """
     global _worker_task
     if _worker_task and not _worker_task.done():
         return _worker_task
@@ -154,6 +189,11 @@ def start_background_worker() -> asyncio.Task:
 
 
 async def stop_background_worker() -> None:
+    """Para o worker autônomo, cancelando a tarefa do laço.
+
+    Observações:
+        O cancelamento é absorvido; o laço é encerrado na próxima iteração.
+    """
     request_stop()
     global _worker_task
     if _worker_task:
@@ -166,6 +206,18 @@ async def stop_background_worker() -> None:
 
 
 def enable_autonomous_on_run(session, run_id: uuid.UUID) -> ExecutionRunModel:
+    """Marca um run como autônomo.
+
+    Args:
+        session: sessão usada na alteração.
+        run_id: identificador do run.
+
+    Returns:
+        O run atualizado.
+
+    Raises:
+        LookupError: quando o run não existe.
+    """
     run = session.get(ExecutionRunModel, run_id)
     if run is None:
         raise LookupError(str(run_id))

@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""scripts/medir-ollama.py — mede o comportamento real com um modelo local.
+"""
+Arquivo: scripts/medir-ollama.py
+Nome: medir-ollama.py
+Propósito: medir o comportamento real do Callidus com um modelo local servido pelo Ollama.
+Responsabilidade: camada de script — mede latência, chamadas ao modelo, contexto enviado, alucinação e memória do servidor de inferência.
+Componentes: RSS dos processos do Ollama, modelo carregado, consulta respondida pelo estado, consulta que exige inferência e consulta após suspensão.
+Dependências: agent.providers.ollama.OllamaProvider, agent.services (query_service, agent_service, project_service, task_service, executor), httpx e o comando ps.
+Observações: não altera a configuração do Callidus: o modelo e a URL vêm de argumentos e do ambiente, e nada é gravado no .env.
+
+
+mede o comportamento real com um modelo local.
 
 Roda um cenário de hierarquia de agentes contra o Ollama de verdade e mede o que
 importa para a tese do projeto: **funciona bem com modelo pequeno e recursos
@@ -95,6 +105,7 @@ def modelo_carregado(base_url: str) -> dict:
 
 
 async def main() -> int:
+    """Executa o cenário de medição contra o Ollama e imprime o relatório."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default=os.environ.get("DEFAULT_MODEL_ID", "llama3.2:3b"))
     parser.add_argument("--url", default=os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434"))

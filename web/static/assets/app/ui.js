@@ -1,5 +1,16 @@
-// web/static/assets/app/ui.js — ícones, markdown leve e formatadores
+/**
+ * Arquivo: web/static/assets/app/ui.js
+ * Nome: ui.js
+ * Propósito: ícones, markdown leve e formatadores compartilhados pelos componentes.
+ * Responsabilidade: frontend/apresentação — funções puras de formatação e tradução de eventos.
+ * Componentes: ICONS, icon(), escapeHtml(), renderMarkdown(), describeActivity(), summarizeActivity(),
+ *   diffLines(), helpers de rótulo e tempo.
+ * Dependências: nenhuma (módulo puro, sem DOM e sem API).
+ * Observações: o HTML do markdown é escapado antes de qualquer marcação — o conteúdo do modelo
+ * nunca vira HTML cru.
+ */
 
+/** Ícones em SVG (viewBox 0 0 16 16) usados pela interface. */
 export const ICONS = {
   plus: '<path d="M8 3v10M3 8h10"/>',
   play: '<path d="M5 3.5v9l8-4.5-8-4.5z"/>',
@@ -42,11 +53,24 @@ export const ICONS = {
   server: '<rect x="2.5" y="3" width="11" height="4" rx="1"/><rect x="2.5" y="9" width="11" height="4" rx="1"/><path d="M5 5h.01M5 11h.01"/>',
 };
 
+/**
+ * Monta o SVG de um ícone.
+ *
+ * @param {string} name Nome do ícone em `ICONS`.
+ * @param {number} [size] Lado do quadrado do SVG, em pixels.
+ * @returns {string} O HTML do ícone; cai no ícone "circle" quando o nome não existe.
+ */
 export function icon(name, size = 16) {
   const path = ICONS[name] || ICONS.circle;
   return `<svg class="ico" width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
 }
 
+/**
+ * Escapa um texto para ser inserido em HTML.
+ *
+ * @param {*} text Texto a escapar.
+ * @returns {string} O texto escapado (nulo e indefinido viram string vazia).
+ */
 export function escapeHtml(text) {
   return String(text ?? "")
     .replace(/&/g, "&amp;")
@@ -57,9 +81,11 @@ export function escapeHtml(text) {
 }
 
 /**
- * Markdown da resposta final do agente: títulos, ênfase, código, listas (aninhadas),
- * tabelas, citações, linhas horizontais, links e imagens. O HTML é escapado antes de
- * qualquer marcação — o conteúdo do modelo nunca vira HTML cru.
+ * Converte o markdown da resposta do agente em HTML.
+ *
+ * @param {string} text Markdown de origem.
+ * @returns {string} O HTML correspondente (títulos, listas, tabelas, código, citações, links).
+ * Observações: o HTML é escapado antes de qualquer marcação — o conteúdo do modelo nunca vira HTML cru.
  */
 export function renderMarkdown(text) {
   const lines = String(text ?? "").replace(/\r\n?/g, "\n").split("\n");
@@ -189,18 +215,42 @@ export function renderMarkdown(text) {
   return out.join("");
 }
 
+/**
+ * Reconhece um item de lista (com marcador `-`, `*`, `+` ou numeração).
+ *
+ * @param {string} line Linha de markdown.
+ * @returns {boolean} `true` quando a linha começa um item de lista.
+ */
 function isListItem(line) {
   return /^\s*([-*+]|\d+[.)])\s+/.test(line);
 }
 
+/**
+ * Reconhece uma linha de tabela do markdown.
+ *
+ * @param {string} line Linha de markdown.
+ * @returns {boolean} `true` quando a linha contém pipes e tem conteúdo suficiente.
+ */
 function isTableRow(line) {
   return line.includes("|") && line.trim().length > 2;
 }
 
+/**
+ * Reconhece a linha separadora de uma tabela do markdown.
+ *
+ * @param {string} line Linha de markdown.
+ * @returns {boolean} `true` quando a linha separa as colunas de um cabeçalho.
+ */
 function isTableSeparator(line) {
   return /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
 }
 
+/**
+ * Divide uma linha de tabela em suas células.
+ *
+ * @param {string} line Linha de markdown.
+ * @returns {string[]} As células, já sem os pipes das bordas e sem espaços.
+ */
 function splitTableRow(line) {
   return line
     .trim()
@@ -210,6 +260,12 @@ function splitTableRow(line) {
     .map((cell) => cell.trim());
 }
 
+/**
+ * Renderiza uma lista do markdown respeitando o aninhamento por indentação.
+ *
+ * @param {Array<{indent: number, ordered: boolean, text: string}>} items Itens já extraídos.
+ * @returns {string} O HTML da lista.
+ */
 function renderList(items) {
   if (!items.length) return "";
   let index = 0;
@@ -250,7 +306,12 @@ function renderList(items) {
   return `<div class="md-list">${level(base)}</div>`;
 }
 
-/** Marcações dentro da linha: código, links, imagens, ênfase e riscado. */
+/**
+ * Aplica as marcações dentro de uma linha (código, links, imagens, ênfase, riscado).
+ *
+ * @param {string} text Texto já escapado ou a escapar.
+ * @returns {string} O HTML da linha.
+ */
 function inline(text) {
   const codes = [];
   let out = escapeHtml(text);
@@ -269,6 +330,12 @@ function inline(text) {
   return out;
 }
 
+/**
+ * Formata um carimbo de tempo como hora local curta.
+ *
+ * @param {string} iso Carimbo ISO do servidor.
+ * @returns {string} A hora (hh:mm), ou string vazia quando o carimbo é ausente ou inválido.
+ */
 export function stamp(iso) {
   if (!iso) return "";
   const date = new Date(iso);
@@ -276,6 +343,12 @@ export function stamp(iso) {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/**
+ * Resume quanto tempo atrás aconteceu algo ("agora", "5 min", "3 h", "2 d").
+ *
+ * @param {string} iso Carimbo ISO do servidor.
+ * @returns {string} O tempo relativo, ou string vazia quando o carimbo é ausente ou inválido.
+ */
 export function ago(iso) {
   if (!iso) return "";
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -286,8 +359,10 @@ export function ago(iso) {
   return `${Math.floor(diff / 86400)} d`;
 }
 
+/** Status em que a tarefa ainda está sendo trabalhada. */
 export const BUSY_STATUSES = ["PLANNING", "READY", "RUNNING", "VERIFYING", "RETRY_PENDING"];
 
+/** Rótulos em português dos status de tarefa. */
 export const STATUS_LABEL = {
   PENDING: "Pendente",
   PLANNING: "Planejando",
@@ -301,6 +376,7 @@ export const STATUS_LABEL = {
   CANCELLED: "Cancelado",
 };
 
+/** Ícone associado a cada status de tarefa. */
 export const STATUS_ICON = {
   PLANNING: "spark",
   READY: "clock",
@@ -314,6 +390,7 @@ export const STATUS_ICON = {
   PENDING: "circle",
 };
 
+/** Ícone associado a cada ferramenta do agente. */
 export const TOOL_ICON = {
   read_file: "file",
   write_file: "pencil",
@@ -331,6 +408,12 @@ export const TOOL_ICON = {
   modelo: "spark",
 };
 
+/**
+ * Descobre a ferramenta associada a uma tarefa.
+ *
+ * @param {object} task Tarefa do servidor.
+ * @returns {string} O nome da ferramenta, ou string vazia quando a tarefa não é de ferramenta.
+ */
 export function toolOf(task) {
   const meta = task?.metadata_json || {};
   if (meta.tool) return meta.tool;
@@ -339,15 +422,33 @@ export function toolOf(task) {
   return "";
 }
 
+/**
+ * Devolve o título de exibição de uma tarefa.
+ *
+ * @param {object} task Tarefa do servidor.
+ * @returns {string} O `display_title` ou, na falta dele, o `title`.
+ */
 export function titleOf(task) {
   return task?.display_title || task?.title || "";
 }
 
+/**
+ * Traduz o status de uma tarefa para o rótulo em português.
+ *
+ * @param {string} status Status do servidor.
+ * @returns {string} O rótulo, ou "—" quando o status é desconhecido.
+ */
 export function statusLabel(status) {
   return STATUS_LABEL[status] || status || "—";
 }
 
-/** Modelo e provedor usados na conversa (para o cabeçalho da resposta). */
+/**
+ * Monta o rótulo de modelo e provedor usado na conversa.
+ *
+ * @param {object} task Tarefa do servidor (pode ser nulo).
+ * @param {object|null} [live] Retrato `live` do stream (pode ser nulo).
+ * @returns {string} "provedor · modelo", apenas o modelo, ou string vazia quando não há modelo.
+ */
 export function modelLabel(task, live) {
   const modelId = (task?.metadata_json || {}).model_id || live?.model?.model_id || "";
   const provider = live?.model?.provider || (task?.metadata_json || {}).provider || "";
@@ -355,13 +456,21 @@ export function modelLabel(task, live) {
   return provider ? `${provider} · ${modelId}` : modelId;
 }
 
+/**
+ * Escolhe o plural correto para uma contagem.
+ *
+ * @param {number} n Quantidade.
+ * @param {string} one Forma no singular.
+ * @param {string} many Forma no plural.
+ * @returns {string} O texto "n forma".
+ */
 export function plural(n, one, many) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
 // ── Atividade em tempo real (traduzida para português) ─────────────────────
 
-/** Ferramenta → rótulo que o usuário lê. */
+/** Rótulo em português de cada ferramenta, como o usuário lê no feed. */
 export const TOOL_LABEL = {
   read_file: "Leitura de arquivo",
   write_file: "Escrita de arquivo",
@@ -383,6 +492,7 @@ export const TOOL_LABEL = {
   modelo: "Modelo",
 };
 
+/** Ícone em português de cada ferramenta, usado no feed de atividade. */
 export const TOOL_ICON_PT = {
   read_file: "file",
   write_file: "pencil",
@@ -403,7 +513,13 @@ export const TOOL_ICON_PT = {
   verification: "check",
 };
 
-/** Resumo curto dos argumentos de uma ferramenta, em português. */
+/**
+ * Resume os argumentos de uma ferramenta em uma linha curta.
+ *
+ * @param {string} tool Nome da ferramenta.
+ * @param {object} args Argumentos informados pelo servidor.
+ * @returns {string} O comando, o caminho ou o padrão (truncado em 140 caracteres), ou string vazia.
+ */
 export function toolArgsSummary(tool, args) {
   if (!args || typeof args !== "object") return "";
   if (tool === "run_command" || tool === "run_script" || tool === "run_tests") {
@@ -416,7 +532,12 @@ export function toolArgsSummary(tool, args) {
   return "";
 }
 
-/** Converte um evento do stream em uma entrada de atividade (título, detalhe, estado). */
+/**
+ * Converte um evento do stream em uma entrada de atividade (título, detalhe, estado).
+ *
+ * @param {object} event Envelope do stream.
+ * @returns {object|null} A entrada de atividade, ou `null` quando o evento não é de atividade.
+ */
 export function describeActivity(event) {
   const data = event?.data || {};
   const type = event?.type || "";
@@ -651,7 +772,12 @@ export function describeActivity(event) {
   }
 }
 
-/** Resumo do que foi feito no turno: contagens por tipo de ação. */
+/**
+ * Resume o que foi feito no turno: contagens por tipo de ação.
+ *
+ * @param {Array<object>} entries Entradas de atividade do turno.
+ * @returns {object} Contagem de leituras, escritas, comandos, testes, ferramentas, arquivos e pensamentos.
+ */
 export function summarizeActivity(entries) {
   const summary = { leituras: 0, escritas: 0, comandos: 0, testes: 0, ferramentas: 0, arquivos: 0, thoughts: 0 };
   for (const entry of entries || []) {
@@ -671,7 +797,12 @@ export function summarizeActivity(entries) {
   return summary;
 }
 
-/** Linhas do diff com marcação de acréscimo e remoção. */
+/**
+ * Quebra um diff em linhas com marcação de acréscimo, remoção, hunk ou contexto.
+ *
+ * @param {string} text Diff cru (formato unified).
+ * @returns {Array<{type: string, text: string}>} As linhas classificadas.
+ */
 export function diffLines(text) {
   return String(text || "")
     .split("\n")

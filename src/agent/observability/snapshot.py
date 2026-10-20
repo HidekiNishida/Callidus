@@ -1,4 +1,12 @@
-# src/agent/observability/snapshot.py — foto do estado real de uma run e páginas do histórico de eventos
+"""
+Arquivo: src/agent/observability/snapshot.py
+Nome: snapshot.py
+Propósito: montar a foto do estado real de uma run e as páginas do histórico de eventos.
+Responsabilidade: camada de apresentação — leitura do estado persistido combinado ao volátil do processo.
+Componentes: last_seq, events_page, open_operations, run_snapshot, MAX_PAGE, TERMINAL_RUN_STATUSES.
+Dependências: agent.observability.bus, agent.observability.contracts, agent.orchestrator.progress, agent.persistence.models, sqlalchemy.
+Observações: o snapshot vem do banco e do processo, nunca do navegador.
+"""
 from __future__ import annotations
 
 import uuid
@@ -35,6 +43,14 @@ _CLOSERS = {
 
 
 def _type_filter(types: list[str]):
+    """Constrói o filtro de tipos de evento aceitos.
+
+    Args:
+        types: tipos informados; um prefixo terminado em ponto casa com toda a categoria.
+
+    Returns:
+        A cláusula SQL de filtro, ou `None` quando não há tipos informados.
+    """
     clauses = []
     for raw in types:
         t = raw.strip()
@@ -48,6 +64,15 @@ def _type_filter(types: list[str]):
 
 
 def last_seq(session: Session, run_id: uuid.UUID) -> int:
+    """Maior sequência de evento gravada para uma run.
+
+    Args:
+        session: sessão de leitura.
+        run_id: identificador da run.
+
+    Returns:
+        A sequência máxima persistida; zero quando a run ainda não tem eventos.
+    """
     return int(session.scalar(select(func.max(EventLogModel.seq)).where(EventLogModel.run_id == run_id)) or 0)
 
 
@@ -119,12 +144,33 @@ def open_operations(session: Session, run_id: uuid.UUID) -> list[dict[str, Any]]
 
 
 def _iso(value: datetime | None) -> str | None:
+    """Data em ISO 8601, com fuso UTC quando aplicável.
+
+    Args:
+        value: data lida do banco, possivelmente sem fuso.
+
+    Returns:
+        A representação ISO, ou `None` quando não há data.
+    """
     return as_utc(value).isoformat() if value else None
 
 
 def run_snapshot(session: Session, run_id: uuid.UUID, *, bus: EventBus | None = None, recent: int = 300) -> dict[str, Any]:
     """Estado lido do banco (tarefas, evidências, eventos) mais o que só existe em memória neste processo
-    (texto parcial das saídas em andamento). Nada aqui vem do navegador."""
+    (texto parcial das saídas em andamento). Nada aqui vem do navegador.
+
+    Args:
+        session: sessão de leitura do banco.
+        run_id: identificador da run.
+        bus: barramento de eventos; quando ausente, usa o barramento do processo.
+        recent: quantidade de eventos recentes incluídos na página final.
+
+    Returns:
+        O snapshot com a run, o cabeçalho, as tarefas, o estado vivo, os eventos e as estatísticas.
+
+    Raises:
+        LookupError: quando a run não existe no banco.
+    """
     bus = bus or get_bus()
     run = session.get(ExecutionRunModel, run_id)
     if run is None:

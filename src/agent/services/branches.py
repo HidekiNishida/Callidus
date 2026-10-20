@@ -1,4 +1,12 @@
-# src/agent/services/branches.py — ramos da conversa e o que cada um pode ver
+"""
+Arquivo: src/agent/services/branches.py
+Nome: branches.py
+Propósito: definir os ramos da conversa e o que cada ramo pode ver (tarefas e memórias).
+Responsabilidade: camada de aplicação — visibilidade por ramo ao longo da bifurcação.
+Componentes: ancestor_chain, memory_visible, visible_tasks.
+Dependências: agent.persistence.models.
+Observações: memória do projeto vale para todos; a da conversa segue o ramo e os anteriores.
+"""
 from __future__ import annotations
 
 import uuid
@@ -8,6 +16,14 @@ from agent.persistence.models import BranchModel, TaskModel
 
 
 def _aware(value: datetime | None) -> datetime | None:
+    """Normaliza uma data lida do SQLite para UTC com fuso.
+
+    Args:
+        value: data lida do banco, possivelmente sem fuso.
+
+    Returns:
+        A data com fuso UTC, ou `None` quando não há data.
+    """
     if value is None:
         return None
     if value.tzinfo is None:
@@ -16,6 +32,15 @@ def _aware(value: datetime | None) -> datetime | None:
 
 
 def ancestor_chain(branches: dict[uuid.UUID, BranchModel], branch_id: uuid.UUID | None) -> list[BranchModel]:
+    """Cadeia de ancestrais de um ramo, do próprio até a raiz.
+
+    Args:
+        branches: catálogo de ramos indexado por identificador.
+        branch_id: ramo de partida.
+
+    Returns:
+        A cadeia de ramos, na ordem do mais próximo ao mais distante.
+    """
     chain: list[BranchModel] = []
     current = branches.get(branch_id) if branch_id else None
     seen: set[uuid.UUID] = set()
@@ -34,7 +59,18 @@ def memory_visible(
     task_branch_id: uuid.UUID | None,
     branches: dict[uuid.UUID, BranchModel],
 ) -> bool:
-    """Memória do projeto vale para todos. A da conversa segue o ramo e os anteriores."""
+    """Memória do projeto vale para todos. A da conversa segue o ramo e os anteriores.
+
+    Args:
+        memory_branch_id: ramo em que a memória foi criada.
+        memory_created_at: instante de criação da memória.
+        conversation_id: conversa dona da memória; `None` significa memória de projeto.
+        task_branch_id: ramo da tarefa que está lendo a memória.
+        branches: catálogo de ramos indexado por identificador.
+
+    Returns:
+        `True` quando a memória é visível para a tarefa.
+    """
     if conversation_id is None or memory_branch_id is None or task_branch_id is None:
         return True
     chain = ancestor_chain(branches, task_branch_id)
@@ -57,6 +93,16 @@ def visible_tasks(
     branch: BranchModel,
     branches: dict[uuid.UUID, BranchModel],
 ) -> list[TaskModel]:
+    """Tarefas visíveis para um ramo, respeitando a bifurcação.
+
+    Args:
+        tasks: tarefas candidatas da conversa.
+        branch: ramo consultado.
+        branches: catálogo de ramos indexado por identificador.
+
+    Returns:
+        As tarefas visíveis no ramo.
+    """
     chain = ancestor_chain(branches, branch.id)
     chain_ids = {item.id for item in chain}
     child_by_parent = {item.parent_id: item for item in chain if item.parent_id}
@@ -90,6 +136,7 @@ def visible_tasks(
             visible_roots.add(task.id)
 
     def root_id(task: TaskModel) -> uuid.UUID:
+        """Identificador da raiz da conversa à qual a branch pertence."""
         seen: set[uuid.UUID] = set()
         current = task
         while current.parent_id and current.parent_id in by_id and current.id not in seen:

@@ -1,4 +1,13 @@
-# src/agent/api/provider_routes.py — configuração de provedores pela interface
+"""
+Arquivo: src/agent/api/provider_routes.py
+Nome: provider_routes.py
+Propósito: configuração de provedores pela interface.
+Responsabilidade: camada de apresentação/transport.
+Componentes: ProviderEntry, ProviderConfigIn, SecretIn, read_provider_config, write_provider_config, delete_provider….
+Dependências: agent.api.deps, agent.config, agent.providers.base, agent.providers.registry, agent.providers.secrets, __future__….
+Observações: a rota valida, delega e serializa — a regra de negócio vive no serviço.
+"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -42,15 +51,37 @@ class ProviderEntry(BaseModel):
 
 
 class ProviderConfigIn(BaseModel):
+    """Configuração de provedores enviada pela interface.
+
+    Atributos:
+        default_provider: nome do provedor padrão, quando houver.
+        providers: provedores editáveis, indexados pelo nome.
+    """
     default_provider: str | None = None
     providers: dict[str, ProviderEntry] = Field(default_factory=dict)
 
 
 class SecretIn(BaseModel):
+    """Credencial de um provedor enviada pela interface.
+
+    Atributos:
+        secret: valor da credencial; nunca é devolvido na resposta.
+    """
     secret: str
 
 
 def _catalog(settings: Settings) -> ProviderCatalog:
+    """Carrega o catálogo de provedores das configurações.
+
+    Args:
+            settings: configurações do processo.
+
+    Returns:
+            O catálogo de provedores configurado.
+
+    Raises:
+            HTTPException: com status 400 quando a configuração dos provedores é inválida.
+    """
     try:
         return catalog_for_settings(settings)
     except ProviderConfigError as exc:
@@ -58,6 +89,17 @@ def _catalog(settings: Settings) -> ProviderCatalog:
 
 
 def _config_payload(settings: Settings) -> dict[str, Any]:
+    """Monta o payload da configuração de provedores, sem credenciais.
+
+    Args:
+            settings: configurações do processo.
+
+    Returns:
+            O caminho da configuração, o provedor padrão e a descrição de cada provedor com o estado da sua credencial.
+
+    Observações:
+        A chave da API nunca é incluída; apenas o estado do segredo é informado.
+    """
     catalog = _catalog(settings)
     path = config_path_for_settings(settings)
     providers: dict[str, Any] = {}

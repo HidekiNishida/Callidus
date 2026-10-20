@@ -1,5 +1,13 @@
-# src/agent/orchestrator/tool_loop.py — operação do modelo com inspeção por ferramentas
-"""Ciclo de operação em que o modelo inspeciona o projeto antes de responder.
+"""
+Arquivo: src/agent/orchestrator/tool_loop.py
+Nome: tool_loop.py
+Propósito: operação do modelo com inspeção por ferramentas.
+Responsabilidade: camada de aplicação.
+Componentes: ToolLoopOutcome, json_schema_for, tool_schemas, tool_result_text, run_tool_loop.
+Dependências: agent.providers.base, agent.providers.observed, agent.tools.registry, __future__, dataclasses, json….
+Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+
+Ciclo de operação em que o modelo inspeciona o projeto antes de responder.
 
 Por que existe: modelos treinados para ferramentas (o `gpt-oss:20b` é um deles) respondem a uma
 tarefa de programação chamando ferramentas de leitura — `read_file`, `list_dir`. Quando o pedido
@@ -73,10 +81,20 @@ class ToolLoopOutcome:
 
     @property
     def asked_tools(self) -> list[str]:
+        """Lista as ferramentas que o modelo pediu no ciclo.
+
+        Returns:
+            Os nomes das ferramentas, na ordem em que foram chamadas.
+        """
         return [str(item.get("tool")) for item in self.tool_log]
 
     @property
     def applied(self) -> bool:
+        """Diz se o modelo deixou alguma alteração aplicada no disco.
+
+        Returns:
+            Verdadeiro quando houve ferramenta de escrita chamada com sucesso.
+        """
         return bool(self.applied_tool and self.applied_result.get("success"))
 
 
@@ -197,6 +215,17 @@ async def run_tool_loop(
     call_budget = max(1, max_tool_calls)
 
     async def _execute(call_item) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Executa uma chamada de ferramenta pedida pelo modelo.
+
+        Args:
+            call_item: chamada com o nome da ferramenta e os argumentos.
+
+        Returns:
+            O registro da chamada e o resultado bruto da ferramenta.
+
+        Observações:
+            A permissão do pedido é conferida antes da mutação: recusar depois já teria escrito no disco. Ferramenta que quebra vira resultado de erro, para o ciclo continuar em vez de morrer.
+        """
         args = call_item.arguments if isinstance(call_item.arguments, dict) else {}
         refusal = tool_guard(call_item.name, args) if tool_guard is not None else None
         if refusal:
@@ -223,6 +252,11 @@ async def run_tool_loop(
         return entry, result
 
     def _budget_note() -> str:
+        """Monta a nota de orçamento de chamadas de ferramenta que entra na conversa.
+
+        Returns:
+            Uma frase com quantas chamadas ainda restam, ou uma string vazia quando o orçamento acabou.
+        """
         restantes = call_budget - len(log)
         if restantes <= 0:
             return ""

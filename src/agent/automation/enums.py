@@ -1,4 +1,12 @@
-# src/agent/automation/enums.py — vocabulário das automações
+"""
+Arquivo: src/agent/automation/enums.py
+Nome: enums.py
+Propósito: definir o vocabulário das automações (estado, gatilho, ação, dependências e disparo).
+Responsabilidade: camada de domínio — enums compartilhados por todo o runtime de automações.
+Componentes: AutomationState, TriggerKind, ActionKind, TargetKind, ObjectiveMode, MissedPolicy, DependencyKind, StartMechanism, FiringState, TERMINAL_FIRING_STATES, ACTIVE_FIRING_STATES.
+Dependências: enum (stdlib).
+Observações: novos tipos de gatilho e de ação entram por registro, não por edição deste módulo.
+"""
 from __future__ import annotations
 
 from enum import StrEnum

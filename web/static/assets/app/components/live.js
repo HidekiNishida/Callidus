@@ -1,4 +1,13 @@
-// web/static/assets/app/components/live.js — painel de execução (estado do redutor em tempo real)
+/**
+ * Arquivo: web/static/assets/app/components/live.js
+ * Nome: live.js
+ * Propósito: painel de execução, com o estado do redutor em tempo real.
+ * Responsabilidade: frontend/componente — desenha plano, chamadas ao modelo, arquivos e verificações.
+ * Componentes: LivePanel (componente Vue), filtros reativos, delegated handlers (onClick, onSearch).
+ * Dependências: `../store.js` (estado e seleção de tarefa), `../live-view.js` (renderizadores),
+ *   `../ui.js` (ícones).
+ * Observações: os blocos são redesenhados pelo contador `state.liveState.version`.
+ */
 import { state, refreshTasks, selectTask } from "../store.js";
 import {
   renderActivity,
@@ -13,6 +22,11 @@ import {
 } from "../live-view.js";
 import { icon } from "../ui.js";
 
+/**
+ * Painel de execução: acompanha a run em tempo real com filtros, árvore e diffs.
+ *
+ * @returns {object} Objeto de opções do Vue com `setup()` e `template`.
+ */
 export const LivePanel = {
   name: "LivePanel",
   setup() {
@@ -67,7 +81,14 @@ export const LivePanel = {
       return state.liveState.data ? renderMetrics(state.liveState.data) : "";
     });
 
-    /** Um único handler para todas as interações do painel (delegação de eventos). */
+    /**
+     * Um único handler para todas as interações do painel (delegação de eventos).
+     *
+     * @param {MouseEvent} event Evento de clique no painel.
+     * @returns {void}
+     * Observações: alterna categorias, "só falhas", a tarefa selecionada, o desdobramento da
+     * árvore e a abertura do diff.
+     */
     function onClick(event) {
       const target = event.target.closest("[data-obs-cat], [data-obs-errors], [data-obs-clear-task], [data-obs-toggle], [data-obs-task], [data-obs-file]");
       if (!target) return;
@@ -113,6 +134,12 @@ export const LivePanel = {
       }
     }
 
+    /**
+     * Captura o texto digitado no campo de busca de filtros.
+     *
+     * @param {Event} event Evento de input do campo de busca.
+     * @returns {void}
+     */
     function onSearch(event) {
       const target = event.target.closest("[data-obs-text]");
       if (!target) return;
@@ -120,7 +147,11 @@ export const LivePanel = {
       bump();
     }
 
-    // Mudou algo no redutor: força o redesenho dos blocos.
+    /**
+     * Mudou algo no redutor: força o redesenho dos blocos.
+     *
+     * @returns {void}
+     */
     function bump() {
       state.liveState.version += 1;
     }

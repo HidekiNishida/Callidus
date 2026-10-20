@@ -1,4 +1,12 @@
-# src/agent/remote/ssh.py — execução de ações em projeto remoto por SSH
+"""
+Arquivo: src/agent/remote/ssh.py
+Nome: ssh.py
+Propósito: executar ações em um projeto remoto por SSH usando o binário do sistema.
+Responsabilidade: camada de infraestrutura — transporte de comandos e arquivos para o computador remoto.
+Componentes: RemoteConfig, RemoteError, CommandResult, SshTransport.
+Dependências: asyncio, pydantic.
+Observações: funciona com servidores POSIX e Windows (PowerShell); arquivos via base64 evitam problemas de quoting.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -28,6 +36,11 @@ class RemoteConfig(BaseModel):
     @field_validator("host")
     @classmethod
     def _host_preenchido(cls, value: str) -> str:
+        """Valida que o host do computador remoto foi informado.
+
+        Raises:
+            ValueError: quando o host está vazio.
+        """
         if not (value or "").strip():
             raise ValueError("host do computador remoto é obrigatório")
         return value.strip()
@@ -35,6 +48,11 @@ class RemoteConfig(BaseModel):
     @field_validator("shell")
     @classmethod
     def _shell_conhecido(cls, value: str) -> str:
+        """Normaliza o shell do servidor para `posix` ou `powershell`.
+
+        Raises:
+            ValueError: quando o shell informado não é reconhecido.
+        """
         clean = (value or "posix").strip().lower()
         if clean in {"powershell", "pwsh", "cmd", "windows"}:
             return "powershell"
@@ -44,10 +62,12 @@ class RemoteConfig(BaseModel):
 
     @property
     def target(self) -> str:
+        """Destino da conexão, no formato `usuario@host` quando há usuário."""
         return f"{self.user}@{self.host}" if self.user else self.host
 
     @property
     def is_windows(self) -> bool:
+        """Indica se o servidor remoto usa PowerShell."""
         return self.shell.lower() in {"powershell", "pwsh", "cmd", "windows"}
 
 
@@ -57,12 +77,31 @@ class RemoteError(RuntimeError):
 
 @dataclass
 class CommandResult:
+    """Desfecho de um comando remoto.
+
+    Atributos:
+        exit_code: código de saída do comando.
+        stdout: saída padrão.
+        stderr: saída de erro.
+    """
+
     exit_code: int
     stdout: str
     stderr: str
 
 
 def _resolve_key(key_path: str | None) -> str | None:
+    """Resolve o caminho da chave SSH privada, quando informada.
+
+    Args:
+        key_path: caminho da chave; `None` significa autenticação por padrão do ssh.
+
+    Returns:
+        O caminho absoluto da chave, ou `None`.
+
+    Raises:
+        RemoteError: quando a chave informada não existe no disco.
+    """
     if not key_path:
         return None
     path = Path(key_path).expanduser()
@@ -79,11 +118,20 @@ class SshTransport:
     """
 
     def __init__(self, config: RemoteConfig) -> None:
+        """Monta o cliente SSH com a configuração do computador remoto."""
         self.config = config
         self._ssh = shutil.which("ssh")
 
     # ── baixo nível ──────────────────────────────────────────────────────
     def _base_args(self) -> list[str]:
+        """Argumentos base da chamada ao `ssh`.
+
+        Returns:
+            A lista de argumentos com as opções de porta, host known e chave.
+
+        Raises:
+            RemoteError: quando o binário `ssh` não existe ou a chave configurada não foi encontrada.
+        """
         if not self._ssh:
             raise RemoteError("o binário `ssh` não está disponível neste computador")
         args = [
@@ -104,12 +152,27 @@ class SshTransport:
         return args
 
     def _quote(self, value: str) -> str:
+        """Cita um valor para o shell do servidor (POSIX ou PowerShell).
+
+        Args:
+            value: texto a citar.
+
+        Returns:
+            O texto pronto para ser embutido no comando remoto.
+        """
         if self.config.is_windows:
             return '"' + str(value).replace('"', '`"') + '"'
         return shlex.quote(str(value))
 
     def _remote_path(self, path: str) -> str:
-        """Junta a pasta remota do projeto com o caminho relativo."""
+        """Junta a pasta remota do projeto com o caminho relativo.
+
+        Args:
+            path: caminho relativo dentro do projeto remoto.
+
+        Returns:
+            O caminho completo no servidor, no formato do shell configurado.
+        """
         base = (self.config.root or ".").strip()
         rel = str(path or ".").strip()
         if not rel or rel == ".":
@@ -132,7 +195,20 @@ class SshTransport:
         timeout: float | None = None,
         on_output: Any = None,
     ) -> CommandResult:
-        """Roda um comando no servidor remoto e devolve saída e código."""
+        """Roda um comando no servidor remoto e devolve saída e código.
+
+        Args:
+            command: comando como texto ou lista de argumentos.
+            cwd: pasta remota onde o comando roda.
+            timeout: tempo limite em segundos; por padrão, o da configuração.
+            on_output: callback opcional que recebe cada trecho de saída em tempo real.
+
+        Returns:
+            O resultado do comando, com código de saída, stdout e stderr.
+
+        Raises:
+            RemoteError: quando o `ssh` não pode ser iniciado ou o comando estoura o tempo.
+        """
         text = command if isinstance(command, str) else " ".join(shlex.quote(part) for part in command)
         workdir = self._remote_path(cwd or ".")
         if self.config.is_windows:
@@ -152,6 +228,7 @@ class SshTransport:
         err_chunks: list[bytes] = []
 
         async def pump(stream, chunks, sink):
+            """Transfere os dados entre a sessão local e o canal remoto."""
             while True:
                 chunk = await stream.read(4096)
                 if not chunk:
@@ -180,6 +257,17 @@ class SshTransport:
 
     # ── arquivos ─────────────────────────────────────────────────────────
     async def list_dir(self, path: str) -> list[dict[str, Any]]:
+        """Lista o conteúdo de uma pasta remota.
+
+        Args:
+            path: caminho da pasta, relativo ao projeto remoto.
+
+        Returns:
+            A lista de entradas, cada uma com nome e caminho.
+
+        Raises:
+            RemoteError: quando a listagem falha no servidor.
+        """
         if self.config.is_windows:
             cmd = f"Get-ChildItem -LiteralPath {self._quote(self._remote_path(path))} -Force | ForEach-Object {{ $_.Name }}"
         else:
@@ -195,6 +283,17 @@ class SshTransport:
         return entries
 
     async def read_text(self, path: str) -> str:
+        """Lê um arquivo remoto como texto.
+
+        Args:
+            path: caminho do arquivo, relativo ao projeto remoto.
+
+        Returns:
+            O conteúdo do arquivo.
+
+        Raises:
+            RemoteError: quando a leitura falha no servidor.
+        """
         if self.config.is_windows:
             cmd = f"Get-Content -Raw -LiteralPath {self._quote(self._remote_path(path))}"
         else:
@@ -205,6 +304,18 @@ class SshTransport:
         return result.stdout
 
     async def write_text(self, path: str, content: str) -> int:
+        """Grava um arquivo remoto, enviando o conteúdo em base64.
+
+        Args:
+            path: caminho do arquivo, relativo ao projeto remoto.
+            content: texto a gravar.
+
+        Returns:
+            A quantidade de bytes gravados.
+
+        Raises:
+            RemoteError: quando a escrita falha no servidor.
+        """
         payload = base64.b64encode(content.encode("utf-8")).decode("ascii")
         target = self._remote_path(path)
         if self.config.is_windows:
@@ -220,6 +331,14 @@ class SshTransport:
         return len(content.encode("utf-8"))
 
     async def make_dir(self, path: str) -> None:
+        """Cria uma pasta remota (e os diretórios intermediários).
+
+        Args:
+            path: caminho da pasta, relativo ao projeto remoto.
+
+        Raises:
+            RemoteError: quando a criação falha no servidor.
+        """
         target = self._remote_path(path)
         if self.config.is_windows:
             cmd = f"New-Item -ItemType Directory -Force -Path {self._quote(target)} | Out-Null"
@@ -230,6 +349,14 @@ class SshTransport:
             raise RemoteError(result.stderr.strip() or "não foi possível criar a pasta remota")
 
     async def remove(self, path: str) -> None:
+        """Remove um arquivo ou pasta remoto, recursivamente.
+
+        Args:
+            path: caminho alvo, relativo ao projeto remoto.
+
+        Raises:
+            RemoteError: quando a remoção falha no servidor.
+        """
         target = self._remote_path(path)
         if self.config.is_windows:
             cmd = f"Remove-Item -LiteralPath {self._quote(target)} -Force -Recurse"
@@ -240,6 +367,15 @@ class SshTransport:
             raise RemoteError(result.stderr.strip() or "não foi possível remover no servidor remoto")
 
     async def move(self, source: str, target: str) -> None:
+        """Move ou renomeia um caminho no servidor remoto.
+
+        Args:
+            source: caminho de origem, relativo ao projeto remoto.
+            target: caminho de destino, relativo ao projeto remoto.
+
+        Raises:
+            RemoteError: quando a movimentação falha no servidor.
+        """
         src = self._remote_path(source)
         dst = self._remote_path(target)
         if self.config.is_windows:
@@ -251,7 +387,11 @@ class SshTransport:
             raise RemoteError(result.stderr.strip() or "não foi possível mover no servidor remoto")
 
     async def check(self) -> dict[str, Any]:
-        """Diagnóstico: o servidor responde? Qual o sistema?"""
+        """Diagnóstico: o servidor responde? Qual o sistema?
+
+        Returns:
+            Um dicionário com `ok`, o nome do sistema e o código de saída.
+        """
         if self.config.is_windows:
             cmd = "$PSVersionTable.PSVersion.ToString()"
         else:

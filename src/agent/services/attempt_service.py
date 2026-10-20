@@ -1,4 +1,12 @@
-# src/agent/services/attempt_service.py — tentativas e detecção de loops
+"""
+Arquivo: src/agent/services/attempt_service.py
+Nome: attempt_service.py
+Propósito: registrar as tentativas das tarefas e detectar repetição de saída ou de prompt.
+Responsabilidade: camada de aplicação — histórico de tentativas, contagem e detecção de loops.
+Componentes: AttemptService.
+Dependências: agent.domain.enums, agent.domain.failures, agent.persistence.models.
+Observações: só a resposta final do modelo conta como tentativa; as iterações do ciclo de ferramentas não.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -13,7 +21,20 @@ from agent.persistence.models import EventLogModel, OperationAttemptModel
 
 
 class AttemptService:
+    """Registro e contagem das tentativas de operação de uma tarefa.
+
+    Atributos:
+        _session: sessão usada nas leituras e gravações.
+        _max_attempts: limite de tentativas a partir do qual a tarefa é considerada esgotada.
+    """
+
     def __init__(self, session: Session, max_attempts: int = 8) -> None:
+        """Cria o serviço ligado a uma sessão.
+
+        Args:
+            session: sessão SQLAlchemy a usar.
+            max_attempts: limite de tentativas por tarefa.
+        """
         self._session = session
         self._max_attempts = max_attempts
 
@@ -31,6 +52,23 @@ class AttemptService:
         project_id: uuid.UUID | None = None,
         failure: Failure | None = None,
     ) -> OperationAttemptModel:
+        """Grava uma tentativa de operação.
+
+        Args:
+            run_id: run em que a tentativa ocorreu.
+            task_id: tarefa que tentou.
+            kind: natureza da tentativa (modelo, ferramenta ou verificação).
+            provider: provedor chamado, quando houver.
+            request: pedido enviado.
+            response: resposta recebida.
+            success: indica se a tentativa deu certo.
+            error: mensagem de erro, quando houver.
+            project_id: projeto, para registrar o fato no log de eventos.
+            failure: falha categorizada, quando a tentativa falhou.
+
+        Returns:
+            A tentativa gravada.
+        """
         if failure is not None and not error:
             error = f"[{failure.category.value}/{failure.cause.value}] {failure.detail}"[:2000]
         row = OperationAttemptModel(
@@ -86,6 +124,14 @@ class AttemptService:
         return len(list(self._session.scalars(stmt).all()))
 
     def count_tool_calls(self, task_id: uuid.UUID) -> int:
+        """Chamadas de ferramenta feitas pela tarefa.
+
+        Args:
+            task_id: identificador da tarefa.
+
+        Returns:
+            A quantidade de chamadas de ferramenta registradas.
+        """
         stmt = select(OperationAttemptModel).where(
             OperationAttemptModel.task_id == task_id,
             OperationAttemptModel.kind == AttemptKind.TOOL.value,
@@ -93,6 +139,14 @@ class AttemptService:
         return len(list(self._session.scalars(stmt).all()))
 
     def attempts_exhausted(self, task_id: uuid.UUID) -> bool:
+        """Indica se a tarefa já consumiu o limite de tentativas.
+
+        Args:
+            task_id: identificador da tarefa.
+
+        Returns:
+            `True` quando o limite foi alcançado.
+        """
         return self.count_attempts(task_id) >= self._max_attempts
 
     def repeated_output_detected(
@@ -102,6 +156,17 @@ class AttemptService:
         window: int = 3,
         kind: AttemptKind | None = None,
     ) -> bool:
+        """Detecta se a última janela de tentativas devolveu sempre a mesma saída.
+
+        Args:
+            task_id: identificador da tarefa.
+            output_fingerprint: impressão da saída atual.
+            window: quantidade de tentativas recentes analisadas.
+            kind: tipo de tentativa a considerar, quando informado.
+
+        Returns:
+            `True` quando todas as tentativas da janela produziram a mesma saída.
+        """
         stmt = (
             select(OperationAttemptModel)
             .where(OperationAttemptModel.task_id == task_id)
@@ -129,5 +194,13 @@ class AttemptService:
 
     @staticmethod
     def fingerprint(data: dict | str) -> str:
+        """Impressão digital curta de um conteúdo, para comparar saídas.
+
+        Args:
+            data: conteúdo a resumir.
+
+        Returns:
+            Os primeiros 16 caracteres do SHA-256 do conteúdo.
+        """
         text = data if isinstance(data, str) else str(data)
         return hashlib.sha256(text.encode()).hexdigest()[:16]
