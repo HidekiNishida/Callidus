@@ -38,6 +38,7 @@ Estas regras definem **como** o agente deve documentar e trabalhar:
 | Commits automáticos | Toda mudança commitada pelo agente (PT); vigora quando houver git |
 | Estado da tarefa | Checklist em `internal/tarefas/` para avançar e retomar |
 | Verificação final | Antes de fechar: consistência código ↔ docs ↔ checklists ↔ regras |
+| Código | [AGENTS.md](/AGENTS.md) — fonte **canônica** de como escrever e manter código (cabeçalho, docstrings, SOLID, testes, documentação) |
 
 Contexto estável do projeto: [project-context.md](/docs/project-context.md).
 
@@ -61,6 +62,7 @@ Contexto estável do projeto: [project-context.md](/docs/project-context.md).
 | ![Tarefas](/media/icons/tarefas.svg){width=28} | [checklists-tarefas.md](/docs/regras/checklists-tarefas.md) | **Toda** atividade: criar/atualizar estado e retomar |
 | ![Verificação](/media/icons/verificacao.svg){width=28} | [verificacao-final.md](/docs/regras/verificacao-final.md) | **Antes de encerrar** qualquer tarefa |
 | ![Documentação](/media/icons/documentacao.svg){width=28} | [resumo-projeto.md](/docs/regras/resumo-projeto.md) | **Toda** tarefa que altera o repo: manter o [`resume.md`](/resume.md) em dia |
+| ![Organização](/media/icons/organizacao.svg){width=28} | [AGENTS.md](/AGENTS.md) | **Fonte canônica** das regras de engenharia — cabeçalho, docstrings, camadas, SOLID, testes, documentação e sincronização |
 
 Template de checklist: [`internal/tarefas/_modelo-checklist.md`](/internal/tarefas/_modelo-checklist.md).
 
@@ -112,9 +114,10 @@ flowchart TD
 
 1. [project-context.md](/docs/project-context.md) — metas e restrições
 2. Este hub
-3. [principios.md](/docs/regras/principios.md)
-4. [navegacao-agentes.md](/docs/regras/navegacao-agentes.md)
-5. [checklists-tarefas.md](/docs/regras/checklists-tarefas.md) — criar estado da atividade
+3. [AGENTS.md](/AGENTS.md) — regras de engenharia (cabeçalho, docstrings, arquitetura, testes)
+4. [principios.md](/docs/regras/principios.md)
+5. [navegacao-agentes.md](/docs/regras/navegacao-agentes.md)
+6. [checklists-tarefas.md](/docs/regras/checklists-tarefas.md) — criar estado da atividade
 
 ### Por tipo de tarefa
 
@@ -219,3 +222,4 @@ Quando adicionar um novo documento de regras:
 - [Verificação final](/docs/regras/verificacao-final.md)
 - [Modelo de checklist](/internal/tarefas/_modelo-checklist.md)
 - [Contexto do projeto](/docs/project-context.md)
+- [Regras de engenharia (canônicas)](/AGENTS.md)
