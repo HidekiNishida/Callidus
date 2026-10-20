@@ -67,8 +67,16 @@ class Item:
         return self.name.rsplit(".", 1)[-1]
 
 
+IGNORADOS_INVENTARIO = ("web/static/assets/vendor/", "web/static/assets/brand/")
+
+
 def project_files() -> list[str]:
-    """Lista os arquivos do projeto que entram no inventário."""
+    """Lista os arquivos do projeto que entram no inventário.
+
+   ficam de fora bibliotecas de terceiros vendorizadas e assets gerados de marca:
+    o `resume.md` mapeia o **código** do projeto, não arquivos que não são
+    escritos nem mantidos aqui.
+    """
     out = subprocess.run(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
         cwd=ROOT,
@@ -76,7 +84,13 @@ def project_files() -> list[str]:
         text=True,
         check=True,
     ).stdout
-    return sorted(f for f in out.splitlines() if f and (ROOT / f).is_file())
+    return sorted(
+        f
+        for f in out.splitlines()
+        if f
+        and (ROOT / f).is_file()
+        and not f.startswith(IGNORADOS_INVENTARIO)
+    )
 
 
 def _py_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
