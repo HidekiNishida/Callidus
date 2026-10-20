@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Conceitos e fundamentos">
+  <rect width="64" height="64" rx="12" fill="#7C3AED"/>
+  <path d="M32 12 C22 12 15 19 15 28 C15 34 18 38 22 41 L22 46 L42 46 L42 41 C46 38 49 34 49 28 C49 19 42 12 32 12 Z" fill="#EDE9FE"/>
+  <line x1="22" y1="50" x2="42" y2="50" stroke="#DDD6FE" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="26" y1="55" x2="38" y2="55" stroke="#C4B5FD" stroke-width="3.5" stroke-linecap="round"/>
+</svg>

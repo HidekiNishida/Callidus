@@ -37,6 +37,8 @@ Não coloque assets de documentação em `internal/` se forem referenciados por 
 
 ## Catálogo de ícones atuais
 
+### Conjunto de regras (identidade do hub)
+
 | Arquivo | Uso |
 |---------|-----|
 | ![hub](/media/icons/hub.svg){width=24} `hub.svg` | Hub / índice |
@@ -54,6 +56,23 @@ Não coloque assets de documentação em `internal/` se forem referenciados por 
 | ![commits](/media/icons/commits.svg){width=24} `commits.svg` | Commits automáticos |
 | ![tarefas](/media/icons/tarefas.svg){width=24} `tarefas.svg` | Checklists de atividade |
 | ![verificacao](/media/icons/verificacao.svg){width=24} `verificacao.svg` | Verificação final |
+
+### Conjunto de categorias (identidade do documento)
+
+Um ícone por **categoria de conteúdo**; o mesmo emoji marca a mesma categoria nas seções.
+A tabela completa (emoji ↔ SVG ↔ significado) está em
+[documentacao.md](/docs/regras/documentacao.md#marcadores-visuais).
+
+| Arquivo | Categoria | Arquivo | Categoria |
+|---------|-----------|---------|-----------|
+| ![objetivo](/media/icons/objetivo.svg){width=24} `objetivo.svg` | Objetivo e propósito | ![referencias](/media/icons/referencias.svg){width=24} `referencias.svg` | Referências e materiais |
+| ![conceitos](/media/icons/conceitos.svg){width=24} `conceitos.svg` | Conceitos e fundamentos | ![desenvolvimento](/media/icons/desenvolvimento.svg){width=24} `desenvolvimento.svg` | Desenvolvimento e manutenção |
+| ![arquitetura](/media/icons/arquitetura.svg){width=24} `arquitetura.svg` | Arquitetura e estrutura | ![testes](/media/icons/testes.svg){width=24} `testes.svg` | Testes e validação |
+| ![configuracao](/media/icons/configuracao.svg){width=24} `configuracao.svg` | Configuração e funcionamento | ![seguranca](/media/icons/seguranca.svg){width=24} `seguranca.svg` | Segurança e permissões |
+| ![fluxos](/media/icons/fluxos.svg){width=24} `fluxos.svg` | Fluxos e processos | ![arquivos](/media/icons/arquivos.svg){width=24} `arquivos.svg` | Arquivos e diretórios |
+| ![integracoes](/media/icons/integracoes.svg){width=24} `integracoes.svg` | Integrações e dependências | ![metricas](/media/icons/metricas.svg){width=24} `metricas.svg` | Métricas e observabilidade |
+| ![restricoes](/media/icons/restricoes.svg){width=24} `restricoes.svg` | Restrições, riscos e cuidados | ![exemplos](/media/icons/exemplos.svg){width=24} `exemplos.svg` | Exemplos e recomendações |
+| ![leitura](/media/icons/leitura.svg){width=24} `leitura.svg` | Navegação e leitura | — | — |
 
 Caminho absoluto base: `/media/icons/`.
 

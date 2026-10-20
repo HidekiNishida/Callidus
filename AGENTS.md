@@ -1,5 +1,9 @@
 # AGENTS.md — Regras de Engenharia do Callidus
 
+![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
+
+As regras de engenharia que todo agente segue ao escrever código.
+
 > **Fonte canônica** das regras de desenvolvimento do Callidus: código, testes, documentação e
 > verificação. As regras específicas de ferramenta (Cursor, hooks, scripts) apenas **referenciam**
 > ou **complementam** este arquivo — não o repetem.
@@ -19,12 +23,12 @@
 6. [SOLID pragmático](#6-solid-pragmático)
 7. [Design patterns](#7-design-patterns)
 8. [Organização modular](#8-organização-modular)
-9. [Contratos que não podem quebrar](#9-contratos-que-não-quebram)
+9. [Contratos que não podem quebrar](#9-contratos-que-não-podem-quebrar)
 10. [Testes](#10-testes)
 11. [Documentação hierárquica](#11-documentação-hierárquica)
-12. [Sincronização obrigatória](#12-sincronização-obrigatória)
-13. [Checklist de execução](#13-checklist-de-execução)
-14. [Referência rápida de comandos](#14-referência-rápida-de-comandos)
+13. [Sincronização obrigatória](#13-sincronização-obrigatória)
+14. [Checklist de execução](#14-checklist-de-execução)
+15. [Referência rápida de comandos](#15-referência-rápida-de-comandos)
 
 ---
 
@@ -307,7 +311,57 @@ Regras:
 
 ---
 
-## 12. Sincronização obrigatória
+## 12. Documentação é parte da implementação
+
+**Toda alteração de código atualiza a documentação correspondente.** Documento desatualizado
+não é dívida menor: é o que faz o próximo agente (e a próxima pessoa) decidir sobre um
+sistema que já não existe. A revisão documental é **critério de conclusão**, junto com a
+validação técnica.
+
+### O que revisar antes de encerrar
+
+1. **Fatos**: algum documento ficou errado (contagens, nomes, caminhos, endpoints, campos)?
+2. **Navegação**: índices, diagramas, sumários e links ficaram obsoletos?
+3. **Novidade**: entrou alguma funcionalidade ou contrato que merece registro?
+4. **Obras**: o que foi removido ou renomeado — some a referência obsoleta e preserve o
+   histórico (ADR, `resume.md`) quando ainda tiver valor.
+
+### Onde fica cada tipo de informação
+
+| Informação | Dono do texto |
+|------------|---------------|
+| Panorama, como rodar, para onde ir | `README.md` |
+| Onde está cada assunto | `docs/README.md` e o hub de regras |
+| Componentes, fronteiras, relações | `docs/architecture/` (+ ADR quando for decisão) |
+| Responsabilidade, fluxo, contratos, testes de um módulo | `README.md` do módulo |
+| Consulta precisa (endpoint, campo, formato) | Referência técnica |
+| Contrato e decisão local | Comentário e docstring no código |
+| Como executar, alterar, validar e manter | `AGENTS.md` e `docs/regras/` |
+
+Quando a explicação completa já existe, use **link contextual + resumo de uma linha** —
+não copie o texto.
+
+### Padrão de forma
+
+O padrão completo está em
+[docs/regras/documentacao.md](/docs/regras/documentacao.md): estrutura de página, marcadores
+visuais, precisão factual e checklist de publicação. Em resumo:
+
+- H1 único, sem salto de nível, sumário quando o documento é longo.
+- Ícone de categoria no topo (SVG em `/media/icons/`) e emoji de categoria nas seções H2
+  (quando o documento não usar âncoras).
+- Bloco de código com linguagem; tabela para comparação; diagrama quando explicar um fluxo.
+- Números, nomes e comandos **verificados no código** antes de serem escritos.
+
+### Verificação documental
+
+```bash
+python scripts/check_docs.py        # links e âncoras
+python scripts/check_references.py  # arquivos e símbolos citados existem
+python scripts/check_markdown.py    # estrutura do Markdown
+```
+
+## 13. Sincronização obrigatória
 
 Code, test, index, diagram and documentation move **juntos**. Ao encerrar a tarefa:
 
@@ -321,7 +375,7 @@ Code, test, index, diagram and documentation move **juntos**. Ao encerrar a tare
 
 ---
 
-## 13. Checklist de execução
+## 14. Checklist de execução
 
 ```markdown
 - [ ] Etapa A — diagnóstico (o que existe, o que falha, o que é risco)
@@ -330,6 +384,7 @@ Code, test, index, diagram and documentation move **juntos**. Ao encerrar a tare
 - [ ] Etapa D — padronização (cabeçalhos, docstrings, nomes)
 - [ ] Etapa E — testes (novos, regressão, suíte completa)
 - [ ] Etapa F — auditoria final (docs, links, consistência, commit)
+- [ ] Documentação revisada: fatos, índices, diagramas, links e regras
 ```
 
 O estado da tarefa vive em [`internal/tarefas/`](/internal/tarefas/) (modelo:
@@ -337,7 +392,7 @@ O estado da tarefa vive em [`internal/tarefas/`](/internal/tarefas/) (modelo:
 
 ---
 
-## 14. Referência rápida de comandos
+## 15. Referência rápida de comandos
 
 | Comando | O que faz |
 |---------|-----------|
@@ -349,6 +404,9 @@ O estado da tarefa vive em [`internal/tarefas/`](/internal/tarefas/) (modelo:
 | `callidus-api` | sobe a API + interface em `http://127.0.0.1:8765` |
 | `python scripts/resume.py check` | confere o `resume.md` contra o código |
 | `python scripts/resume.py faltando` | mostra o que falta descrever no `resume.md` |
+| `python scripts/check_docs.py` | confere links e âncoras da documentação |
+| `python scripts/check_references.py` | confere arquivos e símbolos citados nos documentos |
+| `python scripts/check_markdown.py` | confere a estrutura dos documentos Markdown |
 
 ---
 
