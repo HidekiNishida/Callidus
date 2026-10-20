@@ -1,5 +1,13 @@
-# tests/test_agent_hierarchy_e2e.py — hierarquia recursiva de agentes, de ponta a ponta
-"""O cenário completo do enunciado, com estado real e banco real.
+"""
+Arquivo: tests/test_agent_hierarchy_e2e.py
+Nome: test_agent_hierarchy_e2e.py
+Propósito: Verificar o cenário completo de três gerações de agentes, com estado real e banco real.
+Responsabilidade: camada de testes — percurso de ponta a ponta da hierarquia de agentes: executar, suspender, consultar, retomar e descartar.
+Componentes: árvore avô–pai–filho–neto, cenário completo, consulta a agente suspenso, sobrevivência a reinício, retomada após falha, reaproveitamento de resultado, decomposição real e descarte preservador.
+Dependências: agent.orchestrator.runner, agent.services.agent_service, agent.services.query_service, agent.services.run_service, agent.persistence.database e fixtures de sample_project.
+Observações: banco SQLite temporário por teste; o cenário de decomposição copia o fixture sample_project para tmp_path.
+
+O cenário completo do enunciado, com estado real e banco real.
 
 Avô → pai → filho → neto. O neto persiste as descobertas e é suspenso; o filho
 prossegue e também é suspenso; o pai consulta o filho; o filho recupera a informação
@@ -9,6 +17,7 @@ encerrados; os artefatos permanecem.
 O teste também cobre o que costuma quebrar: reinício do processo, retomada depois de
 falha e reuso de resultado já disponível (sem reanalisar o que já se sabe).
 """
+
 from __future__ import annotations
 
 import shutil
@@ -33,6 +42,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def factory(tmp_path: Path) -> sessionmaker[Session]:
+    """Cria o engine e a fábrica de sessões sobre um banco temporário."""
     settings = Settings(data_dir=tmp_path / "data")
     engine = init_db(settings=settings)
     return build_session_factory(engine)
@@ -40,6 +50,7 @@ def factory(tmp_path: Path) -> sessionmaker[Session]:
 
 @pytest.fixture
 def session(factory) -> Session:
+    """Abre uma sessão do banco temporário e a fecha ao fim do teste."""
     sess = factory()
     yield sess
     sess.close()
@@ -81,6 +92,7 @@ def _three_generations(session: Session):
 
 @pytest.mark.asyncio
 async def test_cenario_completo_de_tres_geracoes(session: Session):
+    """O ciclo completo — netos persistem descobertas, os agentes são suspensos, o pai consulta o filho e os artefatos permanecem — conclui com o trabalho entregue."""
     agents = AgentService(session)
     queries = QueryService(session)
     ids = _three_generations(session)
@@ -207,6 +219,7 @@ async def test_o_estado_sobrevive_a_reinicio_do_processo(factory):
 
 @pytest.mark.asyncio
 async def test_a_retomada_apos_falha_nao_duplica_a_acao(session: Session):
+    """Depois de falhar, a retomada retoma do mesmo ponto sem avançar o trabalho por conta própria."""
     agents = AgentService(session)
     ids = _three_generations(session)
     net = ids["agents"]["neto"]
@@ -289,6 +302,7 @@ async def test_a_decomposicao_real_cria_a_hierarquia_de_agentes(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_o_descartar_preserva_tarefa_e_evidencias(session: Session):
+    """Descartar o agente não apaga a tarefa nem as evidências registradas nela."""
     agents = AgentService(session)
     ids = _three_generations(session)
     net = ids["agents"]["neto"]

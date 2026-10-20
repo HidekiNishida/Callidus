@@ -1,10 +1,14 @@
-# tests/test_skills_evaluation.py — Avaliação comparativa da execução com Skills, estratégia e integridade
-#
-# Compara cenários que a tarefa "Evolução do Agente Local" exigiu:
-#   1. tarefa simples (uma etapa) vs. tarefa multinível (decomposição recursiva);
-#   2. falha de skill (catálogo com skill inválida) — o agente continua funcionando;
-#   3. falha opcional vs. falha obrigatória — conclusões diferentes;
-#   4. esgotamento de orçamento — o bloco de skills é cortado, o obrigatório nunca.
+"""
+Arquivo: tests/test_skills_evaluation.py
+Nome: test_skills_evaluation.py
+Propósito: verificar a avaliação comparativa da execução com skills, estratégia e integridade do contexto.
+Responsabilidade: camada de testes — comportamento da decomposição adaptativa, do catálogo de skills, da consolidação e do ciclo de recuperação da verificação.
+Componentes: tarefa simples contra tarefa multinível, limite de profundidade, skill quebrada, renderização dentro do orçamento, falha opcional contra falha obrigatória, corte do bloco de skills por orçamento, estouro de orçamento, diagnóstico e plano de recuperação, assinatura de recuperação e ida e volta da estratégia.
+Dependências: agent.orchestrator (atomizer, consolidation, strategy), agent.context (budget, operation_builder, assembler), agent.skills (discovery, selector), agent.verification.recovery, agent.persistence.database, pytest.
+Observações: banco e diretório de skills temporários por teste; o modelo não é chamado em nenhum cenário.
+
+Avaliação comparativa da execução com Skills, estratégia e integridade  Compara cenários que a tarefa "Evolução do Agente Local" exigiu: 1. tarefa simples (uma etapa) vs. tarefa multinível (decomposição recursiva); 2. falha de skill (catálogo com skill inválida) — o agente continua funcionando; 3. falha opcional vs. falha obrigatória — conclusões diferentes; 4. esgotamento de orçamento — o bloco de skills é cortado, o obrigatório nunca.
+"""
 from pathlib import Path
 import uuid
 
@@ -36,6 +40,7 @@ from agent.verification.recovery import (
 
 
 def _session(tmp_path: Path):
+    """Cria a fábrica de sessões sobre um diretório de dados temporário."""
     settings = Settings(data_dir=tmp_path / "data")
     factory = build_session_factory(init_db(settings=settings))
     return factory
@@ -47,6 +52,7 @@ def _session(tmp_path: Path):
 
 
 def test_simple_task_is_single_step_while_complex_task_decomposes():
+    """Uma tarefa simples fica em um passo, enquanto a complexa é decomposta em uma sequência maior."""
     strategist = ProfessionalStrategist()
 
     simple = strategist.analyze("liste os arquivos do projeto")
@@ -82,6 +88,7 @@ def test_simple_task_is_single_step_while_complex_task_decomposes():
 
 def test_multilevel_decomposition_is_bounded_by_depth():
     # No limite de profundidade, a decomposição recursiva para em uma etapa atômica.
+    """A decomposição recursiva para em uma etapa atômica quando a profundidade máxima é atingida."""
     deep = adaptive_decompose_operation(
         "Corrigir falha de conexão no banco",
         lead_specialty="debugging_root_cause",
@@ -101,6 +108,7 @@ def test_multilevel_decomposition_is_bounded_by_depth():
 
 
 def test_depth_guard_blocks_cycles_and_deep_trees():
+    """O guardião de profundidade recusa ultrapassar o limite e repetir uma etapa já feita."""
     assert depth_guard(depth=0, max_depth=3) is None
     assert "profundidade" in (depth_guard(depth=3, max_depth=3) or "")
     assert "repetiria" in (depth_guard(depth=0, max_depth=3, parent_title="Corrigir bug", sibling_titles=["corrigir bug"]) or "")
@@ -112,6 +120,7 @@ def test_depth_guard_blocks_cycles_and_deep_trees():
 
 
 def test_broken_skill_in_catalog_does_not_break_the_agent(tmp_path: Path):
+    """Uma skill inválida no catálogo é reportada, e a seleção continua funcionando com o resto."""
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     (skills_dir / "quebrada.md").write_text(
@@ -130,6 +139,7 @@ def test_broken_skill_in_catalog_does_not_break_the_agent(tmp_path: Path):
 
 
 def test_render_below_budget_never_exceeds_limit():
+    """A renderização das skills respeita o limite de caracteres pedido."""
     selector = SkillSelector(SkillRegistry())
     matches = selector.select("implementar endpoint de exportação e criar testes", max_skills=2)
     rendered = selector.render_selected_skills(matches, max_chars=500)
@@ -143,6 +153,7 @@ def test_render_below_budget_never_exceeds_limit():
 
 
 def _make_tree(session, tmp_path: Path, *, optional: bool):
+    """Monta um pai com uma etapa filha, opcional ou não, e devolve os serviços."""
     ts = TaskService(session)
     ps = ProjectService(session)
     project = ps.create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
@@ -161,6 +172,7 @@ def _make_tree(session, tmp_path: Path, *, optional: bool):
 
 
 def test_mandatory_failure_blocks_parent_but_optional_failure_does_not(tmp_path: Path):
+    """A falha de uma etapa obrigatória impede a conclusão do pai; a de uma opcional gera apenas ressalva."""
     factory = _session(tmp_path)
 
     # (a) obrigatória: o pai NÃO conclude.
@@ -203,6 +215,7 @@ def test_mandatory_failure_blocks_parent_but_optional_failure_does_not(tmp_path:
 
 
 def test_skills_block_respects_model_budget(tmp_path: Path):
+    """O bloco de skills respeita o orçamento de contexto do modelo e deixa a escolha registrada."""
     factory = _session(tmp_path)
     with factory() as session:
         ps = ProjectService(session)
@@ -263,6 +276,7 @@ def test_budget_overflow_never_drops_required_components(tmp_path: Path):
 
 
 def test_recovery_diagnoses_syntax_and_test_failures():
+    """O diagnóstico distingue erro de sintaxe, reprovação de teste, artefato ausente e falha de ambiente."""
     syntax = diagnose_verification_failure(
         verifier="syntax",
         summary="sintaxe inválida em app.py",
@@ -303,6 +317,7 @@ def test_recovery_diagnoses_syntax_and_test_failures():
 
 
 def test_recovery_plan_respects_attempt_budget():
+    """O plano de recuperação repete enquanto há orçamento e bloqueia quando as tentativas acabam."""
     diagnosis = diagnose_verification_failure(
         verifier="pytest",
         summary="pytest falhou",
@@ -319,6 +334,7 @@ def test_recovery_plan_respects_attempt_budget():
 
 
 def test_recovery_signature_ignores_numbers_and_ids():
+    """A assinatura da recuperação ignora números e identificadores, reconhecendo a mesma falha."""
     diagnosis = diagnose_verification_failure(
         verifier="pytest",
         summary="pytest falhou",
@@ -337,6 +353,7 @@ def test_recovery_signature_ignores_numbers_and_ids():
 
 
 def test_strategy_roundtrip_through_metadata():
+    """A estratégia sobrevive à ida e volta pela representação serializada, e dados inválidos são recusados."""
     strategist = ProfessionalStrategist()
     strategy = strategist.analyze("corrigir bug de KeyError no processamento de eventos")
     restored = ProfessionalStrategy.from_dict(strategy.as_dict())

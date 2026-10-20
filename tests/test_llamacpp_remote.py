@@ -1,4 +1,13 @@
-# tests/test_llamacpp_remote.py — llama.cpp local e remoto (API compatível com OpenAI)
+"""
+Arquivo: tests/test_llamacpp_remote.py
+Nome: test_llamacpp_remote.py
+Propósito: Verificar o provedor llama.cpp apontado para um servidor remoto.
+Responsabilidade: camada de testes — endpoint compatível com OpenAI, credencial por variável e por arquivo, ferramentas, streaming interrompido, autenticação e listagem de modelos.
+Componentes: chamada no endpoint de chat, envio do bearer token, leitura da chave de arquivo, envio de ferramentas, stream cortado, erro de autenticação e listagem de modelos.
+Dependências: agent.providers.llamacpp, agent.providers.base e o fixture mock_http de transporte.
+Observações: nenhuma chamada de rede: o transporte HTTP é substituído por um mock que devolve respostas fixas.
+"""
+
 from __future__ import annotations
 
 import json
@@ -22,14 +31,17 @@ REQUEST = ChatCompletionRequest(
 
 
 def _body(request: httpx.Request) -> dict:
+    """Decodifica o corpo JSON enviado na requisição."""
     return json.loads(request.content)
 
 
 @pytest.mark.asyncio
 async def test_remote_server_is_called_on_the_openai_endpoint(mock_http):
+    """A chamada vai para o endpoint de chat do servidor remoto, com o modelo e o limite de tokens."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que captura url e corpo da requisição ao servidor remoto."""
         seen["url"] = str(request.url)
         seen["body"] = _body(request)
         return httpx.Response(
@@ -50,9 +62,11 @@ async def test_remote_server_is_called_on_the_openai_endpoint(mock_http):
 
 @pytest.mark.asyncio
 async def test_api_key_is_sent_as_bearer(mock_http):
+    """A chave configurada é enviada como token bearer."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que captura o cabeçalho de autorização enviado."""
         seen["auth"] = request.headers.get("authorization")
         return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
 
@@ -64,11 +78,13 @@ async def test_api_key_is_sent_as_bearer(mock_http):
 
 @pytest.mark.asyncio
 async def test_api_key_file_is_read(tmp_path, mock_http):
+    """A chave lida de arquivo é enviada como token bearer."""
     key_file = tmp_path / "key.txt"
     key_file.write_text("token-do-arquivo\n", encoding="utf-8")
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que captura o cabeçalho de autorização com a chave lida de arquivo."""
         seen["auth"] = request.headers.get("authorization")
         return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
 
@@ -80,9 +96,11 @@ async def test_api_key_file_is_read(tmp_path, mock_http):
 
 @pytest.mark.asyncio
 async def test_tools_are_sent(mock_http):
+    """As ferramentas declaradas são enviadas na requisição."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que captura o corpo com as ferramentas declaradas."""
         seen["body"] = _body(request)
         return httpx.Response(200, json={"choices": [{"message": {"content": ""}}]})
 
@@ -99,7 +117,9 @@ async def test_tools_are_sent(mock_http):
 
 @pytest.mark.asyncio
 async def test_streaming_cut_before_the_end_fails(mock_http):
+    """Um stream interrompido antes do fim é reportado como erro do provedor."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que devolve um stream SSE interrompido antes do fim."""
         return httpx.Response(200, content=b'data: {"choices":[{"delta":{"content":"parcial"}}]}\n\n')
 
     mock_http("llamacpp", handler)
@@ -111,7 +131,9 @@ async def test_streaming_cut_before_the_end_fails(mock_http):
 
 @pytest.mark.asyncio
 async def test_authentication_failure_is_reported(mock_http):
+    """A resposta 403 é reportada como erro de autenticação do provedor."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que devolve 403 ao servidor remoto."""
         return httpx.Response(403, text="forbidden")
 
     mock_http("llamacpp", handler)
@@ -122,7 +144,9 @@ async def test_authentication_failure_is_reported(mock_http):
 
 @pytest.mark.asyncio
 async def test_models_are_listed(mock_http):
+    """A listagem de modelos consulta o endpoint de modelos e devolve os identificadores."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que confirma o endpoint de modelos e devolve a lista."""
         assert request.url.path == "/v1/models"
         return httpx.Response(200, json={"data": [{"id": "meu-gguf"}]})
 

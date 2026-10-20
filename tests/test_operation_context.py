@@ -1,4 +1,12 @@
-# tests/test_operation_context.py
+"""
+Arquivo: tests/test_operation_context.py
+Nome: test_operation_context.py
+Propósito: verificar que o contexto de operação é montado e persistido para uma tarefa.
+Responsabilidade: camada de testes — comportamento do construtor de contexto de operação (orçamento e instantâneo).
+Componentes: montagem do contexto de uma tarefa, cálculo do orçamento de tokens e persistência do instantâneo.
+Dependências: agent.context.operation_builder.OperationContextBuilder, agent.services (project, task), agent.persistence.database, pytest.
+Observações: banco SQLite temporário por teste (tmp_path) e nenhum serviço externo é usado.
+"""
 from pathlib import Path
 
 import pytest
@@ -14,6 +22,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     settings = Settings(data_dir=tmp_path / "data")
     engine = init_db(settings=settings)
     factory = build_session_factory(engine)
@@ -23,6 +32,7 @@ def session(tmp_path: Path):
 
 
 def test_context_snapshot_persisted(session, tmp_path: Path):
+    """O contexto da tarefa é montado com orçamento positivo de tokens e o instantâneo é persistido com seus componentes."""
     project = ProjectService(session).create_project(
         ProjectCreate(name="ctx", root_path=str(tmp_path))
     )

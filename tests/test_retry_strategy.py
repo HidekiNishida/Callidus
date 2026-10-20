@@ -1,4 +1,14 @@
-# tests/test_retry_strategy.py — nova tentativa leva o motivo da falha e nunca repete o mesmo prompt
+"""
+Arquivo: tests/test_retry_strategy.py
+Nome: test_retry_strategy.py
+Propósito: verificar que a nova tentativa leva o motivo da falha e nunca repete o mesmo prompt.
+Responsabilidade: camada de testes — comportamento da estratégia de retentativa e do resumo das falhas.
+Componentes: resumo de falha com motivo e dica, falha de verificação com o fim da saída, retentativa com o motivo e parada por repetição, resposta truncada com limite de saída maior.
+Dependências: agent.orchestrator.runner.RunOrchestrator, agent.domain (failures, enums, schemas), agent.services (project, run, task), agent.persistence.database, pytest.
+Observações: banco temporário por teste; o modelo é substituído por um provedor falso que devolve respostas programadas.
+
+nova tentativa leva o motivo da falha e nunca repete o mesmo prompt
+"""
 from pathlib import Path
 
 import pytest
@@ -22,6 +32,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -29,26 +40,31 @@ def session(tmp_path: Path):
 
 
 class _Scripted:
+    """Provedor falso que devolve respostas programadas e registra os prompts recebidos."""
     name = "mock"
     last_usage = None
 
     def __init__(self, replies: list[str]) -> None:
+        """Guarda as respostas programadas e prepara os registros de prompt e limite de tokens."""
         self.replies = replies
         self.prompts: list[str] = []
         self.num_predict: list[int | None] = []
 
     async def chat(self, request):
+        """Provedor falso: registra os prompts recebidos e devolve a resposta programada."""
         self.prompts.append("\n".join(m.content for m in request.messages))
         self.num_predict.append(request.profile.generation.get("num_predict"))
         reply = self.replies[min(len(self.prompts) - 1, len(self.replies) - 1)]
 
         class _R:
+            """Resposta falsa que carrega a resposta programada."""
             content = reply
 
         return _R()
 
 
 def _change(session, tmp_path: Path, provider, monkeypatch):
+    """Prepara uma etapa de alteração de arquivo em execução, com o provedor falso já conectado."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="Objetivo", objective="Objetivo"))
@@ -73,6 +89,7 @@ def _change(session, tmp_path: Path, provider, monkeypatch):
 
 
 def test_failure_summary_has_reason_and_hint():
+    """O resumo da falha traz o motivo e a dica correspondente, e é vazio sem falhas."""
     history = [Failure(FailureCategory.RECOVERABLE, FailureCause.INVALID_OUTPUT, "JSON inválido").as_dict()]
     text = describe_failures(history)
     assert "invalid_output: JSON inválido" in text
@@ -81,6 +98,7 @@ def test_failure_summary_has_reason_and_hint():
 
 
 def test_verification_failure_keeps_the_end_of_the_output():
+    """A falha de verificação guarda o fim da saída, onde está a asserção que reprovou."""
     failure = classify_verification(False, "pytest falhou", "x" * 1000 + "\nE assert 1 == 2")
     assert failure.detail.startswith("pytest falhou: ")
     assert failure.detail.endswith("E assert 1 == 2")
@@ -89,6 +107,7 @@ def test_verification_failure_keeps_the_end_of_the_output():
 
 @pytest.mark.asyncio
 async def test_retries_carry_the_reason_and_stop_when_the_same_error_repeats(session, tmp_path, monkeypatch):
+    """As retentativas carregam o motivo da falha anterior, nunca repetem o prompt e param quando o mesmo erro se repete."""
     provider = _Scripted(["Claro, vou escrever o arquivo."])
     run, change = _change(session, tmp_path, provider, monkeypatch)
 
@@ -109,6 +128,7 @@ async def test_retries_carry_the_reason_and_stop_when_the_same_error_repeats(ses
 
 @pytest.mark.asyncio
 async def test_truncated_reply_raises_the_output_limit_on_retry(session, tmp_path, monkeypatch):
+    """Uma resposta truncada faz a retentativa aumentar o limite de saída e concluir a escrita."""
     provider = _Scripted(['{"path": "a.txt", "content": "o', '{"path": "a.txt", "content": "ok"}'])
     run, change = _change(session, tmp_path, provider, monkeypatch)
 

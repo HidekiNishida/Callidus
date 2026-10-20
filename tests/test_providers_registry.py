@@ -1,6 +1,15 @@
-# tests/test_providers_registry.py — configuração declarativa de provedores
-from __future__ import annotations
+"""
+Arquivo: tests/test_providers_registry.py
+Nome: test_providers_registry.py
+Propósito: verificar a configuração declarativa de provedores, da leitura do arquivo à construção de cada tipo.
+Responsabilidade: camada de testes — comportamento do catálogo de provedores (carga, validação e construção).
+Componentes: carga de YAML e JSON com interpolação de ambiente, valor padrão de variável, recusa de tipo, opção e URL inválidos, provedor padrão inexistente, arquivo ausente, construção por tipo e por ambiente, exemplo versionado e sigilo da credencial.
+Dependências: agent.providers.registry (ProviderCatalog, build_provider, catalog_for_settings, load_catalog, interpolate_text), agent.config.Settings, pytest.
+Observações: arquivos de configuração temporários e variáveis de ambiente definidas por monkeypatch; nenhuma credencial real é usada.
 
+configuração declarativa de provedores
+"""
+from __future__ import annotations
 import json
 from pathlib import Path
 
@@ -48,12 +57,14 @@ providers:
 
 
 def _write(tmp_path: Path, name: str, text: str) -> Path:
+    """Grava o conteúdo no arquivo indicado e devolve o caminho."""
     path = tmp_path / name
     path.write_text(text, encoding="utf-8")
     return path
 
 
 def test_yaml_config_is_loaded_with_env_interpolation(tmp_path, monkeypatch):
+    """O arquivo YAML é carregado com as variáveis de ambiente interpoladas na URL e nos demais campos."""
     monkeypatch.setenv("CALLIDUS_OLLAMA_URL", "https://vps.exemplo:11434")
     path = _write(tmp_path, "providers.yaml", YAML_CONFIG)
     catalog = load_catalog(path)
@@ -68,6 +79,7 @@ def test_yaml_config_is_loaded_with_env_interpolation(tmp_path, monkeypatch):
 
 
 def test_json_config_is_supported(tmp_path):
+    """Um arquivo de configuração em JSON também é carregado."""
     path = _write(
         tmp_path,
         "providers.json",
@@ -78,6 +90,7 @@ def test_json_config_is_supported(tmp_path):
 
 
 def test_missing_env_variable_is_a_configuration_error(tmp_path):
+    """Uma variável de ambiente ausente é reportada como erro de configuração, com o nome da variável."""
     path = _write(
         tmp_path,
         "providers.yaml",
@@ -89,6 +102,7 @@ def test_missing_env_variable_is_a_configuration_error(tmp_path):
 
 
 def test_env_variable_with_default_value(tmp_path, monkeypatch):
+    """Uma variável opcional sem valor usa o valor padrão declarado na configuração."""
     monkeypatch.delenv("CALLIDUS_OPCIONAL", raising=False)
     path = _write(
         tmp_path,
@@ -100,11 +114,13 @@ def test_env_variable_with_default_value(tmp_path, monkeypatch):
 
 
 def test_interpolation_keeps_value_when_variable_is_set(monkeypatch):
+    """A interpolação substitui a variável pelo valor definido no ambiente."""
     monkeypatch.setenv("X_TOKEN", "abc123")
     assert interpolate_text("Bearer ${X_TOKEN}") == "Bearer abc123"
 
 
 def test_unknown_provider_type_is_rejected(tmp_path):
+    """Um tipo de provedor desconhecido é recusado na carga do catálogo."""
     path = _write(tmp_path, "providers.yaml", "providers:\n  x:\n    type: inexistente\n")
     with pytest.raises(ProviderConfigError) as exc:
         load_catalog(path)
@@ -112,12 +128,14 @@ def test_unknown_provider_type_is_rejected(tmp_path):
 
 
 def test_unknown_option_is_rejected(tmp_path):
+    """Uma opção não suportada na especificação do provedor é recusada."""
     path = _write(tmp_path, "providers.yaml", "providers:\n  x:\n    type: ollama\n    cor: azul\n")
     with pytest.raises(ProviderConfigError):
         load_catalog(path)
 
 
 def test_default_provider_must_exist(tmp_path):
+    """O provedor padrão declarado precisa existir no catálogo."""
     path = _write(tmp_path, "providers.yaml", "default_provider: ausente\nproviders: {}\n")
     with pytest.raises(ProviderConfigError) as exc:
         load_catalog(path)
@@ -125,17 +143,20 @@ def test_default_provider_must_exist(tmp_path):
 
 
 def test_invalid_url_scheme_is_rejected(tmp_path):
+    """Uma URL com esquema inválido é recusada na carga do catálogo."""
     path = _write(tmp_path, "providers.yaml", "providers:\n  x:\n    type: ollama\n    base_url: ftp://host\n")
     with pytest.raises(ProviderConfigError):
         load_catalog(path)
 
 
 def test_missing_file_is_reported(tmp_path):
+    """Um arquivo de configuração inexistente é reportado como erro de configuração."""
     with pytest.raises(ProviderConfigError):
         load_catalog(tmp_path / "nao-existe.yaml")
 
 
 def test_catalog_is_built_from_settings(tmp_path, monkeypatch):
+    """O catálogo é montado a partir das configurações que apontam para o arquivo de configuração."""
     monkeypatch.setenv("CALLIDUS_OLLAMA_URL", "http://10.0.0.5:11434")
     path = _write(tmp_path, "providers.yaml", YAML_CONFIG)
     settings = Settings(provider_config_path=path)
@@ -144,6 +165,7 @@ def test_catalog_is_built_from_settings(tmp_path, monkeypatch):
 
 
 def test_build_provider_creates_each_type(tmp_path, monkeypatch):
+    """O catálogo constrói o provedor pedido, com o nome e o modelo declarados."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
     monkeypatch.setenv("CALLIDUS_OLLAMA_API_KEY", "ol-key")
     monkeypatch.setenv("CALLIDUS_OLLAMA_URL", "http://10.0.0.5:11434")
@@ -161,6 +183,7 @@ def test_build_provider_creates_each_type(tmp_path, monkeypatch):
 
 
 def test_build_provider_requires_api_key_env(monkeypatch):
+    """Construir um provedor sem a variável de ambiente da chave é erro de configuração."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     catalog = ProviderCatalog.from_mapping(
         {"providers": {"r": {"type": "openrouter", "api_key_env": "OPENROUTER_API_KEY"}}}
@@ -171,6 +194,7 @@ def test_build_provider_requires_api_key_env(monkeypatch):
 
 
 def test_build_provider_for_every_supported_type(monkeypatch):
+    """Cada tipo suportado de provedor é construído pela mesma fábrica."""
     monkeypatch.setenv("K", "v")
     settings = Settings()
     cases = {
@@ -193,6 +217,7 @@ def test_build_provider_for_every_supported_type(monkeypatch):
 
 
 def test_openai_compatible_requires_base_url():
+    """Um provedor compatível com OpenAI sem `base_url` é recusado na construção."""
     catalog = ProviderCatalog.from_mapping({"providers": {"p": {"type": "openai_compatible"}}})
     with pytest.raises(ProviderConfigError) as exc:
         catalog.build("p", Settings())
@@ -200,6 +225,7 @@ def test_openai_compatible_requires_base_url():
 
 
 def test_provider_spec_forbids_unknown_keys():
+    """A especificação do provedor recusa chaves desconhecidas."""
     with pytest.raises(Exception):
         ProviderCatalog.from_mapping({"providers": {"p": {"type": "ollama", "chave": "x"}}})
 
@@ -231,6 +257,7 @@ def test_shipped_example_configuration_is_valid(monkeypatch):
 
 
 def test_secret_is_not_written_into_the_spec_dump(tmp_path, monkeypatch):
+    """A credencial não aparece na representação da especificação do provedor."""
     monkeypatch.setenv("CALLIDUS_OLLAMA_API_KEY", "sk-super-secreta")
     monkeypatch.setenv("CALLIDUS_OLLAMA_URL", "http://10.0.0.5:11434")
     path = _write(tmp_path, "providers.yaml", YAML_CONFIG)

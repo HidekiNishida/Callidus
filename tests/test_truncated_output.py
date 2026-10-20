@@ -1,6 +1,15 @@
-# tests/test_truncated_output.py — resposta vazia por corte de tokens não trava o run
-from __future__ import annotations
+"""
+Arquivo: tests/test_truncated_output.py
+Nome: test_truncated_output.py
+Propósito: verificar que uma resposta vazia por corte de tokens não trava o run.
+Responsabilidade: camada de testes — comportamento da classificação de saída truncada e do alargamento do orçamento de saída.
+Componentes: classificação de corte no limite, saída vazia dentro do limite, ampliação do orçamento na tentativa seguinte e ampliação por estagnação sem pausar a run.
+Dependências: agent.orchestrator.runner.RunOrchestrator, agent.domain.failures, agent.services (project, run, task), agent.persistence.database, pytest.
+Observações: banco temporário por teste; o modelo é substituído por um falso que consome todo o orçamento de saída recebido.
 
+resposta vazia por corte de tokens não trava o run
+"""
+from __future__ import annotations
 from pathlib import Path
 
 import pytest
@@ -18,6 +27,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -31,11 +41,13 @@ class _Truncating:
     last_usage = None
 
     def __init__(self, budget: int = 1024, replies: list[str] | None = None) -> None:
+        """Guarda o orçamento de saída e as respostas programadas do modelo falso."""
         self.budget = budget
         self.replies = replies or []
         self.requests: list[tuple[int | None, int]] = []
 
     async def chat(self, request):
+        """Modelo falso: consome todo o orçamento de saída recebido e devolve a resposta programada."""
         num_predict = request.profile.generation.get("num_predict")
         reserve = request.profile.output_reserve
         self.requests.append((num_predict, reserve))
@@ -44,6 +56,7 @@ class _Truncating:
         used = int(num_predict or reserve)
 
         class _R:
+            """Resposta falsa que informa o consumo de todo o orçamento de saída."""
             content = reply
             completion_tokens_estimate = used
             prompt_tokens_estimate = 10
@@ -55,6 +68,7 @@ class _Truncating:
 
 
 def _change(session, tmp_path: Path, provider, monkeypatch):
+    """Prepara uma etapa de alteração de arquivo em execução, com o modelo falso já conectado."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="Objetivo", objective="Objetivo"))
@@ -79,6 +93,7 @@ def _change(session, tmp_path: Path, provider, monkeypatch):
 
 
 def test_resposta_vazia_no_limite_e_classificada_como_corte():
+    """Uma resposta vazia com o orçamento esgotado é classificada como corte de saída."""
     failure = classify_model_output("", "resposta vazia", None, budget=1024, used_tokens=1024)
     assert failure is not None
     assert failure.cause == FailureCause.TRUNCATED_OUTPUT
@@ -87,6 +102,7 @@ def test_resposta_vazia_no_limite_e_classificada_como_corte():
 
 
 def test_resposta_vazia_sem_atingir_o_limite_continua_sendo_saida_invalida():
+    """Uma resposta vazia que não atingiu o limite continua classificada como saída inválida."""
     failure = classify_model_output("", "resposta vazia", None, budget=1024, used_tokens=12)
     assert failure is not None
     assert failure.cause == FailureCause.INVALID_OUTPUT
@@ -94,6 +110,7 @@ def test_resposta_vazia_sem_atingir_o_limite_continua_sendo_saida_invalida():
 
 @pytest.mark.asyncio
 async def test_tentativa_seguinte_amplia_o_orcamento_de_saida(session, tmp_path, monkeypatch):
+    """A tentativa seguinte recebe um orçamento de saída maior que o da anterior."""
     provider = _Truncating(budget=1024)
     run, change = _change(session, tmp_path, provider, monkeypatch)
     orchestrator = RunOrchestrator(session, Settings(data_dir=tmp_path / "data"))
@@ -116,6 +133,7 @@ async def test_tentativa_seguinte_amplia_o_orcamento_de_saida(session, tmp_path,
 
 @pytest.mark.asyncio
 async def test_estagnacao_por_corte_amplia_o_orcamento_sem_pausar(session, tmp_path, monkeypatch):
+    """A estagnação por corte amplia o orçamento de saída e a run segue sem pausar."""
     provider = _Truncating(budget=1024)
     run, change = _change(session, tmp_path, provider, monkeypatch)
     orchestrator = RunOrchestrator(session, Settings(data_dir=tmp_path / "data"))

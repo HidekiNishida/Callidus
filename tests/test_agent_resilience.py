@@ -1,5 +1,13 @@
-# tests/test_agent_resilience.py — falhas e acessibilidade do resultado
-"""O que acontece quando algo dá errado no meio do caminho.
+"""
+Arquivo: tests/test_agent_resilience.py
+Nome: test_agent_resilience.py
+Propósito: Verificar o que acontece quando algo falha no meio do caminho na hierarquia de agentes.
+Responsabilidade: camada de testes — falhas de execução, suspensão, retomada, consulta e descarte, e a não duplicação do trabalho já feito.
+Componentes: falha do provedor, checkpoint preservado, slot do executor, suspensão e descarte que falham, retomada, limite de tentativas da consulta, consulta refeita e descarte com purge.
+Dependências: agent.services.agent_service, agent.services.query_service, agent.providers.base e provedores falsos que falham ou respondem.
+Observações: banco temporário por teste e provedores falsos; as falhas de persistência são simuladas substituindo o método interno de status.
+
+O que acontece quando algo dá errado no meio do caminho.
 
 Cobre os cinco pontos onde a hierarquia pode quebrar:
 
@@ -14,6 +22,7 @@ E verifica a propriedade de não-duplicação: retomar não reexecuta o que já 
 Por fim, confere que resultado, evidências e artefatos continuam acessíveis depois de
 suspender, concluir e descartar o agente.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -40,12 +49,14 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def factory(tmp_path: Path) -> sessionmaker[Session]:
+    """Cria o engine e a fábrica de sessões sobre um banco temporário."""
     settings = Settings(data_dir=tmp_path / "data")
     return build_session_factory(init_db(settings=settings))
 
 
 @pytest.fixture
 def session(factory) -> Session:
+    """Abre uma sessão do banco temporário e a fecha ao fim do teste."""
     sess = factory()
     yield sess
     sess.close()
@@ -53,6 +64,7 @@ def session(factory) -> Session:
 
 @pytest.fixture
 def arvore(session: Session):
+    """Cria um projeto com uma tarefa pai e uma filha, com os respectivos agentes."""
     project = ProjectService(session).create_project(
         ProjectCreate(name="resiliencia", root_path="/tmp/resiliencia")
     )
@@ -77,27 +89,34 @@ class _ProvedorQueFalha(LLMProvider):
     name = "quebrado"
 
     def __init__(self) -> None:
+        """Zera o contador de chamadas ao provedor."""
         self.chamadas = 0
 
     async def list_models(self):
+        """Declara que o provedor não oferece nenhum modelo."""
         return []
 
     async def _chat(self, request):
+        """Conta a chamada e estoura o erro do provedor."""
         self.chamadas += 1
         raise RuntimeError("provedor caiu no meio da inferência")
 
 
 class _ProvedorQueResponde(LLMProvider):
+    """Provedor falso que devolve sempre o mesmo texto."""
     name = "bom"
 
     def __init__(self, texto: str = "A causa foi o import removido") -> None:
+        """Guarda o texto da resposta e zera o contador de chamadas."""
         self.texto = texto
         self.chamadas = 0
 
     async def list_models(self):
+        """Declara que o provedor não oferece nenhum modelo."""
         return []
 
     async def _chat(self, request):
+        """Conta a chamada e devolve a resposta fixa."""
         self.chamadas += 1
         return ChatCompletionResponse(content=self.texto)
 
@@ -106,6 +125,7 @@ class _ProvedorQueResponde(LLMProvider):
 
 
 def test_a_falha_da_execucao_preserva_o_checkpoint(session: Session, arvore):
+    """A falha da execução marca o agente como falhado e mantém o checkpoint de onde parou."""
     agents = AgentService(session)
     filho = arvore["agents"]["filho"]
     agents.start_execution(filho.id)
@@ -128,6 +148,7 @@ def test_a_falha_da_execucao_nao_prende_o_slot_do_executor():
     from agent.services.executor import get_executor, reset_executor
 
     async def cenario():
+        """Cenário assíncrono: a inferência que estoura libera o slot e é contada como falha."""
         reset_executor()
         executor = get_executor()
         provider = _ProvedorQueFalha()
@@ -151,6 +172,7 @@ def test_a_falha_da_execucao_nao_prende_o_slot_do_executor():
 
 
 def test_a_suspensao_grava_o_ponto_exato_de_parada(session: Session, arvore):
+    """A suspensão registra no checkpoint o passo, o motivo e o instante da parada."""
     agents = AgentService(session)
     filho = arvore["agents"]["filho"]
     agents.start_execution(filho.id)
@@ -174,6 +196,7 @@ def test_a_suspensao_que_falha_nao_deixa_estado_meio_consumido(session: Session,
     original = AgentService._set_execution_status
 
     def _explode(self, execution, target, error=None):
+        """Substitui a troca de status para estourar apenas na suspensão e delegar o resto."""
         if target == ExecutionStatus.SUSPENDED:
             raise RuntimeError("falha ao persistir o estado")
         return original(self, execution, target, error=error)
@@ -196,6 +219,7 @@ def test_a_suspensao_que_falha_nao_deixa_estado_meio_consumido(session: Session,
 
 
 def test_a_retomada_apos_falha_preserva_o_ponto_de_parada(session: Session, arvore):
+    """Retomar depois de falhar reinicia a execução no mesmo passo, com a tentativa incrementada."""
     agents = AgentService(session)
     filho = arvore["agents"]["filho"]
     agents.start_execution(filho.id)
@@ -228,6 +252,7 @@ def test_a_retomada_nao_reexecuta_acao_ja_concluida(session: Session, arvore):
 
 @pytest.mark.asyncio
 async def test_a_falha_da_inferencia_nao_corrompe_a_consulta(session: Session, arvore):
+    """A inferência que estoura devolve a consulta a PENDING, com a tentativa contada e sem resposta."""
     queries = QueryService(session)
     pai = arvore["agents"]["pai"]
     filho = arvore["agents"]["filho"]
@@ -270,6 +295,7 @@ async def test_a_tentativa_falha_ao_atingir_o_limite(session: Session, arvore):
 
 @pytest.mark.asyncio
 async def test_a_consulta_refeita_apos_falha_consegue_responder(session: Session, arvore):
+    """A consulta refeita depois da falha é respondida na segunda tentativa."""
     queries = QueryService(session)
     pai = arvore["agents"]["pai"]
     filho = arvore["agents"]["filho"]
@@ -309,6 +335,7 @@ async def test_a_consulta_a_agente_descartado_responde_sem_evidencia(session: Se
 
 
 def test_o_descarte_que_falha_nao_apaga_nada(session: Session, arvore):
+    """O descarte que falha deixa o agente ativo e as descobertas intactas."""
     agents = AgentService(session)
     filho = arvore["agents"]["filho"]
     agents.start_execution(filho.id)
@@ -318,6 +345,7 @@ def test_o_descarte_que_falha_nao_apaga_nada(session: Session, arvore):
     original = AgentService._set_execution_status
 
     def _explode(self, execution, target, error=None):
+        """Substitui a troca de status para estourar apenas no descarte e delegar o resto."""
         if target == ExecutionStatus.DISCARDED:
             raise RuntimeError("falha ao descartar")
         return original(self, execution, target, error=error)
@@ -340,6 +368,7 @@ def test_o_descarte_que_falha_nao_apaga_nada(session: Session, arvore):
 
 
 def test_resultado_e_evidencias_apos_suspender(session: Session, arvore):
+    """Depois de suspender, o resultado consolidado e as evidências da tarefa continuam no banco."""
     agents = AgentService(session)
     filho = arvore["agents"]["filho"]
     task = session.get(TaskModel, arvore["tasks"]["filho"].id)
@@ -362,6 +391,7 @@ def test_resultado_e_evidencias_apos_suspender(session: Session, arvore):
 
 
 def test_resultado_e_evidencias_apos_concluir(session: Session, arvore):
+    """Depois de concluir, o resultado consolidado e as evidências da tarefa continuam no banco."""
     agents = AgentService(session)
     filho = arvore["agents"]["filho"]
     task = session.get(TaskModel, arvore["tasks"]["filho"].id)
@@ -383,6 +413,7 @@ def test_resultado_e_evidencias_apos_concluir(session: Session, arvore):
 
 
 def test_resultado_e_evidencias_apos_descartar(session: Session, arvore):
+    """Depois de descartar, o resultado e as evidências ficam, mas o estado recuperável é liberado."""
     agents = AgentService(session)
     filho = arvore["agents"]["filho"]
     task = session.get(TaskModel, arvore["tasks"]["filho"].id)
@@ -412,6 +443,7 @@ def test_resultado_e_evidencias_apos_descartar(session: Session, arvore):
 
 
 def test_o_descarte_com_purge_apaga_o_agente_mas_nao_a_tarefa(session: Session, arvore):
+    """O descarte com purge remove as linhas do agente e mantém a tarefa."""
     agents = AgentService(session)
     filho = arvore["agents"]["filho"]
     task_id = arvore["tasks"]["filho"].id

@@ -1,4 +1,14 @@
-# tests/test_plan_validation.py — validação do plano antes da execução (cenários 1–9 da especificação)
+"""
+Arquivo: tests/test_plan_validation.py
+Nome: test_plan_validation.py
+Propósito: verificar a validação do plano antes da execução: cobertura de requisitos, dependências e reparo das falhas.
+Responsabilidade: camada de testes — comportamento do veredito do plano, do reparo automático e do replanejamento.
+Componentes: cobertura completa, requisito não coberto, tarefa sem critério verificável, dependências circulares ou inexistentes, dependência de tarefa cancelada, dependência externa, replanejamento e bloqueio por plano inviável.
+Dependências: agent.orchestrator (plan_validation, decomposition, requirements, replan, runner), agent.services (project, run, task), agent.persistence (database, models), pytest.
+Observações: banco SQLite temporário por teste (tmp_path) e provedor de modelo mock; nenhum serviço externo é chamado.
+
+validação do plano antes da execução (cenários 1–9 da especificação)
+"""
 from pathlib import Path
 
 import pytest
@@ -28,6 +38,7 @@ TWO = "Pedido:\n- criar a.py\n- criar b.py"
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -35,6 +46,7 @@ def session(tmp_path: Path):
 
 
 def _root(session, tmp_path, objective=TWO):
+    """Cria o projeto e a tarefa raiz em planejamento, já com os requisitos garantidos."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     root = TaskService(session).create_task(project.id, TaskCreate(title="Raiz", objective=objective))
     root.status = TaskStatus.PLANNING.value
@@ -43,6 +55,7 @@ def _root(session, tmp_path, objective=TWO):
 
 
 def _write(title, req, path):
+    """Monta a especificação de uma subtarefa que cobre um requisito e tem verificação por arquivo."""
     return SubTaskSpec(
         title=title,
         objective=f"criar {path}",
@@ -58,6 +71,7 @@ FINAL = SubTaskSpec(title="Resposta", objective="resumir", metadata={"final_answ
 
 
 def _apply(session, project, parent, specs, **kwargs):
+    """Sanitiza e aplica a decomposição, e devolve o resultado da validação com o reparo."""
     plan, issues = sanitize_spec(DecompositionResult(subtasks=specs))
     apply_decomposition(session, project.id, parent.id, plan)
     session.flush()
@@ -68,6 +82,7 @@ def _apply(session, project, parent, specs, **kwargs):
 
 
 def test_full_coverage_is_valid(session, tmp_path):
+    """Um plano que cobre todos os requisitos é considerado válido e cada requisito tem um único responsável."""
     project, root = _root(session, tmp_path)
     result = _apply(session, project, root, [_write("A", "R1", "a.py"), _write("B", "R2", "b.py"), FINAL])
 
@@ -77,6 +92,7 @@ def test_full_coverage_is_valid(session, tmp_path):
 
 
 def test_uncovered_requirement_is_fixed_before_running(session, tmp_path):
+    """Um requisito sem cobertura gera uma etapa que o atende, e a resposta final passa a depender dela."""
     project, root = _root(session, tmp_path)
     result = _apply(session, project, root, [_write("A", "R1", "a.py"), FINAL])
 
@@ -90,6 +106,7 @@ def test_uncovered_requirement_is_fixed_before_running(session, tmp_path):
 
 
 def test_task_without_verifiable_criteria_is_flagged(session, tmp_path):
+    """Uma tarefa sem critério verificável é sinalizada e reparada antes da execução."""
     project, root = _root(session, tmp_path, "- criar a.py")
     look = SubTaskSpec(title="Olhar", objective="listar", metadata={"tool": "list_dir", "tool_args": {"path": "."}, "covers": ["R1"]})
     plan, issues = sanitize_spec(DecompositionResult(subtasks=[look, FINAL]))
@@ -106,6 +123,7 @@ def test_task_without_verifiable_criteria_is_flagged(session, tmp_path):
 
 
 def test_circular_and_missing_dependencies_are_removed_and_recorded(session, tmp_path):
+    """Dependências circulares, inexistentes e sobre si mesma são removidas e registradas nos reparos."""
     project, root = _root(session, tmp_path)
     a = _write("A", "R1", "a.py").model_copy(update={"depends_on_indices": [1, 7]})
     b = _write("B", "R2", "b.py").model_copy(update={"depends_on_indices": [0, 1]})
@@ -120,6 +138,7 @@ def test_circular_and_missing_dependencies_are_removed_and_recorded(session, tmp
 
 
 def test_dependency_on_cancelled_task_is_inconsistent(session, tmp_path):
+    """Depender de uma tarefa cancelada torna o plano inconsistente e o reparo devolve um plano executável."""
     project, root = _root(session, tmp_path)
     _apply(session, project, root, [_write("A", "R1", "a.py"), _write("B", "R2", "b.py"), FINAL])
     tasks = TaskService(session)
@@ -135,6 +154,7 @@ def test_dependency_on_cancelled_task_is_inconsistent(session, tmp_path):
 
 
 def test_external_dependency_is_identified_but_plan_still_runs(session, tmp_path):
+    """Uma dependência externa é identificada e sinalizada, mas o plano continua executável."""
     project, root = _root(session, tmp_path)
     shell = SubTaskSpec(
         title="Deploy",
@@ -149,6 +169,7 @@ def test_external_dependency_is_identified_but_plan_still_runs(session, tmp_path
 
 
 def test_decomposition_cannot_drop_an_inherited_requirement(session, tmp_path):
+    """A decomposição não pode descartar um requisito herdado: a etapa que o atendia é recriada."""
     project, root = _root(session, tmp_path)
     sub = TaskService(session).create_task(
         project.id, TaskCreate(title="Parte B", objective="b", parent_id=root.id, kind="subsystem", metadata={"covers": ["R2"]})
@@ -165,6 +186,7 @@ def test_decomposition_cannot_drop_an_inherited_requirement(session, tmp_path):
 
 
 def test_inconclusive_when_coverage_cannot_be_proven(session, tmp_path):
+    """Sem cobertura comprovável, o veredito é inconclusivo, mas o plano permanece executável."""
     project, root = _root(session, tmp_path)
     plain = [SubTaskSpec(title="Fazer", objective="fazer tudo", metadata={"model_operation": True}), FINAL.model_copy(update={"metadata": {"final_answer": True}})]
     result = _apply(session, project, root, plain)
@@ -174,6 +196,7 @@ def test_inconclusive_when_coverage_cannot_be_proven(session, tmp_path):
 
 
 def test_replanning_carries_the_requirements_of_the_stopped_step(session, tmp_path):
+    """O replanejamento carrega para a nova etapa os requisitos da etapa que parou."""
     from agent.orchestrator.replan import replan_parent
 
     project, root = _root(session, tmp_path)
@@ -193,6 +216,7 @@ def test_replanning_carries_the_requirements_of_the_stopped_step(session, tmp_pa
 
 @pytest.mark.asyncio
 async def test_plan_change_is_revalidated_before_the_next_step(session, tmp_path):
+    """Antes do passo seguinte, o plano alterado é revalidado e a nova versão fica registrada."""
     project, root = _root(session, tmp_path)
     _apply(session, project, root, [_write("A", "R1", "a.py"), _write("B", "R2", "b.py"), FINAL])
     run = RunService(session).start_run(project.id, ExecutionRunCreate(root_task_id=root.id, config={"provider": "mock"}))
@@ -214,6 +238,7 @@ async def test_plan_change_is_revalidated_before_the_next_step(session, tmp_path
 
 @pytest.mark.asyncio
 async def test_unfixable_plan_blocks_without_running_anything(session, tmp_path):
+    """Um plano irrecuperável bloqueia a tarefa e cancela as etapas filhas, sem executar nada."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     root = TaskService(session).create_task(project.id, TaskCreate(title="Raiz", objective="Criar o arquivo app.py"))
     run = RunService(session).start_run(project.id, ExecutionRunCreate(root_task_id=root.id, config={"provider": "mock"}))

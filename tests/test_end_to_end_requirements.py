@@ -1,4 +1,13 @@
-# tests/test_end_to_end_requirements.py — objetivo com várias etapas, uma falha corrigida e aceite global verificado
+"""
+Arquivo: tests/test_end_to_end_requirements.py
+Nome: test_end_to_end_requirements.py
+Propósito: Verificar, de ponta a ponta, um objetivo de múltiplos passos com um único reparo até a aceitação global.
+Responsabilidade: camada de testes — requisitos derivados do objetivo, correção orientada por falha e encerramento aceito globalmente.
+Componentes: objetivo de múltiplos passos que termina em aceitação global verificada.
+Dependências: agent.orchestrator.runner, agent.orchestrator.requirements e agent.services.metrics_service.
+Observações: o fixture sample_project é copiado para tmp_path, o banco é temporário e o modelo é determinístico.
+"""
+
 import json
 import shutil
 from pathlib import Path
@@ -30,10 +39,12 @@ class _Developer:
     last_usage = None
 
     def __init__(self) -> None:
+        """Zera a lista de prompts e o contador de tentativas de correção."""
         self.prompts: list[str] = []
         self.calc_attempts = 0
 
     async def chat(self, request):
+        """Responde conforme o passo pedido, errando de propósito na primeira correção."""
         prompt = "\n".join(m.content for m in request.messages)
         self.prompts.append(prompt)
         if "[final]" in prompt:
@@ -48,6 +59,7 @@ class _Developer:
             reply = "## Ok\n\n- nada a fazer.\n"
 
         class _R:
+            """Resposta falsa que carrega a resposta montada pelo modelo falso."""
             content = reply
 
         return _R()
@@ -55,6 +67,7 @@ class _Developer:
 
 @pytest.mark.asyncio
 async def test_multi_step_objective_with_one_fix_ends_in_verified_global_acceptance(tmp_path: Path, monkeypatch):
+    """O objetivo com dois requisitos só é aceito globalmente depois que a falha da primeira tentativa orienta a correção."""
     workspace = tmp_path / "workspace"
     shutil.copytree(Path(__file__).parent / "fixtures" / "sample_project", workspace)
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)

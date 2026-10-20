@@ -1,4 +1,13 @@
-# tests/test_home_branches.py
+"""
+Arquivo: tests/test_home_branches.py
+Nome: test_home_branches.py
+Propósito: Verificar a raiz home dos projetos soltos e o ramification das conversas.
+Responsabilidade: camada de testes — projeto sem pasta usa a home, conversa solta, renomeação, bifurcação com memória e informação do sistema.
+Componentes: projeto sem pasta, conversa solta com override de pasta, renomeação, edição de mensagem que cria ramo e ferramenta de informações do sistema.
+Dependências: agent.services.project_service, agent.services.conversation_service, agent.services.branches e agent.services.inbox.
+Observações: banco temporário por teste; a pasta inicial aponta para tmp_path.
+"""
+
 import asyncio
 from pathlib import Path
 
@@ -19,11 +28,13 @@ from agent.tools.registry import ToolContext, ToolRegistry
 
 
 def _session(tmp_path: Path):
+    """Abre uma sessão do banco temporário."""
     engine = init_db(settings=Settings(data_dir=tmp_path))
     return build_session_factory(engine)()
 
 
 def test_project_without_folder_uses_the_user_home(tmp_path: Path):
+    """Um projeto sem pasta usa a home do usuário e aparece na lista de projetos."""
     session = _session(tmp_path)
     project = ProjectService(session).create_project(ProjectCreate(name="Casa", root_path=""))
     assert project.path_origin == "home"
@@ -33,6 +44,7 @@ def test_project_without_folder_uses_the_user_home(tmp_path: Path):
 
 
 def test_loose_chat_and_override_use_home_until_a_folder_is_chosen(tmp_path: Path):
+    """A conversa solta usa a home até que uma pasta seja escolhida."""
     session = _session(tmp_path)
     conversation = ConversationService(session).create_loose(ConversationCreate(title="Solta"))
     project = ProjectService(session).get_project(conversation.project_id)
@@ -44,6 +56,7 @@ def test_loose_chat_and_override_use_home_until_a_folder_is_chosen(tmp_path: Pat
 
 
 def test_rename_keeps_a_custom_title(tmp_path: Path):
+    """Renomear a conversa substitui o título original."""
     session = _session(tmp_path)
     conversation = ConversationService(session).create_loose(ConversationCreate(title="Nome original"))
     renamed = ConversationService(session).rename(conversation.id, "Nome novo")
@@ -52,6 +65,7 @@ def test_rename_keeps_a_custom_title(tmp_path: Path):
 
 
 def test_editing_a_message_forks_and_memory_follows_the_branch(tmp_path: Path):
+    """Editar uma mensagem cria um ramo e a memória passa a valer só nele."""
     session = _session(tmp_path)
     service = ConversationService(session)
     conversation = service.create_loose(ConversationCreate(title="Chat"))
@@ -119,6 +133,7 @@ def test_editing_a_message_forks_and_memory_follows_the_branch(tmp_path: Path):
 
 
 def test_system_info_reports_the_home_directory(tmp_path: Path):
+    """A ferramenta de informações do sistema informa a home e o diretório de trabalho."""
     registry = ToolRegistry()
     register_all(registry)
     result = asyncio.run(

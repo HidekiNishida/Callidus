@@ -1,5 +1,16 @@
-# tests/test_recovery_and_reporting.py — falhas diagnosticadas, reladas honestas
-"""Regressões da recuperação de falhas e do relatório final.
+"""
+Arquivo: tests/test_recovery_and_reporting.py
+Nome: test_recovery_and_reporting.py
+Propósito: verificar a recuperação de falhas e o relatório final: etapas substituídas, resultado de teste e rodapé de verificações.
+Responsabilidade: camada de testes — comportamento do replanejamento, do reconhecimento de resultado de teste e do rodapé da resposta final.
+Componentes: marcação de etapa cancelada pelo replanejamento, suíte reprovando como resultado, rodapé que relata reprovação, rodapé com o que passou, ausência de rodapé sem verificação e requisito com evidência.
+Dependências: agent.orchestrator (replan, closing, requirements, runner), agent.services (project, task), agent.persistence (database, models), pytest.
+Observações: banco SQLite temporário por teste e nenhum serviço externo é chamado.
+
+falhas diagnosticadas, reladas honestas
+
+
+Regressões da recuperação de falhas e do relatório final.
 
 1. O replanejamento cancela as etapas pendentes e as substitui: sem a marcação, a consolidação
    entende "trabalho não feito" e bloqueia o pai mesmo com o plano novo já concluído.
@@ -24,6 +35,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -31,10 +43,12 @@ def session(tmp_path: Path):
 
 
 def _project(session, tmp_path):
+    """Cria o projeto de trabalho do teste e devolve o projeto."""
     return ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
 
 
 def test_etapa_cancelada_pelo_replanejamento_e_marcada_como_substituida(session, tmp_path):
+    """O replanejamento cancela as etapas pendentes e bloqueadas e marca que foram substituídas."""
     project = _project(session, tmp_path)
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="Raiz", objective="fazer"))
@@ -57,15 +71,16 @@ def test_etapa_cancelada_pelo_replanejamento_e_marcada_como_substituida(session,
 
 
 def test_suica_de_testes_reprovando_e_resultado_e_nao_falha_de_ferramenta():
-    from agent.orchestrator.runner import _is_informative_test_result
+    """Rodar a suíte de testes e ver reprovar é resultado, não ferramenta quebrada: repetir a mesma chamada devolve a mesma falha."""
+    from agent.orchestrator.execution.tool_results import is_informative_test_result
 
     reprovou = {"success": False, "exit_code": 1, "stdout": "1 failed, 4 passed"}
     ferramenta_quebrada = {"success": False, "error": "executável indisponível: pytest"}
 
-    assert _is_informative_test_result("run_pytest", reprovou) is True
-    assert _is_informative_test_result("run_pytest", ferramenta_quebrada) is False
-    assert _is_informative_test_result("run_command", reprovou) is False
-    assert _is_informative_test_result("run_pytest", {"success": True}) is False
+    assert is_informative_test_result("run_pytest", reprovou) is True
+    assert is_informative_test_result("run_pytest", ferramenta_quebrada) is False
+    assert is_informative_test_result("run_command", reprovou) is False
+    assert is_informative_test_result("run_pytest", {"success": True}) is False
 
 
 def test_rodape_da_resposta_final_relata_a_reprovacao(session, tmp_path):
@@ -97,6 +112,7 @@ def test_rodape_da_resposta_final_relata_a_reprovacao(session, tmp_path):
 
 
 def test_rodape_relata_apenas_o_que_passou(session, tmp_path):
+    """O rodapé menciona apenas a verificação que passou."""
     from agent.persistence.models import EvidenceModel
 
     project = _project(session, tmp_path)
@@ -118,6 +134,7 @@ def test_rodape_relata_apenas_o_que_passou(session, tmp_path):
 
 
 def test_sem_verificacao_nao_ha_rodape(session, tmp_path):
+    """Sem verificações registradas, a resposta final não recebe rodapé."""
     project = _project(session, tmp_path)
     root = TaskService(session).create_task(project.id, TaskCreate(title="Raiz", objective="fazer"))
     session.flush()

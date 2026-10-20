@@ -1,3 +1,12 @@
+/**
+ * Arquivo: tests/web/replay.mjs
+ * Nome: replay.mjs
+ * Propósito: passar uma foto do servidor e as mensagens SSE pelo mesmo redutor da interface e imprimir o estado final.
+ * Responsabilidade: camada de script — reduz a foto e os eventos recebidos ao estado que a interface mostraria.
+ * Componentes: leitura da entrada em stdin, aplicação dos eventos e do estado ao vivo e impressão do estado reduzido em JSON.
+ * Dependências: web/static/assets/app/live-state.js, entrada padrão do processo.
+ * Observações: não acessa a rede e não escreve arquivos; é executado sob demanda pelos testes de ponta a ponta.
+ */
 // Passa uma foto do servidor e as mensagens SSE recebidas pelo mesmo redutor da interface e imprime o estado final.
 // Entrada (stdin): {"snapshot": {...}, "messages": [{"event": null|"live"|"resync"|"end"|"rotate", "data": {...}}]}
 import {

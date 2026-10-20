@@ -1,4 +1,13 @@
-# tests/test_decompose_loop.py — alteração não vira o mesmo plano de novo
+"""
+Arquivo: tests/test_decompose_loop.py
+Nome: test_decompose_loop.py
+Propósito: Verificar o laço de decomposição: o plano escolhido, o consumo de uso e o não re-decomposição.
+Responsabilidade: camada de testes — plano por página, timeout do modelo registrado, acumulação de uso, lacre de passos repetidos e execução do mesmo plano.
+Componentes: plano de página com verificação de HTML, timeout do modelo, soma de uso, título repetido como folha, cópia de plano entre irmãos, pensamento repetido e não re-decomposição.
+Dependências: agent.orchestrator.decomposition, agent.orchestrator.runner, agent.api.main e agent.orchestrator.closing.
+Observações: banco temporário por teste e provedor mock; o workspace do fixture é copiado para tmp_path quando necessário.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -25,6 +34,7 @@ from agent.services.task_service import TaskService
 
 @pytest.mark.asyncio
 async def test_page_request_checks_html_instead_of_pytest(tmp_path: Path):
+    """Um pedido de página usa o modelo de página, com verificação de conteúdo de arquivo e sem pytest."""
     from agent.config import Settings
     from agent.orchestrator.decomposition import resolve_decomposition_plan
 
@@ -44,6 +54,7 @@ async def test_page_request_checks_html_instead_of_pytest(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_model_timeout_is_recorded_and_does_not_stay_running(session, tmp_path: Path, monkeypatch):
+    """O timeout do modelo é registrado como falha e a tarefa não fica em execução."""
     from agent.providers.base import ProviderError
 
     project = ProjectService(session).create_project(ProjectCreate(name="site", root_path=str(tmp_path)))
@@ -69,9 +80,11 @@ async def test_model_timeout_is_recorded_and_does_not_stay_running(session, tmp_
     session.commit()
 
     class _Down:
+        """Provedor falso que falha com erro de tempo esgotado."""
         name = "mock"
 
         async def chat(self, request):
+            """Estoura ProviderError para simular o provedor indisponível."""
             raise ProviderError("tempo esgotado")
 
     monkeypatch.setattr("agent.orchestrator.runner._select_provider", lambda settings, config: _Down())
@@ -83,6 +96,7 @@ async def test_model_timeout_is_recorded_and_does_not_stay_running(session, tmp_
 
 
 def test_usage_adds_prompt_and_completion():
+    """O uso acumulado soma prompt, completion e total."""
     from agent.orchestrator.usage import accumulate_usage
 
     meta = accumulate_usage(None, 120, 30)
@@ -91,6 +105,7 @@ def test_usage_adds_prompt_and_completion():
 
 
 def test_same_title_becomes_a_leaf_change():
+    """Um subtarefa com o mesmo título do passo vira uma operação de modelo atômica."""
     plan = seal_repeated_steps(
         "Aplicar alterações",
         DecompositionResult(
@@ -106,12 +121,14 @@ def test_same_title_becomes_a_leaf_change():
 
 
 def test_copied_plan_matches_sibling_titles():
+    """Só um plano que repete os títulos dos irmãos é copiado."""
     titles = [item.title for item in GENERIC_TEMPLATE.subtasks]
     assert plan_copies_siblings(titles, list(reversed(titles)), "Aplicar alterações")
     assert not plan_copies_siblings(titles, ["Outra coisa", "Aplicar alterações"], "Aplicar alterações")
 
 
 def test_repeated_thought_is_marked():
+    """Um pensamento repetido é marcado com a contagem de repetições."""
     thoughts: list[dict] = []
     _mark_repeated_thought(thoughts, {"text": "Pensando em como dividir «Aplicar alterações»."})
     _mark_repeated_thought(thoughts, {"text": "Vou fazer: Inspecionar código."})
@@ -123,6 +140,7 @@ def test_repeated_thought_is_marked():
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Abre uma sessão do banco temporário e a fecha ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     factory = build_session_factory(engine)
     opened = factory()
@@ -132,6 +150,7 @@ def session(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_model_operation_is_not_decomposed_again(session, tmp_path: Path):
+    """Uma operação de modelo pronta não é decomposta de novo."""
     project = ProjectService(session).create_project(ProjectCreate(name="site", root_path=str(tmp_path)))
     root = TaskService(session).create_task(
         project.id,
@@ -165,6 +184,7 @@ async def test_model_operation_is_not_decomposed_again(session, tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_same_plan_is_executed_instead_of_nested(session, tmp_path: Path):
+    """O mesmo plano é executado em vez de gerar subtarefas aninhadas."""
     project = ProjectService(session).create_project(ProjectCreate(name="site", root_path=str(tmp_path)))
     root = TaskService(session).create_task(
         project.id,

@@ -1,4 +1,13 @@
-# tests/test_consolidation.py
+"""
+Arquivo: tests/test_consolidation.py
+Nome: test_consolidation.py
+Propósito: Verificar a consolidação do pai a partir das evidências dos filhos.
+Responsabilidade: camada de testes — pai só fecha com evidência de verificação e fecha quando a evidência existe.
+Componentes: consolidação sem evidência e consolidação com evidência aprovada.
+Dependências: agent.orchestrator.consolidation, agent.services.task_service e agent.persistence.models.EvidenceModel.
+Observações: banco temporário por teste.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -15,6 +24,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Abre uma sessão do banco temporário e a fecha ao fim do teste."""
     settings = Settings(data_dir=tmp_path / "data")
     engine = init_db(settings=settings)
     factory = build_session_factory(engine)
@@ -24,6 +34,7 @@ def session(tmp_path: Path):
 
 
 def test_parent_not_completed_without_verification_evidence(session, tmp_path: Path):
+    """Sem evidência de verificação, o pai volta ao planejamento e o filho fica pendente de nova tentativa."""
     project = ProjectService(session).create_project(
         ProjectCreate(name="p", root_path=str(tmp_path))
     )
@@ -49,6 +60,7 @@ def test_parent_not_completed_without_verification_evidence(session, tmp_path: P
 
 
 def test_parent_completed_when_evidence_present(session, tmp_path: Path):
+    """Com evidência de verificação aprovada, o pai é consolidado como concluído."""
     project = ProjectService(session).create_project(
         ProjectCreate(name="p", root_path=str(tmp_path))
     )

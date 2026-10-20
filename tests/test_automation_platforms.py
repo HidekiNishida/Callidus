@@ -1,5 +1,13 @@
-# tests/test_automation_platforms.py — adaptadores de inicialização nativa
-"""Testes dos três adaptadores de serviço.
+"""
+Arquivo: tests/test_automation_platforms.py
+Nome: test_automation_platforms.py
+Propósito: Verificar os três adaptadores de serviço do supervisor de automações.
+Responsabilidade: camada de testes — arquivo gerado, argumentos montados e decisões de cada adaptador de sistema operacional.
+Componentes: launchd com arranque e recuperação, instalação por usuário, unidade systemd de usuário, privilégio administrativo, remoção, agendador de tarefas do Windows, status e seleção de adaptador.
+Dependências: agent.automation.service e agent.automation.cli.
+Observações: HOME redirecionado para tmp_path e comandos do sistema operacional substituídos por dublês; nenhuma execução real de serviço.
+
+Testes dos três adaptadores de serviço.
 
 O ambiente de execução pode ser um só: os adaptadores são testados por **unidade**
 (arquivo gerado, argumentos montados, decisões) e por simulação do sistema
@@ -7,6 +15,7 @@ operacional. Nenhum teste aqui afirma que um serviço do Windows ou do Linux foi
 validado em execução nesta máquina — o que se comprova é o comando e o arquivo
 produzidos.
 """
+
 from __future__ import annotations
 
 import plistlib
@@ -27,6 +36,7 @@ from agent.automation.service import (
 # ─────────────────────────────────────────────────────────── macOS
 
 def test_launchd_gera_plist_com_arranque_e_recuperacao(tmp_path, monkeypatch):
+    """O plist gerado carrega o label, o arranque automático, a recuperação e as variáveis de ambiente."""
     monkeypatch.setenv("HOME", str(tmp_path))
     adapter = LaunchdAdapter()
     options = ServiceOptions(
@@ -54,6 +64,7 @@ def test_launchd_gera_plist_com_arranque_e_recuperacao(tmp_path, monkeypatch):
 
 
 def test_launchd_instalacao_por_usuario_nao_exige_administrador(tmp_path, monkeypatch):
+    """A instalação por usuário do launchd é aceita e fica dentro do diretório do usuário."""
     monkeypatch.setenv("HOME", str(tmp_path))
     adapter = LaunchdAdapter()
     monkeypatch.setattr(adapter, "available", lambda: True)
@@ -66,6 +77,7 @@ def test_launchd_instalacao_por_usuario_nao_exige_administrador(tmp_path, monkey
 # ─────────────────────────────────────────────────────────── Linux
 
 def test_systemd_gera_unidade_de_usuario(tmp_path, monkeypatch):
+    """A unidade systemd de usuário traz o ExecStart, o Restart e o alvo do usuário."""
     monkeypatch.setenv("HOME", str(tmp_path))
     adapter = SystemdAdapter()
     monkeypatch.setattr(adapter, "available", lambda: True)
@@ -87,6 +99,7 @@ def test_systemd_gera_unidade_de_usuario(tmp_path, monkeypatch):
 
 
 def test_systemd_unidade_de_sistema_exige_administrador(tmp_path, monkeypatch):
+    """A instalação de sistema systemd sem privilégio administrativo é recusada com dica."""
     monkeypatch.setenv("HOME", str(tmp_path))
     adapter = SystemdAdapter()
     monkeypatch.setattr(adapter, "available", lambda: True)
@@ -102,6 +115,7 @@ def test_systemd_unidade_de_sistema_exige_administrador(tmp_path, monkeypatch):
 
 
 def test_systemd_uninstall_remove_a_unidade(tmp_path, monkeypatch):
+    """A remoção da unidade systemd apaga o arquivo gerado."""
     monkeypatch.setenv("HOME", str(tmp_path))
     adapter = SystemdAdapter()
     monkeypatch.setattr(adapter, "available", lambda: True)
@@ -115,11 +129,13 @@ def test_systemd_uninstall_remove_a_unidade(tmp_path, monkeypatch):
 # ─────────────────────────────────────────────────────────── Windows
 
 def test_windows_agendador_de_tarefas_registra_tarefa_de_usuario(monkeypatch):
+    """A tarefa do Windows é criada por schtasks com disparo no login."""
     adapter = WindowsTaskAdapter()
     monkeypatch.setattr(adapter, "available", lambda: True)
     captured: dict = {}
 
     def fake_run(args, timeout=60.0):
+        """Dublê do comando do sistema: captura os argumentos e devolve sucesso."""
         captured["args"] = args
         return 0, "tarefa criada", ""
 
@@ -135,6 +151,7 @@ def test_windows_agendador_de_tarefas_registra_tarefa_de_usuario(monkeypatch):
 
 
 def test_windows_tarefa_de_sistema_exige_administrador(monkeypatch):
+    """A tarefa de sistema do Windows sem privilégio administrativo é recusada."""
     adapter = WindowsTaskAdapter()
     monkeypatch.setattr(adapter, "available", lambda: True)
     monkeypatch.setattr(adapter, "_is_admin", lambda: False)
@@ -144,6 +161,7 @@ def test_windows_tarefa_de_sistema_exige_administrador(monkeypatch):
 
 
 def test_windows_status_de_tarefa_inexistente(monkeypatch):
+    """Uma tarefa inexistente aparece como não instalada e inativa no status."""
     adapter = WindowsTaskAdapter()
     monkeypatch.setattr(adapter, "available", lambda: True)
     monkeypatch.setattr(adapter, "_run", lambda args, timeout=60.0: (1, "", "tarefa não existe"))
@@ -156,6 +174,7 @@ def test_windows_status_de_tarefa_inexistente(monkeypatch):
 # ─────────────────────────────────────────────────────────── escolha
 
 def test_adaptador_escolhido_corresponde_a_plataforma(monkeypatch):
+    """O adaptador escolhido corresponde à plataforma e o status cobre as três."""
     adapter = current_adapter()
     assert adapter.platform_name in {"macos", "linux", "windows"}
     status = adapters_status()
@@ -164,6 +183,7 @@ def test_adaptador_escolhido_corresponde_a_plataforma(monkeypatch):
 
 
 def test_opcoes_padrao_apontam_para_o_pacote():
+    """As opções padrão executam o supervisor do pacote, com escopo de usuário."""
     options = default_options()
     assert options.command[-1] == "run"
     assert "agent.automation.cli" in options.command
@@ -171,6 +191,7 @@ def test_opcoes_padrao_apontam_para_o_pacote():
 
 
 def test_cli_tem_os_comandos_de_operacao():
+    """A CLI aceita todos os comandos de operação do supervisor."""
     from agent.automation.cli import build_parser
 
     parser = build_parser()
@@ -180,14 +201,17 @@ def test_cli_tem_os_comandos_de_operacao():
 
 
 def test_cli_install_repassa_o_escopo(tmp_path, monkeypatch):
+    """A CLI repassa o escopo informado ao adaptador de instalação."""
     from agent.automation.cli import build_parser, cmd_install
 
     captured: dict = {}
 
     class FakeAdapter:
+        """Adaptador falso que registra o escopo recebido na instalação."""
         platform_name = "fake"
 
         def install(self, options):
+            """Registra o escopo das opções e devolve instalação bem-sucedida."""
             captured["scope"] = options.scope
             return {"installed": True}
 

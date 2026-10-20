@@ -1,6 +1,15 @@
-# tests/test_project_delete.py — remoção de projeto em cascata
-from __future__ import annotations
+"""
+Arquivo: tests/test_project_delete.py
+Nome: test_project_delete.py
+Propósito: verificar a remoção de um projeto em cascata, sem quebrar chaves estrangeiras e sem tocar nos arquivos do disco.
+Responsabilidade: camada de testes — comportamento da exclusão de projeto e das rotas correspondentes.
+Componentes: remoção em cascata de conversas, tarefas, memórias, grafo e eventos, tentativa com evidência ligada, preservação dos arquivos, rota HTTP de exclusão e projeto inexistente.
+Dependências: agent.services (project, run, task, conversation), agent.persistence (database, models), agent.api (deps, main), fastapi.testclient, pytest.
+Observações: banco SQLite temporário por teste e nenhum arquivo do workspace é apagado.
 
+remoção de projeto em cascata
+"""
+from __future__ import annotations
 from pathlib import Path
 
 import pytest
@@ -29,6 +38,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def env(tmp_path: Path):
+    """Monta um projeto com conversa, tarefas, run e nó do grafo, devolvendo o contexto ao teste."""
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
     session = build_session_factory(init_db(settings=settings))()
     project = ProjectService(session).create_project(
@@ -51,6 +61,7 @@ def env(tmp_path: Path):
 
 
 def test_delete_project_removes_everything_owned_by_it(env):
+    """A remoção apaga o projeto e tudo o que ele possuía: conversa, tarefas, memórias, grafo e eventos."""
     session, project, conversation, child = env
     result = ProjectService(session).delete_project(project.id)
     session.commit()
@@ -93,6 +104,7 @@ def test_delete_project_with_attempts_and_evidence_does_not_break_foreign_keys(e
 
 
 def test_delete_project_keeps_the_files_on_disk(env, tmp_path: Path):
+    """A remoção do projeto não apaga os arquivos do workspace."""
     session, project, _conversation, _child = env
     marker = tmp_path / "importante.txt"
     marker.write_text("não pode sumir", encoding="utf-8")
@@ -104,9 +116,11 @@ def test_delete_project_keeps_the_files_on_disk(env, tmp_path: Path):
 
 
 def test_delete_project_api(tmp_path: Path, monkeypatch):
+    """A rota de exclusão remove o projeto e devolve 404 na consulta seguinte."""
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
 
     def override_settings():
+        """Devolve as configurações de teste para a aplicação da API."""
         return settings
 
     deps._engine = None
@@ -128,9 +142,11 @@ def test_delete_project_api(tmp_path: Path, monkeypatch):
 
 
 def test_delete_unknown_project_is_404(tmp_path: Path, monkeypatch):
+    """Excluir um projeto inexistente devolve 404 em vez de erro."""
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
 
     def override_settings():
+        """Devolve as configurações de teste para a aplicação da API."""
         return settings
 
     deps._engine = None

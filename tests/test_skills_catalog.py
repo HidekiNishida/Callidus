@@ -1,4 +1,14 @@
-# tests/test_skills_catalog.py — Testes do catálogo de Skills em Markdown (fonte de verdade)
+"""
+Arquivo: tests/test_skills_catalog.py
+Nome: test_skills_catalog.py
+Propósito: verificar o catálogo de Skills em Markdown, a fonte de verdade das competências.
+Responsabilidade: camada de testes — comportamento da leitura do catálogo em Markdown, da descoberta e da seleção de skills.
+Componentes: frontmatter com escalares e listas, contrato completo da skill, arquivos inválidos ignorados, diretório padrão e do projeto, precedência do catálogo, skills inválidas reportadas e seleção por objetivo.
+Dependências: agent.skills.catalog.loader, agent.skills.discovery.SkillRegistry, agent.skills.selector.SkillSelector, pytest.
+Observações: catálogo de projeto temporário por teste; o catálogo do próprio repositório é lido, nunca escrito.
+
+Testes do catálogo de Skills em Markdown (fonte de verdade)
+"""
 from pathlib import Path
 
 import pytest
@@ -14,6 +24,7 @@ from agent.skills.discovery import SkillRegistry
 
 
 def test_parse_frontmatter_supports_scalars_and_lists():
+    """O frontmatter aceita escalares, listas por linha e listas inline, e o corpo vem separado."""
     front, body = parse_frontmatter(
         "---\n"
         "id: minha_skill\n"
@@ -33,6 +44,7 @@ def test_parse_frontmatter_supports_scalars_and_lists():
 
 
 def test_parse_skill_markdown_extracts_all_contract_fields(tmp_path: Path):
+    """A skill Markdown expõe todos os campos do contrato, dos critérios de ativação aos riscos."""
     path = tmp_path / "minha-skill.md"
     path.write_text(
         "---\n"
@@ -80,6 +92,7 @@ def test_parse_skill_markdown_extracts_all_contract_fields(tmp_path: Path):
 
 
 def test_load_catalog_ignores_readme_and_invalid_files(tmp_path: Path):
+    """O carregamento do catálogo ignora o README e as skills inválidas."""
     (tmp_path / "README.md").write_text("# Não é uma skill\n", encoding="utf-8")
     (tmp_path / "boa.md").write_text(
         "---\nid: boa\nname: Boa\ndescription: Descrição válida.\n---\n\n"
@@ -95,6 +108,7 @@ def test_load_catalog_ignores_readme_and_invalid_files(tmp_path: Path):
 
 
 def test_default_catalog_dir_points_to_repository_skills():
+    """O diretório padrão aponta para as skills versionadas no repositório."""
     directory = default_catalog_dir()
     assert directory is not None
     assert directory.name == "skills"
@@ -102,12 +116,14 @@ def test_default_catalog_dir_points_to_repository_skills():
 
 
 def test_catalog_dir_prefers_project_skills(tmp_path: Path):
+    """Quando o projeto tem a pasta `skills`, ela tem precedência sobre o catálogo do repositório."""
     project_skills = tmp_path / "skills"
     project_skills.mkdir()
     assert catalog_dir(tmp_path) == project_skills
 
 
 def test_registry_loads_catalog_over_builtins():
+    """O registro carrega o catálogo do repositório por cima das skills embutidas."""
     registry = SkillRegistry()
     skill = registry.get("debugging_root_cause")
     assert skill is not None
@@ -119,6 +135,7 @@ def test_registry_loads_catalog_over_builtins():
 
 
 def test_registry_project_skills_override_repository(tmp_path: Path):
+    """Uma skill do projeto sobrescreve a do repositório com o mesmo identificador."""
     project_skills = tmp_path / "skills"
     project_skills.mkdir()
     (project_skills / "custom.md").write_text(
@@ -135,6 +152,7 @@ def test_registry_project_skills_override_repository(tmp_path: Path):
 
 
 def test_registry_reports_invalid_skills(tmp_path: Path):
+    """Uma skill inválida é reportada na lista de inválidas e não entra no registro."""
     project_skills = tmp_path / "skills"
     project_skills.mkdir()
     (project_skills / "invalida.md").write_text(
@@ -157,6 +175,7 @@ def test_registry_reports_invalid_skills(tmp_path: Path):
     ],
 )
 def test_selector_picks_expected_skill(objective: str, expected: str):
+    """Para cada objetivo, a seleção inclui a skill esperada."""
     from agent.skills.selector import SkillSelector
 
     selector = SkillSelector(SkillRegistry())

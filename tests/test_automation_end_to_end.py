@@ -1,5 +1,13 @@
-# tests/test_automation_end_to_end.py — fluxo completo das automações
-"""O fluxo de aceitação, de ponta a ponta e sem inferência.
+"""
+Arquivo: tests/test_automation_end_to_end.py
+Nome: test_automation_end_to_end.py
+Propósito: Verificar o fluxo de aceitação de uma automação, de ponta a ponta e sem inferência.
+Responsabilidade: camada de testes — criação, recuperação por outro processo, disparo, verificação de dependências, execução da ação e evidência persistida.
+Componentes: fluxo completo sobrevivendo ao encerramento do processo, automação reativa a evento interno e automação de script determinístico.
+Dependências: agent.automation.store, agent.automation.supervisor, agent.automation.contracts e agent.persistence.database.
+Observações: banco SQLite temporário por teste; a recuperação é simulada abrindo um novo engine sobre o mesmo arquivo.
+
+O fluxo de aceitação, de ponta a ponta e sem inferência.
 
 1. A automação é criada e aprovada.
 2. A interface e o processo principal são encerrados (a sessão e o engine são
@@ -10,6 +18,7 @@
 6. A ação roda no destino correto, o resultado é verificado e a evidência fica
    persistida e disponível para inspeção posterior.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,6 +49,7 @@ from agent.persistence.models import (
 
 @pytest.fixture
 def db_url(tmp_path, monkeypatch):
+    """Aponta o banco de teste para um arquivo SQLite temporário."""
     url = f"sqlite:///{tmp_path / 'e2e.db'}"
     monkeypatch.setenv("CALLIDUS_TEST_DATABASE_URL", url)
     monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")

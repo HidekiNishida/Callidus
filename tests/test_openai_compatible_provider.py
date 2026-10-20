@@ -1,4 +1,14 @@
-# tests/test_openai_compatible_provider.py — adaptador reutilizável de API compatível com OpenAI
+"""
+Arquivo: tests/test_openai_compatible_provider.py
+Nome: test_openai_compatible_provider.py
+Propósito: verificar o adaptador reutilizável de API compatível com OpenAI, do corpo da requisição ao tratamento de erros.
+Responsabilidade: camada de testes — comportamento observável do adaptador OpenAI-compatible (parâmetros, ferramentas, streaming e falhas).
+Componentes: parâmetros de geração e uso, autenticação, cabeçalhos extras, chamadas de ferramenta, saída estruturada, streaming, cache de modelos, erros e health check.
+Dependências: agent.providers.openai_compatible.OpenAICompatibleProvider, agent.providers.base, fixture mock_http do conftest, httpx, pytest.
+Observações: todo o HTTP é simulado pela fixture mock_http; nenhum gateway real é contatado.
+
+adaptador reutilizável de API compatível com OpenAI
+"""
 from __future__ import annotations
 
 import json
@@ -24,14 +34,17 @@ REQUEST = ChatCompletionRequest(
 
 
 def _body(request: httpx.Request) -> dict:
+    """Decodifica o corpo JSON enviado na requisição."""
     return json.loads(request.content)
 
 
 @pytest.mark.asyncio
 async def test_chat_sends_model_and_parameters_and_parses_usage(mock_http):
+    """A requisição envia modelo, mensagens e parâmetros traduzidos, e a resposta devolve conteúdo, tokens e o motivo de término."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         seen["body"] = _body(request)
         seen["path"] = request.url.path
         seen["auth"] = request.headers.get("authorization")
@@ -64,9 +77,11 @@ async def test_chat_sends_model_and_parameters_and_parses_usage(mock_http):
 
 @pytest.mark.asyncio
 async def test_api_key_is_sent_as_bearer(mock_http):
+    """A chave configurada é enviada como token Bearer."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         seen["auth"] = request.headers.get("authorization")
         return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
 
@@ -78,9 +93,11 @@ async def test_api_key_is_sent_as_bearer(mock_http):
 
 @pytest.mark.asyncio
 async def test_extra_headers_are_sent(mock_http):
+    """Os cabeçalhos extras configurados acompanham a requisição."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         seen["headers"] = dict(request.headers)
         return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
 
@@ -92,9 +109,11 @@ async def test_extra_headers_are_sent(mock_http):
 
 @pytest.mark.asyncio
 async def test_tool_calls_are_returned(mock_http):
+    """As chamadas de ferramenta da resposta são convertidas em chamadas tipadas, com os argumentos já decodificados."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         seen["body"] = _body(request)
         return httpx.Response(
             200,
@@ -134,9 +153,11 @@ async def test_tool_calls_are_returned(mock_http):
 
 @pytest.mark.asyncio
 async def test_structured_output_is_translated_to_json_schema(mock_http):
+    """O formato de saída estruturada é traduzido para o esquema JSON esperado pela API."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         seen["body"] = _body(request)
         return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
 
@@ -154,6 +175,7 @@ async def test_structured_output_is_translated_to_json_schema(mock_http):
 
 @pytest.mark.asyncio
 async def test_streaming_delivers_fragments_and_final_usage(mock_http):
+    """O streaming entrega os fragmentos e registra o uso final informado pelo servidor."""
     body = (
         'data: {"choices":[{"delta":{"content":"Ol"}}]}\n\n'
         'data: {"choices":[{"delta":{"content":"á"},"finish_reason":"stop"}]}\n\n'
@@ -162,6 +184,7 @@ async def test_streaming_delivers_fragments_and_final_usage(mock_http):
     ).encode("utf-8")
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         assert _body(request)["stream"] is True
         return httpx.Response(200, content=body)
 
@@ -178,7 +201,9 @@ async def test_streaming_delivers_fragments_and_final_usage(mock_http):
 
 @pytest.mark.asyncio
 async def test_streaming_cut_in_the_middle_fails_with_clear_error(mock_http):
+    """Um stream interrompido antes do fim falha com mensagem explícita."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         return httpx.Response(200, content=b'data: {"choices":[{"delta":{"content":"parcial"}}]}\n\n')
 
     mock_http("openai_compatible", handler)
@@ -190,9 +215,11 @@ async def test_streaming_cut_in_the_middle_fails_with_clear_error(mock_http):
 
 @pytest.mark.asyncio
 async def test_models_are_listed_and_cached(mock_http):
+    """A listagem de modelos é cacheada e consultada na API uma única vez dentro do prazo."""
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         calls["n"] += 1
         return httpx.Response(200, json={"data": [{"id": "modelo-a"}, {"id": "modelo-b"}]})
 
@@ -205,7 +232,9 @@ async def test_models_are_listed_and_cached(mock_http):
 
 @pytest.mark.asyncio
 async def test_authentication_failure_is_reported(mock_http):
+    """Uma resposta 401 é reportada como erro de autenticação."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         return httpx.Response(401, json={"error": "invalid api key"})
 
     mock_http("openai_compatible", handler)
@@ -216,7 +245,9 @@ async def test_authentication_failure_is_reported(mock_http):
 
 @pytest.mark.asyncio
 async def test_rate_limit_is_reported(mock_http):
+    """Uma resposta 429 é reportada como limite de requisições."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         return httpx.Response(429, json={"error": "slow down"})
 
     mock_http("openai_compatible", handler)
@@ -227,7 +258,9 @@ async def test_rate_limit_is_reported(mock_http):
 
 @pytest.mark.asyncio
 async def test_timeout_is_reported(mock_http):
+    """Um tempo esgotado é reportado como timeout de provedor."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         raise httpx.ReadTimeout("demorou")
 
     mock_http("openai_compatible", handler)
@@ -241,6 +274,7 @@ async def test_health_check_reports_failure_instead_of_raising(mock_http):
     """Servidor fora do ar: o diagnóstico vira `ok=False`, nunca exceção (evita 500 na API)."""
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         raise httpx.ConnectError("recusado")
 
     mock_http("openai_compatible", handler)
@@ -253,7 +287,9 @@ async def test_health_check_reports_failure_instead_of_raising(mock_http):
 
 @pytest.mark.asyncio
 async def test_health_check_lists_models(mock_http):
+    """O health check informa o provedor como disponível e lista os modelos atendidos."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         return httpx.Response(200, json={"data": [{"id": "modelo-a"}]})
 
     mock_http("openai_compatible", handler)

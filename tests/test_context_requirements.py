@@ -1,5 +1,13 @@
-# tests/test_context_requirements.py — o modelo precisa saber o que tem de provar
-"""Regressões do contexto da operação.
+"""
+Arquivo: tests/test_context_requirements.py
+Nome: test_context_requirements.py
+Propósito: Verificar que os requisitos canônicos chegam ao prompt da etapa e sobrevivem ao aperto de contexto.
+Responsabilidade: camada de testes — montagem do contexto da etapa com requisitos, objetivo global, regras do projeto e descarte do dispensável.
+Componentes: requisitos no prompt, objetivo global e regra do projeto como obrigatórios, descarte do conteúdo não essencial, componente vazio e requisitos da etapa.
+Dependências: agent.context.assembler, agent.context.operation_builder e agent.orchestrator.requirements.
+Observações: banco temporário por teste; a montagem do contexto é determinística.
+
+Regressões do contexto da operação.
 
 O critério de aceite canônico (os requisitos da raiz) nunca chegava ao prompt da etapa: o
 modelo executava sem saber o que tinha de provar, e a validação depois apontava o requisito
@@ -7,6 +15,7 @@ como não comprovado. Além disso, o objetivo global e as regras do projeto eram
 descartáveis — o modelo perdia o "porquê" e as restrições canônicas quando o contexto
 aperto.
 """
+
 from pathlib import Path
 
 import pytest
@@ -25,6 +34,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Abre uma sessão do banco temporário e a fecha ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -32,6 +42,7 @@ def session(tmp_path: Path):
 
 
 def _contexto(**extra):
+    """Monta o contexto de operação com um perfil de modelo padrão e ajustes pontuais."""
     base = dict(
         global_rules="regras",
         project_rules="memória do projeto",
@@ -46,6 +57,7 @@ def _contexto(**extra):
 
 
 def test_requisitos_chegam_ao_prompt():
+    """Os requisitos obrigatórios aparecem no prompt montado para a etapa."""
     result = _contexto(requirements="Requisitos obrigatórios:\n- R1: criar a função dobro")
 
     corpo = result.messages[-1].content
@@ -64,6 +76,7 @@ def test_objetivo_global_e_regra_do_projeto_sao_obrigatorios():
 
 
 def test_conteudo_nao_essencial_e_o_que_sai_quando_falta_espaco():
+    """Quando falta espaço, o conteúdo descartável sai e objetivo, requisitos e regra do projeto permanecem."""
     perfil = ModelProfile(model_id="m", input_budget=1200, context_limit=8192)
     result = build_operation_context(
         perfil,
@@ -86,6 +99,7 @@ def test_conteudo_nao_essencial_e_o_que_sai_quando_falta_espaco():
 
 
 def test_componente_vazio_nao_gera_cabecalho():
+    """Um componente vazio não produz cabeçalho no prompt."""
     result = _contexto(global_objective="")
 
     assert "## objetivo-global" not in result.messages[-1].content
@@ -128,6 +142,7 @@ def test_requisitos_da_tarefa_aparecem_no_contexto_da_etapa(session, tmp_path):
 
 
 def test_requisito_que_a_etapa_nao_cobre_nao_aparece(session, tmp_path):
+    """O requisito que a etapa não cobre não entra no contexto dela."""
     from agent.context.operation_builder import OperationContextBuilder
 
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))

@@ -1,4 +1,14 @@
-# tests/test_progress_metrics.py — progresso verificável, métricas do run e cenários ponta a ponta
+"""
+Arquivo: tests/test_progress_metrics.py
+Nome: test_progress_metrics.py
+Propósito: verificar o progresso verificável, as métricas do run e os cenários de ponta a ponta do progresso.
+Responsabilidade: camada de testes — comportamento do cálculo de progresso, das métricas de run e da execução de etapas irmãs.
+Componentes: progresso por trabalho verificado, pergunta simples não superdecomposta, objetivo de múltiplos passos com métricas, etapa independente executada em paralelo, chamadas de modelo sem trabalho verificado.
+Dependências: agent.orchestrator (progress, runner), agent.services (metrics, project, run, task), agent.persistence (database, models), fastapi.testclient, pytest.
+Observações: banco e workspace temporários; o provedor de modelo é o mock e, no cenário de erro, um provedor falso que devolve texto inválido.
+
+progresso verificável, métricas do run e cenários ponta a ponta
+"""
 import shutil
 from pathlib import Path
 
@@ -20,6 +30,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -27,6 +38,7 @@ def session(tmp_path: Path):
 
 
 def _start(session, root_path: Path, objective: str, config: dict | None = None):
+    """Cria projeto, tarefa raiz e run de exemplo, devolvendo o contexto ao teste."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(root_path)))
     root = TaskService(session).create_task(project.id, TaskCreate(title="Pedido", objective=objective))
     run = RunService(session).start_run(
@@ -37,6 +49,7 @@ def _start(session, root_path: Path, objective: str, config: dict | None = None)
 
 
 def test_progress_is_verified_work_not_activity():
+    """Progresso exige trabalho verificado: mais tarefas concluídas ou pendentes menores contam, mais chamadas de modelo não."""
     assert made_progress(None, {"verified": 1, "pending": 3})
     assert not made_progress(None, {"verified": 0, "pending": 3})
     assert made_progress({"verified": 1, "pending": 3}, {"verified": 2, "pending": 3})
@@ -47,6 +60,7 @@ def test_progress_is_verified_work_not_activity():
 
 @pytest.mark.asyncio
 async def test_simple_question_is_not_over_decomposed(session, tmp_path):
+    """Uma pergunta simples não é superdecomposta: a árvore fica rasa e com poucas tarefas."""
     _, _, run = _start(session, tmp_path, "Que dia é hoje?")
 
     log = await RunOrchestrator(session, Settings(data_dir=tmp_path / "data")).run_until_idle(run.id, max_steps=12)
@@ -61,6 +75,7 @@ async def test_simple_question_is_not_over_decomposed(session, tmp_path):
 
 @pytest.mark.asyncio
 async def test_multi_step_objective_end_to_end_with_metrics(tmp_path: Path):
+    """Um objetivo de múltiplos passos conclui a run e as métricas refletem árvore, evidências e progresso verificado."""
     workspace = tmp_path / "workspace"
     shutil.copytree(Path(__file__).parent / "fixtures" / "sample_project", workspace)
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
@@ -97,6 +112,7 @@ async def test_multi_step_objective_end_to_end_with_metrics(tmp_path: Path):
 
 
 def _plan(session, tmp_path: Path):
+    """Monta um plano com uma etapa travada, uma dependente dela e uma independente."""
     project, root, run = _start(session, tmp_path, "Três etapas")
     tasks = TaskService(session)
     root.status = TaskStatus.PLANNING.value
@@ -128,6 +144,7 @@ def _plan(session, tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_independent_sibling_runs_while_dependent_waits(session, tmp_path):
+    """A etapa independente é executada enquanto a dependente continua esperando."""
     run, dependent, independent = _plan(session, tmp_path)
 
     out = await RunOrchestrator(session, Settings(data_dir=tmp_path / "data")).step(run.id)
@@ -137,16 +154,20 @@ async def test_independent_sibling_runs_while_dependent_waits(session, tmp_path)
 
 
 class _Garbage:
+    """Provedor falso que devolve texto que não é JSON e conta as chamadas."""
     name = "mock"
     last_usage = None
 
     def __init__(self) -> None:
+        """Zera o contador de chamadas ao modelo."""
         self.calls = 0
 
     async def chat(self, request):
+        """Provedor falso: devolve texto que não é JSON e conta as chamadas."""
         self.calls += 1
 
         class _R:
+            """Resposta falsa com um conteúdo que não é JSON."""
             content = f"não é JSON {self.calls}"
 
         return _R()
@@ -154,6 +175,7 @@ class _Garbage:
 
 @pytest.mark.asyncio
 async def test_more_model_calls_without_verified_work_is_not_progress(session, tmp_path, monkeypatch):
+    """Chamadas de modelo sem trabalho verificado não contam como progresso e aparecem como erro por categoria."""
     project, root, run = _start(session, tmp_path, "Objetivo")
     root.status = TaskStatus.PLANNING.value
     change = TaskService(session).create_task(

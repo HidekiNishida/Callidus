@@ -1,5 +1,15 @@
-# tests/test_agent_api.py — interface HTTP da hierarquia de agentes
-"""Os endpoints de agente e consulta, exercitados como a interface web os usa."""
+"""
+Arquivo: tests/test_agent_api.py
+Nome: test_agent_api.py
+Propósito: Verificar os endpoints de agente (árvore, suspensão, consulta, descarte) e as métricas de recurso expostas pela API.
+Responsabilidade: camada de testes — contrato HTTP dos endpoints de agente e consulta, como a interface web os consome.
+Componentes: árvore de agentes, suspensão e retomada, consulta entre agentes, recusa de consulta circular, descarte e métricas de recurso.
+Dependências: agent.api.deps, agent.config.Settings, agent.domain.schemas, agent.services.agent_service, agent.services.project_service, agent.services.task_service e TestClient.
+Observações: banco temporário em tmp_path e worker de fundo desativado; a sessão real é aberta via dependência da API.
+
+Os endpoints de agente e consulta, exercitados como a interface web os usa.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -18,9 +28,11 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def client(tmp_path: Path):
+    """Cliente de teste da API com banco temporário e worker de fundo desligado."""
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
 
     def override_settings():
+        """Devolve as configurações do teste, com banco temporário e worker de fundo desligado."""
         return settings
 
     deps._engine = None
@@ -38,6 +50,7 @@ def client(tmp_path: Path):
 
 @pytest.fixture
 def tree(client: TestClient):
+    """Cria um projeto com duas tarefas encadeadas e devolve seus identificadores."""
     project = client.post("/projects", json={"name": "agentes", "root_path": "/tmp/agentes"}).json()
     root = client.post(
         f"/projects/{project['id']}/tasks",
@@ -51,10 +64,12 @@ def tree(client: TestClient):
 
 
 def _agents(session):
+    """Devolve um AgentService apoiado na sessão do teste."""
     return AgentService(session)
 
 
 def test_a_arvore_de_agentes_e_exposta(client: TestClient, tree):
+    """A árvore de agentes é listada com pai, profundidade e vínculo entre eles."""
     from agent.api.deps import get_session_factory
 
     session = get_session_factory()()
@@ -75,6 +90,7 @@ def test_a_arvore_de_agentes_e_exposta(client: TestClient, tree):
 
 
 def test_suspender_e_retomar_um_agente(client: TestClient, tree):
+    """Suspender devolve o agente como SUSPENDED e retomar o traz de volta para RUNNING."""
     from agent.api.deps import get_session_factory
 
     session = get_session_factory()()
@@ -97,6 +113,7 @@ def test_suspender_e_retomar_um_agente(client: TestClient, tree):
 
 
 def test_consulta_entre_agentes_pela_interface(client: TestClient, tree):
+    """A consulta entre agentes responde a partir do estado persistido e aparece no histórico do solicitante."""
     from agent.api.deps import get_session_factory
 
     session = get_session_factory()()
@@ -127,6 +144,7 @@ def test_consulta_entre_agentes_pela_interface(client: TestClient, tree):
 
 
 def test_consulta_circular_e_recusada_pela_interface(client: TestClient, tree):
+    """A consulta circular é recusada com 409 em vez de entrar em laço."""
     from agent.api.deps import get_session_factory
 
     session = get_session_factory()()
@@ -147,6 +165,7 @@ def test_consulta_circular_e_recusada_pela_interface(client: TestClient, tree):
 
 
 def test_descartar_um_agente(client: TestClient, tree):
+    """O descarte responde preservando a tarefa associada ao agente."""
     from agent.api.deps import get_session_factory
 
     session = get_session_factory()()
@@ -164,6 +183,7 @@ def test_descartar_um_agente(client: TestClient, tree):
 
 
 def test_as_metricas_de_recurso_sao_expostas(client: TestClient, tree):
+    """As métricas de recurso trazem limite do executor, profundidade de agentes e contagens por estado."""
     from agent.api.deps import get_session_factory
 
     session = get_session_factory()()

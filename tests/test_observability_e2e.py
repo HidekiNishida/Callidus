@@ -1,4 +1,14 @@
-# tests/test_observability_e2e.py — execução real → eventos → SSE → redutor da interface (Node) → mesmo estado do servidor
+"""
+Arquivo: tests/test_observability_e2e.py
+Nome: test_observability_e2e.py
+Propósito: verificar que uma execução real chega pelo SSE ao redutor da interface e produz o mesmo estado do servidor.
+Responsabilidade: camada de testes — comportamento de ponta a ponta da observabilidade, do servidor ao redutor da interface em Node.
+Componentes: run real com streaming, redução do snapshot pelo Node, arquivos alterados, testes e verificações, retomada de run interrompida.
+Dependências: agent.orchestrator.runner, agent.observability, agent.providers (base, observed), agent.services, node (tests/web/replay.mjs), pytest.
+Observações: banco e workspace temporários; o teste é pulado quando o node não está disponível no ambiente.
+
+execução real → eventos → SSE → redutor da interface (Node) → mesmo estado do servidor
+"""
 import asyncio
 import json
 import shutil
@@ -28,19 +38,24 @@ pytestmark = pytest.mark.skipif(NODE is None, reason="node indisponível: o redu
 
 
 class _Streaming(LLMProvider):
+    """Provedor falso que transmite os fragmentos programados."""
     name = "fake-stream"
     supports_streaming = True
 
     def __init__(self, pieces: list[str]):
+        """Guarda os fragmentos que o provedor vai transmitir."""
         self.pieces = pieces
 
     async def list_models(self):
+        """Provedor falso: não anuncia nenhum modelo."""
         return []
 
     async def _chat(self, request):
+        """Provedor falso: falha se o streaming não for usado."""
         raise AssertionError("deveria transmitir")
 
     async def _chat_streaming(self, request, on_delta) -> ChatCompletionResponse:
+        """Entrega os pedaços configurados e devolve a resposta com o conteúdo completo."""
         for piece in self.pieces:
             on_delta(piece)
             await asyncio.sleep(0.15)
@@ -48,17 +63,22 @@ class _Streaming(LLMProvider):
 
 
 class _Broken(_Streaming):
+    """Provedor falso que emite um fragmento e falha de propósito no meio do streaming."""
     async def _chat_streaming(self, request, on_delta) -> ChatCompletionResponse:
+        """Provedor falso: emite um fragmento e falha de propósito."""
         on_delta("começ")
         raise ProviderError("conexão caiu")
 
 
 class _Req:
+    """Requisição falsa: o cliente continua conectado."""
     async def is_disconnected(self) -> bool:
+        """Responde que a conexão do cliente continua ativa."""
         return False
 
 
 def _parse(chunk: str) -> list[dict]:
+    """Converte um chunk de stream SSE na lista de eventos com o payload decodificado."""
     out = []
     for block in chunk.split("\n\n"):
         item: dict = {"event": None}
@@ -73,6 +93,7 @@ def _parse(chunk: str) -> list[dict]:
 
 
 async def _collect(gen, into: list):
+    """Consome o gerador até o fim e acumula os eventos decodificados."""
     try:
         async for chunk in gen:
             into.extend(_parse(chunk))
@@ -81,10 +102,12 @@ async def _collect(gen, into: list):
 
 
 def _jsonable(value):
+    """Converte o snapshot em JSON puro, representando valores não serializáveis como texto."""
     return json.loads(json.dumps(value, default=str))
 
 
 def _ui(snapshot: dict, messages: list[dict]) -> dict:
+    """Roda o redutor da interface em Node sobre o snapshot e devolve o estado da interface."""
     proc = subprocess.run(
         [NODE, str(REPLAY)],
         input=json.dumps({"snapshot": _jsonable(snapshot), "messages": messages}),
@@ -97,6 +120,7 @@ def _ui(snapshot: dict, messages: list[dict]) -> dict:
 
 
 def _setup(tmp_path: Path, objective: str):
+    """Prepara workspace, banco, projeto, tarefa raiz e run de exemplo, devolvendo o contexto ao teste."""
     workspace = tmp_path / "workspace"
     shutil.copytree(Path(__file__).parent / "fixtures" / "sample_project", workspace)
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
@@ -113,6 +137,7 @@ def _setup(tmp_path: Path, objective: str):
 
 @pytest.mark.asyncio
 async def test_real_run_through_sse_reaches_the_same_state_in_the_interface(tmp_path):
+    """Uma run real chega pelo SSE ao redutor da interface, que mostra a mesma árvore, status, arquivos e verificações do servidor."""
     settings, factory, session, project, root, run = _setup(tmp_path, "e2e corrigir calc.py e validar")
     bus = get_bus()
     before = run_snapshot(session, run.id)
@@ -169,6 +194,7 @@ async def test_real_run_through_sse_reaches_the_same_state_in_the_interface(tmp_
 
 @pytest.mark.asyncio
 async def test_interrupted_run_reopened_in_the_interface_is_never_shown_as_completed(tmp_path):
+    """Uma run interrompida reaberta no Node aparece como interrompida, e a retomada continua a exibi-la sem marcá-la como concluída."""
     settings, factory, session, project, root, run = _setup(tmp_path, "e2e corrigir calc.py e validar")
     with observe(session, run_id=run.id, project_id=project.id, task_id=root.id, agent="executor"):
         emit("command.started", {"call_id": "c1", "command": "pytest -q"}, commit=True)

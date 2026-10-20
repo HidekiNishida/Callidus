@@ -1,4 +1,14 @@
-# tests/test_sufficient_context.py — a operação recebe o que precisa: arquivos, contrato, objetivo e dependências
+"""
+Arquivo: tests/test_sufficient_context.py
+Nome: test_sufficient_context.py
+Propósito: verificar que a operação recebe o que precisa: arquivos, contrato, objetivo global e resultados das dependências.
+Responsabilidade: camada de testes — comportamento da montagem do contexto de operação.
+Componentes: arquivos-alvo no prompt, contrato, objetivo global e resultados de dependências, compactação que preserva os arquivos-alvo.
+Dependências: agent.context (assembler, operation_builder), agent.services (contract, project, task), agent.persistence.database, pytest.
+Observações: banco e workspace temporários por teste; o modelo não é chamado em nenhum cenário.
+
+a operação recebe o que precisa: arquivos, contrato, objetivo e dependências
+"""
 from pathlib import Path
 
 import pytest
@@ -18,6 +28,7 @@ PROFILE = ModelProfile(model_id="m", context_limit=16000, input_budget=12000, ou
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -25,6 +36,7 @@ def session(tmp_path: Path):
 
 
 def _prompt(session, project, root_path: Path, task) -> tuple[str, list[str]]:
+    """Monta o contexto da tarefa e devolve o prompt final e as notas de estratégia."""
     budget, snap = OperationContextBuilder(session).build_for_task(
         project_id=project.id, root_path=str(root_path), task=task, profile=PROFILE
     )
@@ -32,6 +44,7 @@ def _prompt(session, project, root_path: Path, task) -> tuple[str, list[str]]:
 
 
 def test_operation_sees_the_files_it_must_change(session, tmp_path):
+    """O prompt traz o conteúdo dos arquivos-alvo e não traz arquivos fora do projeto nem inexistentes."""
     (tmp_path / "pkg").mkdir()
     (tmp_path / "pkg" / "mod.py").write_text("def soma(a,  b):\n    return a - b\n", encoding="utf-8")
     (tmp_path.parent / "fora.py").write_text("segredo\n", encoding="utf-8")
@@ -55,6 +68,7 @@ def test_operation_sees_the_files_it_must_change(session, tmp_path):
 
 
 def test_contract_root_goal_and_dependency_results_reach_the_operation(session, tmp_path):
+    """O prompt carrega o contrato, o objetivo global e o resultado da etapa de dependência."""
     (tmp_path / "api.py").write_text("ROTAS = []\n", encoding="utf-8")
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
@@ -84,6 +98,7 @@ def test_contract_root_goal_and_dependency_results_reach_the_operation(session, 
 
 
 def test_compaction_never_alters_target_files():
+    """A compactação reduz o contexto sem alterar o conteúdo dos arquivos-alvo nem o objetivo."""
     code = "x  =  1\n\n\n\ny = 2\n"
     result = build_operation_context(
         PROFILE,

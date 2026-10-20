@@ -1,4 +1,14 @@
-# tests/test_observability_executor.py — o executor real emite os fatos da execução, na ordem, ligados à tarefa
+"""
+Arquivo: tests/test_observability_executor.py
+Nome: test_observability_executor.py
+Propósito: verificar que o executor real emite os fatos da execução na ordem e ligados à tarefa correspondente.
+Responsabilidade: camada de testes — comportamento emissor do executor durante uma execução de ponta a ponta.
+Componentes: ordem e tipagem dos eventos, vínculo com tarefa e pai, diff de arquivo alterado, saída de teste em memória, coerência entre persistido e entregue.
+Dependências: agent.orchestrator.runner, agent.observability, agent.persistence (database, models), agent.services, pytest.
+Observações: banco e workspace temporários; o provedor de modelo é o mock configurado na run.
+
+o executor real emite os fatos da execução, na ordem, ligados à tarefa
+"""
 import asyncio
 import shutil
 from pathlib import Path
@@ -19,6 +29,7 @@ from agent.services.task_service import TaskService
 
 
 async def _run_calc_fix(tmp_path: Path):
+    """Executa uma run de correção de calc.py e devolve a sessão, as tarefas, o log e os eventos persistidos e entregues."""
     workspace = tmp_path / "workspace"
     shutil.copytree(Path(__file__).parent / "fixtures" / "sample_project", workspace)
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
@@ -47,6 +58,7 @@ async def _run_calc_fix(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_executor_emits_ordered_typed_facts_for_a_real_run(tmp_path: Path):
+    """O executor emite fatos ordenados e tipados da execução, com seq único, diff real do arquivo e nenhum evento duplicado."""
     session, root, run, log, rows, delivered = await _run_calc_fix(tmp_path)
     assert log[-1]["action"] == "run_completed"
     types = [r.event_type for r in rows]

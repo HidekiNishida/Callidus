@@ -1,8 +1,18 @@
-# tests/test_model_tool_operation.py — a operação do modelo usa ferramentas (regressão real)
-"""Regressão da conversa real: com `gpt-oss:20b`, a etapa "Aplicar alterações" recebia o pedido
+"""
+Arquivo: tests/test_model_tool_operation.py
+Nome: test_model_tool_operation.py
+Propósito: Verificar a etapa de operação de modelo que usa ferramentas para alterar o projeto.
+Responsabilidade: camada de testes — modelo que pede ferramenta, aplica a mudança e conclui verificada, e chamada repetida que não entra em laço.
+Componentes: aplicação da mudança com verificação aprovada e parada da repetição de chamada de ferramenta.
+Dependências: agent.orchestrator.runner, agent.orchestrator.consolidation e agent.providers.base.
+Observações: banco temporário por teste e modelo falso que alterna entre pedir ferramenta e escrever o arquivo.
+
+Regressão da conversa real: com `gpt-oss:20b`, a etapa "Aplicar alterações" recebia o pedido
 sem ferramentas e o modelo devolvia `content` vazio. O agente repetia o mesmo pedido três vezes
 e parava em estagnação. Aqui o modelo pede a ferramenta, o agente a executa e a etapa conclui
-com evidência."""
+com evidência.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,6 +34,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Abre uma sessão do banco temporário e a fecha ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -37,12 +48,15 @@ class _ToolModel:
     last_usage = None
 
     def __init__(self) -> None:
+        """Zera o contador de chamadas ao modelo."""
         self.calls = 0
 
     def capabilities(self) -> ProviderCapabilities:
+        """Declara o provedor capaz de usar ferramentas e laço de ferramentas."""
         return ProviderCapabilities(tools=True, tool_loop=True)
 
     async def chat(self, request):
+        """Na primeira chamada pede a leitura do arquivo; na segunda, escreve o conteúdo."""
         self.calls += 1
         if self.calls == 1:
             return type(
@@ -78,6 +92,7 @@ class _ToolModel:
 
 
 def _leaf(session, tmp_path: Path, monkeypatch, provider):
+    """Prepara o projeto e a folha em execução, com o provedor falso injetado no runner."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="Objetivo", objective="Objetivo"))
@@ -105,6 +120,7 @@ def _leaf(session, tmp_path: Path, monkeypatch, provider):
 async def test_model_that_uses_tools_applies_the_change_and_the_step_is_verified(
     session, tmp_path, monkeypatch
 ):
+    """O modelo pede a ferramenta, o agente executa, o arquivo é escrito e a etapa fica verificada com as duas chamadas registradas."""
     provider = _ToolModel()
     run, leaf = _leaf(session, tmp_path, monkeypatch, provider)
 
@@ -133,10 +149,12 @@ async def test_repeated_identical_tool_call_does_not_loop_forever(session, tmp_p
     """A mesma chamada com os mesmos argumentos falha de novo: a etapa para para o replanejamento."""
 
     class _AlwaysMissing:
+        """Provedor falso que nunca deve ser chamado nesta etapa."""
         name = "mock"
         last_usage = None
 
         async def chat(self, request):  # pragma: no cover - não deve ser chamado
+            """Estoura uma asserção, porque o modelo não deve ser chamado."""
             raise AssertionError("o modelo não deve ser chamado nesta etapa")
 
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))

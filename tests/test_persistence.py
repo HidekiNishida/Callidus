@@ -1,4 +1,14 @@
-# tests/test_persistence.py — persistência e recuperação
+"""
+Arquivo: tests/test_persistence.py
+Nome: test_persistence.py
+Propósito: verificar a persistência de projetos e tarefas, as transições de estado e as dependências entre tarefas.
+Responsabilidade: camada de testes — comportamento dos serviços de projeto e tarefa sobre o banco.
+Componentes: sobrevivência da árvore de tarefas à reabertura, recusa de transição inválida, bloqueio de ciclo de dependência, caminho feliz até concluída.
+Dependências: agent.services (project_service, task_service), agent.persistence.database, agent.domain (enums, schemas), pytest.
+Observações: banco SQLite temporário por teste (tmp_path); o agent.db real nunca é tocado.
+
+persistência e recuperação
+"""
 import uuid
 from pathlib import Path
 
@@ -15,6 +25,7 @@ from agent.services.task_service import DependencyError, TaskService
 
 @pytest.fixture
 def session(tmp_path: Path) -> Session:
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     settings = Settings(data_dir=tmp_path)
     engine = init_db(settings=settings)
     factory = build_session_factory(engine)
@@ -24,6 +35,7 @@ def session(tmp_path: Path) -> Session:
 
 
 def test_project_and_task_tree_survives_reopen(tmp_path: Path, session: Session):
+    """A árvore de tarefas permanece intacta depois de reabrir o banco em outra sessão."""
     ps = ProjectService(session)
     project = ps.create_project(
         ProjectCreate(name="demo", root_path=str(tmp_path), description="test")
@@ -53,6 +65,7 @@ def test_project_and_task_tree_survives_reopen(tmp_path: Path, session: Session)
 
 
 def test_invalid_transition_rejected(session: Session):
+    """Uma transição de estado inválida é recusada e a tarefa não muda de status."""
     ps = ProjectService(session)
     project = ps.create_project(ProjectCreate(name="p", root_path="/tmp/p"))
     task = TaskService(session).create_task(
@@ -65,6 +78,7 @@ def test_invalid_transition_rejected(session: Session):
 
 
 def test_dependency_cycle_blocked(session: Session):
+    """Uma dependência que criaria um ciclo entre tarefas é recusada."""
     ps = ProjectService(session)
     project = ps.create_project(ProjectCreate(name="p", root_path="/tmp/p"))
     ts = TaskService(session)
@@ -76,6 +90,7 @@ def test_dependency_cycle_blocked(session: Session):
 
 
 def test_happy_path_to_completed(session: Session):
+    """A sequência válida de estados leva a tarefa até concluída e registra o instante de conclusão."""
     ps = ProjectService(session)
     project = ps.create_project(ProjectCreate(name="p", root_path="/tmp/p"))
     ts = TaskService(session)

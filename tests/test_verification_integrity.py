@@ -1,5 +1,16 @@
-# tests/test_verification_integrity.py — a evidência precisa provar alguma coisa
-"""Regressões da integridade da verificação.
+"""
+Arquivo: tests/test_verification_integrity.py
+Nome: test_verification_integrity.py
+Propósito: verificar que a evidência precisa provar alguma coisa.
+Responsabilidade: camada de testes — comportamento do verificador de etapas e da impressão digital das evidências.
+Componentes: etapas sem dependência declarada, reprovação por etapa anterior pendente, aprovação por etapa concluída, evidência invalidada quando o arquivo some ou muda, impressão digital por verificador e verificador de etapas que não se autoaprova.
+Dependências: agent.orchestrator.consolidation.stages_outcome, agent.verification (fingerprint, runner), agent.services (project, task), agent.persistence.database, pytest.
+Observações: banco e workspace temporários por teste; as evidências são criadas direto no banco.
+
+a evidência precisa provar alguma coisa
+
+
+Regressões da integridade da verificação.
 
 Duas falhas de fundo permitiam que o Callidus dissesse "concluído" sem ter provado nada:
 
@@ -24,6 +35,7 @@ from agent.verification.fingerprint import artifact_paths, is_current, snapshot
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -31,6 +43,7 @@ def session(tmp_path: Path):
 
 
 def _tree(session, tmp_path):
+    """Monta uma tarefa raiz com duas etapas, uma delas dependente da outra."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="Raiz", objective="fazer"))
@@ -63,6 +76,7 @@ def test_stages_sem_dependencia_e_inconclusivo(session, tmp_path):
 
 
 def test_stages_reprova_etapa_anterior_pendente(session, tmp_path):
+    """Uma etapa anterior ainda pendente reprova a verificação por etapas."""
     _, _, first, second = _tree(session, tmp_path)
     first.status = TaskStatus.PLANNING.value
     session.flush()
@@ -75,6 +89,7 @@ def test_stages_reprova_etapa_anterior_pendente(session, tmp_path):
 
 
 def test_stages_aprova_etapa_anterior_concluida(session, tmp_path):
+    """Uma etapa anterior concluída aprova a verificação por etapas."""
     _, _, first, second = _tree(session, tmp_path)
     first.status = TaskStatus.COMPLETED.value
     session.flush()
@@ -86,6 +101,7 @@ def test_stages_aprova_etapa_anterior_concluida(session, tmp_path):
 
 
 def test_evidence_de_file_exists_invalida_quando_o_arquivo_some(tmp_path):
+    """A evidência de existência de arquivo é invalidada quando o arquivo some."""
     (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
     spec = {"type": "file_exists", "path": "app.py"}
 
@@ -98,6 +114,7 @@ def test_evidence_de_file_exists_invalida_quando_o_arquivo_some(tmp_path):
 
 
 def test_evidence_de_syntax_invalida_quando_o_arquivo_muda(tmp_path):
+    """A evidência de sintaxe é invalidada quando o arquivo muda."""
     target = tmp_path / "app.py"
     target.write_text("x = 1\n", encoding="utf-8")
     spec = {"type": "syntax", "path": "app.py"}
@@ -111,6 +128,7 @@ def test_evidence_de_syntax_invalida_quando_o_arquivo_muda(tmp_path):
 
 
 def test_verificadores_que_leem_arquivo_agora_tem_impressao_digital():
+    """Os verificadores que leem arquivo passam a ter impressão digital, e os demais continuam sem ela."""
     assert artifact_paths({"type": "file_exists", "path": "a.py"}) == ["a.py"]
     assert artifact_paths({"type": "syntax", "path": "a.py"}) == ["a.py"]
     # Verificadores que não dependem de arquivo continuam sem impressão.

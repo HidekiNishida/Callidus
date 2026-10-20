@@ -1,4 +1,13 @@
-# tests/test_attachments.py — texto longo, imagem e documento viram arquivo no projeto
+"""
+Arquivo: tests/test_attachments.py
+Nome: test_attachments.py
+Propósito: Verificar o armazenamento dos anexos enviados junto de uma tarefa.
+Responsabilidade: camada de testes — anexos de texto colado e de imagem gravados no projeto e limite de tamanho recusado.
+Componentes: anexos de texto e imagem persistidos e anexo acima do limite recusado.
+Dependências: agent.api.deps, agent.config.Settings e TestClient.
+Observações: banco temporário em tmp_path e worker de fundo desativado; os arquivos vão para a pasta temporária do projeto.
+"""
+
 import base64
 from pathlib import Path
 
@@ -11,6 +20,7 @@ from agent.config import Settings
 
 @pytest.fixture
 def client(tmp_path: Path):
+    """Cliente de teste da API com banco temporário e worker de fundo desligado."""
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
     deps._engine = None
     deps._session_factory = None
@@ -25,6 +35,7 @@ def client(tmp_path: Path):
 
 
 def test_pasted_text_and_image_are_stored(client, tmp_path):
+    """O texto colado e a imagem são guardados na pasta de anexos do projeto."""
     root = tmp_path / "proj"
     root.mkdir()
     project = client.post("/projects", json={"name": "Anexos", "root_path": str(root)}).json()
@@ -66,6 +77,7 @@ def test_pasted_text_and_image_are_stored(client, tmp_path):
 
 
 def test_attachment_over_limit_is_rejected(client, tmp_path):
+    """Um anexo acima do limite permitido é recusado com 400."""
     root = tmp_path / "proj"
     root.mkdir()
     project = client.post("/projects", json={"name": "Limite", "root_path": str(root)}).json()

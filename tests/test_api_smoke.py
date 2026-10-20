@@ -1,4 +1,13 @@
-# tests/test_api_smoke.py — fumaça da API: o fluxo principal responde sem erro 5xx
+"""
+Arquivo: tests/test_api_smoke.py
+Nome: test_api_smoke.py
+Propósito: Verificar, de forma ampla, que as rotas da API respondem sem erro interno.
+Responsabilidade: camada de testes — fumaça das rotas de leitura, ciclo de projeto e conversa, execuções, provedores, payloads inválidos e filesystem.
+Componentes: rotas somente-leitura, ciclo de projeto e conversa, rotas de execução, configuração de provedor, payloads inválidos, criação de pasta, retomada de run, remoto do projeto e identificadores inexistentes.
+Dependências: agent.api.deps, agent.config.Settings e TestClient.
+Observações: banco temporário em tmp_path e worker de fundo desativado; a criação de pasta usa um diretório temporário na home, removido ao fim.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,10 +21,12 @@ from agent.config import Settings
 
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch):
+    """Cliente de teste da API com banco temporário e worker de fundo desligado."""
     monkeypatch.delenv("PROVIDERS_CONFIG_PATH", raising=False)
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
 
     def override_settings():
+        """Devolve as configurações do teste, com banco temporário e worker de fundo desligado."""
         return settings
 
     deps._engine = None
@@ -31,6 +42,7 @@ def client(tmp_path: Path, monkeypatch):
 
 
 def test_read_only_routes_answer(client: TestClient):
+    """Nenhuma rota somente-leitura responde com erro de servidor."""
     for path in (
         "/health",
         "/providers",
@@ -47,6 +59,7 @@ def test_read_only_routes_answer(client: TestClient):
 
 
 def test_project_and_conversation_lifecycle(client: TestClient, tmp_path: Path):
+    """Criar, renomear projeto e conversa, criar tarefa e consultá-la responde dentro do esperado."""
     project = client.post("/projects", json={"name": "projeto", "root_path": str(tmp_path)})
     assert project.status_code == 200, project.text
     project_id = project.json()["id"]
@@ -102,6 +115,7 @@ def test_project_and_conversation_lifecycle(client: TestClient, tmp_path: Path):
 
 
 def test_run_routes_answer(client: TestClient, tmp_path: Path):
+    """As rotas de execução (passo, pausa, retomada, autônomo e métricas) respondem sem erro interno."""
     project = client.post("/projects", json={"name": "projeto", "root_path": str(tmp_path)}).json()
     conversation = client.post(f"/projects/{project['id']}/conversations", json={"title": "c"}).json()
     task = client.post(
@@ -131,6 +145,7 @@ def test_run_routes_answer(client: TestClient, tmp_path: Path):
 
 
 def test_provider_configuration_routes_answer(client: TestClient, monkeypatch):
+    """A configuração de provedor é salva e consultada, e um servidor inexistente devolve erro limpo."""
     monkeypatch.setenv("CHAVE_DE_TESTE", "chave-de-teste-123456")
     saved = client.put(
         "/providers/config",
@@ -167,6 +182,7 @@ def test_provider_configuration_routes_answer(client: TestClient, monkeypatch):
 
 
 def test_invalid_payloads_return_4xx_not_500(client: TestClient):
+    """Payloads inválidos são recusados com 4xx, nunca com erro de servidor."""
     cases = [
         ("post", "/projects", {"name": ""}),
         ("post", "/projects", {"name": "x", "root_path": 123}),
@@ -195,12 +211,14 @@ def test_criar_pasta_dentro_do_alcance(client: TestClient, tmp_path: Path):
 
 
 def test_criar_pasta_com_nome_invalido(client: TestClient, tmp_path: Path):
+    """Nome de pasta vazio, com barras ou ponto duplo é recusado com 400."""
     for name in ("", "  ", "a/b", ".."):
         response = client.post("/fs/mkdir", json={"path": str(tmp_path), "name": name})
         assert response.status_code == 400, f"{name!r} → {response.status_code}"
 
 
 def test_criar_pasta_fora_do_alcance(client: TestClient):
+    """Criar pasta fora do alcance permitido é recusado com 400."""
     response = client.post("/fs/mkdir", json={"path": "/etc", "name": "x"})
     assert response.status_code == 400
 
@@ -224,6 +242,7 @@ def test_run_pausado_pode_ser_retomado(client: TestClient, tmp_path: Path):
 
 
 def test_remote_do_projeto_e_configuravel(client: TestClient, tmp_path: Path):
+    """O remoto do projeto é salvo, consultado e removido pela API."""
     project = client.post("/projects", json={"name": "p", "root_path": str(tmp_path)}).json()
     saved = client.put(
         f"/projects/{project['id']}/remote",
@@ -236,12 +255,14 @@ def test_remote_do_projeto_e_configuravel(client: TestClient, tmp_path: Path):
 
 
 def test_remote_sem_host_e_recusado(client: TestClient, tmp_path: Path):
+    """Configurar o remoto sem host é recusado com 400."""
     project = client.post("/projects", json={"name": "p", "root_path": str(tmp_path)}).json()
     response = client.put(f"/projects/{project['id']}/remote", json={"host": ""})
     assert response.status_code == 400
 
 
 def test_unknown_ids_return_404(client: TestClient):
+    """Identificadores inexistentes devolvem 404 nas rotas de projeto, tarefa e conversa."""
     missing = "00000000-0000-0000-0000-000000000000"
     assert client.get(f"/projects/{missing}").status_code == 404
     assert client.delete(f"/projects/{missing}").status_code == 404

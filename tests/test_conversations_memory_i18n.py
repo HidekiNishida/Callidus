@@ -1,4 +1,13 @@
-# tests/test_conversations_memory_i18n.py
+"""
+Arquivo: tests/test_conversations_memory_i18n.py
+Nome: test_conversations_memory_i18n.py
+Propósito: Verificar a detecção de idioma, a tradução, a memória por conversa e a remoção da conversa com sua árvore de tarefas.
+Responsabilidade: camada de testes — idioma dos títulos, estrutura da memória, escopo da memória, rotas de conversa e memória e ferramenta de lembrar.
+Componentes: detecção e tradução, memória que guarda o texto inteiro e se divide no uso, memória restrita à conversa, rotas de conversa e memória, ferramenta de lembrar e remoção em cascata.
+Dependências: agent.i18n.locale, agent.memory.store, agent.services.conversation_service, agent.tools.registry e a API HTTP.
+Observações: banco temporário em tmp_path; a pasta inicial é simulada com monkeypatch.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -22,6 +31,7 @@ from agent.tools.registry import ToolContext, build_default_registry
 
 
 def test_detects_and_translates_task_titles():
+    """O idioma dos títulos é detectado e as frases são traduzidas para português e inglês."""
     assert detect_language("Crie uma calculadora com interface") == "pt"
     assert detect_language("Create unit tests for calculator logic") == "en"
     assert detect_language("Crear una interfaz para el archivo") == "es"
@@ -35,6 +45,7 @@ def test_detects_and_translates_task_titles():
 
 
 def test_memory_keeps_full_text_and_splits_on_use():
+    """A memória guarda o texto completo, resume sem perder o começo e se divide no uso conforme o pedido."""
     content = (
         "O banco fica em SQLite e não deve ir para o git.\n\n"
         "A calculadora precisa de quatro operações e testes unitários na pasta tests."
@@ -52,6 +63,7 @@ def test_memory_keeps_full_text_and_splits_on_use():
 
 
 def test_conversation_memory_is_scoped(tmp_path: Path):
+    """A memória pertence à conversa e as subtarefas herdam o mesmo identificador de conversa."""
     engine = init_db(settings=Settings(data_dir=tmp_path))
     session: Session = build_session_factory(engine)()
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
@@ -110,9 +122,11 @@ def test_conversation_memory_is_scoped(tmp_path: Path):
 
 @pytest.fixture
 def client(tmp_path: Path):
+    """Cliente de teste da API com banco temporário e worker de fundo desligado."""
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
 
     def override_settings():
+        """Devolve as configurações do teste, com banco temporário e worker de fundo desligado."""
         return settings
 
     deps._engine = None
@@ -128,6 +142,7 @@ def client(tmp_path: Path):
 
 
 def test_api_conversations_folder_and_memory(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A API navega na pasta do usuário e devolve conversas e memórias do projeto."""
     (tmp_path / "projetos").mkdir(exist_ok=True)
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     home = client.get("/fs/browse")
@@ -159,9 +174,11 @@ def test_api_conversations_folder_and_memory(client: TestClient, tmp_path: Path,
 
 @pytest.mark.asyncio
 async def test_remember_tool_uses_saver():
+    """A ferramenta de lembrar repassa o conteúdo ao salvador de memória."""
     seen = {}
 
     def saver(args):
+        """Salvador falso de memória: guarda os argumentos recebidos e confirma a gravação."""
         seen.update(args)
         return {"success": True, "summary": "ok"}
 

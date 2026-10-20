@@ -1,4 +1,14 @@
-# tests/test_ollama_provider.py — Ollama local e remoto (API nativa)
+"""
+Arquivo: tests/test_ollama_provider.py
+Nome: test_ollama_provider.py
+Propósito: verificar o adaptador do Ollama local e remoto contra a API nativa, incluindo streaming e diagnóstico.
+Responsabilidade: camada de testes — comportamento observável do provedor Ollama (requisição, resposta, erros e saúde).
+Componentes: API nativa de chat, envio da chave, listagem de modelos, ferramentas, streaming, timeout, autenticação, health check e URL inválida.
+Dependências: agent.providers.ollama.OllamaProvider, agent.providers.base, fixture mock_http do conftest, httpx, pytest.
+Observações: todo o HTTP é simulado pela fixture mock_http; nenhum servidor Ollama real é contatado.
+
+Ollama local e remoto (API nativa)
+"""
 from __future__ import annotations
 
 import json
@@ -23,14 +33,17 @@ REQUEST = ChatCompletionRequest(
 
 
 def _body(request: httpx.Request) -> dict:
+    """Decodifica o corpo JSON enviado na requisição."""
     return json.loads(request.content)
 
 
 @pytest.mark.asyncio
 async def test_remote_ollama_uses_native_api(mock_http):
+    """A chamada usa a API nativa `/api/chat` com o modelo e a temperatura configurados, e devolve o conteúdo e os tokens estimados."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         seen["path"] = request.url.path
         seen["body"] = _body(request)
         return httpx.Response(200, json={"message": {"content": "pronto"}, "eval_count": 3})
@@ -49,9 +62,11 @@ async def test_remote_ollama_uses_native_api(mock_http):
 
 @pytest.mark.asyncio
 async def test_api_key_is_sent_when_configured(mock_http):
+    """A chave configurada é enviada no cabeçalho de autorização."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         seen["auth"] = request.headers.get("authorization")
         return httpx.Response(200, json={"message": {"content": "ok"}})
 
@@ -63,7 +78,9 @@ async def test_api_key_is_sent_when_configured(mock_http):
 
 @pytest.mark.asyncio
 async def test_models_are_listed_from_api_tags(mock_http):
+    """Os modelos disponíveis vêm da listagem `/api/tags` do servidor."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         assert request.url.path == "/api/tags"
         return httpx.Response(200, json={"models": [{"name": "qwen3:8b"}, {"name": "llama3.2"}]})
 
@@ -74,9 +91,11 @@ async def test_models_are_listed_from_api_tags(mock_http):
 
 @pytest.mark.asyncio
 async def test_tools_are_sent_and_tool_calls_are_returned(mock_http):
+    """As ferramentas enviadas ao Ollama chegam de volta como chamadas de ferramenta tipadas."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         seen["body"] = _body(request)
         return httpx.Response(
             200,
@@ -104,12 +123,14 @@ async def test_tools_are_sent_and_tool_calls_are_returned(mock_http):
 
 @pytest.mark.asyncio
 async def test_streaming_collects_fragments_and_usage(mock_http):
+    """O streaming entrega os fragmentos recebidos e contabiliza o uso reported pelo servidor."""
     body = (
         '{"message":{"content":"Ol"},"done":false}\n'
         '{"message":{"content":"á"},"done":true,"eval_count":2}\n'
     ).encode("utf-8")
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         assert _body(request)["stream"] is True
         return httpx.Response(200, content=body)
 
@@ -124,7 +145,9 @@ async def test_streaming_collects_fragments_and_usage(mock_http):
 
 @pytest.mark.asyncio
 async def test_streaming_without_final_message_fails(mock_http):
+    """Um stream que termina sem a mensagem final é recusado com erro explícito."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         return httpx.Response(200, content=b'{"message":{"content":"parcial"},"done":false}\n')
 
     mock_http("ollama", handler)
@@ -136,7 +159,9 @@ async def test_streaming_without_final_message_fails(mock_http):
 
 @pytest.mark.asyncio
 async def test_timeout_is_reported_as_provider_timeout(mock_http):
+    """Um tempo esgotado é reportado como timeout de provedor."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         raise httpx.ReadTimeout("demorou")
 
     mock_http("ollama", handler)
@@ -148,7 +173,9 @@ async def test_timeout_is_reported_as_provider_timeout(mock_http):
 
 @pytest.mark.asyncio
 async def test_authentication_failure_is_reported(mock_http):
+    """Uma resposta 401 é reportada como erro de autenticação."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         return httpx.Response(401, text="unauthorized")
 
     mock_http("ollama", handler)
@@ -159,7 +186,9 @@ async def test_authentication_failure_is_reported(mock_http):
 
 @pytest.mark.asyncio
 async def test_health_check_reports_the_server(mock_http):
+    """O health check informa o servidor como disponível e lista os modelos encontrados."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta programada e registra a requisição."""
         return httpx.Response(200, json={"models": [{"name": "qwen3:8b"}]})
 
     mock_http("ollama", handler)
@@ -170,6 +199,7 @@ async def test_health_check_reports_the_server(mock_http):
 
 
 def test_invalid_base_url_is_rejected():
+    """Uma URL de base com esquema não suportado é recusada na construção do provedor."""
     from agent.providers.base import ProviderConfigError
 
     with pytest.raises(ProviderConfigError):

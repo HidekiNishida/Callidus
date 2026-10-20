@@ -1,5 +1,15 @@
-# tests/test_query_service.py — consultas entre agentes, em qualquer geração
-"""O pai pergunta, o filho responde — sem receber o histórico do filho.
+"""
+Arquivo: tests/test_query_service.py
+Nome: test_query_service.py
+Propósito: verificar as consultas entre agentes, do registro à resposta fundamentada no estado persistido.
+Responsabilidade: camada de testes — comportamento do serviço de consultas (protocolo, resolução, ausência e fundamentação).
+Componentes: registro e correlação da consulta, recusa de ciclo, auto-consulta e pergunta vazia, limite de pendentes, agrupamento de perguntas, resposta a partir do estado, busca em descendente profundo, ausência de evidência, limite de tentativas, agente suspenso, contexto limitado, detecção de ausência e marcação de resposta fundamentada ou não.
+Dependências: agent.services (query_service, agent_service, project_service, task_service), agent.persistence.database, agent.providers.base, pytest.
+Observações: banco SQLite temporário por teste; o modelo é substituído por um provedor falso nas consultas que exigem inferência.
+
+consultas entre agentes, em qualquer geração
+
+O pai pergunta, o filho responde — sem receber o histórico do filho.
 
 Cobre o caminho principal (resposta a partir do estado persistido, sem inferência), o
 caminho recursivo (a resposta vem de um descendente) e as regras do protocolo (ciclo,
@@ -25,6 +35,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path) -> Session:
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     settings = Settings(data_dir=tmp_path)
     factory = build_session_factory(init_db(settings=settings))
     sess = factory()
@@ -67,6 +78,7 @@ def tree(session: Session):
 
 
 def test_a_consulta_e_registrada_com_correlacao_e_tentativas(session: Session, tree):
+    """A consulta é registrada como pendente, com correlação, limite de tentativas e a pergunta guardada."""
     service = QueryService(session)
     query = service.ask(tree["agents"]["root"].id, tree["agents"]["child"].id, "o que houve?")
     assert query.status == QueryStatus.PENDING.value
@@ -85,18 +97,21 @@ def test_consulta_circular_e_recusada(session: Session, tree):
 
 
 def test_consulta_a_si_mesmo_e_recusada(session: Session, tree):
+    """Um agente não pode consultar a si mesmo."""
     service = QueryService(session)
     with pytest.raises(QueryRejectedError):
         service.ask(tree["agents"]["child"].id, tree["agents"]["child"].id, "oi?")
 
 
 def test_consulta_sem_pergunta_e_recusada(session: Session, tree):
+    """Uma consulta sem pergunta é recusada."""
     service = QueryService(session)
     with pytest.raises(QueryRejectedError):
         service.ask(tree["agents"]["root"].id, tree["agents"]["child"].id, "   ")
 
 
 def test_o_limite_de_consultas_pendentes_e_respeitado(tmp_path: Path):
+    """A terceira consulta pendente do mesmo par é recusada pelo limite configurado."""
     settings = Settings(data_dir=tmp_path, max_pending_queries_per_agent=2)
     factory = build_session_factory(init_db(settings=settings))
     sess = factory()
@@ -116,6 +131,7 @@ def test_o_limite_de_consultas_pendentes_e_respeitado(tmp_path: Path):
 
 
 def test_perguntas_relacionadas_sao_agrupadas_em_uma_consulta(session: Session, tree):
+    """Perguntas relacionadas viram uma única consulta pendente com todas as perguntas."""
     service = QueryService(session)
     query = service.ask(
         tree["agents"]["root"].id,
@@ -130,6 +146,7 @@ def test_perguntas_relacionadas_sao_agrupadas_em_uma_consulta(session: Session, 
 
 
 async def test_a_resposta_vem_do_estado_persistido_sem_inferencia(session: Session, tree):
+    """A resposta vem do estado persistido, com as evidências, sem inferência do modelo."""
     agents = AgentService(session)
     agents.record_finding(
         tree["agents"]["grand"].id,
@@ -171,6 +188,7 @@ async def test_a_consulta_encontra_evidencia_em_descendente_profundo(session: Se
 
 
 async def test_sem_evidencia_a_resposta_diz_que_falta(session: Session, tree):
+    """Sem evidência no estado, a resposta declara a ausência e marca a incerteza."""
     service = QueryService(session)
     query = service.ask(
         tree["agents"]["root"].id, tree["agents"]["child"].id, "qual foi a causa da falha?"
@@ -182,6 +200,7 @@ async def test_sem_evidencia_a_resposta_diz_que_falta(session: Session, tree):
 
 
 async def test_a_resposta_e_correlacionada_a_consulta(session: Session, tree):
+    """Cada consulta tem identidade própria e responde à pergunta que originou."""
     service = QueryService(session)
     first = service.ask(tree["agents"]["root"].id, tree["agents"]["child"].id, "pergunta A")
     second = service.ask(tree["agents"]["root"].id, tree["agents"]["child"].id, "pergunta B")
@@ -193,6 +212,7 @@ async def test_a_resposta_e_correlacionada_a_consulta(session: Session, tree):
 
 
 async def test_o_limite_de_tentativas_e_respeitado(session: Session, tree):
+    """Sem tentativas disponíveis, a consulta falha com o motivo de limite de tentativas."""
     service = QueryService(session)
     query = service.ask(
         tree["agents"]["root"].id,
@@ -207,6 +227,7 @@ async def test_o_limite_de_tentativas_e_respeitado(session: Session, tree):
 
 
 async def test_resolver_uma_consulta_ja_respondida_nao_reinferencia(session: Session, tree):
+    """Resolver de novo uma consulta já respondida devolve a mesma resposta, sem novo consumo."""
     service = QueryService(session)
     query = service.ask(tree["agents"]["root"].id, tree["agents"]["child"].id, "pergunta")
     resolved = await service.resolve(query.id)
@@ -225,10 +246,12 @@ async def test_o_agente_suspenso_e_reativado_para_responder(session: Session, tr
     assert agents.get(grand.id).status == "SUSPENDED"
 
     class _Provider:
+        """Provedor falso que devolve uma resposta fixa, sem consultar o estado persistido."""
         name = "fake"
         calls = 0
 
         async def chat(self, request):
+            """Provedor falso: devolve uma resposta fixa, sem consultar o estado persistido."""
             _Provider.calls += 1
             return ChatCompletionResponse(content="A causa foi o import faltando")
 
@@ -264,6 +287,7 @@ def test_o_contexto_da_consulta_e_limitado_e_nao_traz_transcricao(session: Sessi
 
 
 def test_o_checkpoint_e_limitado(session: Session, tree):
+    """O checkpoint salvo é truncado e sinaliza o truncamento."""
     agents = AgentService(session)
     net = tree["agents"]["grand"]
     agents.save_checkpoint(net.id, {"step": "z" * 100_000})
@@ -302,6 +326,7 @@ def test_a_deteccao_de_ausencia_e_tolerante(texto: str):
     ],
 )
 def test_uma_resposta_normal_nao_e_tratada_como_ausencia(texto: str):
+    """Uma resposta com conteúdo não é confundida com a declaração de ausência."""
     from agent.services.query_service import _declara_ausencia
 
     assert _declara_ausencia(texto) is False
@@ -318,9 +343,11 @@ async def test_resposta_sem_lastro_e_marcada_como_nao_fundamentada(session: Sess
     agents.record_finding(net.id, "A causa da falha foi o import removido em calc.py")
 
     class _Provider:
+        """Provedor falso que devolve uma resposta sem lastro no estado persistido."""
         name = "fake"
 
         async def chat(self, request):
+            """Provedor falso: devolve uma resposta fixa, sem consultar o estado persistido."""
             return ChatCompletionResponse(
                 content="A probabilidade de reincidência é de 37% ao ano, segundo o modelo."
             )
@@ -341,6 +368,7 @@ async def test_resposta_sem_lastro_e_marcada_como_nao_fundamentada(session: Sess
 
 @pytest.mark.asyncio
 async def test_resposta_com_lastro_e_marcada_como_fundamentada(session: Session, tree):
+    """A resposta apoiada no estado persistido é marcada como fundamentada, sem incerteza."""
     from agent.providers.base import ModelProfile
 
     agents = AgentService(session)
@@ -351,9 +379,11 @@ async def test_resposta_com_lastro_e_marcada_como_fundamentada(session: Session,
     )
 
     class _Provider:
+        """Provedor falso que devolve uma resposta com lastro no estado persistido."""
         name = "fake"
 
         async def chat(self, request):
+            """Provedor falso: devolve uma resposta fixa, sem consultar o estado persistido."""
             return ChatCompletionResponse(
                 content="O import de math foi removido de calc.py, conforme o log da linha 42."
             )
@@ -373,14 +403,17 @@ async def test_resposta_com_lastro_e_marcada_como_fundamentada(session: Session,
 
 @pytest.mark.asyncio
 async def test_resposta_que_declara_ausencia_vira_resposta_com_ausencia(session: Session, tree):
+    """Uma resposta que declara ausência é registrada como ausência de evidência."""
     from agent.providers.base import ModelProfile
 
     queries = QueryService(session)
 
     class _Provider:
+        """Provedor falso que declara ausência de informação."""
         name = "fake"
 
         async def chat(self, request):
+            """Provedor falso: devolve uma resposta fixa, sem consultar o estado persistido."""
             return ChatCompletionResponse(content="SEMA INFORMAÇÃO FALTA\n\nNão há dados.")
 
     consulta = queries.ask(

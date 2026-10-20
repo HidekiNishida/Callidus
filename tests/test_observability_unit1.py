@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
-# tests/test_observability_unit1.py
-# Unit 1 tests for observabilidade-tempo-real: contrato, barramento, emissor, migração
 
+"""
+Arquivo: tests/test_observability_unit1.py
+Nome: test_observability_unit1.py
+Propósito: verificar o contrato dos eventos, o barramento, o emissor e as colunas da migração da observabilidade.
+Responsabilidade: camada de testes — comportamento unitário do contrato de eventos, do emissor e do modelo de persistência.
+Componentes: especificações e validação de payload, conversão de linha em envelope, emissão fora e dentro do contexto, alocação de sequência, vínculo com tarefa pai, sanitização e migração.
+Dependências: agent.observability (contracts, emitter, bus, sanitize), agent.persistence (models, database), sqlalchemy, pytest.
+Observações: banco SQLite em memória por teste; nenhum arquivo real é tocado e nenhum serviço externo é usado.
+
+Unit 1 tests for observabilidade-tempo-real: contrato, barramento, emissor, migração
+"""
 import uuid
 from datetime import datetime, timezone
 import pytest
@@ -27,6 +36,7 @@ from agent.observability.sanitize import sanitize
 
 def setup_function():
     # Create a fresh in-memory database for each test
+    """Cria um banco SQLite em memória novo para o teste e devolve a fábrica de sessões."""
     engine = create_engine("sqlite:///:memory:")
     init_db(engine)
     SessionLocal = build_session_factory(engine)
@@ -34,7 +44,7 @@ def setup_function():
 
 
 def test_event_specs_and_validation():
-    """Contract: specs exist and validation works."""
+    """As especificações dos eventos descrevem categoria, persistência e campos obrigatórios, e a validação recusa payload incompleto ou tipo desconhecido."""
     SessionLocal = setup_function()
     # Known event type
     spec = spec_for("agent.started")
@@ -63,7 +73,7 @@ def test_event_specs_and_validation():
 
 
 def test_envelope_from_row():
-    """Envelope conversion from row."""
+    """A conversão de uma linha persistida produz o envelope com identificadores, sequência, carimbo UTC e payload original."""
     SessionLocal = setup_function()
     with SessionLocal() as session:
         # Create an instance without specifying id (let default work)
@@ -98,7 +108,7 @@ def test_envelope_from_row():
 
 
 def test_emit_without_context():
-    """Emit outside of observe context returns None."""
+    """Uma emissão fora de um contexto de observação não registra nada e devolve `None`."""
     SessionLocal = setup_function()
     with SessionLocal() as session:
         result = emit("agent.started", {"output_id": "x", "provider": "p", "model": "m", "streaming": True})
@@ -106,7 +116,7 @@ def test_emit_without_context():
 
 
 def test_emit_persists_after_commit():
-    """Emit inside observe context persists row only after commit."""
+    """O evento persistido só é gravado no commit e mantém o `seq` reservado pelo fragmento que o precedeu."""
     SessionLocal = setup_function()
     bus = get_bus()
     # Reset bus state for test
@@ -150,7 +160,7 @@ def test_emit_persists_after_commit():
 
 
 def test_sequence_allocation():
-    """Sequence numbers increase per run and are based on max seq in db."""
+    """A sequência é alocada por run, cresce a cada evento e continua a partir do maior `seq` já gravado no banco."""
     SessionLocal = setup_function()
     bus = get_bus()
     bus.reset()
@@ -216,7 +226,7 @@ def test_sequence_allocation():
 
 
 def test_parent_task_id_and_agent_set():
-    """When emitting, parent_task_id and agent are set from context if not provided."""
+    """Tarefa e agente vêm do contexto de observação, e o pai da tarefa é preenchido no flush; valores explícitos prevalecem."""
     SessionLocal = setup_function()
     with SessionLocal() as session:
         parent_task_id = uuid.uuid4()
@@ -285,7 +295,7 @@ def test_parent_task_id_and_agent_set():
 
 
 def test_sanitize_text_limit():
-    """Text payloads are sanitized to event_text_limit."""
+    """O texto do payload é truncado no limite configurado de evento."""
     from agent.config import get_settings
     settings = get_settings()
     limit = settings.event_text_limit
@@ -306,7 +316,7 @@ def test_sanitize_text_limit():
 
 
 def test_migration_columns_exist():
-    """Ensure the migration added the expected columns to event_logs."""
+    """A tabela de eventos aceita as colunas adicionadas pela migração e persiste a linha."""
     SessionLocal = setup_function()
     with SessionLocal() as session:
         # Try to insert a row with all columns

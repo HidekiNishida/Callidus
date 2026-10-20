@@ -1,4 +1,13 @@
-# tests/test_mcp_manager.py
+"""
+Arquivo: tests/test_mcp_manager.py
+Nome: test_mcp_manager.py
+Propósito: Verificar o gerente de servidores MCP.
+Responsabilidade: camada de testes — leitura do identificador de ferramenta e chamada a servidor desativado.
+Componentes: identificador de ferramenta MCP e recusa de chamada a servidor desligado.
+Dependências: agent.mcp.manager.
+Observações: arquivo de configuração MCP temporário em tmp_path; nenhum servidor é iniciado.
+"""
+
 import json
 from pathlib import Path
 
@@ -8,6 +17,7 @@ from agent.mcp.manager import McpManager
 
 
 def test_parse_mcp_tool_id(tmp_path: Path):
+    """O identificador de ferramenta MCP é decomposto em servidor e ferramenta, e identificadores locais são ignorados."""
     cfg = tmp_path / "mcp.json"
     cfg.write_text(
         json.dumps(
@@ -25,6 +35,7 @@ def test_parse_mcp_tool_id(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_call_disabled_server(tmp_path: Path):
+    """Chamar ferramenta de servidor desativado devolve falha em vez de tentar executá-la."""
     cfg = tmp_path / "mcp.json"
     cfg.write_text(
         json.dumps(

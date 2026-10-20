@@ -1,4 +1,13 @@
-# tests/test_llamacpp_provider.py
+"""
+Arquivo: tests/test_llamacpp_provider.py
+Nome: test_llamacpp_provider.py
+Propósito: Verificar o adaptador do provedor llama.cpp e sua seleção pelo orquestrador.
+Responsabilidade: camada de testes — contrato do provedor local, escolha do provedor pelo runner e decomposição com llama.cpp.
+Componentes: listagem de modelos e chat, seleção do provedor e decomposição servida pelo llama.cpp.
+Dependências: agent.providers.llamacpp, agent.orchestrator.runner e agent.orchestrator.decomposition.
+Observações: nenhuma chamada de rede: o cliente HTTP é substituído por um transporte simulado.
+"""
+
 import json
 
 import httpx
@@ -14,7 +23,9 @@ from agent.providers.mock import MockProvider, decomposition_json
 
 @pytest.mark.asyncio
 async def test_llamacpp_lists_and_chats(monkeypatch):
+    """O provedor lista os modelos e envia o chat no formato esperado."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que responde à listagem de modelos e ao chat, validando o corpo enviado."""
         if request.url.path.endswith("/models"):
             return httpx.Response(200, json={"data": [{"id": "qwen-local"}]})
         payload = json.loads(request.content)
@@ -29,6 +40,7 @@ async def test_llamacpp_lists_and_chats(monkeypatch):
     real = httpx.AsyncClient
 
     def factory(*args, **kwargs):
+        """Fabrica um cliente httpx que usa o transporte simulado no lugar da rede."""
         kwargs["transport"] = transport
         return real(*args, **kwargs)
 
@@ -46,6 +58,7 @@ async def test_llamacpp_lists_and_chats(monkeypatch):
 
 
 def test_runner_selects_llamacpp():
+    """Com a base do llama.cpp configurada, o runner escolhe esse provedor."""
     settings = Settings(llamacpp_base_url="http://127.0.0.1:8080")
     provider = _select_provider(settings, {"provider": "llamacpp"})
     assert isinstance(provider, LlamaCppProvider)
@@ -53,6 +66,7 @@ def test_runner_selects_llamacpp():
 
 @pytest.mark.asyncio
 async def test_decomposition_uses_llamacpp_provider():
+    """A decomposição usa o llama.cpp e devolve um plano com a ferramenta pedida e a resposta final."""
     mock = MockProvider(
         responses=[
             decomposition_json(

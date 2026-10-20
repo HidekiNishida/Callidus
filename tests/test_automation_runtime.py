@@ -1,10 +1,19 @@
-# tests/test_automation_runtime.py — regressões do runtime de automações
-"""Testes determinísticos do runtime de automações.
+"""
+Arquivo: tests/test_automation_runtime.py
+Nome: test_automation_runtime.py
+Propósito: Verificar de forma determinística o runtime de automações.
+Responsabilidade: camada de testes — máquina de estados do disparo, persistência, idempotência, recuperação, dependências, cancelamento e segurança.
+Componentes: gatilhos e fuso, eventos internos, recuperação após reinício, migração, horários perdidos, dependências, inicialização autorizada, execução de script, ação Callidus, objetivo congelado, destino remoto, idempotência, cancelamento, permissões, supervisor e reconciliação.
+Dependências: agent.automation.dispatcher, agent.automation.executor, agent.automation.supervisor, agent.automation.dependencies, agent.automation.security e agent.automation.store.
+Observações: banco SQLite temporário por teste; scripts são criados em tmp_path e o provedor nunca é chamado de verdade.
+
+Testes determinísticos do runtime de automações.
 
 Cobrem a máquina de estados do disparo, a persistência, a idempotência, a
 recuperação, as dependências, o cancelamento e a segurança — sem depender de um
 LLM real nem de rede.
 """
+
 from __future__ import annotations
 
 import os
@@ -67,6 +76,7 @@ def db(tmp_path, monkeypatch):
 
 @pytest.fixture
 def project(db, tmp_path):
+    """Cria o projeto usado pelos testes no banco temporário."""
     engine, factory, _settings = db
     session = factory()
     row = ProjectModel(name="projeto", root_path=str(tmp_path))
@@ -76,6 +86,7 @@ def project(db, tmp_path):
 
 
 def _script(tmp_path: Path, body: str = "echo ok\n", name: str = "alvo.sh") -> Path:
+    """Grava um script executável em tmp_path e devolve o caminho."""
     path = tmp_path / name
     path.write_text(f"#!/bin/sh\n{body}", encoding="utf-8")
     path.chmod(0o755)
@@ -83,6 +94,7 @@ def _script(tmp_path: Path, body: str = "echo ok\n", name: str = "alvo.sh") -> P
 
 
 def _definition(project, **overrides) -> AutomationDefinition:
+    """Monta a definição de uma automação de teste com gatilho cron e ação de script."""
     payload = {
         "name": "automação de teste",
         "project_id": str(project.id),
@@ -267,6 +279,7 @@ def test_migracao_preserva_agendamentos_antigos(db):
 
 
 def test_migracao_e_idempotente(db):
+    """Rodar a migração duas vezes não duplica as automações migradas."""
     engine, factory, _settings = db
     session = factory()
     project = ProjectModel(name="antigo", root_path=str(Path(os.getcwd())))
@@ -415,6 +428,7 @@ def test_inicializacao_autorizada_e_bloqueio_nao_autorizado(db, tmp_path):
 
 
 def await_resolver(resolver: DependencyResolver, spec: DependencySpec):
+    """Executa a verificação de dependências de forma síncrona."""
     import asyncio
 
     return asyncio.run(resolver.check_all([spec]))
@@ -607,15 +621,19 @@ def test_execucao_remota_usa_o_destino_configurado(db, project, monkeypatch):
     captured: dict = {}
 
     class FakeResult:
+        """Resultado falso de comando remoto, com saída de sucesso."""
         exit_code = 0
         stdout = "ok remoto"
         stderr = ""
 
     class FakeSsh:
+        """Transporte SSH falso que registra a configuração e o comando executado."""
         def __init__(self, config):
+            """Guarda a configuração remota recebida para inspeção."""
             captured["config"] = config
 
         async def run(self, command, cwd=None, timeout=None, on_output=None):
+            """Registra o comando e o diretório e devolve um resultado de sucesso."""
             captured["command"] = command
             captured["cwd"] = cwd
             return FakeResult()
@@ -700,6 +718,7 @@ def test_protecao_contra_execucao_duplicada(db, project):
 
 
 def test_chave_de_idempotencia_unica_no_banco(db, project):
+    """A chave de idempotência é única no banco: a segunda inserção é recusada."""
     engine, factory, _settings = db
     session = factory()
     row = AutomationService(session).create(_definition(project))
@@ -753,6 +772,7 @@ def test_cancelamento_suspensao_e_desativacao(db, project):
 
 
 def test_cancelar_disparos_pendentes(db, project):
+    """O disparo cancelado permanece cancelado no banco."""
     engine, factory, _settings = db
     session = factory()
     row = AutomationService(session).create(_definition(project))
@@ -790,6 +810,7 @@ def test_script_sem_autorizacao_e_bloqueado(db, project, tmp_path):
 
 
 def test_comando_fora_da_allowlist_e_bloqueado():
+    """Um comando fora da lista permitida é recusado com erro de permissão."""
     permissions = PermissionSpec(allow_scripts=True, allowed_commands=["/bin/sh"])
     with pytest.raises(PermissionDenied):
         assert_script_allowed(["/usr/bin/curl", "http://exemplo"], permissions)
@@ -853,6 +874,7 @@ def test_supervisor_despara_e_executa_uma_automacao_vencida(db, project, tmp_pat
 
 
 def test_status_e_diagnostico_do_supervisor(db, project):
+    """O status e o diagnóstico do supervisor listam as automações e a política de horário perdido."""
     engine, factory, settings = db
     session = factory()
     AutomationService(session).create(_definition(project))

@@ -1,7 +1,16 @@
-# tests/test_automation_api.py — API das automações
-"""Testes das rotas de automação: criar, consultar, ativar, suspender, executar,
+"""
+Arquivo: tests/test_automation_api.py
+Nome: test_automation_api.py
+Propósito: Verificar as rotas de automação: criar, consultar, ativar, suspender, executar, testar, cancelar e remover.
+Responsabilidade: camada de testes — contrato HTTP das rotas de automação e o que a interface precisa ver.
+Componentes: ciclo de criação e remoção, ativação com próximo disparo, validação sem gravação, estados, edição, execução manual, teste de prontidão, cancelamento, status e diagnóstico do supervisor.
+Dependências: agent.api.main, agent.config.get_settings e agent.persistence.database.
+Observações: banco SQLite temporário por teste (CALLIDUS_TEST_DATABASE_URL) e supervisor de automação desligado.
+
+Testes das rotas de automação: criar, consultar, ativar, suspender, executar,
 testar, cancelar e remover — e o que a interface precisa ver.
 """
+
 from __future__ import annotations
 
 
@@ -15,6 +24,7 @@ from agent.persistence.models import ProjectModel
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
+    """Cliente de teste da API sobre um banco temporário, com um projeto já criado."""
     monkeypatch.setenv("CALLIDUS_TEST_DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
     monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")
     monkeypatch.setenv("CALLIDUS_ENABLE_AUTOMATION_SUPERVISOR", "0")
@@ -42,6 +52,7 @@ def client(tmp_path, monkeypatch):
 
 
 def _definition(project_id: str) -> dict:
+    """Monta a definição de uma automação cron com ação de script e permissões."""
     return {
         "name": "tarefa da madrugada",
         "project_id": project_id,
@@ -54,6 +65,7 @@ def _definition(project_id: str) -> dict:
 
 
 def test_criar_consultar_e_remover(client):
+    """A automação criada é listada, consultada e removida; depois da remoção, some da consulta."""
     payload = _definition(client.project_id)
     response = client.post("/automations", json={"definition": payload})
     assert response.status_code == 200
@@ -74,6 +86,7 @@ def test_criar_consultar_e_remover(client):
 
 
 def test_criar_com_ativacao_calcula_proximo_disparo(client):
+    """Criar já ativa calcula o próximo horário de disparo."""
     payload = _definition(client.project_id)
     response = client.post("/automations", json={"definition": payload, "activate": True})
     assert response.status_code == 200
@@ -83,6 +96,7 @@ def test_criar_com_ativacao_calcula_proximo_disparo(client):
 
 
 def test_validacao_sem_gravacao(client):
+    """A validação aponta o erro do gatilho sem gravar a automação."""
     payload = _definition(client.project_id)
     payload["trigger"] = {"kind": "cron"}  # sem expressão
     response = client.post("/automations/validate", json={"definition": payload})
@@ -94,6 +108,7 @@ def test_validacao_sem_gravacao(client):
 
 
 def test_ativar_suspender_e_desativar(client):
+    """Ativar, suspender e desativar percorrem os estados enabled, suspended e disabled."""
     automation_id = client.post(
         "/automations", json={"definition": _definition(client.project_id)}
     ).json()["id"]
@@ -103,6 +118,7 @@ def test_ativar_suspender_e_desativar(client):
 
 
 def test_editar_automacao(client):
+    """A edição troca o nome e a política de horário perdido da automação."""
     automation_id = client.post(
         "/automations", json={"definition": _definition(client.project_id)}
     ).json()["id"]
@@ -117,6 +133,7 @@ def test_editar_automacao(client):
 
 
 def test_executar_uma_vez_registra_disparo(client):
+    """A execução manual cria um disparo pendente com chave de idempotência e o registra no histórico."""
     automation_id = client.post(
         "/automations", json={"definition": _definition(client.project_id)}
     ).json()["id"]
@@ -130,6 +147,7 @@ def test_executar_uma_vez_registra_disparo(client):
 
 
 def test_teste_verifica_prontidao_sem_executar(client):
+    """O teste de prontidão informa a prontidão sem executar a automação."""
     automation_id = client.post(
         "/automations", json={"definition": _definition(client.project_id)}
     ).json()["id"]
@@ -141,6 +159,7 @@ def test_teste_verifica_prontidao_sem_executar(client):
 
 
 def test_cancelar_disparos(client):
+    """O cancelamento encerra o disparo pendente e informa quantos foram cancelados."""
     automation_id = client.post(
         "/automations", json={"definition": _definition(client.project_id)}
     ).json()["id"]
@@ -151,6 +170,7 @@ def test_cancelar_disparos(client):
 
 
 def test_status_do_supervisor(client):
+    """O status do supervisor informa as automações e o serviço da plataforma."""
     response = client.get("/automations/supervisor/status")
     assert response.status_code == 200
     body = response.json()
@@ -160,6 +180,7 @@ def test_status_do_supervisor(client):
 
 
 def test_diagnostico_do_supervisor(client):
+    """O diagnóstico do supervisor detalha cada automação e os disparos pendentes."""
     client.post("/automations", json={"definition": _definition(client.project_id)})
     body = client.get("/automations/supervisor/diagnose").json()
     assert len(body["automations"]) == 1

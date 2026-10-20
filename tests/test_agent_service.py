@@ -1,5 +1,13 @@
-# tests/test_agent_service.py — ciclo de vida do agente lógico
-"""Agente, tarefa e execução como três entidades distintas.
+"""
+Arquivo: tests/test_agent_service.py
+Nome: test_agent_service.py
+Propósito: Verificar agente, tarefa e execução como três entidades distintas.
+Responsabilidade: camada de testes — ciclo de vida do agente: identidade, hierarquia, suspensão, retomada, descobertas, descarte e transições válidas.
+Componentes: existência independente da execução, identidade estável, hierarquia recursiva, limite de profundidade, suspensão, retomada, cancelamento, espera por filho, reabertura do banco, descobertas, descarte e efeitos externos.
+Dependências: agent.services.agent_service, agent.services.task_service, agent.services.project_service, agent.domain.agent_lifecycle e agent.persistence.database.
+Observações: banco temporário por teste; a reabertura usa um novo engine sobre o mesmo arquivo para simular o reinício do processo.
+
+Agente, tarefa e execução como três entidades distintas.
 
 O que este arquivo prova:
 
@@ -10,6 +18,7 @@ O que este arquivo prova:
 - descartar não apaga resultado nem artefato;
 - transições inválidas são erro, nunca "correção" silenciosa.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -40,6 +49,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session_factory(tmp_path: Path) -> sessionmaker[Session]:
+    """Cria o engine e a fábrica de sessões sobre um banco temporário."""
     settings = Settings(data_dir=tmp_path)
     engine = init_db(settings=settings)
     return build_session_factory(engine)
@@ -47,6 +57,7 @@ def session_factory(tmp_path: Path) -> sessionmaker[Session]:
 
 @pytest.fixture
 def session(session_factory) -> Session:
+    """Abre uma sessão do banco temporário e a fecha ao fim do teste."""
     sess = session_factory()
     yield sess
     sess.close()
@@ -54,6 +65,7 @@ def session(session_factory) -> Session:
 
 @pytest.fixture
 def project(session: Session):
+    """Cria o projeto usado pelos testes e devolve a tarefa raiz."""
     return ProjectService(session).create_project(
         ProjectCreate(name="agentes", root_path="/tmp/agentes")
     )
@@ -86,6 +98,7 @@ def _tree(session: Session, project, depth: int = 3):
 
 
 def test_o_agente_existe_independente_da_execucao(session: Session, project):
+    """Sem execução iniciada, o agente continua existindo, consultável e sem execução corrente."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     agent = service.ensure_agent(tasks[1].id)
@@ -98,6 +111,7 @@ def test_o_agente_existe_independente_da_execucao(session: Session, project):
 
 
 def test_a_identidade_do_agente_e_estavel(session: Session, project):
+    """Pedir o agente da mesma tarefa duas vezes devolve o mesmo identificador."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     first = service.ensure_agent(tasks[0].id)
@@ -106,6 +120,7 @@ def test_a_identidade_do_agente_e_estavel(session: Session, project):
 
 
 def test_a_hierarquia_de_agentes_e_recursiva(session: Session, project):
+    """A hierarquia de agentes é recursiva, com profundidade e ancestrais corretos."""
     tasks = _tree(session, project, depth=5)
     service = AgentService(session)
     for task in tasks:
@@ -122,6 +137,7 @@ def test_a_hierarquia_de_agentes_e_recursiva(session: Session, project):
 
 
 def test_a_profundidade_da_delegacao_e_limitada(tmp_path: Path, session_factory):
+    """Ultrapassar a profundidade máxima de delegação é recusado com erro."""
     settings = Settings(data_dir=tmp_path, max_agent_depth=2)
     sess = session_factory()
     project = ProjectService(sess).create_project(
@@ -141,6 +157,7 @@ def test_a_profundidade_da_delegacao_e_limitada(tmp_path: Path, session_factory)
 
 
 def test_suspender_preserva_o_estado_e_libera_a_execucao(session: Session, project):
+    """Suspender guarda o checkpoint com o motivo e mantém o agente disponível para consulta."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     agent = service.ensure_agent(tasks[1].id)
@@ -160,6 +177,7 @@ def test_suspender_preserva_o_estado_e_libera_a_execucao(session: Session, proje
 
 
 def test_retomar_reconstroi_a_execucao_a_partir_do_estado(session: Session, project):
+    """Retomar reconstrói a execução em RUNNING a partir do checkpoint salvo."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     agent = service.ensure_agent(tasks[1].id)
@@ -174,6 +192,7 @@ def test_retomar_reconstroi_a_execucao_a_partir_do_estado(session: Session, proj
 
 
 def test_execucao_encerrada_nao_pode_ser_retomada(session: Session, project):
+    """Uma execução cancelada não pode ser retomada."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     agent = service.ensure_agent(tasks[1].id)
@@ -184,6 +203,7 @@ def test_execucao_encerrada_nao_pode_ser_retomada(session: Session, project):
 
 
 def test_o_agente_espera_por_filho_sem_perder_a_execucao(session: Session, project):
+    """Esperar por filho deixa a execução em WAITING_FOR_CHILD e o agente em WAITING."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     agent = service.ensure_agent(tasks[1].id)
@@ -197,6 +217,7 @@ def test_o_agente_espera_por_filho_sem_perder_a_execucao(session: Session, proje
 
 
 def test_o_estado_sobrevive_a_reabertura_do_banco(session_factory):
+    """Reabrir o banco devolve o agente, o checkpoint e as descobertas persistidos."""
     session = session_factory()
     project = ProjectService(session).create_project(
         ProjectCreate(name="reabertura", root_path="/tmp/reabertura")
@@ -222,6 +243,7 @@ def test_o_estado_sobrevive_a_reabertura_do_banco(session_factory):
 
 
 def test_descobertas_sao_acumuladas_e_nao_duplicadas(session: Session, project):
+    """Duas descobertas registradas ficam acumuladas, uma por achado."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     agent = service.ensure_agent(tasks[1].id)
@@ -231,6 +253,7 @@ def test_descobertas_sao_acumuladas_e_nao_duplicadas(session: Session, project):
 
 
 def test_resultado_da_tarefa_vira_descoberta_do_agente(session: Session, project):
+    """O resultado consolidado da tarefa vira descoberta do agente e não é duplicado ao reprocessar."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     agent = service.ensure_agent(tasks[1].id)
@@ -247,6 +270,7 @@ def test_resultado_da_tarefa_vira_descoberta_do_agente(session: Session, project
 
 
 def test_descartar_com_consulta_pendente_e_bloqueado(session: Session, project):
+    """Descartar um agente com consulta pendente é bloqueado."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     parent = service.ensure_agent(tasks[0].id)
@@ -259,6 +283,7 @@ def test_descartar_com_consulta_pendente_e_bloqueado(session: Session, project):
 
 
 def test_descartar_preserva_resultados_e_artefatos(session: Session, project):
+    """O descarte preserva achados e artefatos e marca o agente como descartado."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     agent = service.ensure_agent(tasks[1].id)
@@ -277,6 +302,7 @@ def test_descartar_preserva_resultados_e_artefatos(session: Session, project):
 
 
 def test_descartar_com_forca_ignora_consultas_pendentes(session: Session, project):
+    """O descarte forçado acontece mesmo com consulta pendente e cancela essa consulta."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     parent = service.ensure_agent(tasks[0].id)
@@ -290,6 +316,7 @@ def test_descartar_com_forca_ignora_consultas_pendentes(session: Session, projec
 
 
 def test_descartar_com_purge_remove_as_linhas_do_agente(session: Session, project):
+    """O descarte com purge apaga as linhas do agente e mantém a tarefa."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     agent = service.ensure_agent(tasks[1].id)
@@ -304,16 +331,19 @@ def test_descartar_com_purge_remove_as_linhas_do_agente(session: Session, projec
 
 
 def test_transicao_invalida_de_agente_e_erro():
+    """A transição de agente inválida levanta erro em vez de corrigir o estado."""
     with pytest.raises(InvalidAgentTransition):
         validate_agent_transition(AgentStatus.DISCARDED, AgentStatus.ACTIVE)
 
 
 def test_transicao_invalida_de_execucao_e_erro():
+    """A transição de execução inválida levanta erro em vez de corrigir o estado."""
     with pytest.raises(InvalidAgentTransition):
         validate_execution_transition(ExecutionStatus.CANCELLED, ExecutionStatus.RUNNING)
 
 
 def test_transicoes_validas_de_execucao():
+    """A cadeia RUNNING → SUSPENDING → SUSPENDED → RESUMING → RUNNING é aceita."""
     validate_execution_transition(ExecutionStatus.RUNNING, ExecutionStatus.SUSPENDING)
     validate_execution_transition(ExecutionStatus.SUSPENDING, ExecutionStatus.SUSPENDED)
     validate_execution_transition(ExecutionStatus.SUSPENDED, ExecutionStatus.RESUMING)
@@ -342,6 +372,7 @@ def test_efeito_externo_nao_resumivel_exige_verificacao(session: Session, projec
 
 
 def test_efeito_externo_resumivel_nao_exige_verificacao(session: Session, project):
+    """Efeito externo resumível não entra na fila de verificação."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     agent = service.ensure_agent(tasks[1].id)
@@ -352,6 +383,7 @@ def test_efeito_externo_resumivel_nao_exige_verificacao(session: Session, projec
 
 
 def test_a_retomada_avisa_o_que_precisa_ser_verificado(session: Session, project):
+    """A retomada registra no checkpoint os efeitos externos que exigem verificação antes de repetir."""
     tasks = _tree(session, project, depth=2)
     service = AgentService(session)
     agent = service.ensure_agent(tasks[1].id)

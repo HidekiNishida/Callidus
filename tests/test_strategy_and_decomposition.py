@@ -1,4 +1,14 @@
-# tests/test_strategy_and_decomposition.py — Testes da camada estratégica, decomposição adaptativa e integridade
+"""
+Arquivo: tests/test_strategy_and_decomposition.py
+Nome: test_strategy_and_decomposition.py
+Propósito: verificar a camada estratégica, a decomposição adaptativa e a integridade da consolidação e da verificação.
+Responsabilidade: camada de testes — comportamento da análise estratégica, da decomposição por domínio e da consolidação com ressalvas.
+Componentes: estratégia por tipo de pedido, decomposição por especialidade, falha de etapa opcional, dependência opcional que falha e novos verificadores de arquivo e análise estática.
+Dependências: agent.orchestrator (strategy, atomizer, consolidation), agent.verification.runner, agent.services (project, task), agent.persistence.database, pytest.
+Observações: banco e workspace temporários por teste; o modelo não é chamado em nenhum cenário.
+
+Testes da camada estratégica, decomposição adaptativa e integridade
+"""
 from pathlib import Path
 import pytest
 import uuid
@@ -16,6 +26,7 @@ from agent.config import Settings
 
 
 def test_professional_strategist_preserves_intention_and_selects_specialties():
+    """A análise estratégica preserva o pedido original e escolhe o domínio, a especialidade principal e as de revisão."""
     strategist = ProfessionalStrategist()
 
     # 1. Consulta simples
@@ -49,6 +60,7 @@ def test_professional_strategist_preserves_intention_and_selects_specialties():
 
 def test_adaptive_decompose_operation_produces_domain_specific_subtasks():
     # Bugfix decomposition
+    """A decomposição adaptativa gera etapas da especialidade escolhida, encadeadas na ordem certa."""
     plan_bug = adaptive_decompose_operation("Corrigir falha de conexão no banco", lead_specialty="debugging_root_cause")
     assert len(plan_bug.subtasks) == 3
     assert "diagnosticar" in plan_bug.subtasks[0].title.lower() or "reproduzir" in plan_bug.subtasks[0].title.lower()
@@ -69,6 +81,7 @@ def test_adaptive_decompose_operation_produces_domain_specific_subtasks():
 
 
 def test_optional_subtask_failure_allows_completion_with_caveats(tmp_path: Path):
+    """A falha de uma etapa opcional permite concluir o pai, com a ressalva registrada."""
     settings = Settings(data_dir=tmp_path / "data")
     factory = build_session_factory(init_db(settings=settings))
     with factory() as session:
@@ -126,6 +139,7 @@ def test_optional_subtask_failure_allows_completion_with_caveats(tmp_path: Path)
 
 
 def test_optional_dependency_failure_does_not_block_downstream_task(tmp_path: Path):
+    """A falha de uma dependência opcional não bloqueia a etapa que depende dela."""
     settings = Settings(data_dir=tmp_path / "data")
     factory = build_session_factory(init_db(settings=settings))
     with factory() as session:
@@ -161,6 +175,7 @@ def test_optional_dependency_failure_does_not_block_downstream_task(tmp_path: Pa
 @pytest.mark.asyncio
 async def test_new_verifiers_file_exists_and_static_analysis(tmp_path: Path):
     # 1. file_exists
+    """Os verificadores de existência de arquivo e de análise estática aprovam e reprovam conforme o conteúdo."""
     target_file = tmp_path / "app.py"
     target_file.write_text("print('hello world')\n", encoding="utf-8")
 

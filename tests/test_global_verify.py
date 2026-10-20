@@ -1,4 +1,13 @@
-# tests/test_global_verify.py
+"""
+Arquivo: tests/test_global_verify.py
+Nome: test_global_verify.py
+Propósito: Verificar a verificação global do objetivo.
+Responsabilidade: camada de testes — recusa de conclusão sem evidência e aceitação com evidência de verificação.
+Componentes: verificação concluída sem evidência e verificação concluída com evidência aprovada.
+Dependências: agent.orchestrator.global_verify e agent.services.task_service.
+Observações: banco temporário por teste.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -15,6 +24,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Abre uma sessão do banco temporário e a fecha ao fim do teste."""
     settings = Settings(data_dir=tmp_path / "data")
     engine = init_db(settings=settings)
     factory = build_session_factory(engine)
@@ -24,6 +34,7 @@ def session(tmp_path: Path):
 
 
 def test_global_rejects_completed_verify_without_evidence(session, tmp_path: Path):
+    """Verificação concluída sem evidência não é aceita e volta para nova tentativa."""
     project = ProjectService(session).create_project(
         ProjectCreate(name="p", root_path=str(tmp_path))
     )
@@ -49,6 +60,7 @@ def test_global_rejects_completed_verify_without_evidence(session, tmp_path: Pat
 
 
 def test_global_accepts_with_evidence(session, tmp_path: Path):
+    """Com evidência de verificação aprovada, o objetivo é aceito globalmente."""
     project = ProjectService(session).create_project(
         ProjectCreate(name="p", root_path=str(tmp_path))
     )

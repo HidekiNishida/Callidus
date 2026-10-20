@@ -1,4 +1,13 @@
-# tests/test_e2e_orchestrator.py — fluxo reproduzível ponta a ponta (mock)
+"""
+Arquivo: tests/test_e2e_orchestrator.py
+Nome: test_e2e_orchestrator.py
+Propósito: Verificar o orquestrador de ponta a ponta sobre o projeto de exemplo.
+Responsabilidade: camada de testes — ciclo completo de execução com verificação, sobre uma cópia do fixture sample_project.
+Componentes: execução completa do objetivo e validação da entrega.
+Dependências: agent.orchestrator.runner, agent.services.run_service e o fixture sample_project.
+Observações: o fixture é copiado para tmp_path e o banco é temporário; o provedor é o mock.
+"""
+
 import shutil
 from pathlib import Path
 
@@ -15,6 +24,7 @@ from agent.services.task_service import TaskService
 
 @pytest.mark.asyncio
 async def test_e2e_fix_calc_with_verification(tmp_path: Path):
+    """O objetivo de corrigir a calculadora é executado até o fim e a entrega passa na verificação."""
     fixture = Path(__file__).parent / "fixtures" / "sample_project"
     workspace = tmp_path / "workspace"
     shutil.copytree(fixture, workspace)

@@ -1,4 +1,14 @@
-# tests/test_requirements.py — requisitos rastreáveis: derivação, ids estáveis, cobertura herdada/parcial, estado por evidência
+"""
+Arquivo: tests/test_requirements.py
+Nome: test_requirements.py
+Propósito: verificar os requisitos rastreáveis: derivação, identificadores estáveis, cobertura herdada e estado por evidência.
+Responsabilidade: camada de testes — comportamento da derivação e do estado dos requisitos de uma tarefa.
+Componentes: derivação a partir do objetivo e dos critérios, persistência única com identificadores estáveis, herança de cobertura e partes, estado por cobertura e evidência, resposta final que não satisfaz requisito de mudança, resposta que satisfaz requisito de resposta e aplicabilidade não obrigatória.
+Dependências: agent.orchestrator (requirements, decomposition), agent.services (contract, project, task), agent.persistence (database, models), pytest.
+Observações: banco SQLite temporário por teste; a cobertura de evidência é criada direto no banco, sem executar o trabalho.
+
+requisitos rastreáveis: derivação, ids estáveis, cobertura herdada/parcial, estado por evidência
+"""
 from pathlib import Path
 
 import pytest
@@ -23,6 +33,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -30,6 +41,7 @@ def session(tmp_path: Path):
 
 
 def test_enumerated_objective_and_criteria_become_requirements():
+    """Objetivo enumerado e critérios de aceite viram requisitos com origem e evidência declaradas."""
     reqs = derive_requirements(
         "Sistema de pedidos:\n- criar a API de pedidos\n- calcular frete\n",
         "1. pytest passa\n",
@@ -44,6 +56,7 @@ def test_enumerated_objective_and_criteria_become_requirements():
 
 
 def test_requirements_are_persisted_once_with_stable_ids(session, tmp_path):
+    """Os requisitos são gravados uma única vez e mantêm o identificador mesmo com o objetivo alterado."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     root = TaskService(session).create_task(project.id, TaskCreate(title="R", objective="- criar a.py\n- criar b.py"))
 
@@ -56,6 +69,7 @@ def test_requirements_are_persisted_once_with_stable_ids(session, tmp_path):
 
 
 def test_covers_inherit_from_parent_and_keep_partial_parts(session, tmp_path):
+    """A cobertura é herdada do pai e a parte parcial do requisito é preservada."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="R", objective="- criar a.py\n- criar b.py"))
@@ -76,6 +90,7 @@ def test_covers_inherit_from_parent_and_keep_partial_parts(session, tmp_path):
 
 
 def _two_requirement_tree(session, tmp_path):
+    """Monta uma árvore com dois requisitos, uma etapa que cobre um deles e a etapa de resposta final."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="R", objective="- criar a.py\n- criar b.py"))
@@ -92,6 +107,7 @@ def _two_requirement_tree(session, tmp_path):
 
 
 def test_status_tracks_coverage_and_evidence(session, tmp_path):
+    """O status do requisito acompanha a cobertura e só fica satisfeito com evidência registrada."""
     root, a, final = _two_requirement_tree(session, tmp_path)
 
     status = {r["id"]: r["status"] for r in requirement_status(session, root)}
@@ -108,6 +124,7 @@ def test_status_tracks_coverage_and_evidence(session, tmp_path):
 
 
 def test_change_requirement_is_not_satisfied_by_the_final_answer_alone(session, tmp_path):
+    """Um requisito de mudança não é satisfeito apenas pela resposta final."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="R", objective="Criar o arquivo a.py"))
@@ -123,6 +140,7 @@ def test_change_requirement_is_not_satisfied_by_the_final_answer_alone(session, 
 
 
 def test_answer_requirement_accepts_the_delivered_answer(session, tmp_path):
+    """Um requisito de resposta é satisfeito pela resposta final entregue."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="R", objective="Que dia é hoje?"))
@@ -138,6 +156,7 @@ def test_answer_requirement_accepts_the_delivered_answer(session, tmp_path):
 
 
 def test_non_mandatory_requirement_keeps_its_applicability(session, tmp_path):
+    """Um requisito marcado como não aplicável mantém essa aplicabilidade e seu estado."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     root = TaskService(session).create_task(project.id, TaskCreate(title="R", objective="x"))
     ContractService(session).upsert(

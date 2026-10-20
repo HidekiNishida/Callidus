@@ -1,4 +1,13 @@
-# tests/test_failures.py — taxonomia de falhas e registro no orquestrador
+"""
+Arquivo: tests/test_failures.py
+Nome: test_failures.py
+Propósito: Verificar a classificação das falhas e a forma canônica de registrá-las.
+Responsabilidade: camada de testes — categorias e causas de falha, detecção de saída truncada e registro da tentativa inválida.
+Componentes: resultado de ferramenta, sucesso sem falha, erro de provedor, saída truncada, erro de contexto, verificação inconclusiva, ida e volta da falha e tentativa com JSON inválido.
+Dependências: agent.domain.failures e agent.orchestrator.runner.
+Observações: banco temporário por teste e provedor falso que devolve prosa em vez de JSON.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -28,6 +37,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Abre uma sessão do banco temporário e a fecha ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -54,16 +64,19 @@ def session(tmp_path: Path):
     ],
 )
 def test_tool_results_are_categorized(out, category, cause):
+    """O resultado com erro da ferramenta é classificado na categoria e causa esperadas."""
     failure = classify_tool_result(out)
     assert failure is not None
     assert (failure.category, failure.cause) == (category, cause)
 
 
 def test_successful_tool_is_not_a_failure():
+    """Uma ferramenta bem-sucedida não é classificada como falha."""
     assert classify_tool_result({"success": True}) is None
 
 
 def test_provider_errors_separate_timeout_from_unavailable():
+    """Timeout, indisponibilidade externa e erro do servidor recebem causas distintas."""
     assert classify_provider_error("tempo esgotado").cause == FailureCause.TIMEOUT
     down = classify_provider_error("Ollama indisponível em http://x: refused")
     assert down.category == FailureCategory.EXTERNAL_UNAVAILABLE
@@ -71,6 +84,7 @@ def test_provider_errors_separate_timeout_from_unavailable():
 
 
 def test_truncated_output_differs_from_malformed_json():
+    """Saída truncada tem causa própria, diferente de JSON inválido, e a ausência de campo obrigatório é apontada."""
     cut = classify_model_output('{"path": "a.py", "content": "def f(', "JSON inválido")
     assert cut.cause == FailureCause.TRUNCATED_OUTPUT
     assert cut.category == FailureCategory.CHANGE_STRATEGY
@@ -85,6 +99,7 @@ def test_truncated_output_differs_from_malformed_json():
 
 
 def test_context_and_verification_categories():
+    """Erro de contexto e verificação inconclusiva ou reprovada recebem causas próprias."""
     assert classify_context_error("estouro").cause == FailureCause.CONTEXT_BUDGET
     assert classify_verification(True, "ok") is None
     inconclusive = classify_verification(None, "manual")
@@ -94,6 +109,7 @@ def test_context_and_verification_categories():
 
 
 def test_failure_roundtrip():
+    """A falha sobrevive à ida e volta entre dicionário e objeto, e dados inválidos devolvem nada."""
     failure = Failure(FailureCategory.RECOVERABLE, FailureCause.TOOL_ERROR, "x")
     assert Failure.from_dict(failure.as_dict()) == failure
     assert Failure.from_dict({"category": "nope", "cause": "x"}) is None
@@ -102,6 +118,7 @@ def test_failure_roundtrip():
 
 @pytest.mark.asyncio
 async def test_invalid_model_json_is_a_failed_attempt_with_category(session, tmp_path: Path, monkeypatch):
+    """Resposta do modelo sem JSON vira tentativa falhada com categoria registrada."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="Objetivo", objective="Objetivo"))
@@ -123,11 +140,14 @@ async def test_invalid_model_json_is_a_failed_attempt_with_category(session, tmp
     session.commit()
 
     class _Prose:
+        """Provedor falso que devolve prosa em vez de uma operação estruturada."""
         name = "mock"
         last_usage = None
 
         async def chat(self, request):
+            """Devolve uma resposta em prosa, sem JSON de operação."""
             class _R:
+                """Resposta falsa que carrega o texto em prosa."""
                 content = "Claro! Vou escrever o arquivo agora."
 
             return _R()

@@ -1,4 +1,14 @@
-# tests/test_observability_events.py — contrato, sequência, sanitização e publicação só após commit
+"""
+Arquivo: tests/test_observability_events.py
+Nome: test_observability_events.py
+Propósito: verificar o contrato dos eventos, a sequência por run, a sanitização de dados sensíveis e a publicação apenas após o commit.
+Responsabilidade: camada de testes — comportamento do barramento de eventos, da persistência e da sanitização de payloads.
+Componentes: validação de tipo e campos do evento, sequência monotônica por run, publicação pós-commit, fragmentos efêmeros, redação de segredos, resync de assinante lento.
+Dependências: agent.observability (emit, observe, bus, contracts, sanitize), agent.persistence (database, models), agent.services, pytest.
+Observações: banco SQLite temporário por teste (tmp_path) e barramento em memória; nenhum dado real é exposto.
+
+contrato, sequência, sanitização e publicação só após commit
+"""
 import asyncio
 import uuid
 from pathlib import Path
@@ -21,6 +31,7 @@ from agent.services.task_service import TaskService
 
 
 def _setup(tmp_path: Path):
+    """Cria projeto, tarefa raiz e run em um banco temporário, devolvendo o contexto ao teste."""
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
     factory = build_session_factory(init_db(settings=settings))
     session = factory()
@@ -33,16 +44,19 @@ def _setup(tmp_path: Path):
 
 
 def _events(session, run_id):
+    """Devolve os eventos persistidos da run, ordenados por sequência."""
     return list(
         session.scalars(select(EventLogModel).where(EventLogModel.run_id == run_id).order_by(EventLogModel.seq))
     )
 
 
 def test_emit_outside_a_run_records_nothing(tmp_path: Path):
+    """Um evento emitido fora de uma run não é persistido e devolve nada."""
     assert emit("task.created") is None
 
 
 def test_unknown_type_and_missing_fields_are_rejected(tmp_path: Path):
+    """Tipo de evento desconhecido e payload com campos obrigatórios ausentes são recusados."""
     _, session, project, root, run = _setup(tmp_path)
     with observe(session, run_id=run.id, project_id=project.id):
         with pytest.raises(UnknownEventType):
@@ -52,6 +66,7 @@ def test_unknown_type_and_missing_fields_are_rejected(tmp_path: Path):
 
 
 def test_seq_is_monotonic_per_run_and_covers_legacy_producers(tmp_path: Path):
+    """A sequência é monotônica e única por run, e um novo processo continua a partir do maior `seq` gravado."""
     factory, session, project, root, run = _setup(tmp_path)
     child = TaskService(session).create_task(project.id, TaskCreate(title="Filha", objective="o", parent_id=root.id))
     session.commit()
@@ -80,6 +95,7 @@ def test_seq_is_monotonic_per_run_and_covers_legacy_producers(tmp_path: Path):
 
 
 def test_runs_have_independent_sequences(tmp_path: Path):
+    """Cada run mantém a própria sequência de eventos, independente das demais."""
     _, session, project, root, run = _setup(tmp_path)
     other_root = TaskService(session).create_task(project.id, TaskCreate(title="Outra", objective="o"))
     session.commit()
@@ -95,6 +111,7 @@ def test_runs_have_independent_sequences(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_persisted_events_are_published_only_after_commit(tmp_path: Path):
+    """Eventos persistidos só chegam aos assinantes depois do commit; um rollback descarta o evento."""
     _, session, project, root, run = _setup(tmp_path)
     bus = get_bus()
     sub = bus.subscribe(str(run.id))
@@ -117,6 +134,7 @@ async def test_persisted_events_are_published_only_after_commit(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_ephemeral_deltas_are_not_persisted_but_share_the_sequence(tmp_path: Path):
+    """Fragmentos de saída não são persistidos, mas consomem sequência e chegam ao vivo com o texto acumulado."""
     _, session, project, root, run = _setup(tmp_path)
     bus = get_bus()
     with observe(session, run_id=run.id, project_id=project.id, task_id=root.id):
@@ -135,6 +153,7 @@ async def test_ephemeral_deltas_are_not_persisted_but_share_the_sequence(tmp_pat
 
 
 def test_secrets_are_redacted_and_long_text_truncated():
+    """Chaves e senhas são redigidas, caminhos sensíveis são reconhecidos e textos longos são truncados."""
     data = sanitize(
         {
             "api_key": "abc123",
@@ -157,6 +176,7 @@ def test_secrets_are_redacted_and_long_text_truncated():
 
 @pytest.mark.asyncio
 async def test_slow_subscriber_gets_resync_instead_of_unbounded_queue():
+    """Um assinante lento recebe `resync` em vez de uma fila sem limite."""
     bus = EventBus(queue_size=3)
     run_id = str(uuid.uuid4())
     bus.allocate_seq(run_id, lambda: 0)

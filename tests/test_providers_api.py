@@ -1,4 +1,14 @@
-# tests/test_providers_api.py — descoberta de provedores pela API
+"""
+Arquivo: tests/test_providers_api.py
+Nome: test_providers_api.py
+Propósito: verificar a descoberta de provedores pela API, sem expor credenciais.
+Responsabilidade: camada de testes — comportamento das rotas de listagem, modelos e saúde dos provedores.
+Componentes: listagem sem segredos, provedor inexistente, modelos reportados pelo servidor e diagnóstico de conectividade.
+Dependências: agent.api (deps, main), agent.config.Settings, fastapi.testclient, httpx, pytest.
+Observações: configuração e chaves temporárias; o servidor do provedor é simulado com httpx.MockTransport.
+
+descoberta de provedores pela API
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,6 +34,7 @@ providers:
 
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch):
+    """Cliente HTTP sobre um diretório de dados temporário, com catálogo de provedores próprio."""
     monkeypatch.setenv("CHAVE_DE_TESTE", "chave-de-teste-123456")
     config = tmp_path / "providers.yaml"
     config.write_text(CONFIG, encoding="utf-8")
@@ -34,6 +45,7 @@ def client(tmp_path: Path, monkeypatch):
     )
 
     def override_settings():
+        """Devolve as configurações de teste para a aplicação da API."""
         return settings
 
     deps._engine = None
@@ -49,6 +61,7 @@ def client(tmp_path: Path, monkeypatch):
 
 
 def test_providers_are_listed_without_secrets(client: TestClient):
+    """A listagem mostra os provedores configurados e os embutidos, informa a origem da chave e não devolve o segredo."""
     r = client.get("/providers")
     assert r.status_code == 200
     payload = r.json()
@@ -62,12 +75,15 @@ def test_providers_are_listed_without_secrets(client: TestClient):
 
 
 def test_unknown_provider_is_404(client: TestClient):
+    """Consultar modelos de um provedor inexistente devolve 404."""
     r = client.get("/providers/nao-existe/models")
     assert r.status_code == 404
 
 
 def test_models_endpoint_reports_the_server_state(client: TestClient, monkeypatch):
+    """A rota de modelos devolve exatamente o que o servidor do provedor informou."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a listagem de modelos do servidor."""
         return httpx.Response(200, json={"models": [{"name": "qwen3:8b"}]})
 
     transport = httpx.MockTransport(handler)
@@ -82,7 +98,9 @@ def test_models_endpoint_reports_the_server_state(client: TestClient, monkeypatc
 
 
 def test_health_endpoint_reports_connectivity(client: TestClient, monkeypatch):
+    """A rota de saúde informa o provedor como disponível e lista os modelos atendidos."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a listagem de modelos do servidor."""
         return httpx.Response(200, json={"models": [{"name": "qwen3:8b"}]})
 
     transport = httpx.MockTransport(handler)

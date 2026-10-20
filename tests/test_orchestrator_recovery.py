@@ -1,4 +1,14 @@
-# tests/test_orchestrator_recovery.py — retomada após passos parciais
+"""
+Arquivo: tests/test_orchestrator_recovery.py
+Nome: test_orchestrator_recovery.py
+Propósito: verificar a retomada do orquestrador depois de passos parciais e o bloqueio por contrato ausente.
+Responsabilidade: camada de testes — comportamento de retomada e de bloqueio do orquestrador.
+Componentes: retomada de uma run a partir de passos parciais em outra sessão, bloqueio quando o contrato exigido não existe.
+Dependências: agent.orchestrator.runner.RunOrchestrator, agent.services (project, run, task), agent.persistence.database, pytest.
+Observações: banco e workspace temporários; o provedor de modelo é o mock configurado na run.
+
+retomada após passos parciais
+"""
 import shutil
 from pathlib import Path
 
@@ -16,6 +26,7 @@ from agent.services.task_service import TaskService
 
 @pytest.mark.asyncio
 async def test_resume_run_after_partial_steps(tmp_path: Path):
+    """Uma run interrompida após alguns passos é retomada em outra sessão e conclude a tarefa raiz."""
     fixture = Path(__file__).parent / "fixtures" / "sample_project"
     workspace = tmp_path / "workspace"
     shutil.copytree(fixture, workspace)
@@ -56,6 +67,7 @@ async def test_resume_run_after_partial_steps(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_blocked_without_contract(tmp_path: Path):
+    """Sem o contrato exigido pela tarefa, a run é bloqueada em vez de avançar."""
     settings = Settings(data_dir=tmp_path / "data")
     engine = init_db(settings=settings)
     factory = build_session_factory(engine)

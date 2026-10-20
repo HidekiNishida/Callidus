@@ -1,5 +1,16 @@
-# tests/test_request_permissions.py — restrições do pedido viram permissões
-"""Regressões das permissões derivadas do pedido.
+"""
+Arquivo: tests/test_request_permissions.py
+Nome: test_request_permissions.py
+Propósito: verificar que as restrições do pedido do usuário viram permissões de ferramenta.
+Responsabilidade: camada de testes — comportamento da derivação e da herança das permissões do pedido.
+Componentes: pedido somente leitura, proteção dos arquivos de teste, reconhecimento de arquivo de teste, herança das marcas na decomposição, recusa de escrita, marcação na estratégia.
+Dependências: agent.orchestrator (strategy, consolidation, runner), agent.services (project, task), agent.persistence.database, pytest.
+Observações: banco SQLite temporário por teste; as restrições são avaliadas a partir do texto do pedido, sem execução de trabalho.
+
+restrições do pedido viram permissões
+
+
+Regressões das permissões derivadas do pedido.
 
 O pedido do usuário é a fonte das restrições. Duas delas viram **permissão de ferramenta**
 (não apenas instrução no prompt, que um modelo pequeno ignora):
@@ -29,6 +40,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -36,12 +48,14 @@ def session(tmp_path: Path):
 
 
 def test_pedido_somente_leitura_e_reconhecido():
+    """Um pedido que proíbe alterar arquivos é reconhecido como somente leitura."""
     assert is_read_only_request("Execute a suíte e diga o resultado. Não altere nenhum arquivo.") is True
     assert is_read_only_request("Apenas leia os arquivos e me diga o que encontrou") is True
     assert is_read_only_request("Crie em app.py uma função dobro(x)") is False
 
 
 def test_régua_protegida_só_abre_quando_o_pedido_manda_mexer_nos_testes():
+    """A proteção dos testes só é liberada quando o pedido manda mexer neles."""
     assert protects_test_files("Corrija o módulo para que a soma funcione") is True
     assert protects_test_files("Crie testes para a função soma") is False
     assert protects_test_files("Atualize a suíte de testes para cobrir o novo caso") is False
@@ -49,6 +63,7 @@ def test_régua_protegida_só_abre_quando_o_pedido_manda_mexer_nos_testes():
 
 
 def test_reconhece_arquivo_de_teste():
+    """Arquivos de teste são reconhecidos pelo caminho e pela extensão."""
     assert looks_like_test_file("tests/test_calc.py") is True
     assert looks_like_test_file("test_app.py") is True
     assert looks_like_test_file("src/foo_test.py") is True
@@ -58,6 +73,7 @@ def test_reconhece_arquivo_de_teste():
 
 
 def test_a_marca_desce_com_a_decomposicao(session, tmp_path):
+    """As marcas do pedido são herdadas pelas etapas filhas da decomposição."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="Raiz", objective="fazer"))
@@ -72,26 +88,29 @@ def test_a_marca_desce_com_a_decomposicao(session, tmp_path):
 
 
 def test_escrita_em_arquivo_de_teste_e_recusada_quando_a_régua_esta_protegida():
-    from agent.orchestrator.runner import _write_refusal_reason
+    """Com a régua protegida, a escrita em arquivo de teste é recusada, mas a leitura é liberada."""
+    from agent.orchestrator.execution.guards import write_refusal_reason
 
     meta = {"protect_tests": True}
 
-    assert _write_refusal_reason(meta, "write_file", "tests/test_calc.py") is not None
-    assert _write_refusal_reason(meta, "write_file", "calc.py") is None
-    assert _write_refusal_reason(meta, "read_file", "tests/test_calc.py") is None
+    assert write_refusal_reason(meta, "write_file", "tests/test_calc.py") is not None
+    assert write_refusal_reason(meta, "write_file", "calc.py") is None
+    assert write_refusal_reason(meta, "read_file", "tests/test_calc.py") is None
 
 
 def test_escrita_e_recusada_em_pedido_somente_leitura():
-    from agent.orchestrator.runner import _write_refusal_reason
+    """Em pedido somente leitura, qualquer escrita é recusada e a leitura permanece liberada."""
+    from agent.orchestrator.execution.guards import write_refusal_reason
 
     meta = {"read_only": True}
 
-    assert _write_refusal_reason(meta, "edit_file", "app.py") is not None
-    assert _write_refusal_reason(meta, "write_file", "app.py") is not None
-    assert _write_refusal_reason(meta, "read_file", "app.py") is None
+    assert write_refusal_reason(meta, "edit_file", "app.py") is not None
+    assert write_refusal_reason(meta, "write_file", "app.py") is not None
+    assert write_refusal_reason(meta, "read_file", "app.py") is None
 
 
 def test_a_estrategia_marca_a_raiz():
+    """A estratégia marca a raiz conforme o pedido: somente leitura e proteção dos testes."""
     strategist = ProfessionalStrategist()
 
     leitura = strategist.analyze("Rode os testes e diga o resultado. Não altere nenhum arquivo.")

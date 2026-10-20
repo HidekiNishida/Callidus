@@ -1,4 +1,13 @@
-# tests/test_independent_verification.py — evidência independente: estados, critério, comando, código de saída
+"""
+Arquivo: tests/test_independent_verification.py
+Nome: test_independent_verification.py
+Propósito: Verificar a verificação independente do trabalho entregue.
+Responsabilidade: camada de testes — evidência completa de aprovação, reprovação com testes quebrados, erro de sintaxe, ferramenta ausente, comando não aprovado, verificação inconclusiva e evidência desatualizada.
+Componentes: código válido com testes passando, código inválido, executor inexistente, comando sem aprovação, verificação manual inconclusiva e mudança posterior que invalida a evidência.
+Dependências: agent.verification.runner, agent.verification.syntax, agent.orchestrator.global_verify e agent.services.task_service.
+Observações: banco temporário por teste e modelo falso que devolve o conteúdo do arquivo.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -21,6 +30,7 @@ from agent.verification.runner import syntax_problem
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Abre uma sessão do banco temporário e a fecha ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -28,6 +38,7 @@ def session(tmp_path: Path):
 
 
 def _project(tmp_path: Path, body: str = "return a + b") -> Path:
+    """Cria o projeto de exemplo com calc.py e um teste que espera a soma correta."""
     root = tmp_path / "proj"
     (root / "tests").mkdir(parents=True)
     (root / "calc.py").write_text(f"def add(a, b):\n    {body}\n")
@@ -39,6 +50,7 @@ def _project(tmp_path: Path, body: str = "return a + b") -> Path:
 
 
 def _verifying(session, root_path: Path, spec: dict | None, *, approve=False, status=TaskStatus.VERIFYING, meta=None):
+    """Prepara o projeto, a raiz com requisitos e a folha em verificação."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(root_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="Raiz", objective="- corrigir calc.py"))
@@ -58,11 +70,13 @@ def _verifying(session, root_path: Path, spec: dict | None, *, approve=False, st
 
 
 def _evidence(session, task_id):
+    """Devolve as evidências registradas para a tarefa."""
     return session.scalars(select(EvidenceModel).where(EvidenceModel.task_id == task_id)).all()
 
 
 @pytest.mark.asyncio
 async def test_valid_code_with_passing_tests_records_full_evidence(session, tmp_path):
+    """Com o teste passando, a evidência registra aprovação, comando, critério e impressão digital dos artefatos."""
     run, leaf = _verifying(session, _project(tmp_path), {"type": "pytest", "path": "tests"})
 
     out = await RunOrchestrator(session, Settings(data_dir=tmp_path / "data")).step(run.id)
@@ -80,6 +94,7 @@ async def test_valid_code_with_passing_tests_records_full_evidence(session, tmp_
 
 @pytest.mark.asyncio
 async def test_failing_tests_after_implementation_are_a_failure_to_fix(session, tmp_path):
+    """Testes que falham depois da implementação reprovam a tarefa e a colocam em nova tentativa."""
     run, leaf = _verifying(session, _project(tmp_path, "return a - b"), {"type": "pytest", "path": "tests"})
 
     out = await RunOrchestrator(session, Settings(data_dir=tmp_path / "data")).step(run.id)
@@ -92,6 +107,7 @@ async def test_failing_tests_after_implementation_are_a_failure_to_fix(session, 
 
 
 def test_syntax_checker_is_deterministic():
+    """O verificador de sintaxe aponta a linha do erro e não acusa arquivos que não são código."""
     assert syntax_problem("a.py", "def f(:\n") .startswith("linha 1")
     assert syntax_problem("a.py", "def f():\n    return 1\n") is None
     assert syntax_problem("d.json", "{") is not None
@@ -99,16 +115,20 @@ def test_syntax_checker_is_deterministic():
 
 
 class _Writer:
+    """Modelo falso que devolve sempre a mesma resposta."""
     name = "mock"
     last_usage = None
 
     def __init__(self, reply: str) -> None:
+        """Guarda a resposta fixa do modelo."""
         self.reply = reply
 
     async def chat(self, request):
+        """Devolve a resposta fixa ao modelo."""
         reply = self.reply
 
         class _R:
+            """Resposta falsa com o conteúdo fixo do modelo."""
             content = reply
 
         return _R()
@@ -116,6 +136,7 @@ class _Writer:
 
 @pytest.mark.asyncio
 async def test_invalid_code_is_caught_by_the_syntax_verifier_not_by_the_model(session, tmp_path, monkeypatch):
+    """Código com sintaxe inválida é reprovado pelo verificador de sintaxe, não pelo modelo."""
     root = _project(tmp_path)
     run, leaf = _verifying(session, root, None, status=TaskStatus.RUNNING, meta={"model_operation": True, "atomic": True})
     provider = _Writer('{"path": "calc.py", "content": "def add(a, b:\\n    return a + b\\n", "summary": "pronto, corrigido"}')
@@ -134,6 +155,7 @@ async def test_invalid_code_is_caught_by_the_syntax_verifier_not_by_the_model(se
 
 @pytest.mark.asyncio
 async def test_missing_tool_blocks_the_verification_instead_of_failing_the_code(session, tmp_path):
+    """Executável ausente bloqueia a verificação em vez de reprovar o código."""
     run, leaf = _verifying(
         session, _project(tmp_path), {"type": "command", "command": ["programa-que-nao-existe-xyz"]}, approve=True
     )
@@ -151,6 +173,7 @@ async def test_missing_tool_blocks_the_verification_instead_of_failing_the_code(
 
 @pytest.mark.asyncio
 async def test_unapproved_command_is_blocked_not_failed(session, tmp_path):
+    """Comando não aprovado é bloqueado por falta de permissão, não reprovado."""
     run, leaf = _verifying(session, _project(tmp_path), {"type": "command", "command": ["true"]}, approve=False)
 
     out = await RunOrchestrator(session, Settings(data_dir=tmp_path / "data")).step(run.id)
@@ -161,6 +184,7 @@ async def test_unapproved_command_is_blocked_not_failed(session, tmp_path):
 
 @pytest.mark.asyncio
 async def test_inconclusive_verification_is_never_success(session, tmp_path):
+    """Verificação inconclusiva nunca é contada como sucesso."""
     run, leaf = _verifying(session, _project(tmp_path), {"type": "acceptance_manual"})
 
     out = await RunOrchestrator(session, Settings(data_dir=tmp_path / "data")).step(run.id)
@@ -173,6 +197,7 @@ async def test_inconclusive_verification_is_never_success(session, tmp_path):
 
 @pytest.mark.asyncio
 async def test_later_change_marks_old_evidence_stale_without_deleting_it(session, tmp_path):
+    """Mudança posterior marca a evidência antiga como desatualizada sem apagá-la."""
     root = _project(tmp_path)
     run, leaf = _verifying(session, root, {"type": "pytest", "path": "tests"})
     await RunOrchestrator(session, Settings(data_dir=tmp_path / "data")).step(run.id)

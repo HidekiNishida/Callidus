@@ -1,8 +1,20 @@
-# tests/test_tool_loop.py — ciclo de ferramentas da operação (regressão da "resposta vazia")
-"""Regressão do defeito encontrado na conversa real: um modelo que trabalha com ferramentas
+"""
+Arquivo: tests/test_tool_loop.py
+Nome: test_tool_loop.py
+Propósito: verificar o ciclo de ferramentas da operação, do esquema declarado à execução e à volta do resultado.
+Responsabilidade: camada de testes — comportamento do laço de ferramentas e do contrato das ferramentas expostas ao modelo.
+Componentes: esquema JSON da ferramenta, truncamento da saída, execução da ferramenta pedida, alteração aplicada pela ferramenta, orçamento esgotado, chamada repetida, saída vazia com e sem raciocínio, envio do histórico ao Ollama e conjunto de ferramentas de mutação.
+Dependências: agent.orchestrator.tool_loop, agent.providers (base, ollama), agent.tools.registry, httpx, pytest.
+Observações: provedor falso com roteiro de respostas e transporte HTTP simulado; o workspace temporário é o diretório do projeto.
+
+ciclo de ferramentas da operação (regressão da "resposta vazia")
+
+
+Regressão do defeito encontrado na conversa real: um modelo que trabalha com ferramentas
 (`gpt-oss:20b`) devolve `content` vazio quando o pedido chega sem ferramentas declaradas —
 ele pede a ferramenta e não há para onde pedir. O Callidus tratava isso como "resposta vazia",
-repetia o mesmo pedido e parava em estagnação."""
+repetia o mesmo pedido e parava em estagnação.
+"""
 from __future__ import annotations
 
 import json
@@ -31,13 +43,16 @@ class _FakeProvider:
     supports_streaming = False
 
     def __init__(self, script: list) -> None:
+        """Guarda o roteiro de respostas e prepara o registro das requisições."""
         self.script = list(script)
         self.requests: list[ChatCompletionRequest] = []
 
     def capabilities(self) -> ProviderCapabilities:
+        """Provedor falso: declara suporte a ferramentas e ao laço de ferramentas."""
         return ProviderCapabilities(tools=True, tool_loop=True)
 
     async def chat(self, request: ChatCompletionRequest):
+        """Provedor falso: devolve uma resposta por vez, conforme o roteiro."""
         self.requests.append(request)
         step = self.script.pop(0) if self.script else {"content": "ok"}
         calls = [
@@ -59,14 +74,17 @@ class _FakeProvider:
 
 @pytest.fixture
 def ctx(tmp_path):
+    """Contexto de ferramenta apontando para um diretório de projeto temporário."""
     return ToolContext(project_root=str(tmp_path))
 
 
 def _profile() -> ModelProfile:
+    """Perfil de modelo com contexto e orçamento de entrada usados nos testes."""
     return ModelProfile(model_id="gpt-oss:20b", context_limit=8192, input_budget=6000, output_reserve=1024)
 
 
 def test_tool_schemas_use_json_schema_from_the_simplified_spec():
+    """As ferramentas expostas ao modelo usam um esquema JSON derivado da especificação, com os obrigatórios declarados."""
     registry = build_default_registry()
     spec = registry.get_spec("read_file")
     schema = json_schema_for(spec)
@@ -83,6 +101,7 @@ def test_tool_schemas_use_json_schema_from_the_simplified_spec():
 
 
 def test_tool_result_text_truncates_long_output():
+    """A saída longa da ferramenta é truncada no limite configurado."""
     body = tool_result_text({"success": True, "content": "x" * 5000}, limit=100)
     assert body.startswith("x" * 50)
     assert "…" in body
@@ -90,6 +109,7 @@ def test_tool_result_text_truncates_long_output():
 
 @pytest.mark.asyncio
 async def test_loop_executes_the_requested_tool_and_feeds_the_result_back(ctx):
+    """A ferramenta pedida é executada e o resultado volta para o modelo na chamada seguinte."""
     provider = _FakeProvider(
         [
             {"tool_calls": [{"name": "read_file", "arguments": {"path": "a.txt"}}]},
@@ -99,6 +119,7 @@ async def test_loop_executes_the_requested_tool_and_feeds_the_result_back(ctx):
     seen: list[str] = []
 
     async def on_tool(entry, result):
+        """Callback que registra as chamadas de ferramenta do laço."""
         seen.append(entry["tool"])
 
     outcome = await run_tool_loop(
@@ -122,6 +143,7 @@ async def test_loop_executes_the_requested_tool_and_feeds_the_result_back(ctx):
 
 @pytest.mark.asyncio
 async def test_model_that_applies_the_change_through_the_tool_ends_the_cycle(ctx):
+    """Quando o modelo aplica a alteração pela ferramenta, o ciclo termina com a mudança registrada."""
     provider = _FakeProvider(
         [
             {"tool_calls": [{"name": "write_file", "arguments": {"path": "a.txt", "content": "oi"}}]},
@@ -143,6 +165,7 @@ async def test_model_that_applies_the_change_through_the_tool_ends_the_cycle(ctx
 
 @pytest.mark.asyncio
 async def test_budget_exhausted_forces_a_final_call_that_can_apply_the_change(ctx, tmp_path):
+    """Com o orçamento de iterações esgotado, a última chamada é a que pode aplicar a alteração."""
     provider = _FakeProvider(
         [
             {"tool_calls": [{"name": "list_dir", "arguments": {"path": "."}}]},
@@ -166,6 +189,7 @@ async def test_budget_exhausted_forces_a_final_call_that_can_apply_the_change(ct
 
 @pytest.mark.asyncio
 async def test_repeated_tool_call_tells_the_model_it_already_knows(ctx):
+    """Uma chamada repetida de ferramenta avisa o modelo de que ele já consultou aquilo."""
     provider = _FakeProvider(
         [
             {"tool_calls": [{"name": "list_dir", "arguments": {"path": "."}}]},
@@ -187,6 +211,7 @@ async def test_repeated_tool_call_tells_the_model_it_already_knows(ctx):
 
 
 def test_empty_output_with_reasoning_is_not_a_plain_invalid_json():
+    """Uma saída vazia acompanhada de raciocínio é classificada como saída vazia, não como JSON inválido."""
     failure = classify_model_output("", "resposta vazia", None, reasoning="vou ler o arquivo")
     assert failure is not None
     assert failure.cause == FailureCause.EMPTY_OUTPUT
@@ -194,6 +219,7 @@ def test_empty_output_with_reasoning_is_not_a_plain_invalid_json():
 
 
 def test_empty_output_without_reasoning_keeps_the_old_classification():
+    """Uma saída vazia sem raciocínio mantém a classificação de saída inválida."""
     failure = classify_model_output("", "resposta vazia", None)
     assert failure is not None
     assert failure.cause == FailureCause.INVALID_OUTPUT
@@ -201,9 +227,11 @@ def test_empty_output_without_reasoning_keeps_the_old_classification():
 
 @pytest.mark.asyncio
 async def test_ollama_sends_the_tool_history_and_reads_the_reasoning(mock_http):
+    """O Ollama recebe o histórico de ferramentas na requisição e devolve o raciocínio do modelo."""
     seen: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: devolve a resposta com chamada de ferramenta e raciocínio."""
         seen["body"] = json.loads(request.content)
         return httpx.Response(
             200,
@@ -246,4 +274,5 @@ async def test_ollama_sends_the_tool_history_and_reads_the_reasoning(mock_http):
 
 
 def test_mutation_tools_are_part_of_the_operation_set():
+    """As ferramentas de mutação fazem parte do conjunto de ferramentas da operação."""
     assert set(MUTATION_TOOLS) <= set(OPERATION_TOOLS)

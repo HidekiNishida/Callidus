@@ -1,4 +1,14 @@
-# tests/test_observability_api.py — histórico paginado, foto do estado, SSE com reconexão e recuperação
+"""
+Arquivo: tests/test_observability_api.py
+Nome: test_observability_api.py
+Propósito: verificar o histórico paginado de eventos, a foto do estado de uma run e a transmissão SSE com reconexão e recuperação.
+Responsabilidade: camada de testes — comportamento observável das rotas de observabilidade (eventos, snapshot e stream).
+Componentes: paginação e filtros do histórico, snapshot de run, stream ao vivo com dedupe, rotação e resync, operações interrompidas.
+Dependências: agent.api.observe_routes, agent.observability (emit, observe, bus, snapshot), agent.services (project, run, task), agent.orchestrator.runner, fastapi.testclient.
+Observações: banco SQLite temporário por teste (tmp_path) e workspace copiado de tests/fixtures; o worker em segundo plano fica desativado.
+
+histórico paginado, foto do estado, SSE com reconexão e recuperação
+"""
 import asyncio
 import json
 import shutil
@@ -28,6 +38,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch):
+    """Cliente HTTP sobre um diretório de dados temporário, sem worker em segundo plano."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
     deps._engine = None
     deps._session_factory = None
@@ -43,6 +54,7 @@ def client(tmp_path: Path, monkeypatch):
 
 
 def _completed_run(tmp_path: Path):
+    """Executa uma run de exemplo até o fim e devolve a sessão e a run concluída."""
     workspace = tmp_path / "workspace"
     shutil.copytree(Path(__file__).parent / "fixtures" / "sample_project", workspace)
     session = deps.get_session_factory()()
@@ -59,6 +71,7 @@ def _completed_run(tmp_path: Path):
 
 
 def _parse_sse(text: str) -> list[dict]:
+    """Converte o texto de um stream SSE na lista de eventos, decodificando o payload de cada bloco."""
     out = []
     for block in text.strip().split("\n\n"):
         item: dict = {}
@@ -74,6 +87,7 @@ def _parse_sse(text: str) -> list[dict]:
 
 
 def test_history_pages_filters_snapshot_and_stream_of_a_finished_run(client, tmp_path):
+    """O histórico paginado devolve todos os eventos persistidos em ordem, respeita os filtros de tipo e de tarefa, e o stream reenvia o histórico terminando com `end`."""
     session, run = _completed_run(tmp_path)
     # Fragmentos (não persistidos) consomem números da mesma sequência: o persistido é crescente, com lacunas.
     db_seqs = list(session.scalars(select(EventLogModel.seq).where(EventLogModel.run_id == run.id).order_by(EventLogModel.seq)))
@@ -114,6 +128,7 @@ def test_history_pages_filters_snapshot_and_stream_of_a_finished_run(client, tmp
     assert ids == db_seqs and total == len(ids)
     # Relidos do SQLite (que perde o fuso), os carimbos ainda saem como UTC explícito.
     def _utc(text: str) -> bool:
+        """Indica se o carimbo lido está em UTC."""
         return datetime.fromisoformat(text.replace("Z", "+00:00")).utcoffset() == timedelta(0)
 
     assert all(_utc(i["data"]["ts"]) for i in items if "id" in i)
@@ -136,6 +151,7 @@ def test_history_pages_filters_snapshot_and_stream_of_a_finished_run(client, tmp
 
 
 def _active_run(tmp_path: Path, name: str = "p"):
+    """Cria uma run iniciada e ainda não executada, devolvendo a fábrica de sessão, a sessão e as entidades criadas."""
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
     factory = build_session_factory(init_db(settings=settings))
     session = factory()
@@ -147,7 +163,9 @@ def _active_run(tmp_path: Path, name: str = "p"):
 
 
 class _Req:
+    """Requisição falsa: o cliente continua conectado."""
     async def is_disconnected(self) -> bool:
+        """Responde que a conexão do cliente continua ativa."""
         return False
 
 
@@ -162,6 +180,7 @@ async def _collect(gen, into: list):
 
 @pytest.mark.asyncio
 async def test_live_stream_orders_dedupes_separates_runs_and_ends(tmp_path):
+    """O stream ao vivo ordena os eventos, descarta duplicatas, ignora eventos de outras runs e encerra com `end` quando a run termina."""
     factory, session, project, root, run = _active_run(tmp_path)
     other_root = TaskService(session).create_task(project.id, TaskCreate(title="Outra", objective="o"))
     session.commit()
@@ -202,6 +221,7 @@ async def test_live_stream_orders_dedupes_separates_runs_and_ends(tmp_path):
 
 @pytest.mark.asyncio
 async def test_stream_rotates_after_max_age_so_server_shutdown_never_waits_forever(tmp_path):
+    """O stream gira após `max_age`, devolvendo `rotate` com o último `seq` para que o servidor nunca fique esperando o cliente."""
     factory, session, project, root, run = _active_run(tmp_path)
     bus = get_bus()
     got: list = []
@@ -215,6 +235,7 @@ async def test_stream_rotates_after_max_age_so_server_shutdown_never_waits_forev
 
 @pytest.mark.asyncio
 async def test_slow_consumer_resyncs_from_the_database_without_losing_persisted_events(tmp_path):
+    """Um consumidor lento recebe `resync` e recupera do banco todos os eventos persistidos, sem repetir nem perder nenhum."""
     factory, session, project, root, run = _active_run(tmp_path)
     bus = EventBus(queue_size=2)
     got: list = []
@@ -247,6 +268,7 @@ async def test_slow_consumer_resyncs_from_the_database_without_losing_persisted_
 
 
 def test_interrupted_operations_are_shown_and_never_marked_completed(tmp_path):
+    """Operações em andamento aparecem como interrompidas após o reinício do processo e nunca são apresentadas como concluídas."""
     factory, session, project, root, run = _active_run(tmp_path)
     child = TaskService(session).create_task(project.id, TaskCreate(title="Gerar", objective="o", parent_id=root.id))
     session.commit()

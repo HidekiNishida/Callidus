@@ -1,4 +1,13 @@
-# tests/test_loose_memory_replan.py
+"""
+Arquivo: tests/test_loose_memory_replan.py
+Nome: test_loose_memory_replan.py
+Propósito: Verificar a memória estruturada das conversas soltas e o replanejamento após um bloqueio.
+Responsabilidade: camada de testes — índice de memória sem o texto inteiro, contexto com a memória escolhida, migração de conversa solta e replanejamento que preserva o trabalho feito.
+Componentes: escolha da memória pelo índice, leitura apenas da memória escolhida, movimentação e remoção de conversa solta e replanejamento que substitui só a cauda.
+Dependências: agent.memory.store, agent.context.operation_builder e agent.orchestrator.replan.
+Observações: banco temporário por teste; a memória é criada diretamente no banco.
+"""
+
 from pathlib import Path
 
 from agent.config import Settings
@@ -16,6 +25,7 @@ from agent.services.task_service import TaskService
 
 
 def test_memory_index_chooses_without_the_full_text():
+    """A memória é escolhida pelo índice de fatos e tópicos, sem o texto completo."""
     outline = structure_memory(
         "O banco fica em SQLite.\n\nA interface da calculadora usa Tkinter e quatro operações."
     )
@@ -46,6 +56,7 @@ def test_memory_index_chooses_without_the_full_text():
 
 
 def test_builder_reads_only_the_chosen_memory(tmp_path: Path):
+    """O contexto da etapa lê apenas a memória escolhida e não as outras."""
     engine = init_db(settings=Settings(data_dir=tmp_path))
     session = build_session_factory(engine)()
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
@@ -87,6 +98,7 @@ def test_builder_reads_only_the_chosen_memory(tmp_path: Path):
 
 
 def test_loose_conversation_moves_its_memory_and_can_be_removed(tmp_path: Path):
+    """A conversa solta é movida para um projeto com a sua memória e pode ser removida."""
     engine = init_db(settings=Settings(data_dir=tmp_path))
     session = build_session_factory(engine)()
     projects = ProjectService(session)
@@ -136,6 +148,7 @@ def test_loose_conversation_moves_its_memory_and_can_be_removed(tmp_path: Path):
 
 
 def test_replan_keeps_done_work_and_replaces_the_tail(tmp_path: Path):
+    """O replanejamento mantém o trabalho concluído e cancela a cauda ainda pendente."""
     engine = init_db(settings=Settings(data_dir=tmp_path))
     session = build_session_factory(engine)()
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))

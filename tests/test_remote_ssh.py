@@ -1,4 +1,14 @@
-# tests/test_remote_ssh.py — execução remota por SSH (com binário ssh falso)
+"""
+Arquivo: tests/test_remote_ssh.py
+Nome: test_remote_ssh.py
+Propósito: verificar a execução remota por SSH e a configuração remota do projeto.
+Responsabilidade: camada de testes — comportamento do transporte SSH e das rotas de configuração remota.
+Componentes: montagem dos argumentos do ssh, caminho remoto por shell, execução de comando com cd, PowerShell, diagnóstico do sistema, chave inexistente, configuração inválida, rotas de remoto do projeto e ferramentas redirecionadas ao servidor.
+Dependências: agent.remote.ssh (SshTransport, RemoteConfig, RemoteError), agent.api (deps, main), agent.tools (builtins, registry), fastapi.testclient, pytest.
+Observações: o binário ssh é substituído por um script falso que registra os argumentos; nenhum servidor real é contatado.
+
+execução remota por SSH (com binário ssh falso)
+"""
 from __future__ import annotations
 
 import os
@@ -34,6 +44,7 @@ def fake_ssh(tmp_path: Path, monkeypatch):
 
 
 def test_comando_posix_via_ssh(fake_ssh):
+    """Os argumentos do ssh carregam usuário, host, porta e execução sem interação."""
     transport = SshTransport(RemoteConfig(host="servidor.exemplo", user="deploy", root="/srv/app"))
     result = transport._base_args()
     joined = " ".join(result)
@@ -43,6 +54,7 @@ def test_comando_posix_via_ssh(fake_ssh):
 
 
 def test_caminho_remoto_monta_a_pasta_do_projeto():
+    """O caminho remoto é montado sobre a raiz do projeto, no formato do shell configurado."""
     posix = SshTransport(RemoteConfig(host="h", root="/srv/app"))
     assert posix._remote_path("a/b.txt") == "/srv/app/a/b.txt"
     assert posix._remote_path(".") == "/srv/app"
@@ -52,6 +64,7 @@ def test_caminho_remoto_monta_a_pasta_do_projeto():
 
 @pytest.mark.asyncio
 async def test_run_monta_o_cd_e_manda_o_comando(fake_ssh):
+    """O comando remoto é enviado após o `cd` para o diretório de trabalho pedido."""
     transport = SshTransport(RemoteConfig(host="h", user="deploy", root="/srv/app"))
     await transport.run(["pytest", "-q"], cwd="tests")
     args = fake_ssh.read_text(encoding="utf-8")
@@ -60,6 +73,7 @@ async def test_run_monta_o_cd_e_manda_o_comando(fake_ssh):
 
 @pytest.mark.asyncio
 async def test_run_powershell_usa_set_location(fake_ssh):
+    """No PowerShell, a mudança de diretório é feita com `Set-Location`."""
     transport = SshTransport(RemoteConfig(host="h", root="C:\\app", shell="powershell"))
     await transport.run("npm test", cwd=".")
     args = fake_ssh.read_text(encoding="utf-8")
@@ -69,6 +83,7 @@ async def test_run_powershell_usa_set_location(fake_ssh):
 
 @pytest.mark.asyncio
 async def test_check_devolve_o_sistema(fake_ssh):
+    """O diagnóstico remoto devolve o sistema operacional do servidor."""
     transport = SshTransport(RemoteConfig(host="h"))
     result = await transport.check()
     assert result["ok"] is True
@@ -77,6 +92,7 @@ async def test_check_devolve_o_sistema(fake_ssh):
 
 @pytest.mark.asyncio
 async def test_chave_inexistente_vira_erro_claro(fake_ssh, tmp_path: Path):
+    """Uma chave SSH inexistente vira erro explícito em vez de falha genérica."""
     transport = SshTransport(RemoteConfig(host="h", key_path=str(tmp_path / "nao-existe")))
     with pytest.raises(RemoteError) as exc:
         transport._base_args()
@@ -84,16 +100,19 @@ async def test_chave_inexistente_vira_erro_claro(fake_ssh, tmp_path: Path):
 
 
 def test_config_invalida_e_rejeitada():
+    """Uma configuração remota sem host é recusada."""
     with pytest.raises(Exception):
         RemoteConfig(host="")
 
 
 def test_projeto_guarda_e_remove_o_computador_remoto(tmp_path: Path, monkeypatch):
+    """A configuração remota do projeto é salva, lida e removida pelas rotas."""
     from fastapi.testclient import TestClient
 
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
 
     def override_settings():
+        """Devolve as configurações de teste para a aplicação da API."""
         return settings
 
     deps._engine = None
@@ -130,11 +149,13 @@ def test_projeto_guarda_e_remove_o_computador_remoto(tmp_path: Path, monkeypatch
 
 
 def test_teste_de_conexao_sem_configuracao(tmp_path: Path):
+    """Testar a conexão sem configuração remota devolve 400 explicando o motivo."""
     from fastapi.testclient import TestClient
 
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
 
     def override_settings():
+        """Devolve as configurações de teste para a aplicação da API."""
         return settings
 
     deps._engine = None
@@ -190,6 +211,7 @@ async def test_leitura_de_arquivo_vai_para_o_servidor_remoto(fake_ssh, tmp_path:
 
 @pytest.mark.asyncio
 async def test_caminho_fora_do_projeto_e_recusado_no_remoto(fake_ssh, tmp_path: Path):
+    """Um caminho fora da raiz do projeto é recusado também na execução remota."""
     from agent.tools.builtins import _read_file
     from agent.tools.registry import ToolContext
 

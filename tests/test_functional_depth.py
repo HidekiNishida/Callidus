@@ -1,4 +1,13 @@
-# tests/test_functional_depth.py — dividir não depende de profundidade fixa; proteção contra recursão é separada
+"""
+Arquivo: tests/test_functional_depth.py
+Nome: test_functional_depth.py
+Propósito: Verificar a profundidade da decomposição e as proteções contra laço recursivo.
+Responsabilidade: camada de testes — decomposição de tarefa profunda, guarda de objetivo repetido e orçamento de tarefas por run.
+Componentes: tarefa mais profunda que o limite antigo, objetivo repetido de ancestral e orçamento de tarefas como proteção.
+Dependências: agent.orchestrator.runner, agent.orchestrator.consolidation e agent.services.task_service.
+Observações: banco temporário por teste e provedor mock.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -16,6 +25,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Abre uma sessão do banco temporário e a fecha ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -23,6 +33,7 @@ def session(tmp_path: Path):
 
 
 def _chain(session, tmp_path: Path, depth: int, leaf_objective: str):
+    """Cria uma cadeia de tarefas com profundidade definida e devolve o run e a folha."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="Nível 0", objective="Sistema de pedidos completo"))
@@ -45,6 +56,7 @@ def _chain(session, tmp_path: Path, depth: int, leaf_objective: str):
 
 @pytest.mark.asyncio
 async def test_task_deeper_than_the_old_limit_is_still_decomposed(session, tmp_path):
+    """Uma tarefa mais profunda que o limite anterior ainda é decomposta."""
     run, leaf = _chain(session, tmp_path, depth=7, leaf_objective="Implementar o cálculo de frete em frete.py")
 
     out = await RunOrchestrator(session, Settings(data_dir=tmp_path / "data")).step(run.id)
@@ -56,6 +68,7 @@ async def test_task_deeper_than_the_old_limit_is_still_decomposed(session, tmp_p
 
 @pytest.mark.asyncio
 async def test_objective_repeated_from_an_ancestor_triggers_the_guard(session, tmp_path):
+    """Objetivo repetido de um ancestral aciona a guarda e vira operação de modelo."""
     run, leaf = _chain(session, tmp_path, depth=3, leaf_objective="Parte 1 do sistema")
 
     out = await RunOrchestrator(session, Settings(data_dir=tmp_path / "data")).step(run.id)
@@ -68,6 +81,7 @@ async def test_objective_repeated_from_an_ancestor_triggers_the_guard(session, t
 
 @pytest.mark.asyncio
 async def test_task_budget_is_a_protection_not_a_depth_rule(session, tmp_path):
+    """O orçamento de tarefas por run interrompe a decomposição em vez de virar regra de profundidade."""
     run, leaf = _chain(session, tmp_path, depth=2, leaf_objective="Escrever frete.py")
 
     out = await RunOrchestrator(session, Settings(data_dir=tmp_path / "data", max_tasks_per_run=3)).step(run.id)

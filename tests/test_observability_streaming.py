@@ -1,4 +1,14 @@
-# tests/test_observability_streaming.py — fragmentos reais do modelo, resposta final sem duplicar, erro e cancelamento
+"""
+Arquivo: tests/test_observability_streaming.py
+Nome: test_observability_streaming.py
+Propósito: verificar a emissão de fragmentos reais do modelo, a resposta final sem duplicação, o erro de stream e o cancelamento.
+Responsabilidade: camada de testes — comportamento do streaming do provedor observado pelo observability.
+Componentes: stream NDJSON do Ollama, stream SSE do llama.cpp, stream cortado no meio, provedor sem streaming, chamada cancelada, chamada fora da run.
+Dependências: agent.providers (ollama, llamacpp, mock, observed, base), agent.observability, agent.persistence (database, models), httpx, pytest.
+Observações: transporte HTTP substituído por httpx.MockTransport; banco temporário por teste e nenhum serviço externo é contatado.
+
+fragmentos reais do modelo, resposta final sem duplicar, erro e cancelamento
+"""
 import asyncio
 import json
 from pathlib import Path
@@ -25,6 +35,7 @@ REQUEST = ChatCompletionRequest(messages=[ChatMessage(role="user", content="oi")
 
 
 def _run(tmp_path: Path):
+    """Cria projeto, tarefa raiz e run em um banco temporário, devolvendo o contexto ao teste."""
     settings = Settings(data_dir=tmp_path / "data", enable_background_worker=False)
     session = build_session_factory(init_db(settings=settings))()
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
@@ -35,7 +46,9 @@ def _run(tmp_path: Path):
 
 
 def _patch_transport(monkeypatch, module: str, body: bytes, status: int = 200):
+    """Substitui o transporte HTTP do provedor por uma resposta simulada que exige streaming."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler HTTP falso: exige streaming e devolve o corpo programado."""
         assert json.loads(request.content)["stream"] is True
         return httpx.Response(status, content=body)
 
@@ -45,6 +58,7 @@ def _patch_transport(monkeypatch, module: str, body: bytes, status: int = 200):
 
 
 async def _observed(tmp_path, provider, *, purpose="operation"):
+    """Executa a chamada observada no contexto de uma run e devolve a resposta, o erro, os eventos entregues e os persistidos."""
     session, project, root, run = _run(tmp_path)
     bus = get_bus()
     sub = bus.subscribe(str(run.id))
@@ -63,11 +77,13 @@ async def _observed(tmp_path, provider, *, purpose="operation"):
 
 
 def _ndjson(*objs) -> bytes:
+    """Serializa os objetos como linhas NDJSON, o formato de stream do Ollama."""
     return b"".join(json.dumps(o).encode() + b"\n" for o in objs)
 
 
 @pytest.mark.asyncio
 async def test_ollama_streams_fragments_and_final_answer_is_not_duplicated(tmp_path, monkeypatch):
+    """O Ollama transmite os fragmentos e a resposta final é gravada uma única vez, sem repetir o texto."""
     body = _ndjson(
         {"message": {"content": "Olá"}, "done": False},
         {"message": {"content": ", mundo"}, "done": False},
@@ -92,6 +108,7 @@ async def test_ollama_streams_fragments_and_final_answer_is_not_duplicated(tmp_p
 
 @pytest.mark.asyncio
 async def test_llamacpp_streams_openai_sse(tmp_path, monkeypatch):
+    """O llama.cpp transmite os fragmentos em SSE do formato OpenAI e contabiliza os tokens de completion."""
     chunks = [
         {"choices": [{"delta": {"content": "par"}}]},
         {"choices": [{"delta": {"content": "cial"}, "finish_reason": "stop"}]},
@@ -106,6 +123,7 @@ async def test_llamacpp_streams_openai_sse(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_stream_cut_midway_is_a_failure_with_the_partial_text(tmp_path, monkeypatch):
+    """Um stream interrompido vira falha com o texto parcial recebido, e nunca uma conclusão."""
     _patch_transport(monkeypatch, "ollama", _ndjson({"message": {"content": "come"}, "done": False}))
     resp, error, delivered, rows = await _observed(tmp_path, OllamaProvider("http://ollama"))
     assert isinstance(error, ProviderError)
@@ -117,6 +135,7 @@ async def test_stream_cut_midway_is_a_failure_with_the_partial_text(tmp_path, mo
 
 @pytest.mark.asyncio
 async def test_provider_without_streaming_never_fakes_fragments(tmp_path):
+    """Um provedor sem streaming não inventa fragmentos: registra espera pela resposta inteira e concludes com `streamed` falso."""
     resp, error, delivered, rows = await _observed(tmp_path, MockProvider(responses=["resposta inteira"]))
     assert resp.content == "resposta inteira"
     assert not any(e["type"] == "agent.output.delta" for e in delivered)
@@ -129,16 +148,20 @@ async def test_provider_without_streaming_never_fakes_fragments(tmp_path):
 
 
 class _Hanging(LLMProvider):
+    """Provedor falso que fica pendurado, sem nunca concluir o streaming."""
     name = "hanging"
     supports_streaming = True
 
     async def list_models(self):
+        """Provedor falso: não anuncia nenhum modelo."""
         return []
 
     async def _chat(self, request):
+        """Provedor falso: falha se o streaming não for usado."""
         raise AssertionError("não deveria chamar chat")
 
     async def _chat_streaming(self, request, on_delta) -> ChatCompletionResponse:
+        """Provedor falso: emite um fragmento e fica pendurado até ser cancelado."""
         on_delta("pensando")
         await asyncio.sleep(3600)
         raise AssertionError("inalcançável")
@@ -146,6 +169,7 @@ class _Hanging(LLMProvider):
 
 @pytest.mark.asyncio
 async def test_cancelled_call_is_recorded_as_cancelled_not_completed(tmp_path):
+    """Uma chamada cancelada é registrada como cancelada, com o texto parcial, e não como concluída."""
     session, project, root, run = _run(tmp_path)
     with observe(session, run_id=run.id, project_id=project.id, task_id=root.id):
         task = asyncio.create_task(observed_chat(_Hanging(), REQUEST, purpose="operation"))
@@ -162,5 +186,6 @@ async def test_cancelled_call_is_recorded_as_cancelled_not_completed(tmp_path):
 
 @pytest.mark.asyncio
 async def test_outside_a_run_the_provider_is_called_plainly(monkeypatch):
+    """Fora de uma run, o provedor é chamado normalmente, sem eventos de observabilidade."""
     resp = await observed_chat(MockProvider(responses=["ok"]), REQUEST, purpose="chat")
     assert resp.content == "ok"

@@ -1,4 +1,13 @@
-# tests/test_contract_impact.py
+"""
+Arquivo: tests/test_contract_impact.py
+Nome: test_contract_impact.py
+Propósito: Verificar o impacto da mudança de contrato sobre as tarefas dependentes.
+Responsabilidade: camada de testes — identificação das tarefas afetadas quando o contrato do produtor muda.
+Componentes: contrato do produtor que encontra a tarefa dependente.
+Dependências: agent.services.contract_service, agent.services.task_service e agent.services.project_service.
+Observações: banco temporário por teste.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -13,6 +22,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Abre uma sessão do banco temporário e a fecha ao fim do teste."""
     settings = Settings(data_dir=tmp_path / "data")
     engine = init_db(settings=settings)
     factory = build_session_factory(engine)
@@ -22,6 +32,7 @@ def session(tmp_path: Path):
 
 
 def test_contract_change_finds_dependent_tasks(session, tmp_path: Path):
+    """A mudança de contrato do produtor lista a tarefa que depende dele."""
     project = ProjectService(session).create_project(
         ProjectCreate(name="p", root_path=str(tmp_path))
     )

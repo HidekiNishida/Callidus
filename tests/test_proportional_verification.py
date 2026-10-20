@@ -1,4 +1,14 @@
-# tests/test_proportional_verification.py — escrita gera evidência; etapa sem ação não conclui à toa
+"""
+Arquivo: tests/test_proportional_verification.py
+Nome: test_proportional_verification.py
+Propósito: verificar que a escrita gera evidência e que uma etapa sem ação não conclui à toa.
+Responsabilidade: camada de testes — comportamento da verificação proporcional ao que a etapa fez.
+Componentes: verificação implícita de conteúdo após escrita, execução da etapa que não tinha ação declarada.
+Dependências: agent.orchestrator.runner.RunOrchestrator, agent.persistence (database, models), agent.services (project, run, task), pytest.
+Observações: banco e workspace temporários; o provedor de modelo é substituído por um falso que escreve o arquivo.
+
+escrita gera evidência; etapa sem ação não conclui à toa
+"""
 from pathlib import Path
 
 import pytest
@@ -17,6 +27,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -24,22 +35,27 @@ def session(tmp_path: Path):
 
 
 class _Writer:
+    """Provedor falso que devolve a operação de arquivo a ser gravada."""
     name = "mock"
     last_usage = None
 
     def __init__(self) -> None:
+        """Zera o contador de chamadas ao modelo."""
         self.calls = 0
 
     async def chat(self, request):
+        """Provedor falso: devolve o conteúdo a ser gravado e conta as chamadas."""
         self.calls += 1
 
         class _R:
+            """Resposta falsa com a operação de arquivo em JSON."""
             content = '{"path": "notas.txt", "content": "lista de compras"}'
 
         return _R()
 
 
 def _leaf(session, tmp_path: Path, metadata: dict, monkeypatch):
+    """Prepara uma tarefa folha em execução com o provedor falso já conectado."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="Objetivo", objective="Objetivo"))
@@ -61,6 +77,7 @@ def _leaf(session, tmp_path: Path, metadata: dict, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_write_without_declared_check_gets_an_implicit_content_check(session, tmp_path, monkeypatch):
+    """Uma escrita sem verificação declarada recebe uma checagem implícita de conteúdo, com evidência aprovada."""
     run, leaf, _ = _leaf(session, tmp_path, {"model_operation": True}, monkeypatch)
 
     out = await RunOrchestrator(session, Settings(data_dir=tmp_path / "data")).step(run.id)
@@ -75,6 +92,7 @@ async def test_write_without_declared_check_gets_an_implicit_content_check(sessi
 
 @pytest.mark.asyncio
 async def test_step_without_action_runs_instead_of_completing_silently(session, tmp_path, monkeypatch):
+    """Uma etapa sem ação declarada executa o trabalho em vez de pular direto para a verificação."""
     run, leaf, provider = _leaf(session, tmp_path, {"atomic": True}, monkeypatch)
 
     out = await RunOrchestrator(session, Settings(data_dir=tmp_path / "data")).step(run.id)

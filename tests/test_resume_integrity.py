@@ -1,4 +1,14 @@
-# tests/test_resume_integrity.py — retomada após reabrir o banco e evidência que fica desatualizada
+"""
+Arquivo: tests/test_resume_integrity.py
+Nome: test_resume_integrity.py
+Propósito: verificar a retomada após reabrir o banco e o tratamento de evidência que fica desatualizada.
+Responsabilidade: camada de testes — comportamento da impressão digital das evidências e da revalidação após mudança externa.
+Componentes: impressão digital por arquivos, retomada da run com o banco reaberto, evidência desatualizada por mudança externa, falha mais recente sobrepassando aprovação antiga e reconferência antes de repetir a operação.
+Dependências: agent.orchestrator (runner, consolidation, global_verify), agent.verification.fingerprint, agent.services (project, run, task), agent.persistence (database, models), pytest.
+Observações: banco e workspace temporários; o modelo é substituído por um provedor falso que não deve ser chamado.
+
+retomada após reabrir o banco e evidência que fica desatualizada
+"""
 import shutil
 from pathlib import Path
 
@@ -19,6 +29,7 @@ from agent.verification.fingerprint import fingerprint, is_current, snapshot
 
 
 def test_fingerprint_follows_files_and_ignores_the_database(tmp_path):
+    """A impressão digital muda com os arquivos do projeto e ignora o banco de dados."""
     (tmp_path / "app.py").write_text("x = 1\n")
     (tmp_path / "agent.db").write_text("a")
     first = fingerprint(str(tmp_path), ["."])
@@ -39,6 +50,7 @@ def test_fingerprint_follows_files_and_ignores_the_database(tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_resumes_after_reopening_the_database(tmp_path: Path):
+    """A run retomada depois de reabrir o banco conclude a tarefa e deixa o arquivo corrigido."""
     workspace = tmp_path / "workspace"
     shutil.copytree(Path(__file__).parent / "fixtures" / "sample_project", workspace)
     settings = Settings(data_dir=tmp_path / "data")
@@ -76,6 +88,7 @@ async def test_run_resumes_after_reopening_the_database(tmp_path: Path):
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -83,6 +96,7 @@ def session(tmp_path: Path):
 
 
 def _verified_tree(session, tmp_path: Path):
+    """Monta uma árvore com uma etapa verificada e a evidência correspondente já registrada."""
     (tmp_path / "frete.py").write_text("def frete():\n    return 10\n")
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
@@ -109,6 +123,7 @@ def _verified_tree(session, tmp_path: Path):
 
 
 def test_external_change_makes_evidence_stale_and_is_never_deleted(session, tmp_path):
+    """Uma mudança externa torna a evidência desatualizada, sem apagá-la, e a etapa é reaberta para reverificar."""
     _, root, leaf = _verified_tree(session, tmp_path)
     assert verification_evidence_ok(session, leaf)
     assert evaluate_global_acceptance(session, root.id)[0]
@@ -127,6 +142,7 @@ def test_external_change_makes_evidence_stale_and_is_never_deleted(session, tmp_
 
 
 def test_latest_failed_evidence_overrides_an_older_pass(session, tmp_path):
+    """A evidência de falha mais recente sobrepõe a aprovação anterior."""
     _, _, leaf = _verified_tree(session, tmp_path)
     session.add(EvidenceModel(task_id=leaf.id, verifier="file_contains", passed=False, summary="trecho ausente"))
     session.commit()
@@ -135,15 +151,18 @@ def test_latest_failed_evidence_overrides_an_older_pass(session, tmp_path):
 
 @pytest.mark.asyncio
 async def test_stale_evidence_is_rechecked_before_repeating_the_operation(session, tmp_path, monkeypatch):
+    """A evidência desatualizada é reconferida antes de o orquestrador repetir a operação."""
     project, root, leaf = _verified_tree(session, tmp_path)
     run = RunService(session).start_run(project.id, ExecutionRunCreate(root_task_id=root.id, config={}))
     session.commit()
 
     class _NoModel:
+        """Provedor falso que falha se o modelo for chamado, porque a reverificação deve bastar."""
         name = "mock"
         last_usage = None
 
         async def chat(self, request):
+            """Provedor falso: falha se o modelo for chamado, porque a reverificação deve bastar."""
             raise AssertionError("não deveria chamar o modelo")
 
     monkeypatch.setattr("agent.orchestrator.runner._select_provider", lambda settings, config: _NoModel())

@@ -1,4 +1,14 @@
-# tests/test_skills_observability.py — Eventos de estratégia, skills, decomposição e recuperação
+"""
+Arquivo: tests/test_skills_observability.py
+Nome: test_skills_observability.py
+Propósito: verificar os eventos de estratégia, skills, decomposição e recuperação de verificação.
+Responsabilidade: camada de testes — comportamento emissor do orquestrador para estratégia, decomposição e recuperação.
+Componentes: evento de estratégia formulada com persistência nos metadados, evento de decomposição, evento de recuperação de verificação com a ação escolhida.
+Dependências: agent.orchestrator.runner.RunOrchestrator, agent.observability (emit, get_bus), agent.services (project, run, task), agent.persistence.database, pytest.
+Observações: banco temporário por teste e provedor de modelo mock.
+
+Eventos de estratégia, skills, decomposição e recuperação
+"""
 from pathlib import Path
 
 import pytest
@@ -16,6 +26,7 @@ from agent.services.task_service import TaskService
 
 @pytest.mark.asyncio
 async def test_run_emits_strategy_skill_and_decomposition_events(tmp_path: Path):
+    """A run emite os eventos de estratégia e de decomposição, e a estratégia fica persistida nos metadados da raiz."""
     settings = Settings(data_dir=tmp_path / "data")
     factory = build_session_factory(init_db(settings=settings))
     session = factory()
@@ -59,6 +70,7 @@ async def test_run_emits_strategy_skill_and_decomposition_events(tmp_path: Path)
 
 @pytest.mark.asyncio
 async def test_verification_recovery_emits_event_and_retries(tmp_path: Path):
+    """Uma verificação que falha emite o evento de recuperação, que fica registrada nos metadados da tarefa."""
     settings = Settings(data_dir=tmp_path / "data")
     factory = build_session_factory(init_db(settings=settings))
     session = factory()

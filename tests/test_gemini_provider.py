@@ -1,4 +1,13 @@
-# tests/test_gemini_provider.py — API nativa do Google Gemini
+"""
+Arquivo: tests/test_gemini_provider.py
+Nome: test_gemini_provider.py
+Propósito: Verificar o adaptador do provedor Gemini: formato da requisição, leitura da resposta, ferramentas e streaming.
+Responsabilidade: camada de testes — contrato HTTP do provedor Gemini contra a API real, com transporte HTTP simulado.
+Componentes: formato da requisição, papel de sistema e de assistente, uso e chamada de função, conversão de ferramentas, saída estruturada, streaming, lista de modelos e erro de autenticação.
+Dependências: agent.providers.gemini, agent.providers.base e o fixture mock_http de transporte.
+Observações: nenhuma chamada de rede: o transporte HTTP é substituído por um mock que devolve respostas fixas.
+"""
+
 from __future__ import annotations
 
 import json
@@ -21,14 +30,17 @@ REQUEST = ChatCompletionRequest(
 
 
 def _body(request: httpx.Request) -> dict:
+    """Decodifica o corpo JSON enviado na requisição."""
     return json.loads(request.content)
 
 
 @pytest.mark.asyncio
 async def test_request_uses_gemini_shape(mock_http):
+    """A requisição usa o endpoint generateContent, a chave no cabeçalho e o corpo no formato do Gemini."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que captura url, cabeçalhos e corpo e devolve um candidato de texto."""
         seen["url"] = str(request.url)
         seen["headers"] = dict(request.headers)
         seen["body"] = _body(request)
@@ -52,9 +64,11 @@ async def test_request_uses_gemini_shape(mock_http):
 
 @pytest.mark.asyncio
 async def test_assistant_role_becomes_model_and_system_is_separated(mock_http):
+    """A mensagem de sistema vai para systemInstruction e a de assistente vira papel model."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que captura o corpo enviado e devolve um candidato de texto."""
         seen["body"] = _body(request)
         return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
 
@@ -76,7 +90,9 @@ async def test_assistant_role_becomes_model_and_system_is_separated(mock_http):
 
 @pytest.mark.asyncio
 async def test_usage_and_function_call_are_parsed(mock_http):
+    """O texto, o uso e a chamada de função da resposta são lidos."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que devolve texto, chamada de função, motivo de parada e uso."""
         return httpx.Response(
             200,
             json={
@@ -108,9 +124,11 @@ async def test_usage_and_function_call_are_parsed(mock_http):
 
 @pytest.mark.asyncio
 async def test_tools_are_converted_to_function_declarations(mock_http):
+    """As ferramentas são convertidas em functionDeclarations."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que captura o corpo com as ferramentas convertidas e devolve um texto."""
         seen["body"] = _body(request)
         return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
 
@@ -133,9 +151,11 @@ async def test_tools_are_converted_to_function_declarations(mock_http):
 
 @pytest.mark.asyncio
 async def test_structured_output_sets_mime_type(mock_http):
+    """A saída estruturada define o mime type e o schema na generationConfig."""
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que captura o corpo com saída estruturada e devolve um texto."""
         seen["body"] = _body(request)
         return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "{}"}]}}]})
 
@@ -153,12 +173,14 @@ async def test_structured_output_sets_mime_type(mock_http):
 
 @pytest.mark.asyncio
 async def test_streaming_uses_sse_and_collects_fragments(mock_http):
+    """O streaming usa SSE, reúne os fragmentos e lê o uso."""
     body = (
         'data: {"candidates":[{"content":{"parts":[{"text":"Ol"}]}}]}\n\n'
         'data: {"candidates":[{"content":{"parts":[{"text":"á"}]}}],"usageMetadata":{"promptTokenCount":3}}\n\n'
     ).encode("utf-8")
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que confirma a URL de streaming e devolve os fragmentos SSE do Gemini."""
         assert "streamGenerateContent" in str(request.url)
         assert "alt=sse" in str(request.url)
         return httpx.Response(200, content=body)
@@ -174,7 +196,9 @@ async def test_streaming_uses_sse_and_collects_fragments(mock_http):
 
 @pytest.mark.asyncio
 async def test_model_list_comes_from_the_api(mock_http):
+    """A lista de modelos vem da API, sem o prefixo de namespace."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que devolve a lista de modelos com namespace, no endpoint de modelos."""
         assert request.url.path.endswith("/models")
         return httpx.Response(
             200,
@@ -188,7 +212,9 @@ async def test_model_list_comes_from_the_api(mock_http):
 
 @pytest.mark.asyncio
 async def test_authentication_failure_is_reported(mock_http):
+    """A resposta 403 é reportada como erro de autenticação do provedor."""
     def handler(request: httpx.Request) -> httpx.Response:
+        """Handler que devolve 403 com mensagem de chave inválida."""
         return httpx.Response(403, json={"error": {"message": "API key not valid"}})
 
     mock_http("gemini", handler)

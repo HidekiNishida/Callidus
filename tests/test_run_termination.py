@@ -1,4 +1,14 @@
-# tests/test_run_termination.py — pai nunca conclui com filho falho; run parado termina explicado, sem laço
+"""
+Arquivo: tests/test_run_termination.py
+Nome: test_run_termination.py
+Propósito: verificar que o pai nunca conclui com filho falho e que uma run parada termina explicada, sem laço.
+Responsabilidade: camada de testes — comportamento da consolidação do pai, do término da run e da política de replanejamento.
+Componentes: filho falho impede a conclusão, cancelamento previsto libera o pai, cancelamento não previsto mantém pendência, run parada explicada, falha de configuração não replanejada, falha replanejada que não bloqueia o pai e política de replanejamento.
+Dependências: agent.orchestrator (consolidation, replan, runner), agent.services (project, run, task), agent.persistence (database, models), pytest.
+Observações: banco temporário por teste e provedor de modelo mock.
+
+pai nunca conclui com filho falho; run parado termina explicado, sem laço
+"""
 from pathlib import Path
 
 import pytest
@@ -18,6 +28,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -25,6 +36,7 @@ def session(tmp_path: Path):
 
 
 def _tree(session, tmp_path: Path, *, replans: int = 0):
+    """Monta uma árvore com uma etapa concluída e outra falhada, com a contagem de replanejamentos desejada."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(
@@ -54,6 +66,7 @@ def _tree(session, tmp_path: Path, *, replans: int = 0):
 
 
 def test_failed_child_never_completes_the_parent(session, tmp_path):
+    """Uma etapa filha que falhou mantém o pai pendente e não é esquecida na consolidação."""
     _, root, done, broken = _tree(session, tmp_path)
     root.status = TaskStatus.VERIFYING.value
     session.flush()
@@ -68,6 +81,7 @@ def test_failed_child_never_completes_the_parent(session, tmp_path):
 
 
 def test_running_parent_completes_through_valid_transitions(session, tmp_path):
+    """Com a etapa cancelada por replanejamento, o pai consolida e conclui."""
     _, root, _, broken = _tree(session, tmp_path)
     # Cancelamento previsto: a etapa foi substituída por outra (replanejamento ou correção
     # do plano). O trabalho dela não é pendência e o pai pode seguir.
@@ -99,6 +113,7 @@ def test_cancelled_child_without_replacement_leaves_the_parent_incomplete(sessio
 
 @pytest.mark.asyncio
 async def test_stalled_run_ends_explained_and_keeps_finished_work(session, tmp_path):
+    """Uma run parada termina com o motivo explicado, preserva o trabalho concluído e não repete o laço."""
     project, root, done, broken = _tree(session, tmp_path, replans=2)
     run = RunService(session).start_run(
         project.id, ExecutionRunCreate(root_task_id=root.id, config={"provider": "mock"})
@@ -129,6 +144,7 @@ async def test_stalled_run_ends_explained_and_keeps_finished_work(session, tmp_p
 
 @pytest.mark.asyncio
 async def test_configuration_failure_is_not_replanned_and_the_stop_says_why(session, tmp_path):
+    """Uma falha de configuração não é replanejada e a parada informa que exige ação externa."""
     project, root, done, broken = _tree(session, tmp_path, replans=0)
     run = RunService(session).start_run(
         project.id, ExecutionRunCreate(root_task_id=root.id, config={"provider": "mock"})
@@ -145,6 +161,7 @@ async def test_configuration_failure_is_not_replanned_and_the_stop_says_why(sess
 
 @pytest.mark.asyncio
 async def test_replanned_failure_no_longer_blocks_the_parent(session, tmp_path):
+    """Depois do replanejamento, a etapa que falhou é marcada como substituída e não bloqueia mais o pai."""
     project, root, done, broken = _tree(session, tmp_path, replans=0)
     broken.metadata_json = {
         "atomic": True,
@@ -179,6 +196,7 @@ async def test_replanned_failure_no_longer_blocks_the_parent(session, tmp_path):
 
 
 def test_replan_policy_needs_budget_and_progress(session, tmp_path):
+    """O replanejamento só acontece com orçamento disponível e quando o anterior trouxe progresso."""
     _, root, _, broken = _tree(session, tmp_path)
     broken.metadata_json = {"last_failure": {"category": "change_strategy", "cause": "context_budget", "detail": "grande"}}
     assert replan_decision({}, broken, completed=1).replan

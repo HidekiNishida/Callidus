@@ -1,4 +1,12 @@
-# tests/test_state_machine.py
+"""
+Arquivo: tests/test_state_machine.py
+Nome: test_state_machine.py
+Propósito: verificar quais transições de estado de tarefa são aceitas e quais são recusadas.
+Responsabilidade: camada de testes — comportamento observável da máquina de estados de tarefa.
+Componentes: tabela parametrizada de transições válidas e inválidas entre estados de tarefa.
+Dependências: agent.domain.enums.TaskStatus, agent.domain.state_machine (can_transition, transition, InvalidTransitionError), pytest.
+Observações: caso puramente determinístico, sem banco, disco ou rede.
+"""
 import pytest
 
 from agent.domain.enums import TaskStatus
@@ -18,6 +26,7 @@ from agent.domain.state_machine import InvalidTransitionError, can_transition, t
     ],
 )
 def test_transitions(current, target, ok):
+    """As transições marcadas como válidas são aceitas e avançam o estado; as inválidas levantam InvalidTransitionError."""
     assert can_transition(current, target) is ok
     if ok:
         assert transition(current, target) == target

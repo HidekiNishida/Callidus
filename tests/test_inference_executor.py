@@ -1,10 +1,19 @@
-# tests/test_inference_executor.py — executor compartilhado de inferência
-"""Exclusividade de inferência: uma por vez, no processo inteiro.
+"""
+Arquivo: tests/test_inference_executor.py
+Nome: test_inference_executor.py
+Propósito: Verificar a exclusividade de inferência: uma por vez, no processo inteiro.
+Responsabilidade: camada de testes — serialização das inferências, paralelismo configurado, espera pelo slot, cancelamento, falha do provedor e limite vindo das configurações.
+Componentes: inferências concorrentes, limite configurado, espera pelo slot, cancelamento, falha do provedor, caminho herdado do provedor e limite das configurações.
+Dependências: agent.services.executor e agent.providers.base.
+Observações: o executor global é reiniciado entre os testes; o provedor falso segura a inferência por um tempo curto.
+
+Exclusividade de inferência: uma por vez, no processo inteiro.
 
 O teste mais importante deste arquivo é `test_inferencias_concorrentes_nao_se_sobrepoem`:
 ele prova que duas rotas de chamada diferentes (a que o runner usa e a que o ciclo de
 ferramentas usa) nunca disparam inferências ao mesmo tempo.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -32,15 +41,18 @@ class _SlowProvider(LLMProvider):
     name = "slow"
 
     def __init__(self, delay: float = 0.05) -> None:
+        """Prepara o atraso da inferência e zera os contadores."""
         self.delay = delay
         self.active = 0
         self.max_active = 0
         self.calls = 0
 
     async def list_models(self):
+        """Declara um único modelo disponível."""
         return ["m"]
 
     async def _chat(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+        """Conta a chamada, registra a simultaneidade e segura a inferência pelo atraso configurado."""
         self.calls += 1
         self.active += 1
         self.max_active = max(self.max_active, self.active)
@@ -53,6 +65,7 @@ class _SlowProvider(LLMProvider):
 
 @pytest.fixture(autouse=True)
 def _isolated_executor():
+    """Reinicia o executor global antes e depois do teste."""
     reset_executor()
     yield
     reset_executor()
@@ -60,10 +73,12 @@ def _isolated_executor():
 
 @pytest.mark.asyncio
 async def test_inferencias_concorrentes_nao_se_sobrepoem():
+    """Quatro inferências concorrentes nunca se sobrepõem quando o limite é um."""
     provider = _SlowProvider()
     executor = InferenceExecutor(limit=1)
 
     async def call():
+        """Adquire um slot, faz a inferência e devolve o slot ao executor."""
         slot = await executor.acquire(purpose="test")
         try:
             return await provider._chat(REQUEST)
@@ -80,10 +95,12 @@ async def test_inferencias_concorrentes_nao_se_sobrepoem():
 
 @pytest.mark.asyncio
 async def test_o_limite_configurado_permite_paralelismo_quando_asked():
+    """Com limite três, as inferências rodam em paralelo."""
     provider = _SlowProvider(delay=0.02)
     executor = InferenceExecutor(limit=3)
 
     async def call():
+        """Adquire um slot, faz a inferência e devolve o slot ao executor."""
         slot = await executor.acquire(purpose="test")
         try:
             return await provider._chat(REQUEST)
@@ -97,10 +114,12 @@ async def test_o_limite_configurado_permite_paralelismo_quando_asked():
 
 @pytest.mark.asyncio
 async def test_a_espera_pelo_slot_e_registrada():
+    """A espera pelo slot é registrada nas métricas de espera."""
     executor = InferenceExecutor(limit=1)
     slot = await executor.acquire(purpose="first")
 
     async def second():
+        """Espera pelo slot disponível e devolve quanto tempo esperou."""
         other = await executor.acquire(purpose="second")
         executor.release(slot=other)
         return other.waited_seconds
@@ -116,10 +135,12 @@ async def test_a_espera_pelo_slot_e_registrada():
 
 @pytest.mark.asyncio
 async def test_cancelamento_nao_deixa_slot_ocupado():
+    """O cancelamento libera o slot, que continua utilizável depois."""
     executor = InferenceExecutor(limit=1)
     slot = await executor.acquire(purpose="first")
 
     async def cancelled():
+        """Espera por um slot até ser cancelada."""
         try:
             await executor.acquire(purpose="second")
         except asyncio.CancelledError:
@@ -139,8 +160,11 @@ async def test_cancelamento_nao_deixa_slot_ocupado():
 
 @pytest.mark.asyncio
 async def test_falha_do_provedor_contabilizada_e_slot_devolvido():
+    """A falha do provedor é contabilizada e o slot é devolvido."""
     class _Broken(_SlowProvider):
+        """Provedor que sempre falha na inferência."""
         async def _chat(self, request):
+            """Estoura um erro de execução, simulando a queda do provedor."""
             raise RuntimeError("caiu")
 
     provider = _Broken()
@@ -162,6 +186,7 @@ async def test_o_provedor_herdado_passa_pelo_executor():
 
 @pytest.mark.asyncio
 async def test_o_limite_vem_das_configuracoes():
+    """O limite do executor vem da configuração de inferências concorrentes."""
     settings = Settings(max_concurrent_inferences=2)
     executor = get_executor(settings)
     assert executor.limit == 2
@@ -170,5 +195,6 @@ async def test_o_limite_vem_das_configuracoes():
 
 
 def test_limite_invalido_e_recusado():
+    """Limite zero ou negativo é recusado com erro."""
     with pytest.raises(ValueError):
         InferenceExecutor(limit=0)

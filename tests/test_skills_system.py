@@ -1,4 +1,14 @@
-# tests/test_skills_system.py — Testes do sistema de Skills (descoberta, validação, seleção sob demanda)
+"""
+Arquivo: tests/test_skills_system.py
+Nome: test_skills_system.py
+Propósito: verificar o sistema de Skills: descoberta, validação e seleção sob demanda.
+Responsabilidade: camada de testes — comportamento das skills embutidas, do registro e do seletor.
+Componentes: validade das skills embutidas, registro com skill inválida, descoberta em diretório, correspondência do seletor e renderização dentro do orçamento.
+Dependências: agent.skills (builtins, discovery, models, selector), pytest.
+Observações: diretório de skills temporário por teste; as skills embutidas são apenas lidas.
+
+Testes do sistema de Skills (descoberta, validação, seleção sob demanda)
+"""
 from pathlib import Path
 import pytest
 
@@ -9,6 +19,7 @@ from agent.skills.selector import SkillSelector
 
 
 def test_builtin_skills_load_and_are_valid():
+    """As skills embutidas carregam completas e todas são válidas."""
     skills = get_builtin_skills()
     assert len(skills) >= 6
     for s in skills:
@@ -21,6 +32,7 @@ def test_builtin_skills_load_and_are_valid():
 
 
 def test_registry_loads_builtins_and_handles_invalid_skills():
+    """O registro carrega as skills embutidas e recusa uma skill inválida, registrando-a como tal."""
     registry = SkillRegistry()
     assert len(registry.list_all()) >= 6
     assert registry.get("software_engineering") is not None
@@ -34,6 +46,7 @@ def test_registry_loads_builtins_and_handles_invalid_skills():
 
 
 def test_registry_discovers_skills_from_directory(tmp_path: Path):
+    """Uma skill escrita em Markdown é descoberta no diretório do projeto."""
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     custom_skill = skills_dir / "custom-optimization.md"
@@ -60,6 +73,7 @@ def test_registry_discovers_skills_from_directory(tmp_path: Path):
 
 
 def test_skill_selector_matches_relevant_skills():
+    """O seletor casa cada objetivo com a skill correspondente."""
     registry = SkillRegistry()
     selector = SkillSelector(registry)
 
@@ -81,6 +95,7 @@ def test_skill_selector_matches_relevant_skills():
 
 
 def test_skill_selector_renders_within_budget():
+    """As skills selecionadas são renderizadas dentro do orçamento de caracteres."""
     registry = SkillRegistry()
     selector = SkillSelector(registry)
     matches = selector.select("Implementar nova rota de exportação no backend e criar testes")

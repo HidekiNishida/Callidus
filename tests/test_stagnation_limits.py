@@ -1,4 +1,14 @@
-# tests/test_stagnation_limits.py — mesmo erro por assinatura, estratégia diferente, limites com pausa e retomada
+"""
+Arquivo: tests/test_stagnation_limits.py
+Nome: test_stagnation_limits.py
+Propósito: verificar a detecção de estagnação por assinatura de erro, a mudança de estratégia e os limites com pausa e retomada.
+Responsabilidade: camada de testes — comportamento da assinatura de erro, do limite de estagnação, da pausa da run e da retomada.
+Componentes: assinatura de erro insensível a números, estratégia diferente reinicia a contagem, estagnação registrada com diagnóstico, nova tentativa com estratégia diferente, replanejamento repetido sem progresso, limites vindos das configurações, pausa com estado recuperável e retomada pela rota.
+Dependências: agent.orchestrator (stagnation, replan, runner), agent.services (project, run, task), agent.persistence (database, models), fastapi.testclient, pytest.
+Observações: banco temporário por teste; o modelo é substituído por um provedor falso que devolve respostas programadas.
+
+mesmo erro por assinatura, estratégia diferente, limites com pausa e retomada
+"""
 from pathlib import Path
 
 import pytest
@@ -20,6 +30,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -27,24 +38,29 @@ def session(tmp_path: Path):
 
 
 class _Scripted:
+    """Provedor falso que devolve respostas programadas e registra os prompts recebidos."""
     name = "mock"
     last_usage = None
 
     def __init__(self, replies: list[str]) -> None:
+        """Guarda as respostas programadas e prepara o registro de prompts."""
         self.replies = replies
         self.prompts: list[str] = []
 
     async def chat(self, request):
+        """Provedor falso: registra os prompts recebidos e devolve a resposta programada."""
         self.prompts.append("\n".join(m.content for m in request.messages))
         reply = self.replies[min(len(self.prompts) - 1, len(self.replies) - 1)]
 
         class _R:
+            """Resposta falsa que carrega a resposta programada."""
             content = reply
 
         return _R()
 
 
 def _change(session, tmp_path: Path, provider, monkeypatch):
+    """Prepara uma etapa de alteração de arquivo em execução, com o provedor falso já conectado."""
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     tasks = TaskService(session)
     root = tasks.create_task(project.id, TaskCreate(title="Objetivo", objective="Objetivo"))
@@ -69,15 +85,18 @@ def _change(session, tmp_path: Path, provider, monkeypatch):
 
 
 def _failure(detail: str, strategy: str = "s1") -> dict:
+    """Monta uma falha com assinatura e estratégia, como o orquestrador as registra."""
     data = Failure(FailureCategory.RECOVERABLE, FailureCause.VERIFICATION_FAILED, detail).as_dict()
     return {**data, "signature": error_signature(data), "strategy": strategy}
 
 
 def _events(session, run_id, kind):
+    """Devolve os eventos de um tipo gravados para a run."""
     return session.scalars(select(EventLogModel).where(EventLogModel.run_id == run_id, EventLogModel.event_type == kind)).all()
 
 
 def test_same_error_with_different_numbers_has_the_same_signature():
+    """Erros que só diferem em números e identificadores têm a mesma assinatura e contam como repetição."""
     assert normalize_error("pytest falhou em 0.31s (3 failed) id 1f0e2d3c-aaaa-bbbb-cccc-123456789abc") == normalize_error(
         "Pytest falhou em 12.9s (7 failed) id 99999999-aaaa-bbbb-cccc-123456789abc"
     )
@@ -87,12 +106,14 @@ def test_same_error_with_different_numbers_has_the_same_signature():
 
 
 def test_a_materially_different_strategy_restarts_the_count():
+    """Quando a estratégia muda de verdade, a contagem de repetições recomeça."""
     runs = [_failure("assert 1 == 2", "s1"), _failure("assert 1 == 2", "s1"), _failure("assert 1 == 2", "s2")]
     assert repeated_failures(runs) == 1
 
 
 @pytest.mark.asyncio
 async def test_repeated_error_without_strategy_change_stops_and_records_diagnosis(session, tmp_path, monkeypatch):
+    """O mesmo erro sem mudança de estratégia para a execução, registra o diagnóstico e emite o evento de estagnação."""
     provider = _Scripted(["Vou escrever o arquivo 1.", "Vou escrever o arquivo 2.", "Vou escrever o arquivo 3."])
     run, change = _change(session, tmp_path, provider, monkeypatch)
     orch = RunOrchestrator(session, Settings(data_dir=tmp_path / "data"))
@@ -120,6 +141,7 @@ async def test_repeated_error_without_strategy_change_stops_and_records_diagnosi
 
 @pytest.mark.asyncio
 async def test_new_attempt_with_a_different_strategy_is_not_stagnation(session, tmp_path, monkeypatch):
+    """Uma tentativa com estratégia diferente não conta como estagnação."""
     provider = _Scripted(["Vou escrever."])
     run, change = _change(session, tmp_path, provider, monkeypatch)
     orch = RunOrchestrator(session, Settings(data_dir=tmp_path / "data"))
@@ -137,6 +159,7 @@ async def test_new_attempt_with_a_different_strategy_is_not_stagnation(session, 
 
 
 def test_repeated_replan_without_fewer_pending_is_refused_even_if_text_differs(session, tmp_path, monkeypatch):
+    """Replanejar de novo sem reduzir o pendente é recusado, mesmo com texto de erro diferente."""
     run, change = _change(session, tmp_path, _Scripted(["x"]), monkeypatch)
     task = TaskService(session).get_task(change.id)
     task.status = TaskStatus.BLOCKED.value
@@ -150,6 +173,7 @@ def test_repeated_replan_without_fewer_pending_is_refused_even_if_text_differs(s
 
 
 def test_limits_come_from_settings_and_run_config():
+    """Os limites vêm das configurações e podem ser ajustados pela configuração da run."""
     limits = limits_for(Settings(max_model_calls_per_run=7), {"limits": {"tool_calls": 2, "seconds": "x"}})
     assert limits["model_calls"] == 7 and limits["tool_calls"] == 2
     assert limits["seconds"] == Settings().max_run_seconds
@@ -157,6 +181,7 @@ def test_limits_come_from_settings_and_run_config():
 
 @pytest.mark.asyncio
 async def test_limit_pauses_with_recoverable_state_and_resume_continues(session, tmp_path, monkeypatch):
+    """O limite de chamadas pausa a run com estado recuperável, e a retomada continua de onde parou."""
     provider = _Scripted(["Vou escrever."])
     run, change = _change(session, tmp_path, provider, monkeypatch)
     run = session.get(ExecutionRunModel, run.id)
@@ -197,6 +222,7 @@ async def test_limit_pauses_with_recoverable_state_and_resume_continues(session,
 
 
 def test_resume_route_reactivates_only_paused_runs(session, tmp_path, monkeypatch):
+    """A rota de retomada reativa apenas runs pausadas e devolve 409 quando a run já está ativa."""
     from fastapi.testclient import TestClient
 
     from agent.api import deps

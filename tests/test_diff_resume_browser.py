@@ -1,4 +1,13 @@
-# tests/test_diff_resume_browser.py
+"""
+Arquivo: tests/test_diff_resume_browser.py
+Nome: test_diff_resume_browser.py
+Propósito: Verificar o diff unificado, o resumo de retomada e as ferramentas de navegador.
+Responsabilidade: camada de testes — marcação de linhas do diff, retorno do diff na edição, brief de retomada, proteção de URL e ferramenta desligada.
+Componentes: diff unificado, diff devolvido pela edição, brief de retomada, guarda de URL e navegador desativado por padrão.
+Dependências: agent.tools.diffing, agent.orchestrator.resume, agent.tools.browser e agent.tools.registry.
+Observações: banco temporário em tmp_path; nenhuma navegação real é feita.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -15,6 +24,7 @@ from agent.tools.registry import ToolContext, build_default_registry
 
 
 def test_unified_diff_marks_added_and_removed_lines():
+    """O diff unificado conta a linha adicionada e a removida e mostra os dois trechos."""
     diff = unified_diff_text("app.py", "a = 1\n", "a = 2\n")
     assert diff["added"] == 1
     assert diff["removed"] == 1
@@ -24,6 +34,7 @@ def test_unified_diff_marks_added_and_removed_lines():
 
 @pytest.mark.asyncio
 async def test_edit_file_returns_diff(tmp_path: Path):
+    """A edição de arquivo devolve o diff da mudança aplicada."""
     target = tmp_path / "app.py"
     target.write_text("valor = 1\n", encoding="utf-8")
     registry = build_default_registry()
@@ -37,6 +48,7 @@ async def test_edit_file_returns_diff(tmp_path: Path):
 
 
 def test_resume_brief_says_what_stopped_and_corrects_instruction(tmp_path: Path):
+    """O brief de retomada diz onde parou, o que já foi feito e corrige a instrução."""
     engine = init_db(settings=Settings(data_dir=tmp_path))
     session = build_session_factory(engine)()
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
@@ -64,6 +76,7 @@ def test_resume_brief_says_what_stopped_and_corrects_instruction(tmp_path: Path)
 
 
 def test_browser_guards_and_parses_results():
+    """A guarda recusa URL de arquivo local e a leitura do HTML extrai título e endereço dos resultados."""
     with pytest.raises(ValueError):
         guard_url("file:///etc/passwd")
     assert guard_url("https://exemplo.dev").startswith("https://")
@@ -75,6 +88,7 @@ def test_browser_guards_and_parses_results():
 
 @pytest.mark.asyncio
 async def test_browser_tool_stays_off_until_enabled(tmp_path: Path):
+    """A ferramenta de navegador recusa a navegação enquanto está desligada."""
     registry = build_default_registry()
     off = await registry.execute(
         "browser",

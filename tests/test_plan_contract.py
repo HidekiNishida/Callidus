@@ -1,5 +1,16 @@
-# tests/test_plan_contract.py — o plano do modelo não pode ser descartado por um rótulo fora do contrato
-"""Regressões do contrato do plano.
+"""
+Arquivo: tests/test_plan_contract.py
+Nome: test_plan_contract.py
+Propósito: verificar que um plano do modelo sobrevive a rótulos fora do contrato e que etapas irrecuperáveis são reparadas antes de executar.
+Responsabilidade: camada de testes — comportamento da normalização e da validação do contrato do plano.
+Componentes: normalização de kind, dependências e covers, plano sem subtarefas, metadados canônicos da resposta final, reparo de verificador inexistente e de edição sem âncora.
+Dependências: agent.orchestrator (plan_contract, plan_validation, decomposition), agent.services (project, task), agent.persistence.database, pytest.
+Observações: banco SQLite temporário por teste (tmp_path) e workspace temporário; o provedor de modelo não é chamado.
+
+o plano do modelo não pode ser descartado por um rótulo fora do contrato
+
+
+Regressões do contrato do plano.
 
 O modelo rotula as etapas do jeito que entende. Um rótulo fora do enum (`kind: "final_answer"`)
 descartava o plano inteiro e o orquestrador caía no template genérico — perdendo a
@@ -28,6 +39,7 @@ from agent.services.task_service import TaskService
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Sessão de banco sobre um diretório de dados temporário, fechada ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -35,6 +47,7 @@ def session(tmp_path: Path):
 
 
 def test_kind_final_answer_e_aceito_como_etapa_de_resposta():
+    """O rótulo `final_answer`, fora do enum, é aceito como etapa de operação sem gerar aviso."""
     kind, warning = normalize_kind("final_answer")
 
     assert kind == TaskKind.OPERATION
@@ -42,6 +55,7 @@ def test_kind_final_answer_e_aceito_como_etapa_de_resposta():
 
 
 def test_kind_desconhecido_vira_operacao_com_aviso():
+    """Um `kind` desconhecido vira operação e o rótulo original fica registrado no aviso."""
     kind, warning = normalize_kind("coisa_qualquer")
 
     assert kind == TaskKind.OPERATION
@@ -49,6 +63,7 @@ def test_kind_desconhecido_vira_operacao_com_aviso():
 
 
 def test_dependencia_invalida_e_descartada_sem_derrubar_o_plano():
+    """Dependências inválidas são descartadas com aviso, e as válidas são preservadas."""
     depends, warnings = normalize_depends([0, "2", "x", True, 1])
 
     assert depends == [0, 2, 1]
@@ -56,6 +71,7 @@ def test_dependencia_invalida_e_descartada_sem_derrubar_o_plano():
 
 
 def test_covers_normalizado_em_lista_uniforme():
+    """A cobertura de requisitos é normalizada para uma lista uniforme de itens, e `None` permanece `None`."""
     assert normalize_covers(["R1"]) == [{"req": "R1", "partial": False, "part": ""}]
     assert normalize_covers({"req": "R2", "partial": True, "part": "API"}) == [
         {"req": "R2", "partial": True, "part": "API"}
@@ -64,6 +80,7 @@ def test_covers_normalizado_em_lista_uniforme():
 
 
 def test_plano_com_kind_fora_do_enum_sobrevive():
+    """Um plano com rótulo fora do enum é normalizado e continua válido com as duas subtarefas."""
     payload, warnings = normalize_plan_payload(
         {
             "subtasks": [
@@ -85,6 +102,7 @@ def test_plano_com_kind_fora_do_enum_sobrevive():
 
 
 def test_plano_sem_subtarefas_e_sinalizado():
+    """Um plano sem subtarefas é sinalizado em vez de passar em silêncio."""
     payload, warnings = normalize_plan_payload({"subtasks": []})
 
     assert payload["subtasks"] == []
@@ -92,6 +110,7 @@ def test_plano_sem_subtarefas_e_sinalizado():
 
 
 def test_etapa_de_resposta_final_ganha_os_metadados_canonicos():
+    """A etapa de resposta final recebe os metadados canônicos `final_answer` e `model_operation`."""
     payload, _ = normalize_plan_payload(
         {
             "subtasks": [
@@ -180,6 +199,7 @@ def test_edicao_com_trecho_inexistente_vira_operacao_do_modelo(session, tmp_path
 
 
 def test_edicao_com_trecho_presente_e_preservada(session, tmp_path):
+    """Uma edição cujo trecho existe no arquivo é preservada como está, com a ferramenta original."""
     (tmp_path / "app.py").write_text("def hello():\n    return 'oi'\n", encoding="utf-8")
     project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
     root = TaskService(session).create_task(

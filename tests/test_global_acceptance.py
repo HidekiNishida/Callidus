@@ -1,4 +1,13 @@
-# tests/test_global_acceptance.py — aceite global por requisito, correção localizada, integração e relatório parcial
+"""
+Arquivo: tests/test_global_acceptance.py
+Nome: test_global_acceptance.py
+Propósito: Verificar a aceitação global do objetivo a partir dos requisitos e das evidências.
+Responsabilidade: camada de testes — relatório de requisitos, reabertura de tarefa sem evidência, bloqueio por requisito pendente, falha de integração e regressão.
+Componentes: requisitos comprovados com relatório, tarefa declarada concluída sem evidência, requisito obrigatório pendente, falha de integração e regressão que reabre só a tarefa afetada.
+Dependências: agent.orchestrator.global_verify, agent.orchestrator.requirements e agent.verification.fingerprint.
+Observações: banco temporário por teste; os arquivos de verificação são criados dentro de tmp_path.
+"""
+
 import uuid
 from pathlib import Path
 
@@ -27,6 +36,7 @@ from agent.verification.fingerprint import snapshot
 
 @pytest.fixture
 def session(tmp_path: Path):
+    """Abre uma sessão do banco temporário e a fecha ao fim do teste."""
     engine = init_db(settings=Settings(data_dir=tmp_path / "data"))
     opened = build_session_factory(engine)()
     yield opened
@@ -34,10 +44,12 @@ def session(tmp_path: Path):
 
 
 def _spec(name: str) -> dict:
+    """Monta a especificação de verificação por conteúdo de arquivo."""
     return {"type": "file_contains", "path": name, "contains": "ok"}
 
 
 def _evidence(session, task, root: Path, passed: bool = True) -> None:
+    """Registra a evidência de uma tarefa a partir da sua especificação de verificação."""
     spec = task.metadata_json["verification"]
     session.add(
         EvidenceModel(
@@ -86,6 +98,7 @@ def _tree(session, tmp_path: Path, objective: str, leaves: list[dict], *, root_m
 
 
 def _statuses(session, root) -> dict[str, str]:
+    """Devolve o estado de cada requisito da raiz."""
     return {r["id"]: r["status"] for r in requirements_report(session, root)}
 
 
@@ -94,6 +107,7 @@ OBJ = "- criar a.py\n- criar b.py"
 
 @pytest.mark.asyncio
 async def test_every_requirement_with_valid_evidence_completes_with_report(session, tmp_path):
+    """Com todos os requisitos comprovados, o run termina e o relatório marca cada um como comprovado com evidência."""
     run, root, _, _, _ = _tree(
         session, tmp_path, OBJ, [{"title": "A", "covers": ["R1"], "file": "a.py"}, {"title": "B", "covers": ["R2"], "file": "b.py"}]
     )
@@ -109,6 +123,7 @@ async def test_every_requirement_with_valid_evidence_completes_with_report(sessi
 
 @pytest.mark.asyncio
 async def test_task_claimed_done_without_evidence_gets_a_localized_fix(session, tmp_path):
+    """Tarefa concluída sem evidência gera uma tarefa de correção só do requisito afetado."""
     run, root, (a, b), final, _ = _tree(
         session, tmp_path, OBJ, [{"title": "A", "covers": ["R1"], "file": "a.py"}, {"title": "B", "covers": ["R2"]}]
     )
@@ -132,6 +147,7 @@ async def test_task_claimed_done_without_evidence_gets_a_localized_fix(session, 
 
 @pytest.mark.asyncio
 async def test_pending_mandatory_requirement_blocks_completion_with_partial_report(session, tmp_path):
+    """Requisito obrigatório sem comprovação impede a conclusão e o relatório mostra o que faltou."""
     run, root, _, _, _ = _tree(
         session, tmp_path, OBJ + "\n- criar c.py", [{"title": "A", "covers": ["R1"], "file": "a.py"}, {"title": "B", "covers": ["R2"], "file": "b.py"}]
     )
@@ -160,6 +176,7 @@ async def test_pending_mandatory_requirement_blocks_completion_with_partial_repo
 
 
 def test_integration_failure_keeps_requirements_unaccepted(session, tmp_path):
+    """A falha da verificação global bloqueia os requisitos, mesmo com as evidências locais aprovadas."""
     run, root, (a, b), _, proj = _tree(
         session,
         tmp_path,
@@ -188,6 +205,7 @@ def test_integration_failure_keeps_requirements_unaccepted(session, tmp_path):
 
 @pytest.mark.asyncio
 async def test_regression_reopens_only_the_affected_task(session, tmp_path):
+    """A regressão reabre apenas a tarefa cujo arquivo mudou e mantém a outra comprovada."""
     run, root, (a, b), _, proj = _tree(
         session, tmp_path, OBJ, [{"title": "A", "covers": ["R1"], "file": "a.py"}, {"title": "B", "covers": ["R2"], "file": "b.py"}]
     )
