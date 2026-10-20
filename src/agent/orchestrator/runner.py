@@ -1,4 +1,12 @@
-# src/agent/orchestrator/runner.py — ciclo completo de execução
+"""
+Arquivo: src/agent/orchestrator/runner.py
+Nome: runner.py
+Propósito: coordenar o ciclo de execução de um run — planejar, executar, verificar, consolidar.
+Responsabilidade: camada de aplicação — orquestração do ciclo; delega a execução de uma tarefa.
+Componentes: RunOrchestrator (step, planejamento, estagnação, pausa, retomada), helpers de fluxo.
+Dependências: agent.services.task_service, agent.services.attempt_service, agent.orchestrator.execution, agent.persistence.models.
+Observações: o SQLite é a fonte da verdade; a verificação é independente de quem executa.
+"""
 from __future__ import annotations
 
 import uuid
@@ -10,25 +18,18 @@ from sqlalchemy.orm import Session
 
 from agent.config import Settings
 from agent.domain.agent_enums import ExecutionStatus
-from agent.domain.enums import AttemptKind, MemoryKind, RunStatus, TaskKind, TaskStatus
+from agent.domain.enums import MemoryKind, RunStatus, TaskStatus
 from agent.domain.failures import (
     Failure,
     FailureCategory,
     FailureCause,
-    classify_context_error,
-    classify_model_output,
-    classify_provider_error,
-    classify_tool_result,
-    classify_verification,
 )
 from agent.domain.schemas import MemoryCreate, TaskStatusUpdate
-from agent.i18n.locale import detect_language, language_instruction
+from agent.i18n.locale import detect_language
 from agent.orchestrator.consolidation import (
     children_of,
-    consolidate_parent,
     pending_reason,
     settled,
-    stages_outcome,
     verification_evidence_ok,
 )
 from agent.orchestrator.global_verify import (
@@ -39,7 +40,7 @@ from agent.orchestrator.global_verify import (
     requirements_report,
 )
 from agent.services.contract_service import ContractService
-from agent.orchestrator.atomizer import micro_decompose_operation, should_decompose_further
+from agent.orchestrator.atomizer import should_decompose_further
 from agent.orchestrator.decomposition import (
     apply_decomposition,
     executable_leaf,
@@ -61,202 +62,131 @@ from agent.orchestrator.progress import made_progress, progress_state
 from agent.orchestrator.replan import replan_decision, replan_under
 from agent.orchestrator.stagnation import (
     diagnose,
-    error_signature,
     limit_reached,
     limits_for,
     next_action_for_limit,
     repeated_failures,
-    strategy_signature,
 )
 from agent.orchestrator.requirements import effective_covers, ensure_requirements, root_of
-from agent.orchestrator.strategy import looks_like_test_file
-from agent.orchestrator.tool_loop import ToolLoopOutcome, run_tool_loop
-from agent.orchestrator.usage import accumulate_usage
-from agent.context.budget import ContextBudgetError
-from agent.context.operation_builder import OperationContextBuilder
-from agent.knowledge.graph_service import KnowledgeGraphService
+from agent.orchestrator.execution import (
+    ExecutionRuntime,
+    TaskExecutor,
+    apply_provider_usage,
+    note_thought,
+    profile_from_config,
+    remember_failure,
+    select_provider,
+    work_root,
+)
 from agent.persistence.models import (
-    ConversationModel,
     EventLogModel,
-    EvidenceModel,
     ExecutionRunModel,
     ProjectModel,
     TaskModel,
 )
-from agent.services.inbox import effective_root
-from agent.providers.base import LLMProvider, ModelProfile, ProviderConfigError, ProviderError
-from agent.providers.mock import MockProvider
-from agent.providers.observed import observed_chat
-from agent.providers.registry import build_provider_by_name
+from agent.providers.base import LLMProvider, ModelProfile
 from agent.services.agent_service import AgentService
 from agent.services.attempt_service import AttemptService
 from agent.services.project_service import ProjectService
 from agent.services.task_service import TaskService
-from agent.tools.registry import ToolContext, build_default_registry
-from agent.verification.fingerprint import snapshot as artifact_snapshot
-from agent.verification.runner import VerificationResult, run_verification
+from agent.tools.registry import build_default_registry
+
+
+def _select_provider(settings: Settings, run_config: dict) -> LLMProvider:
+    """Provedor do run — a escolha vive em `agent.orchestrator.execution.providers`.
+
+    O nome permanece neste módulo porque é aqui que consumidores e testes a injetam
+    (monkeypatch): trocar a implementação não pode quebrar quem injeta o provedor.
+
+    Args:
+        settings: configuração do processo.
+        run_config: configuração do run (`provider`, `mock_keyword_map`).
+
+    Returns:
+        A instância do provedor escolhido.
+
+    Raises:
+        ProviderConfigError: quando o provedor pedido não existe e não há fallback autorizado.
+    """
+    return select_provider(settings, run_config)
+
+
+def _profile_from_config(run_config: dict, settings: Settings, provider: LLMProvider | None = None) -> ModelProfile:
+    """Perfil do modelo para o run (limites de contexto e geração).
+
+    Args:
+        run_config: configuração do run.
+        settings: configuração do processo.
+        provider: provedor escolhido, quando já conhecido.
+
+    Returns:
+        O perfil do modelo a aplicar nas chamadas.
+    """
+    return profile_from_config(run_config, settings, provider)
 
 
 class RunBlockedError(RuntimeError):
+    """Erro de execução que impede a run de continuar.
+
+    Observações:
+        Distingue um bloqueio de negócio de uma falha inesperada, para que o chamador saiba que é preciso ação de fora.
+    """
     pass
 
 
 _ACTION_KEYS = ("mcp_tool", "final_answer", "model_operation", "tool", "verification")
 
 
-def _is_informative_test_result(tool_id: str, out: dict) -> bool:
-    """A ferramenta rodou e o resultado é um veredito, não uma falha de execução.
-
-    `run_pytest` que termina com código de saída diferente de zero e saída de texto é a suíte
-    **reprovando** — a ferramenta funcionou. Só há falha de ferramenta quando o comando nem
-    chegou a rodar (executável ausente, timeout, caminho bloqueado).
-    """
-    if tool_id not in {"run_pytest", "pytest"}:
-        return False
-    if out.get("success"):
-        return False
-    if out.get("exit_code") is None:
-        return False
-    return bool(str(out.get("stdout") or "").strip() or str(out.get("stderr") or "").strip())
-
-
-def _operation_tools_for(meta: dict) -> tuple[str, ...]:
-    """Ferramentas da etapa: sem `write_file`/`edit_file` quando o pedido é somente leitura.
-
-    "Não altere nenhum arquivo do projeto" vira **permissão**, não apenas instrução: o modelo
-    recebe as ferramentas de leitura e o caminho que escreve no disco recusa a alteração.
-    """
-    from agent.orchestrator.tool_loop import INSPECTION_TOOLS, OPERATION_TOOLS
-
-    if (meta or {}).get("read_only"):
-        return INSPECTION_TOOLS
-    return OPERATION_TOOLS
-
-
-def _write_refusal_reason(meta: dict, tool_name: str, path: str | None) -> str | None:
-    """Por que esta escrita não pode acontecer (ou `None`, quando pode).
-
-    Duas proteções, ambas do pedido e não do modelo:
-
-    - **Somente leitura**: o pedido proíbe alterar o projeto.
-    - **Régua protegida**: os arquivos de teste são o critério da medição. Alterá-los para a
-      medição passar é trocar o critério, não resolver o problema — a menos que o pedido
-      mande mexer nos testes.
-    """
-    if tool_name not in {"write_file", "edit_file", "move_file"}:
-        return None
-    if meta.get("read_only"):
-        return "a etapa é somente leitura: o pedido proíbe alterar arquivos"
-    if meta.get("protect_tests") and path and looks_like_test_file(str(path)):
-        return f"o pedido não pede para alterar os testes: «{path}» é o critério da medição"
-    return None
-
-
-def _payload_is_usable(content: str) -> bool:
-    """A resposta do modelo já é o JSON que a etapa espera (criar ou editar)?"""
-    from agent.util.json_parse import parse_json_object
-
-    data, err = parse_json_object(content or "")
-    if err or not isinstance(data, dict):
-        return False
-    if not isinstance(data.get("path"), str) or not data.get("path").strip():
-        return False
-    return bool(data.get("content") or data.get("new_string"))
-
-
-def _test_summary(out: dict) -> str:
-    """Resumo curto do que a suíte contou."""
-    text = str(out.get("stdout") or out.get("stderr") or "").strip()
-    lines = [line for line in text.splitlines() if line.strip()]
-    return lines[-1][:200] if lines else f"código de saída {out.get('exit_code')}"
-
-
-def _select_provider(settings: Settings, run_config: dict) -> LLMProvider:
-    """Provedor do run: nome vem do run (`config["provider"]`) ou das settings.
-
-    Ordem: mock → catálogo de provedores configurado (`PROVIDERS_CONFIG_PATH`) → provedores
-    embutidos (Ollama, llama.cpp). Nome desconhecido é erro explícito: trocar de provedor
-    silenciosamente (por exemplo para o mock) mudaria custo, privacidade e resultado.
-    """
-    name = str(run_config.get("provider") or _default_provider_name(settings) or "ollama")
-    if name == "mock":
-        kw = run_config.get("mock_keyword_map") or {}
-        return MockProvider(keyword_map=kw)
-    provider = build_provider_by_name(name, settings)
-    if provider is not None:
-        return provider
-    if settings.allow_mock_fallback:
-        return MockProvider()
-    raise ProviderConfigError(
-        f"provedor '{name}' desconhecido: use um nome definido no arquivo de provedores "
-        "(PROVIDERS_CONFIG_PATH) ou 'ollama', 'llamacpp' ou 'mock'"
-    )
-
-
-def _default_provider_name(settings: Settings) -> str:
-    """Provedor padrão: o do arquivo de provedores, se houver; senão o das settings."""
-    from agent.providers.registry import catalog_for_settings
-
-    try:
-        catalog = catalog_for_settings(settings)
-    except ProviderConfigError:
-        return settings.default_provider
-    return catalog.default_provider or settings.default_provider
-
-
-def _profile_from_config(run_config: dict, settings: Settings, provider: LLMProvider | None = None) -> ModelProfile:
-    from agent.orchestrator.decomposition import profile_from_run_config
-
-    return profile_from_run_config(run_config, settings, provider=provider)
-
-
-_ENVIRONMENT = {FailureCategory.CONFIGURATION, FailureCategory.EXTERNAL_UNAVAILABLE}
-
-
-def _supports_tool_loop(provider) -> bool:
-    """O provedor sabe manter a conversa de ferramentas? Provedor sem o recurso fica no
-    protocolo JSON de uma tacada (o modelo recebe as ferramentas só quando o transporte
-    sabe devolver o resultado delas)."""
-    capabilities = getattr(provider, "capabilities", None)
-    if not callable(capabilities):
-        return False
-    try:
-        return bool(capabilities().tool_loop)
-    except Exception:  # pragma: no cover - provedor de teste sem capacidades
-        return False
-
-
-def _compact_inspection(inspections: list[dict[str, Any]], max_items: int = 6, max_chars: int = 900) -> list[dict]:
-    """Inspeção da tentativa, enxuta: o que foi lido e um trecho do conteúdo."""
-    out: list[dict] = []
-    for item in inspections[-max_items:]:
-        path = item.get("path")
-        if not path:
-            continue
-        content = str(item.get("content") or "")[:max_chars]
-        out.append({"path": path, "content": content})
-    return out
-
-
-def evidence_state(passed: bool | None, blocked: bool = False) -> str:
-    """Estado gravado na evidência; `desatualizado` é marcado depois, por `reopen_verification_gaps`."""
-    if blocked:
-        return "bloqueado"
-    return {True: "aprovado", False: "reprovado"}.get(passed, "inconclusivo")
-
-
 class RunOrchestrator:
+    """Orquestrador de uma execução: planeja, executa, verifica, consolida e fecha.
+
+    Observações:
+        Todo o estado do ciclo vive no banco; a verificação é independente de quem executa o passo.
+    """
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
+        """Prepara o orquestrador sobre a sessão do banco.
+
+        Args:
+            session: sessão usada em todas as operações do ciclo.
+            settings: configurações do processo; quando ausentes, usa as configurações padrão.
+        """
         self._session = session
         self._settings = settings or Settings()
         self._tasks = TaskService(session)
         self._attempts = AttemptService(session, max_attempts=self._settings.max_attempts_per_task)
         self._tools = build_default_registry()
+        self._runtime = ExecutionRuntime(
+            session=session,
+            settings=self._settings,
+            tasks=self._tasks,
+            attempts=self._attempts,
+            tools=self._tools,
+            # A política de provedor passa pela função deste módulo: quem injeta um
+            # provedor por monkeypatch continua injetando no mesmo lugar.
+            provider_factory=lambda settings, config: _select_provider(settings, config),
+        )
+        self._executor = TaskExecutor(self._runtime)
 
     def _run_config(self, run: ExecutionRunModel) -> dict:
+        """Devolve a configuração gravada do run.
+
+        Args:
+            run: registro do run.
+
+        Returns:
+            O dicionário de configuração do run, ou um dicionário vazio quando o run não tem configuração.
+        """
         return run.config_json or {}
 
     def _promote_ready_or_block(self, task_id: uuid.UUID) -> dict[str, Any] | None:
+        """Libera a etapa para execução, ou a bloqueia quando o contrato obrigatório falta.
+
+        Args:
+            task_id: identificador da etapa.
+
+        Returns:
+            O bloqueio com o motivo quando o contrato impede a execução, ou `None` quando a etapa foi liberada.
+        """
         ok, errs = ContractService(self._session).validate_for_run(task_id)
         if not ok:
             self._tasks.update_status(
@@ -267,14 +197,18 @@ class RunOrchestrator:
         self._tasks.update_status(task_id, TaskStatusUpdate(status=TaskStatus.READY))
         return None
 
-    def _apply_provider_usage(self, task: TaskModel, provider) -> None:
-        usage = getattr(provider, "last_usage", None)
-        provider.last_usage = None
-        if not usage:
-            return
-        task.metadata_json = accumulate_usage(task.metadata_json, usage[0], usage[1])
-
     def _same_title_above(self, task: TaskModel) -> bool:
+        """Diz se a etapa repete o título ou o objetivo de alguma etapa acima na árvore.
+
+        Args:
+            task: etapa avaliada.
+
+        Returns:
+            Verdadeiro quando existe um ancestral com o mesmo título ou o mesmo objetivo.
+
+        Observações:
+            A varredura é protegida contra ciclos de parentagem.
+        """
         title = task.title.strip().casefold()
         objective = " ".join((task.objective or "").split()).casefold()
         parent_id = task.parent_id
@@ -299,6 +233,18 @@ class RunOrchestrator:
         work_root: str,
         spec_issues: list | None = None,
     ) -> PlanValidation:
+        """Valida o plano das filhas de uma tarefa e aplica as correções seguras.
+
+        Args:
+            run: run dona do plano.
+            parent: tarefa cujo plano é validado.
+            config: configuração do run.
+            work_root: pasta de trabalho usada para conferir ferramentas e verificações.
+            spec_issues: problemas já detectados na especificação do plano.
+
+        Returns:
+            O resultado da validação, com o veredito e as correções aplicadas.
+        """
         return validate_and_repair(
             self._session,
             parent,
@@ -352,15 +298,6 @@ class RunOrchestrator:
             "fixes": validation.fixes,
         }
 
-    def _criteria_of(self, task: TaskModel) -> dict[str, Any]:
-        """Critério avaliado pela verificação: requisitos que a etapa cobre e o critério de aceite dela."""
-        covers = effective_covers(self._session, task)
-        return {
-            "requirements": [c["req"] for c in covers],
-            "partial": [c["req"] for c in covers if c["partial"]],
-            "acceptance": task.acceptance_criteria or "",
-        }
-
     def _task_requirements(self, task: TaskModel) -> list[dict]:
         """Requisitos que esta etapa precisa atender (os da raiz filtrados pela cobertura herdada)."""
         reqs = ensure_requirements(self._session, root_of(self._session, task))
@@ -384,6 +321,17 @@ class RunOrchestrator:
         return None
 
     def _depth(self, task: TaskModel) -> int:
+        """Calcula a profundidade da etapa na árvore de tarefas.
+
+        Args:
+            task: etapa avaliada.
+
+        Returns:
+            O número de ancestrais da etapa.
+
+        Observações:
+            A varredura é protegida contra ciclos de parentagem.
+        """
         depth = 0
         parent_id = task.parent_id
         seen: set[uuid.UUID] = set()
@@ -423,44 +371,17 @@ class RunOrchestrator:
                 child_meta.setdefault("strategy_requirements", strategy.extracted_requirements[:5])
             child.metadata_json = child_meta
 
-    def _plan_verification_recovery(
-        self,
-        task: TaskModel,
-        vresult: Any,
-        detail: dict[str, Any],
-        spec: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Diagnostica a reprovação e decide o próximo passo (diagnóstico → correção → re-verificação)."""
-        from agent.verification.recovery import (
-            diagnose_verification_failure,
-            plan_recovery,
-            recovery_signature,
-        )
-
-        diagnosis = diagnose_verification_failure(
-            verifier=vresult.verifier,
-            summary=vresult.summary,
-            detail=detail,
-            spec=spec,
-        )
-        recoveries = int((task.metadata_json or {}).get("verification_recoveries") or 0)
-        plan = plan_recovery(
-            diagnosis,
-            attempt_count=recoveries,
-            max_recoveries=self._settings.verification_max_recoveries,
-        )
-        plan["signature"] = recovery_signature(diagnosis, detail)
-        plan["recoveries"] = recoveries
-        task.metadata_json = {**(task.metadata_json or {}), "verification_recoveries": recoveries + 1}
-        emit(
-            "verification.recovery_planned",
-            {"cause": plan.get("cause"), "action": plan.get("action"), "retry": plan.get("retry", False)},
-            task_id=task.id,
-            commit=True,
-        )
-        return plan
-
     def _run_as_leaf(self, run: ExecutionRunModel, task: TaskModel, *, note: str) -> dict[str, Any]:
+        """Executa a etapa como folha, sem decompô-la.
+
+        Args:
+            run: run em curso.
+            task: etapa que será executada como folha.
+            note: explicação registrada para a interface.
+
+        Returns:
+            A ação resultante: a etapa ficou pronta, ou está esperando as dependências.
+        """
         meta = dict(task.metadata_json or {})
         if not meta.get("tool") and not meta.get("verification") and not meta.get("final_answer"):
             meta["model_operation"] = True
@@ -475,6 +396,20 @@ class RunOrchestrator:
         return {"action": "operation_wait_deps", "task_id": str(task.id)}
 
     async def step(self, run_id: uuid.UUID) -> dict[str, Any]:
+        """Executa um passo do ciclo da run.
+
+        Args:
+            run_id: identificador da run.
+
+        Returns:
+            A ação realizada no passo, com a tarefa afetada.
+
+        Raises:
+                LookupError: quando a run não existe.
+
+        Observações:
+            O passo é o mesmo executado pelo worker autônomo: quem executa não muda o que é verificado.
+        """
         run = self._session.get(ExecutionRunModel, run_id)
         if run is None:
             raise LookupError(str(run_id))
@@ -636,6 +571,15 @@ class RunOrchestrator:
         return {"action": "run_paused", "run_id": str(run.id), "reason": reason, "next_action": next_action}
 
     def _record_action(self, run_id: uuid.UUID, out: dict[str, Any]) -> None:
+        """Grava a ação do passo no histórico e publica o progresso quando ele muda.
+
+        Args:
+            run_id: identificador da run.
+            out: ação realizada no passo.
+
+        Observações:
+            O evento `run.progress` só é emitido quando o estado de progresso muda; decompor sem avançar não é progresso.
+        """
         run = self._session.get(ExecutionRunModel, run_id)
         if run is None:
             return
@@ -676,29 +620,15 @@ class RunOrchestrator:
             )
         )
 
-    def _note_thought(self, run: ExecutionRunModel, task: TaskModel | None, text: str, *, phase: str = "thinking") -> None:
+    def _note_thought(
+        self, run: ExecutionRunModel, task: TaskModel | None, text: str, *, phase: str = "thinking"
+    ) -> None:
         """Grava o que está acontecendo e libera o banco para a interface ler durante a inferência."""
-        self._session.add(
-            EventLogModel(
-                project_id=run.project_id,
-                run_id=run.id,
-                task_id=task.id if task is not None else None,
-                event_type="agent.thought",
-                payload_json={"phase": phase, "text": text[:400], "task": task.title if task is not None else None},
-            )
-        )
-        self._session.commit()
+        note_thought(self._session, run, task, text, phase=phase)
 
     def _remember_failure(self, task: TaskModel, failure: Failure) -> dict[str, Any]:
         """Guarda a falha na tarefa: a próxima tentativa e a política de replanejamento leem daqui."""
-        meta = dict(task.metadata_json or {})
-        history = list(meta.get("failures") or [])[-4:]
-        noted = {**failure.as_dict(), "signature": error_signature(failure.as_dict()), "strategy": strategy_signature(task)}
-        history.append(noted)
-        meta["failures"] = history
-        meta["last_failure"] = noted
-        task.metadata_json = meta
-        return noted
+        return remember_failure(task, failure)
 
     def _widen_output_budget(self, task: TaskModel, *, factor: int = 2) -> int:
         """Aumenta o orçamento de resposta da etapa (o modelo gastou tudo e devolveu nada).
@@ -730,6 +660,14 @@ class RunOrchestrator:
     }
 
     def _pending_under(self, root_id: uuid.UUID) -> list[dict[str, Any]]:
+        """Lista as etapas que ainda impedem a raiz de concluir.
+
+        Args:
+            root_id: identificador da raiz da árvore.
+
+        Returns:
+            As pendências com título, estado e o motivo de cada uma.
+        """
         tasks = list(self._session.scalars(select(TaskModel)).all())
         subtree = self._subtree_ids(root_id, tasks)
         pending: list[dict[str, Any]] = []
@@ -774,65 +712,16 @@ class RunOrchestrator:
         )
         return {"action": "run_stalled", "run_id": str(run.id), "reason": reason, "pending": pending}
 
-    def _context_overflow(
-        self,
-        run: ExecutionRunModel,
-        project: ProjectModel,
-        task: TaskModel,
-        provider_name: str,
-        profile: ModelProfile,
-        exc: ContextBudgetError,
-    ) -> dict[str, Any]:
-        """O obrigatório não cabe nem compactado: nada é enviado ao modelo e a tarefa para com a explicação."""
-        biggest = max((item for item in exc.breakdown if item["required"]), key=lambda item: item["tokens"])
-        detail = (
-            f"{exc.required_tokens} tokens obrigatórios > orçamento {exc.budget} de {profile.model_id}; "
-            f"maior parte: {biggest['name']} ({biggest['tokens']} tokens). "
-            "Divida o pedido ou use um modelo com contexto maior."
-        )
-        failure = classify_context_error(detail)
-        self._attempts.record(
-            run_id=run.id,
-            task_id=task.id,
-            kind=AttemptKind.MODEL,
-            provider=provider_name,
-            request={"context_snapshot_id": exc.snapshot_id, "breakdown": exc.breakdown, "budget": exc.budget},
-            response=None,
-            success=False,
-            project_id=project.id,
-            failure=failure,
-        )
-        noted = self._remember_failure(task, failure)
-        self._note_thought(run, task, f"O contexto necessário não cabe no modelo: {detail}")
-        self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=detail))
-        return {"action": "blocked_context", "task_id": str(task.id), "failure": noted}
-
-    def _save_requested_memory(self, project: ProjectModel, task: TaskModel, args: dict) -> dict:
-        content = str(args.get("content") or args.get("text") or "").strip()
-        if not content:
-            return {"success": False, "error": "conteúdo vazio"}
-        scope = str(args.get("scope") or "conversation").lower()
-        title = str(args.get("title") or content[:80]).strip() or "Memória"
-        conversation_id = None if scope == "project" else task.conversation_id
-        kind = MemoryKind.CANONICAL if scope == "project" else MemoryKind.CONTEXTUAL
-        record = ProjectService(self._session).add_memory(
-            project.id,
-            MemoryCreate(
-                kind=kind,
-                title=title[:180],
-                content=content,
-                task_id=task.id,
-                conversation_id=conversation_id,
-            ),
-        )
-        return {
-            "success": True,
-            "id": str(record.id),
-            "summary": record.summary,
-            "scope": "project" if conversation_id is None else "conversation",
-        }
-
     def _capture_outcome_memory(self, project: ProjectModel, root: TaskModel) -> None:
+        """Guarda o resultado do trabalho como memória contextual do projeto.
+
+        Args:
+            project: projeto que recebe a memória.
+            root: tarefa raiz do objetivo.
+
+        Observações:
+            A gravação é idempotente: a mesma conclusão não é gravada duas vezes.
+        """
         report = root.consolidated_result_json or {}
         final = report.get("final_answer") or ""
         if not isinstance(final, str):
@@ -892,6 +781,21 @@ class RunOrchestrator:
             pass
 
     async def _step_body(self, run_id: uuid.UUID) -> dict[str, Any]:
+        """Corpo do passo: decide o que fazer com a próxima etapa da run.
+
+            Args:
+                run_id: identificador da run.
+
+            Returns:
+                A ação realizada no passo.
+
+            Raises:
+                LookupError: quando a run ou o projeto da run não existem.
+
+            Observações:
+                A ordem das decisões é fixa: limite de orçamento, replanejamento, escolha da próxima etapa,
+                revalidação do plano e, por fim, a execução ou a verificação conforme o estado da etapa.
+        """
         run = self._session.get(ExecutionRunModel, run_id)
         if run is None:
             raise LookupError(str(run_id))
@@ -911,7 +815,6 @@ class RunOrchestrator:
         )
         config = {**config, "locale": locale}
         provider = _select_provider(self._settings, config)
-        profile = _profile_from_config(config, self._settings, provider)
 
         root = self._tasks.get_task(run.root_task_id)
         hit = limit_reached(self._session, run, limits_for(self._settings, config))
@@ -1058,7 +961,7 @@ class RunOrchestrator:
                         else None,
                         requirements=self._task_requirements(task),
                     )
-                self._apply_provider_usage(task, provider)
+                apply_provider_usage(task, provider)
                 if plan is None or not plan.subtasks:
                     self._tasks.update_status(
                         task.id,
@@ -1135,12 +1038,12 @@ class RunOrchestrator:
             status = TaskStatus.RUNNING
 
         if status == TaskStatus.RUNNING:
-            result = await self._execute_task(run, project, task, config, work_root)
+            result = await self._executor.execute(run, project, task, config, work_root)
             self._sync_agent_execution(task, run_id)
             return result
 
         if status == TaskStatus.VERIFYING:
-            return await self._finalize_verification(run, project, task, work_root)
+            return await self._executor.finalize_verification(run, project, task, work_root)
 
         if status == TaskStatus.RETRY_PENDING:
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.READY))
@@ -1149,6 +1052,18 @@ class RunOrchestrator:
         return {"action": "noop", "task_id": str(task.id), "status": task.status}
 
     async def run_until_idle(self, run_id: uuid.UUID, max_steps: int = 50) -> list[dict]:
+        """Avança a run em vários passos até ela parar, travar ou o orçamento de passos acabar.
+
+            Args:
+                run_id: identificador da run.
+                max_steps: número máximo de passos executados.
+
+            Returns:
+                O registro das ações de cada passo.
+
+            Observações:
+                Dois passos consecutivos de espera encerram o laço: a run não está progredindo.
+        """
         log: list[dict] = []
         for _ in range(max_steps):
             out = await self.step(run_id)
@@ -1172,6 +1087,18 @@ class RunOrchestrator:
         return log
 
     def _pick_next_task(self, root_id: uuid.UUID) -> TaskModel | None:
+        """Escolhe a etapa que o próximo passo deve tratar.
+
+            Args:
+                root_id: identificador da raiz da árvore.
+
+            Returns:
+                A etapa escolhida, ou `None` quando nenhuma etapa pode avançar.
+
+            Observações:
+                A prioridade vai do estado mais avançado ao menos avançado; uma etapa só é escolhida quando
+                suas dependências estão satisfeitas e, no planejamento, quando as filhas já estão resolvidas.
+        """
         stmt = select(TaskModel)
         all_tasks = list(self._session.scalars(stmt).all())
         subtree = self._subtree_ids(root_id, all_tasks)
@@ -1197,6 +1124,15 @@ class RunOrchestrator:
         return None
 
     def _subtree_ids(self, root_id: uuid.UUID, tasks: list[TaskModel]) -> set[uuid.UUID]:
+        """Recolhe o identificador da raiz e o de todos os seus descendentes.
+
+            Args:
+                root_id: identificador da raiz da árvore.
+                tasks: tarefas do projeto.
+
+            Returns:
+                O conjunto de identificadores da subárvore.
+        """
         ids = {root_id}
         changed = True
         while changed:
@@ -1208,6 +1144,14 @@ class RunOrchestrator:
         return ids
 
     def _all_terminal_under(self, root_id: uuid.UUID) -> bool:
+        """Diz se todas as etapas abaixo da raiz chegaram a um estado final.
+
+            Args:
+                root_id: identificador da raiz da árvore.
+
+            Returns:
+                Verdadeiro quando nenhuma etapa abaixo da raiz continua em andamento.
+        """
         stmt = select(TaskModel)
         tasks = list(self._session.scalars(stmt).all())
         subtree = self._subtree_ids(root_id, tasks)
@@ -1221,648 +1165,16 @@ class RunOrchestrator:
                 return False
         return True
 
-    async def _execute_task(
-        self,
-        run: ExecutionRunModel,
-        project: ProjectModel,
-        task: TaskModel,
-        config: dict,
-        work_root: str | None = None,
-    ) -> dict[str, Any]:
-        root_path = work_root or self._work_root(project, task)
-        if self._attempts.attempts_exhausted(task.id):
-            failure = self._remember_failure(
-                task,
-                Failure(FailureCategory.OPERATIONAL_LIMIT, FailureCause.ATTEMPTS_EXHAUSTED, "limite de tentativas"),
-            )
-            self._tasks.update_status(
-                task.id,
-                TaskStatusUpdate(status=TaskStatus.FAILED, reason="limite de tentativas"),
-            )
-            return {"action": "blocked_attempts", "task_id": str(task.id), "failure": failure}
-
-        meta = task.metadata_json or {}
-        remote = None
-        if project is not None:
-            from agent.services.project_service import ProjectService
-
-            remote_config = ProjectService(self._session).get_remote(project.id)
-            if remote_config:
-                from agent.remote.ssh import RemoteConfig
-
-                try:
-                    remote = RemoteConfig(**remote_config)
-                except Exception:  # configuração inválida: o projeto segue local
-                    remote = None
-        ctx = ToolContext(
-            project_root=root_path,
-            run_id=str(run.id),
-            task_id=str(task.id),
-            memory_saver=lambda args, task=task, project=project: self._save_requested_memory(
-                project, task, args
-            ),
-            browser_mode=str(config.get("browser_mode") or "off"),
-            remote=remote,
-        )
-        approved = bool(config.get("approve_risky_tools") or meta.get("approved"))
-
-        if meta.get("mcp_tool"):
-            from agent.mcp.manager import McpManager
-
-            mgr = McpManager(self._settings.mcp_config_path or self._settings.data_dir / "mcp.json")
-            out = await mgr.call_tool(meta["mcp_tool"], meta.get("mcp_args") or {})
-            failure = classify_tool_result(out)
-            self._attempts.record(
-                run_id=run.id,
-                task_id=task.id,
-                kind=AttemptKind.TOOL,
-                provider="mcp",
-                request=meta,
-                response=out,
-                success=failure is None,
-                project_id=project.id,
-                failure=failure,
-            )
-            task.consolidated_result_json = {"mcp": meta["mcp_tool"], "result": out}
-            if failure is None:
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                return await self._finalize_verification(run, project, task, root_path)
-            noted = self._remember_failure(task, failure)
-            self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-            return {"action": "mcp_tool", "task_id": str(task.id), "success": False, "failure": noted}
-
-        if meta.get("final_answer"):
-            return await self._write_final_answer(run, project, task, config)
-
-        if meta and not any(meta.get(key) for key in _ACTION_KEYS) and not children_of(self._session, task.id):
-            meta = {**meta, "model_operation": True}
-            task.metadata_json = meta
-            self._note_thought(run, task, f"«{task.title}» não dizia como fazer; vou executar como alteração.")
-
-        if meta.get("model_operation"):
-            provider = _select_provider(self._settings, config)
-            profile = _profile_from_config(config, self._settings, provider)
-            if meta.get("prompt_key") == "page":
-                generation = dict(profile.generation)
-                generation["num_predict"] = max(int(generation.get("num_predict") or 0), 4096)
-                profile = profile.model_copy(update={"generation": generation})
-            truncations = sum(
-                1 for item in meta.get("failures") or [] if item.get("cause") == FailureCause.TRUNCATED_OUTPUT.value
-            )
-            if truncations:
-                # O modelo consumiu todo o orçamento de saída e devolveu nada: ampliar a
-                # resposta (num_predict e output_reserve) para a próxima tentativa.
-                generation = dict(profile.generation)
-                base = max(int(generation.get("num_predict") or 0), 2048)
-                generation["num_predict"] = min(16384, base * 2**truncations)
-                profile = profile.model_copy(
-                    update={
-                        "generation": generation,
-                        "output_reserve": min(16384, max(profile.output_reserve, 1024) * 2**truncations),
-                    }
-                )
-            explicit_budget = int(meta.get("output_budget") or 0)
-            if explicit_budget:
-                # Orçamento ampliado na estagnação por corte: vale para esta tentativa.
-                generation = dict(profile.generation)
-                generation["num_predict"] = max(int(generation.get("num_predict") or 0), explicit_budget)
-                profile = profile.model_copy(
-                    update={
-                        "generation": generation,
-                        "output_reserve": max(profile.output_reserve, explicit_budget),
-                    }
-                )
-            from agent.providers.base import ChatCompletionRequest
-            from agent.util.json_parse import parse_json_object
-
-            builder = OperationContextBuilder(self._session)
-            build = dict(project_id=project.id, root_path=root_path, task=task, profile=profile, run_id=run.id)
-            try:
-                budget, snap = builder.build_for_task(**build)
-            except ContextBudgetError:
-                try:
-                    budget, snap = builder.build_for_task(**build, compact=True)
-                except ContextBudgetError as exc:
-                    return self._context_overflow(run, project, task, provider.name, profile, exc)
-                self._note_thought(run, task, "O contexto não cabia; segui com a versão compactada, sem cortar conteúdo.")
-            for note in budget.strategy_notes:
-                if note.startswith("skills: "):
-                    skills_list = [s.strip() for s in note.replace("skills: ", "").split(",") if s.strip()]
-                    emit("skill.selected", {"skills": skills_list, "task_id": str(task.id)}, task_id=task.id, commit=True)
-                    break
-            self._note_thought(run, task, f"Pensando na alteração «{task.title}» com {profile.model_id}.")
-            # Fragmentos só quando o provedor transmite de verdade; `stream: false` (etapa ou run) desliga.
-            stream_allowed = meta.get("stream", config.get("stream", True)) is not False
-            prompt_fp = AttemptService.fingerprint(
-                "\n".join(m.content for m in budget.messages)
-                + repr(sorted(profile.generation.items()))
-                + f"|orçamento:{profile.output_reserve}"
-            )
-            attempt_request = {
-                "context_snapshot_id": str(snap.id),
-                "tokens_est": budget.estimated_tokens,
-                "prompt_fp": prompt_fp,
-            }
-            if self._attempts.prompt_already_sent(task.id, prompt_fp):
-                failure = Failure(
-                    FailureCategory.CHANGE_STRATEGY,
-                    FailureCause.REPEATED_PROMPT,
-                    "o pedido ao modelo seria idêntico a uma tentativa anterior",
-                )
-                self._attempts.record(
-                    run_id=run.id,
-                    task_id=task.id,
-                    kind=AttemptKind.MODEL,
-                    provider=provider.name,
-                    request=attempt_request,
-                    response=None,
-                    success=False,
-                    project_id=project.id,
-                    failure=failure,
-                )
-                noted = self._remember_failure(task, failure)
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=failure.detail))
-                return {"action": "blocked_loop", "task_id": str(task.id), "failure": noted}
-            tool_log: list[dict[str, Any]] = []
-            inspections: list[dict[str, Any]] = []
-            used_tokens = 0
-
-            async def _chat_model(provider_obj, request, *, purpose: str, stream: bool):
-                """Chamada ao modelo dentro do ciclo: registra a evidência de cada iteração.
-
-                A iteração final (a que traz a resposta) é registrada depois, com a classificação
-                do resultado; aqui ficam as iterações intermediárias, em que o modelo pediu
-                ferramentas.
-                """
-                nonlocal used_tokens
-                resp = await observed_chat(provider_obj, request, purpose=purpose, stream=stream)
-                used_tokens += int(getattr(resp, "completion_tokens_estimate", None) or 0)
-                calls = list(getattr(resp, "tool_calls", None) or [])
-                if not calls:
-                    return resp
-                iteration_fp = AttemptService.fingerprint(
-                    "\n".join(m.content for m in request.messages) + f"|iteração:{len(tool_log)}"
-                )
-                self._attempts.record(
-                    run_id=run.id,
-                    task_id=task.id,
-                    kind=AttemptKind.MODEL,
-                    provider=provider_obj.name,
-                    request={**attempt_request, "iteration_fp": iteration_fp},
-                    response={
-                        "content_preview": (resp.content or "")[:500],
-                        "tool_calls": [{"tool": item.name, "args": item.arguments} for item in calls],
-                        "reasoning_chars": len(getattr(resp, "reasoning", None) or ""),
-                    },
-                    success=True,
-                    project_id=project.id,
-                )
-                return resp
-
-            async def _on_tool_call(entry: dict[str, Any], result: dict[str, Any]) -> None:
-                tool_log.append(entry)
-                inspections.append(
-                    {
-                        "tool": entry.get("tool"),
-                        "path": (entry.get("args") or {}).get("path"),
-                        "content": entry.get("content") or "",
-                    }
-                )
-                self._attempts.record(
-                    run_id=run.id,
-                    task_id=task.id,
-                    kind=AttemptKind.TOOL,
-                    provider=str(entry.get("tool")),
-                    request=entry.get("args") or {},
-                    response={"success": entry.get("success"), "summary": entry.get("summary")},
-                    success=bool(entry.get("success")),
-                    project_id=project.id,
-                    failure=classify_tool_result(result),
-                )
-                emit(
-                    "model.tool_call",
-                    {"tool": entry.get("tool"), "success": entry.get("success"), "summary": entry.get("summary")},
-                    task_id=task.id,
-                )
-
-            try:
-                if _supports_tool_loop(provider):
-                    outcome = await run_tool_loop(
-                        provider=provider,
-                        messages=budget.messages,
-                        profile=profile,
-                        registry=self._tools,
-                        ctx=ctx,
-                        approved=approved,
-                        max_iterations=self._settings.max_tool_iterations,
-                        max_tool_calls=self._settings.max_tool_calls,
-                        stream=stream_allowed,
-                        chat=_chat_model,
-                        on_tool_call=_on_tool_call,
-                        tool_ids=_operation_tools_for(meta),
-                        payload_ok=_payload_is_usable,
-                        tool_guard=lambda name, args: _write_refusal_reason(
-                            meta, name, args.get("path")
-                        ),
-                        deliverable_hint=(
-                            "Entregue agora a alteração. Responda só com JSON: "
-                            '{"path":"arquivo","content":"conteúdo inteiro"} ou '
-                            '{"path":"arquivo","old_string":"trecho","new_string":"novo"}. '
-                            "Nada de explicação, nada de comentário."
-                        ),
-                    )
-                else:
-                    resp = await _chat_model(
-                        provider,
-                        ChatCompletionRequest(messages=budget.messages, profile=profile),
-                        purpose="operation",
-                        stream=stream_allowed,
-                    )
-                    outcome = ToolLoopOutcome(content=resp.content or "", iterations=1, stop_reason="final")
-                content = outcome.content or ""
-            except ProviderError as exc:
-                self._note_thought(run, task, f"A inferência falhou: {exc}.")
-                failure = classify_provider_error(str(exc))
-                self._attempts.record(
-                    run_id=run.id,
-                    task_id=task.id,
-                    kind=AttemptKind.MODEL,
-                    provider=provider.name,
-                    request=attempt_request,
-                    response={"error": str(exc)},
-                    success=False,
-                    error=str(exc),
-                    project_id=project.id,
-                    failure=failure,
-                )
-                noted = self._remember_failure(task, failure)
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-                return {
-                    "action": "model_operation_error",
-                    "task_id": str(task.id),
-                    "error": str(exc),
-                    "failure": noted,
-                }
-            excerpt = " ".join(content.split())[:280]
-            self._apply_provider_usage(task, provider)
-            if inspections:
-                # O que esta tentativa inspecionou fica na tarefa: a próxima tentativa continua
-                # dali em vez de reler os mesmos arquivos do zero.
-                meta = dict(task.metadata_json or {})
-                meta["inspection"] = _compact_inspection(inspections)
-                task.metadata_json = meta
-            if tool_log:
-                self._note_thought(
-                    run,
-                    task,
-                    "Inspecionei com as ferramentas: " + ", ".join(f"{item['tool']}" for item in tool_log[:6]),
-                    phase="tool",
-                )
-            if outcome.applied:
-                # O modelo aplicou a alteração chamando a ferramenta: mesmo caminho de escrita e
-                # de verificação do protocolo JSON, com a evidência no mesmo lugar.
-                tool_name = outcome.applied_tool or "write_file"
-                payload = dict(outcome.applied_args or {})
-                out = dict(outcome.applied_result or {})
-                refusal = _write_refusal_reason(meta, tool_name, payload.get("path"))
-                if refusal:
-                    # A escrita é recusada e a recusa é o resultado da etapa (o modelo
-                    # respondeu, o arquivo não mudou). Bloquear a etapa faria o sistema
-                    # repetir o mesmo pedido para sempre.
-                    task.consolidated_result_json = {
-                        "model_operation": True,
-                        "refused_write": {"tool": tool_name, "path": payload.get("path"), "reason": refusal},
-                        "report": content.strip(),
-                        "context_snapshot_id": str(snap.id),
-                    }
-                    self._note_thought(run, task, refusal, phase="tool")
-                    self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                    done = await self._finalize_verification(run, project, task, root_path)
-                    done["thought"] = excerpt
-                    return done
-                    self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                    done = await self._finalize_verification(run, project, task, root_path)
-                    done["thought"] = excerpt
-                    return done
-                # A operação que aplicou a mudança é uma tentativa da tarefa: sem esta linha a
-                # contagem de tentativas ignoraria toda operação que terminou em escrita.
-                self._attempts.record(
-                    run_id=run.id,
-                    task_id=task.id,
-                    kind=AttemptKind.MODEL,
-                    provider=provider.name,
-                    request=attempt_request,
-                    response={
-                        "content_preview": content[:500],
-                        "tool_calls": [str(item.get("tool")) for item in tool_log],
-                        "applied": tool_name,
-                        "reasoning_chars": len(outcome.reasoning or ""),
-                    },
-                    success=bool(out.get("success")),
-                    project_id=project.id,
-                )
-                path = payload.get("path")
-                task.consolidated_result_json = {
-                    "model_operation": True,
-                    "tool": tool_name,
-                    "write": out,
-                    "context_snapshot_id": str(snap.id),
-                }
-                if out.get("success") and isinstance(path, str):
-                    KnowledgeGraphService(self._session).touch_file(project.id, root_path, path)
-                if out.get("success"):
-                    self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                    written = str(
-                        payload.get("new_string") if tool_name == "edit_file" else payload.get("content") or ""
-                    )
-                    implicit = (
-                        {
-                            "type": "file_contains",
-                            "path": path,
-                            "contains": written[:200],
-                            "implicit": True,
-                            "syntax": True,
-                        }
-                        if written.strip() and isinstance(path, str)
-                        else None
-                    )
-                    done = await self._finalize_verification(
-                        run, project, task, root_path, implicit_spec=implicit
-                    )
-                    if excerpt:
-                        done["thought"] = excerpt
-                    return done
-                noted = self._remember_failure(task, classify_tool_result(out))
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-                return {
-                    "action": "model_operation_failed",
-                    "task_id": str(task.id),
-                    "thought": excerpt,
-                    "failure": noted,
-                }
-            data, err = parse_json_object(content)
-            missing = ["path"] if data is not None and "path" not in data else None
-            if data is None and meta.get("read_only") and content.strip():
-                # Etapa somente leitura: a entrega é o relatório em texto, não uma escrita.
-                # Exigir JSON aqui transformaria um pedido de leitura em erro de formato.
-                task.consolidated_result_json = {
-                    "model_operation": True,
-                    "read_only": True,
-                    "report": content.strip(),
-                    "context_snapshot_id": str(snap.id),
-                }
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                done = await self._finalize_verification(run, project, task, root_path)
-                done["thought"] = excerpt
-                return done
-            # O orçamento efetivo de saída: o que o provedor pode gerar nesta chamada.
-            generation_now = dict(profile.generation or {})
-            output_budget = int(
-                generation_now.get("num_predict") or generation_now.get("max_tokens") or profile.output_reserve
-            )
-            failure = classify_model_output(
-                content,
-                err,
-                missing,
-                budget=output_budget,
-                used_tokens=used_tokens or None,
-                reasoning=outcome.reasoning,
-            )
-            if failure is not None and failure.cause == FailureCause.TRUNCATED_OUTPUT:
-                self._note_thought(
-                    run,
-                    task,
-                    f"O modelo usou todo o orçamento de {output_budget} tokens e devolveu "
-                    f"{'nada' if not content.strip() else 'uma resposta incompleta'}; "
-                    "vou ampliar a resposta e tentar de novo.",
-                )
-            if failure is not None and failure.cause == FailureCause.EMPTY_OUTPUT:
-                self._note_thought(
-                    run,
-                    task,
-                    "O modelo raciocinou e não devolveu a alteração pedida; "
-                    "vou pedir de novo, com a instrução de responder direto.",
-                )
-            self._attempts.record(
-                run_id=run.id,
-                task_id=task.id,
-                kind=AttemptKind.MODEL,
-                provider=provider.name,
-                request=attempt_request,
-                response={
-                    "content_preview": content[:500],
-                    "tool_calls": [str(item.get("tool")) for item in tool_log],
-                    "reasoning_chars": len(outcome.reasoning or ""),
-                    # O raciocínio explica a resposta vazia: é a evidência do que o modelo
-                    # pretendia fazer (pedir ferramenta, aplicar a mudança, …).
-                    "reasoning_preview": (outcome.reasoning or "")[-600:],
-                },
-                success=failure is None,
-                project_id=project.id,
-                failure=failure,
-            )
-            if failure is not None or data is None:
-                noted = self._remember_failure(task, failure) if failure else None
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-                return {
-                    "action": "model_operation_invalid",
-                    "task_id": str(task.id),
-                    "error": err,
-                    "thought": excerpt,
-                    "failure": noted,
-                }
-            old = data.get("old_string", data.get("old"))
-            new = data["new_string"] if "new_string" in data else data.get("new")
-            if isinstance(old, str) and isinstance(new, str):
-                tool_name = "edit_file"
-                payload = {"path": data["path"], "old_string": old, "new_string": new}
-            else:
-                tool_name = "write_file"
-                payload = {"path": data["path"], "content": data.get("content", "")}
-            refusal = _write_refusal_reason(meta, tool_name, payload.get("path"))
-            if refusal:
-                # A escrita é recusada antes de tocar o disco, e a recusa vira o resultado da
-                # etapa (sem repetir o mesmo pedido para sempre).
-                task.consolidated_result_json = {
-                    "model_operation": True,
-                    "refused_write": {"tool": tool_name, "path": payload.get("path"), "reason": refusal},
-                    "report": content.strip(),
-                    "context_snapshot_id": str(snap.id),
-                }
-                self._note_thought(run, task, refusal, phase="tool")
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                done = await self._finalize_verification(run, project, task, root_path)
-                done["thought"] = excerpt
-                return done
-            out = await self._tools.execute(tool_name, ctx, payload, approved=approved)
-            task.consolidated_result_json = {
-                "model_operation": True,
-                "tool": tool_name,
-                "write": out,
-                "context_snapshot_id": str(snap.id),
-            }
-            if out.get("success") and isinstance(data.get("path"), str):
-                KnowledgeGraphService(self._session).touch_file(project.id, root_path, data["path"])
-            if out.get("success"):
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                written = str(payload.get("new_string") if tool_name == "edit_file" else payload.get("content") or "")
-                implicit = (
-                    {"type": "file_contains", "path": payload["path"], "contains": written[:200], "implicit": True, "syntax": True}
-                    if written.strip()
-                    else None
-                )
-                done = await self._finalize_verification(run, project, task, root_path, implicit_spec=implicit)
-                if excerpt:
-                    done["thought"] = excerpt
-                return done
-            noted = self._remember_failure(task, classify_tool_result(out))
-            self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-            return {
-                "action": "model_operation_failed",
-                "task_id": str(task.id),
-                "thought": excerpt,
-                "failure": noted,
-            }
-
-        if meta.get("tool"):
-            from agent.tools.registry import canonical_tool_id
-
-            tool_id = canonical_tool_id(meta["tool"])
-            args = meta.get("tool_args") or {}
-            target = args.get("path") or args.get("pattern") or args.get("command") or ""
-            where = f" em {target}" if isinstance(target, str) and target else ""
-            refusal = _write_refusal_reason(meta, tool_id, args.get("path"))
-            if refusal:
-                # A escrita do plano é recusada antes de tocar o disco, e a recusa fica
-                # registrada como o resultado da etapa.
-                out = {
-                    "success": False,
-                    "error": refusal,
-                    "refused": True,
-                }
-                task.consolidated_result_json = {
-                    "tool": tool_id,
-                    "result": out,
-                    "refused_write": {"tool": tool_id, "path": args.get("path"), "reason": refusal},
-                }
-                self._note_thought(run, task, refusal, phase="tool")
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                done = await self._finalize_verification(run, project, task, root_path)
-                done["tool"] = tool_id
-                return done
-            self._note_thought(run, task, f"Usando {tool_id}{where}.", phase="tool")
-            out = await self._tools.execute(tool_id, ctx, args, approved=approved)
-            fp = AttemptService.fingerprint({"tool": tool_id, "result": out})
-            if self._attempts.repeated_output_detected(task.id, fp, kind=AttemptKind.TOOL):
-                noted = self._remember_failure(
-                    task,
-                    Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.REPEATED_OUTPUT, "loop detectado"),
-                )
-                self._tasks.update_status(
-                    task.id,
-                    TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="loop detectado"),
-                )
-                return {"action": "blocked_loop", "task_id": str(task.id), "failure": noted}
-            failure = classify_tool_result(out)
-            self._attempts.record(
-                run_id=run.id,
-                task_id=task.id,
-                kind=AttemptKind.TOOL,
-                provider=tool_id,
-                request=args,
-                response={"tool": tool_id, "result": out},
-                success=failure is None,
-                project_id=project.id,
-                failure=failure,
-            )
-            task.consolidated_result_json = {"tool": tool_id, "result": out}
-            if out.get("success") and tool_id in {"write_file", "edit_file", "move_file"}:
-                p = args.get("path") or args.get("to") or args.get("dest")
-                if isinstance(p, str):
-                    KnowledgeGraphService(self._session).touch_file(project.id, root_path, p)
-            if failure is None:
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                return await self._finalize_verification(run, project, task, root_path)
-            if _is_informative_test_result(tool_id, out):
-                # Rodar a suíte e ver os testes falharem **é o resultado**, não uma ferramenta
-                # quebrada: repetir a mesma chamada devolve a mesma falha. A etapa registra o
-                # que a suíte disse e segue para a verificação, que é quem julga o código.
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                done = await self._finalize_verification(run, project, task, root_path)
-                done["tool"] = tool_id
-                done["thought"] = (
-                    f"A suíte de testes rodou e reprovou: {_test_summary(out)}"
-                )
-                return done
-            if failure.cause == FailureCause.TOOL_INPUT and self._attempts.repeated_output_detected(
-                task.id, fp, window=2, kind=AttemptKind.TOOL
-            ):
-                # Erro de entrada é determinístico: repetir a mesma chamada não muda nada.
-                # A etapa para para o replanejamento adaptar o plano (outro arquivo, outra
-                # ferramenta) em vez de insistir em chamada idêntica.
-                noted = self._remember_failure(
-                    task,
-                    Failure(
-                        FailureCategory.CHANGE_STRATEGY,
-                        FailureCause.TOOL_INPUT,
-                        f"a mesma chamada de ferramenta falhou de novo: {failure.detail}",
-                    ),
-                )
-                self._tasks.update_status(
-                    task.id,
-                    TaskStatusUpdate(
-                        status=TaskStatus.BLOCKED,
-                        reason=f"a mesma chamada de ferramenta falhou de novo: {failure.detail}"[:300],
-                    ),
-                )
-                return {
-                    "action": "tool_executed",
-                    "task_id": str(task.id),
-                    "success": False,
-                    "failure": noted,
-                }
-            noted = self._remember_failure(task, failure)
-            self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-            return {"action": "tool_executed", "task_id": str(task.id), "success": False, "failure": noted}
-
-        if meta.get("verification"):
-            self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-            return await self._finalize_verification(run, project, task, root_path)
-
-        kids = children_of(self._session, task.id)
-        if kids:
-            report = consolidate_parent(self._session, task.id)
-            current = TaskStatus(task.status)
-            if report is None and current == TaskStatus.RUNNING:
-                for status in (TaskStatus.VERIFYING, TaskStatus.PLANNING):
-                    self._tasks.update_status(task.id, TaskStatusUpdate(status=status, reason="aguardando etapas"))
-            elif current == TaskStatus.RUNNING:
-                pending = ", ".join(f"«{item['title']}»" for item in (report or {}).get("pending") or [])
-                noted = self._remember_failure(
-                    task,
-                    Failure(FailureCategory.BLOCKED_DEPENDENCY, FailureCause.DEPENDENCY_FAILED, f"etapas não concluídas: {pending}"),
-                )
-                self._tasks.update_status(
-                    task.id, TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=f"etapas não concluídas: {pending}")
-                )
-                return {"action": "blocked_children", "task_id": str(task.id), "failure": noted}
-            return {
-                "action": "consolidated_parent",
-                "task_id": str(task.id),
-                "achieved": bool((report or {}).get("achieved")),
-            }
-
-        if TaskKind(task.kind) == TaskKind.OPERATION and not meta:
-            self._tasks.update_status(
-                task.id,
-                TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="operação sem metadata"),
-            )
-            return {"action": "blocked_no_metadata", "task_id": str(task.id)}
-
-        self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-        return {"action": "skipped_to_verify", "task_id": str(task.id)}
-
     def _ensure_final_message(self, root: TaskModel) -> None:
+        """Garante que a raiz tenha uma resposta final para o usuário.
+
+            Args:
+                root: tarefa raiz do objetivo.
+
+            Observações:
+                A resposta da etapa de resposta final tem precedência; quando ela não existe, a conclusão é
+                montada a partir das etapas e recebe o rodapé de verificações executadas.
+        """
         report = dict(root.consolidated_result_json or {})
         current = report.get("final_answer")
         if isinstance(current, str) and current.strip():
@@ -1890,259 +1202,6 @@ class RunOrchestrator:
         root.consolidated_result_json = report
 
     def _work_root(self, project: ProjectModel, task: TaskModel | None) -> str:
-        conversation = None
-        if task is not None and task.conversation_id:
-            conversation = self._session.get(ConversationModel, task.conversation_id)
-        return effective_root(project, conversation)
+        """Pasta de trabalho da etapa (projeto ou conversa solta)."""
+        return work_root(self._session, project, task)
 
-    async def _write_final_answer(
-        self,
-        run: ExecutionRunModel,
-        project: ProjectModel,
-        task: TaskModel,
-        config: dict,
-    ) -> dict[str, Any]:
-        from agent.guides.discover import capability_line
-        from agent.orchestrator.closing import (
-            compose_final_markdown,
-            extract_sources,
-            local_now_line,
-            usable_reply,
-            verification_footer,
-        )
-        from agent.providers.base import ChatCompletionRequest, ChatMessage
-
-        siblings = children_of(self._session, task.parent_id) if task.parent_id else []
-        stages: list[dict] = []
-        for sibling in siblings:
-            if sibling.id == task.id:
-                continue
-            result = sibling.consolidated_result_json or {}
-            blob = str(result)
-            stages.append(
-                {
-                    "title": sibling.title,
-                    "status": sibling.status,
-                    "sources": extract_sources(blob, sibling.objective or ""),
-                }
-            )
-        parent = self._tasks.get_task(task.parent_id) if task.parent_id else task
-        objective = parent.objective if parent else task.objective
-        provider = _select_provider(self._settings, config)
-        profile = _profile_from_config(config, self._settings, provider)
-        prompt = (
-            f"{language_instruction(str(config.get('locale') or 'pt'))}\n"
-            f"{capability_line(profile.model_id)}\n"
-            "Escreva somente a resposta para a pessoa, no idioma do pedido. "
-            "Não descreva etapas, verificações, fontes nem o fluxo. "
-            "Não monte um relatório. Se bastar uma frase, escreva a frase.\n"
-            f"Data e hora locais agora: {local_now_line()}.\n\n"
-            f"Pedido:\n{objective[:1500]}\n\nEtapas:\n{stages}"
-        )
-        model_text = ""
-        try:
-            self._note_thought(run, task, "Escrevendo a resposta final.")
-            resp = await observed_chat(
-                provider,
-                ChatCompletionRequest(
-                    messages=[ChatMessage(role="user", content=prompt)],
-                    profile=profile,
-                ),
-                purpose="final_answer",
-                stream=config.get("stream", True) is not False,
-            )
-            model_text = (resp.content or "").strip()
-            self._apply_provider_usage(task, provider)
-        except Exception:
-            model_text = ""
-        markdown = model_text if usable_reply(model_text) else compose_final_markdown(
-            objective=objective,
-            stages=stages,
-            model_text=model_text,
-        )
-        # O rodapé é determinístico: o texto do modelo é conciso por desenho, e quem lê a
-        # resposta precisa saber, sem depender do julgamento do modelo, o que foi verificado.
-        footer = verification_footer(self._session, parent if parent is not None else task)
-        if footer:
-            markdown = f"{markdown.rstrip()}\n\n{footer}"
-        sources = extract_sources(markdown, *[str(stage.get("sources")) for stage in stages])
-        task.consolidated_result_json = {"final_answer": True, "markdown": markdown, "sources": sources}
-        self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-        spec = (task.metadata_json or {}).get("verification")
-        if isinstance(spec, dict) and spec:
-            # A verificação declarada na etapa de resposta final **roda**: sem isso a etapa
-            # ficava sem evidência, a consolidação a reabria, e o agent reescrevia a
-            # resposta para sempre — a resposta não muda nada, a medição é a mesma.
-            return await self._finalize_verification(
-                run, project, task, self._work_root(project, task)
-            )
-        self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
-        if task.parent_id:
-            consolidate_parent(self._session, task.parent_id)
-        return {"action": "final_answer", "task_id": str(task.id), "thought": markdown[:280]}
-
-    async def _finalize_verification(
-        self,
-        run: ExecutionRunModel,
-        project: ProjectModel,
-        task: TaskModel,
-        work_root: str | None = None,
-        implicit_spec: dict | None = None,
-    ) -> dict[str, Any]:
-        """Verificação proporcional ao risco: a declarada na tarefa; senão, para escrita, a implícita
-        (`file_contains` com o que foi gravado); leitura sem verificação conclui sem evidência."""
-        root_path = work_root or self._work_root(project, task)
-        meta = task.metadata_json or {}
-        spec = meta.get("verification") or implicit_spec or meta.get("implicit_verification")
-        if isinstance(spec, str):
-            # Verificação vinda como texto ("verification": "pytest"): não é um contrato.
-            # Tratar como ausente é melhor do que derrubar a etapa com uma exceção.
-            spec = None
-        if not isinstance(spec, dict) or not spec:
-            self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
-            consolidate_parent(self._session, task.parent_id) if task.parent_id else None
-            return {"action": "completed_without_verification", "task_id": str(task.id)}
-
-        config = self._run_config(run)
-        approved = bool(config.get("approve_risky_tools"))
-        tool_args = meta.get("tool_args") or {}
-        if str(spec.get("type") or "") == "stages":
-            # `stages` confere as etapas das quais esta depende: precisa do estado persistido,
-            # não só do disco — por isso não é verificador de arquivo.
-            passed_stages, summary_stages, detail_stages = stages_outcome(self._session, task)
-            vresult = VerificationResult("stages", passed_stages, summary_stages, detail_stages)
-        else:
-            vresult = await run_verification(
-                project_root=root_path,
-                spec=spec,
-                tool_args=tool_args,
-                approved=approved,
-            )
-        detail = dict(vresult.detail) if isinstance(vresult.detail, dict) else {}
-        artifacts = artifact_snapshot(root_path, spec, tool_args)
-        if artifacts:
-            detail["artifacts"] = artifacts
-        if not meta.get("verification"):
-            task.metadata_json = {**meta, "implicit_verification": spec}
-        output = f"{detail.get('stdout') or ''}\n{detail.get('stderr') or detail.get('error') or ''}"
-        failure = classify_verification(vresult.passed, vresult.summary, output)
-        if failure is not None and (
-            detail.get("category") == FailureCategory.CONFIGURATION.value or detail.get("error") == "approval_required"
-        ):
-            failure = classify_tool_result(detail)
-        blocked = vresult.passed is False and failure is not None and failure.category in _ENVIRONMENT
-        passed = None if blocked else vresult.passed
-        detail.update(
-            state=evidence_state(passed, blocked),
-            criteria=self._criteria_of(task),
-            command={k: v for k, v in spec.items() if k != "implicit"},
-            exit_code=detail.get("exit_code"),
-        )
-        if failure is not None:
-            detail["reason"] = failure.detail[:500]
-        attempt = self._attempts.record(
-            run_id=run.id,
-            task_id=task.id,
-            kind=AttemptKind.VERIFICATION,
-            provider=vresult.verifier,
-            request=spec,
-            response={"passed": vresult.passed, "summary": vresult.summary},
-            success=failure is None,
-            project_id=project.id,
-            failure=failure,
-        )
-        self._session.add(
-            EvidenceModel(
-                task_id=task.id,
-                attempt_id=attempt.id,
-                verifier=vresult.verifier,
-                passed=passed,
-                summary=vresult.summary,
-                detail_json=detail,
-            )
-        )
-        self._session.flush()
-
-        if vresult.passed is True:
-            task.consolidated_result_json = {
-                "verified": True,
-                "summary": vresult.summary,
-            }
-            self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
-            if task.parent_id:
-                parent = self._tasks.get_task(task.parent_id)
-                kids = children_of(self._session, parent.id)
-                if kids and all(settled(k) for k in kids):
-                    consolidate_parent(self._session, parent.id)
-            return {"action": "verified_ok", "task_id": str(task.id)}
-
-        if blocked:
-            noted = self._remember_failure(task, failure)
-            self._tasks.update_status(
-                task.id,
-                TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=f"verificação bloqueada: {failure.detail[:200]}"),
-            )
-            return {"action": "verify_blocked", "task_id": str(task.id), "failure": noted}
-
-        if vresult.passed is False:
-            if meta.get("final_answer"):
-                # A resposta final foi entregue; a verificação reprovou. Reescrever a resposta
-                # não muda a medição — o que reprovou é o código, não o texto. A etapa
-                # conclude com a evidência reprovada, e o rodapé da resposta reporta o
-                # veredito. Quem decide se o requisito está provado é o aceite por requisito.
-                task.consolidated_result_json = {
-                    "final_answer": True,
-                    "verified": False,
-                    "summary": vresult.summary,
-                }
-                self._remember_failure(task, failure)
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
-                if task.parent_id:
-                    consolidate_parent(self._session, task.parent_id)
-                return {"action": "verify_failed", "task_id": str(task.id), "final_answer": True}
-            fp = AttemptService.fingerprint({"passed": False, "summary": vresult.summary})
-            if self._attempts.repeated_output_detected(task.id, fp, window=2, kind=AttemptKind.VERIFICATION):
-                noted = self._remember_failure(
-                    task,
-                    Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.REPEATED_OUTPUT, vresult.summary),
-                )
-                self._tasks.update_status(
-                    task.id,
-                    TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="a mesma verificação falhou de novo"),
-                )
-                return {"action": "blocked_loop", "task_id": str(task.id), "failure": noted}
-            recovery = self._plan_verification_recovery(task, vresult, detail, spec)
-            noted = self._remember_failure(task, failure)
-            if recovery.get("retry"):
-                task.metadata_json = {
-                    **(task.metadata_json or {}),
-                    "verification_recovery": recovery,
-                    "recovery_guidance": recovery.get("guidance", ""),
-                }
-                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
-                return {
-                    "action": "verify_failed",
-                    "task_id": str(task.id),
-                    "failure": noted,
-                    "recovery": recovery,
-                }
-            self._tasks.update_status(
-                task.id,
-                TaskStatusUpdate(
-                    status=TaskStatus.BLOCKED,
-                    reason=f"verificação reprovou e a recuperação exige intervenção: {str(recovery.get('guidance'))[:200]}",
-                ),
-            )
-            return {
-                "action": "verify_blocked",
-                "task_id": str(task.id),
-                "failure": noted,
-                "recovery": recovery,
-            }
-
-        noted = self._remember_failure(task, failure)
-        self._tasks.update_status(
-            task.id,
-            TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="verificação inconclusiva"),
-        )
-        return {"action": "verify_inconclusive", "task_id": str(task.id), "failure": noted}

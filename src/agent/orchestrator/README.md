@@ -6,7 +6,8 @@
 
 | Arquivo | Classe/Função Principal | Responsabilidade |
 |---------|------------------------|------------------|
-| [`runner.py`](runner.py) | `RunOrchestrator` | **Ciclo completo**: `step()` → `_step_body()` → `_pick_next_task` → `PLANNING`/`RUNNING`/`VERIFYING` → `_execute_task` → `_finalize_verification` → `consolidate_parent` → `global_verify` → `closing` |
+| [`runner.py`](runner.py) | `RunOrchestrator` | **Ciclo completo**: `step()` → `_step_body()` → `_pick_next_task` → `PLANNING`/`RUNNING`/`VERIFYING` → [`execution/`](execution/README.md) → `consolidate_parent` → `global_verify` → `closing` |
+| [`execution/`](execution/README.md) | `TaskExecutor`, `ModelOperation` | **Execução de uma tarefa**: despacho (MCP, modelo, ferramenta, verificação), contexto da operação, escrita do arquivo e evidência |
 | [`planner.py`](planner.py) | `ensure_canonical_memory_for_objective` | Grava memória canônica ("Objetivo global") no início do run |
 | [`strategy.py`](strategy.py) | `ProfessionalStrategist`, `ProfessionalStrategy` | **Abordagem profissional**: classifica o pedido (domínio, complexidade, especialidades, riscos, aceite) e devolve a estratégia executável, preservando a intenção original |
 | [`tool_loop.py`](tool_loop.py) | `run_tool_loop`, `tool_schemas` | **Ciclo de ferramentas da operação**: o modelo inspeciona o projeto (`read_file`, `list_dir`, …) e/ou aplica a alteração (`write_file`, `edit_file`) pelo registro de ferramentas antes de responder; orçamento de leituras e resposta final forçada |
@@ -53,14 +54,14 @@ flowchart TD
   APPLY -->|inválido| BLOCK[_block_invalid_plan: BLOCKED + failure]
   DECOMP -->|com filhos| WAIT[planning_wait_children]
   STATUS -->|READY| PROMOTE[promote_ready_if_dependencies_met]
-  STATUS -->|RUNNING| EXEC[_execute_task]
+  STATUS -->|RUNNING| EXEC[TaskExecutor.execute]
   EXEC -->|mcp_tool| MCP[McpManager.call_tool]
-  EXEC -->|final_answer| FINAL_ANS[_write_final_answer]
+  EXEC -->|final_answer| FINAL_ANS[TaskExecutor.write_final_answer]
   EXEC -->|model_operation| CTX[OperationContextBuilder.build_for_task]
   CTX --> PROV[observed_chat streaming]
   PROV --> PARSE[parse_json_object → edit_file/write_file]
   PARSE --> TOOL[ToolRegistry.execute]
-  TOOL --> VERIF[_finalize_verification]
+  TOOL --> VERIF[TaskExecutor.finalize_verification]
   EXEC -->|tool| TOOL2[ToolRegistry.execute]
   TOOL2 --> VERIF
   EXEC -->|verification| VERIF
