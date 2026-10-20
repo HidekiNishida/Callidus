@@ -86,11 +86,17 @@ export const ChatView = {
       () => {
         const element = logRef.value;
         if (!element) return;
+        // Acompanha o feed enquanto a conversa estiver no ponto mais baixo.
         const stick = atBottom.value && !userTookOver.value;
         Vue.nextTick(() => {
-          if (stick && !userTookOver.value) {
-            element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
-          }
+          if (!stick || userTookOver.value) return;
+          autoScrolling = true;
+          element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+          // Ao terminar, a conversa continua no fim: o próximo item do feed é seguido.
+          window.setTimeout(() => {
+            autoScrolling = false;
+            atBottom.value = true;
+          }, 450);
         });
       },
       { flush: "pre" },
@@ -132,10 +138,14 @@ export const ChatView = {
       return task ? task.title : null;
     });
 
+    // A conversa está no ponto mais baixo? (o usuário pode estar lendo algo acima)
     const atBottom = Vue.ref(true);
-    // O usuário assumiu o controle da rolagem (roda do mouse/toque): a rolagem automática
-    // para até ele voltar ao fim.
+    // O usuário assumiu o controle da rolagem (roda do mouse/toque/teclado): a rolagem
+    // automática para até ele voltar ao fim.
     const userTookOver = Vue.ref(false);
+    // Verdadeiro enquanto a rolagem automática está em curso (para não confundir o
+    // scroll disparado por ela com o scroll do usuário).
+    let autoScrolling = false;
     // Entradas abertas e fechadas pelo usuário (o que tem diff abre sozinho).
     const openIds = Vue.reactive(new Set());
     const closedIds = Vue.reactive(new Set());
@@ -169,8 +179,11 @@ export const ChatView = {
     function onScroll() {
       const element = logRef.value;
       if (!element) return;
-      atBottom.value = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
-      if (atBottom.value) userTookOver.value = false;
+      const bottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+      atBottom.value = bottom;
+      // Scroll nosso (animação automática) não conta como decisão do usuário.
+      if (autoScrolling) return;
+      if (bottom) userTookOver.value = false;
     }
 
     function onUserScrollIntent() {
@@ -356,21 +369,6 @@ export const ChatView = {
                 <span class="thought-dot"></span>{{ thought.text }}
               </li>
             </ul>
-
-            <div class="stages" v-if="message.stages.length">
-              <button
-                type="button"
-                class="stage"
-                :class="{ active: stage.active, selected: stage.selected }"
-                v-for="stage in message.stages"
-                :key="stage.id"
-                @click="selectTask(stage.id)"
-              >
-                <span class="stage-ico" v-html="icon(stage.glyph, 14)"></span>
-                <span class="stage-title">{{ stage.title }}</span>
-                <span class="status-dot" :class="'status-' + stage.status"></span>
-              </button>
-            </div>
 
             <div class="pause-banner" v-if="message.pause">
               <span class="pause-ico" v-html="icon('pause', 15)"></span>

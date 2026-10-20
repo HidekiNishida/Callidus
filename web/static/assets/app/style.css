@@ -689,30 +689,6 @@ pre,
   flex: none;
 }
 
-.stages { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
-
-.stage {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-soft);
-  background: var(--surface-2);
-  color: var(--text);
-  cursor: pointer;
-  text-align: left;
-  transition: border-color var(--dur-2) var(--ease), background var(--dur-2) var(--ease), transform var(--dur-1) var(--ease);
-}
-
-.stage:hover { border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
-.stage:active { transform: scale(0.995); }
-.stage.selected { border-color: var(--accent); background: var(--accent-soft); }
-
-.stage-ico { display: inline-flex; color: var(--faint); }
-.stage-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; transition: background var(--dur-2) var(--ease); }
 .status-dot.status-COMPLETED { background: var(--ok); }
 .status-dot.status-FAILED,

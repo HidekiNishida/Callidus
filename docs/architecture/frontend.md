@@ -73,14 +73,17 @@ assim que a execução atual termina.
 tarefa raiz), então a segunda mensagem não herda o que aconteceu na primeira. O painel de
 detalhes acompanha a tarefa selecionada e ignora respostas antigas que chegam fora de ordem.
 
-**Rolagem automática**: a conversa acompanha o feed enquanto o usuário estiver no fim. Se ele sobe
-para ler (roda do mouse ou toque), a rolagem automática para — e volta a acompanhar quando ele
-retorna ao fim. O botão flutuante de “rolar para o fim” aparece quando há conteúdo abaixo.
+**Rolagem automática**: a conversa acompanha o feed **enquanto a rolagem da conversa estiver no
+ponto mais baixo**. Se o usuário sobe para ler (roda do mouse, toque ou teclado), a rolagem
+automática para — e volta a acompanhar assim que ele retorna ao fim. O scroll gerado pela própria
+rolagem automática não conta como decisão do usuário (uma flag evita que a posição “falso” de
+rolando interrompa o acompanhamento).
 
-**Etiquetas do plano (acima do prompt)**: as tarefas em aberto do plano atual viram etiquetas
-fixas acima do campo de envio (estilo Kilo). Elas acompanham o planejamento: mudam de estado
-(concluída, em execução, bloqueada), somem quando a tarefa é concluída e podem ser clicadas para
-abrir os detalhes da tarefa. Quando há muitas, a faixa rola na horizontal.
+**Etiquetas do plano (só acima do prompt)**: as tarefas em aberto do plano atual viram etiquetas
+fixas acima do campo de envio (estilo Kilo) — e **não** aparecem dentro da bolha da mensagem.
+Elas acompanham o planejamento: mudam de estado (concluída, em execução, bloqueada), somem quando a
+tarefa é concluída e podem ser clicadas para abrir os detalhes da tarefa. Quando há muitas, a faixa
+rola na horizontal.
 
 **Painel de execução (“Acompanhamento”)**: mostra o cabeçalho da run (situação, progresso,
 conexão), a barra de filtros (categoria, só falhas, busca por texto), a árvore de tarefas com

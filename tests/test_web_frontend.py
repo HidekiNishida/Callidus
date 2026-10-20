@@ -202,6 +202,8 @@ def test_rolagem_automatica_para_quando_o_usuario_esta_no_fim():
     """A rolagem acompanha o feed só enquanto o usuário estiver no fim da conversa."""
     chat = (APP_DIR / "components" / "chat.js").read_text(encoding="utf-8")
     assert "const stick = atBottom.value && !userTookOver.value;" in chat
+    # o scroll da própria rolagem automática não conta como decisão do usuário
+    assert "autoScrolling" in chat
     assert "behavior: \"smooth\"" in chat
     assert "scrollHeight" in chat
     assert "@scroll=\"onScroll\"" in chat
@@ -219,6 +221,9 @@ def test_etiquetas_do_plano_acima_do_prompt():
     assert "planTags" in chat
     # concluídas somem, em aberto ficam
     assert "COMPLETED" in chat
+    # as etapas do plano NÃO aparecem dentro da bolha da mensagem
+    assert 'class="stages"' not in chat
+    assert "plan-strip" in chat
     # rolagem horizontal quando há muitas etiquetas
     assert ".plan-strip-inner" in css and "overflow-x: auto" in css
 
