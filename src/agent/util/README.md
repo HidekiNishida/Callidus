@@ -1,14 +1,16 @@
 # Utilitários (`util/`) — Parse JSON Tolerante
 
+![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
+
 Utilitários compartilhados sem dependências externas.
 
-## Módulos
+## 🏗️ Módulos
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
 | [`json_parse.py`](json_parse.py) | `parse_json_object(text)`, `extract_json_objects(text)` | **Extração robusta** — encontra e parseia JSON válido em texto sujo (resposta do modelo) |
 
-## `parse_json_object(text)` → `tuple[dict|None, str|None]`
+## 🛠️ `parse_json_object(text)` → `tuple[dict|None, str|None]`
 
 ```python
 # json_parse.py
@@ -24,9 +26,9 @@ def parse_json_object(text: str) -> tuple[dict | None, str | None]:
     # 5. Retorna erro descritivo
 ```
 
-**Usado em**: `orchestrator/runner.py` → `_execute_task` (parseia resposta do modelo para `model_operation`), `orchestrator/decomposition.py` → `plan_with_model` (parseia plano).
+**Usado em**: `orchestrator/execution/model_operation.py` → `ModelOperation.run` (parseia a resposta do modelo para `model_operation`) e `orchestrator/decomposition.py` → `plan_with_model` (parseia o plano).
 
-## `extract_json_objects(text)` → `list[dict]`
+## 🛠️ `extract_json_objects(text)` → `list[dict]`
 
 ```python
 def extract_json_objects(text: str) -> list[dict]:
@@ -35,7 +37,7 @@ def extract_json_objects(text: str) -> list[dict]:
     # Útil quando modelo retorna múltiplos objetos
 ```
 
-## Testes
+## 🧪 Testes
 
 ```bash
 # Testado indiretamente via orquestrador

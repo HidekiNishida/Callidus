@@ -4,11 +4,11 @@
 
 Entrada: [README do repositório](/README.md) · Contexto: [project-context.md](/docs/project-context.md)
 
-## Princípio central
+## 🧠 Princípio central
 
 A **complexidade fica na arquitetura do agente**, não na janela de contexto do modelo. O LLM é um componente substituível; o orquestrador, a persistência, a decomposição e a verificação são lógica explícita e testável.
 
-## Stack (Fase 0–1)
+## 🎯 Stack (Fase 0–1)
 
 | Camada | Tecnologia | Motivo |
 |--------|------------|--------|
@@ -18,7 +18,7 @@ A **complexidade fica na arquitetura do agente**, não na janela de contexto do 
 | Frontend (fases posteriores) | Vite + React | UI rica para árvore de tarefas e logs |
 | Artefatos | `data/` (gitignored) | DB, memórias longas, evidências |
 
-## Módulos (`src/agent/`)
+## 🏗️ Módulos (`src/agent/`)
 
 ```mermaid
 flowchart TB
@@ -56,7 +56,7 @@ por assunto (`system_`, `project_`, `conversation_`, `task_`, `run_`, `agent_`, 
 `provider_`, `observe_`); a apresentação de leitura fica em `presenters.py` e a visão ao vivo
 em `live_view.py`. Nenhuma rota concentra regra de negócio — elas validam, delegam e serializam.
 
-## Fases de implementação
+## 🎯 Fases de implementação
 
 | Fase | Escopo | Status |
 |------|--------|--------|
@@ -71,7 +71,7 @@ em `live_view.py`. Nenhuma rota concentra regra de negócio — elas validam, de
 | 8 | E2E pytest | Concluída |
 | 9 | Skills sob demanda, estratégia profissional, decomposição recursiva e recuperação da verificação | Concluída — ver [skills-estrategia.md](/docs/architecture/skills-estrategia.md) |
 
-## Decisões (ADR resumido)
+## 🏗️ Decisões (ADR resumido)
 
 1. **Monorepo Python-first** — evita duplicar modelos de domínio entre backend e workers; frontend consome API REST/SSE.
 2. **Estado canônico no SQLite** — conversa com o modelo não é fonte da verdade.
@@ -80,7 +80,7 @@ em `live_view.py`. Nenhuma rota concentra regra de negócio — elas validam, de
 5. **Complexidade na arquitetura, não no prompt** — estratégia, skills e decomposição recursiva vivem em código e no SQLite; o modelo é uma peça substituível ([skills-estrategia.md](/docs/architecture/skills-estrategia.md)).
 6. **Ciclo e execução em pacotes diferentes** — `orchestrator/` (quando) e `orchestrator/execution/` (como) evoluem separadamente; a verificação continua independente de quem executa.
 
-## Documentos relacionados
+## 📚 Documentos relacionados
 
 - [Modelo de dados](/docs/architecture/modelo-dados.md)
 - [Máquina de estados](/docs/architecture/maquina-estados.md)

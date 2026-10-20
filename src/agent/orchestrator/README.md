@@ -1,8 +1,10 @@
 # Orquestrador (`orchestrator/`) — Ciclo de Execução do Callidus
 
+![fluxos](/media/icons/fluxos.svg){width=48}
+
 **Coração do agente**: transforma um objetivo em tarefas atômicas, executa ferramentas/modelo, verifica resultados, consolida, replaneja falhas e escreve a resposta final.
 
-## Módulos
+## 🏗️ Módulos
 
 | Arquivo | Classe/Função Principal | Responsabilidade |
 |---------|------------------------|------------------|
@@ -14,6 +16,7 @@
 | [`decomposition.py`](decomposition.py) | `resolve_decomposition_plan` | **Decomposição hierárquica**: builtin e2e → modelo (Ollama/llama.cpp) → template genérico → mock; `apply_decomposition`, `seal_repeated_steps`, `plan_copies_siblings` |
 | [`atomizer.py`](atomizer.py) | `adaptive_decompose_operation`, `micro_decompose_operation`, `should_decompose_further`, `depth_guard` | **Decomposição recursiva adaptativa**: escolhe a trilha pelo domínio (diagnóstico → correção → verificação) e protege profundidade e ciclos |
 | [`plan_validation.py`](plan_validation.py) | `validate_and_repair`, `PlanValidation` | **Validação determinística do plano**: 16 regras (objetivo, etapas, requisitos, cobertura, dependências, ferramentas, duplicatas, orçamento) → veredito + fixes + blocked |
+| [`plan_contract.py`](plan_contract.py) | `normalize_plan_payload`, `normalize_kind`, `normalize_depends`, `normalize_covers` | **Contrato tolerante do plano**: normaliza o plano devolvido pelo modelo (rótulos de etapa, dependências e cobertura) |
 | [`consolidation.py`](consolidation.py) | `consolidate_parent`, `children_of`, `settled`, `verification_evidence_ok` | Consolida pai ← filhos concluídos com evidência válida |
 | [`global_verify.py`](global_verify.py) | `evaluate_global_acceptance`, `reopen_verification_gaps`, `correct_requirement_gaps`, `ensure_global_verification_task` | **Aceite global por requisito**: run só completa se todo requisito obrigatório `satisfied` |
 | [`requirements.py`](requirements.py) | `ensure_requirements`, `effective_covers`, `root_of`, `requirement_status` | Requisitos rastreáveis (derive do contrato/objetivo + cobertura declarada `covers`) |
@@ -25,7 +28,7 @@
 | [`resume.py`](resume.py) | `resume_root` | Resumo de onde parou (para UI: `POST /tasks/{id}/resume-brief`) |
 | [`engine.py`](engine.py) | — | Legado mínimo (compatibilidade) |
 
-## Fluxo de um Step (`RunOrchestrator.step`)
+## 🔄 Fluxo de um Step (`RunOrchestrator.step`)
 
 ```mermaid
 flowchart TD
@@ -74,9 +77,9 @@ flowchart TD
   EVID -->|blocked/inconclusive| BLOCKED2[BLOCKED + failure]
 ```
 
-## Máquina de Estados (TaskStatus)
+## 🔄 Máquina de Estados (TaskStatus)
 
-```
+```text
 PENDING → PLANNING → READY → RUNNING → VERIFYING → COMPLETED
                     ↓           ↓           ↓
                    BLOCKED   RETRY_PENDING  BLOCKED
@@ -88,7 +91,7 @@ PENDING → PLANNING → READY → RUNNING → VERIFYING → COMPLETED
 
 **Transições válidas** em [`domain/state_machine.py`](../domain/state_machine.py) — `InvalidTransitionError` se inválida.
 
-## Decomposição — Ordem de Prioridade
+## 🔄 Decomposição — Ordem de Prioridade
 
 1. **Builtin E2E** — objetivo contém `e2e` ou `calc.py` → plano fixo de 3 etapas (inspecionar, corrigir, testar)
 2. **Direct Answer** — pergunta curta sem pedido de alteração → 1 etapa `final_answer`
@@ -98,7 +101,7 @@ PENDING → PLANNING → READY → RUNNING → VERIFYING → COMPLETED
 
 > `align_verification`: pedidos de página/site trocam `pytest` por `file_contains <html>`.
 
-## Estratégia Profissional e Decomposição Recursiva
+## 🧠 Estratégia Profissional e Decomposição Recursiva
 
 Na raiz da run, `ProfessionalStrategist.analyze(objective)` classifica o pedido (domínio, complexidade,
 especialidade líder, riscos, critérios de aceite) e grava a estratégia em
@@ -117,7 +120,7 @@ Proteções: `max_tree_depth` (16), `max_tasks_per_run` (400), `depth_guard()` (
 
 Detalhes: [skills-estrategia.md](../../../docs/architecture/skills-estrategia.md)
 
-## Validação do Plano (16 Regras Determinísticas)
+## 🧪 Validação do Plano (16 Regras Determinísticas)
 
 | Categoria | Regra | Falha → |
 |-----------|-------|---------|
@@ -134,7 +137,7 @@ Detalhes: [skills-estrategia.md](../../../docs/architecture/skills-estrategia.md
 
 **Correção automática** (`validate_and_repair`): remove deps inválidas, cancela duplicata, tool inexistente → model_operation, requisito inexistente sai do `covers`, etapa sem critério vira apoio, requisito sem responsável ganha etapa `Atender Rn`.
 
-## Verificação Independente (Proporcional ao Risco)
+## 🧪 Verificação Independente (Proporcional ao Risco)
 
 | Nível | Verificador | Quando |
 |-------|-------------|--------|
@@ -151,7 +154,7 @@ bloqueada com diagnóstico, nunca reprovada em silêncio.
 
 **Evidência** (`EvidenceModel`): `verifier`, `passed` (true/false/null), `summary`, `detail_json` (criteria, artifacts, exit_code, reason, state). Estado `desatualizado` marcado por `reopen_verification_gaps` se arquivo mudou.
 
-## Estagnação, Limites, Pausa e Retomada
+## 🔄 Estagnação, Limites, Pausa e Retomada
 
 ### Estagnação (`_check_stagnation`)
 - Mesmo `signature` (categoria, causa, texto normalizado) + mesma `strategy` (tool/args/verification/mode) → conta repetição
@@ -181,7 +184,7 @@ bloqueada com diagnóstico, nunca reprovada em silêncio.
 - `retry_blocked=true` → tasks `BLOCKED` → `PLANNING`
 - Evidências desatualizadas reabertas no aceite global
 
-## Testes-Chave
+## 🧪 Testes-Chave
 
 ```bash
 # Orquestrador E2E completo
@@ -203,7 +206,7 @@ pytest tests/test_stagnation_limits.py tests/test_run_termination.py tests/test_
 pytest tests/test_progress_metrics.py -v
 ```
 
-## Arquivos Relacionados Fora do `orchestrator/`
+## 📁 Arquivos Relacionados Fora do `orchestrator/`
 
 | Arquivo | Papel no Ciclo |
 |---------|----------------|

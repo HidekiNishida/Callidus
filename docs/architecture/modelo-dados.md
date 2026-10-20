@@ -1,15 +1,26 @@
 # Modelo de dados
 
+![arquivos](/media/icons/arquivos.svg){width=48}
+
+O modelo de dados: as 22 tabelas, seus campos e as transições gravadas.
+
 Persistência principal: SQLite em `data/agent.db` (configurável via `AGENT_DATA_DIR`).
 
-## Entidades
+## 🏗️ Entidades
 
 | Entidade | Responsabilidade |
 |----------|------------------|
 | `Project` | Workspace lógico: nome, path raiz autorizado, config |
+| `ProjectRemote` | Computador remoto do projeto: host, porta, usuário, chave, pasta (segredo nunca exposto) |
+| `Conversation` | Conversa: título, idioma, escopo; é a raiz do trabalho quando a tarefa pertence a ela |
+| `Branch` | Ramo de uma conversa: fork com contexto próprio |
 | `Task` | Nó da árvore: objetivo, escopo, estado, pai, ordem |
 | `TaskDependency` | Aresta dirigida: `depends_on_task_id` deve concluir antes |
 | `ExecutionRun` | Uma “sessão” de orquestração sobre um objetivo |
+| `ScheduledRun` | Disparo agendado herdado do protótipo anterior (convivem com `automations`) |
+| `Automation` | Definição versionada de uma automação: gatilho, ação, dependências, permissões |
+| `AutomationFiring` | Registro de um disparo, com chave de idempotência por instante elegível |
+| `AutomationEvent` | Trilha durável dos eventos do runtime de automações |
 | `OperationAttempt` | Tentativa de operação (modelo ou ferramenta) |
 | `EventLog` | Trilha append-only para auditoria e retomada |
 | `MemoryRecord` | Memória tipada (canônica, execução, contexto, evidência, procedimento) |
@@ -21,7 +32,10 @@ Persistência principal: SQLite em `data/agent.db` (configurável via `AGENT_DAT
 | `AgentExecution` | Execução ativa do agente: checkpoint, tentativa, erro |
 | `AgentQuery` | Consulta entre agentes: perguntas, correlação, tentativas, resposta |
 
-## Task — campos essenciais
+São 22 tabelas. `projects`, `tasks`, `execution_runs`, `operation_attempts` e `event_logs` são
+o núcleo do ciclo; as demais descrevem conversas, agentes, memórias, evidências e automações.
+
+## 🏗️ Task — campos essenciais
 
 - `id` (UUID), `project_id`, `parent_id` (nullable = raiz do objetivo)
 - `title`, `objective`, `scope`, `acceptance_criteria` (JSON/texto)
@@ -31,7 +45,7 @@ Persistência principal: SQLite em `data/agent.db` (configurável via `AGENT_DAT
 - `consolidated_result_json` — resumo após conclusão verificada
 - timestamps: `created_at`, `updated_at`, `started_at`, `completed_at`
 
-## Hierarquia de agentes
+## 🏗️ Hierarquia de agentes
 
 Três entidades distintas, com ciclo de vida próprio:
 
@@ -50,7 +64,7 @@ Três entidades distintas, com ciclo de vida próprio:
 
 Detalhe: [hierarquia-agentes.md](/docs/architecture/hierarquia-agentes.md).
 
-## Memória
+## 🧠 Memória
 
 Tipos (`MemoryKind`):
 
@@ -62,7 +76,7 @@ Tipos (`MemoryKind`):
 
 Compactação futura: nova versão com `source_refs` apontando para registros anteriores.
 
-## Eventos
+## 🔄 Eventos
 
 Cada transição relevante grava `EventLog`: `run_id`, `task_id`, `type`, `payload_json`, `created_at`, `seq` (monotônico por run), `parent_task_id`, `agent` e `schema_version`. Catálogo, contexto e entrega em tempo real: [execucao-autonoma.md](execucao-autonoma.md).
 

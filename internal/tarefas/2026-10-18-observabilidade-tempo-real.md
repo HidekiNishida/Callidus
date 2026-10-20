@@ -1,5 +1,7 @@
 # Checklist: Observabilidade em tempo real
 
+![tarefas](/media/icons/tarefas.svg){width=48}
+
 | Campo | Valor |
 |-------|-------|
 | Estado | em andamento |
@@ -9,7 +11,7 @@
 | Regras consultadas | [Hub](/docs/regras/README.md), [validacoes-testes.md](/docs/regras/validacoes-testes.md), [resumo-projeto.md](/docs/regras/resumo-projeto.md) |
 | Antecessor | [validação, verificação e progresso](/internal/tarefas/2026-10-18-validacao-verificacao-progresso.md) (concluída) |
 
-## Objetivo
+## 🎯 Objetivo
 
 Tornar a execução observável em tempo real a partir do executor real: eventos tipados e persistidos, respostas do modelo em fragmentos quando o provedor transmite, ferramentas, comandos, arquivos e verificações com dados reais, transmissão com reconexão e recuperação, e uma interface de acompanhamento integrada à existente.
 
@@ -17,7 +19,7 @@ Tornar a execução observável em tempo real a partir do executor real: eventos
 
 Unidade 1: contrato de eventos, barramento, emissor e migração.
 
-## Diagnóstico (auditoria)
+## ⚠️ Diagnóstico (auditoria)
 
 | # | Achado | Onde |
 |---|--------|------|
@@ -55,14 +57,14 @@ Unidade 1: contrato de eventos, barramento, emissor e migração.
 | 5 | Interface: cabeçalho, árvore, atividade, respostas, terminal, arquivos, verificação; filtros; reconexão | testes `node --test` |
 | 6 | Integração ponta a ponta (executor real → eventos → estado da interface), documentação, validação final | teste realista com falha e recuperação |
 
-## Riscos
+## ⚠️ Riscos
 
 - Commit no meio do passo para mostrar início de operação longa: o executor já faz isso em `_note_thought`; manter o mesmo padrão e não commitar no meio de transições.
 - Contador de sequência em memória pressupõe um processo servindo a API e o worker (configuração atual); documentar.
 - Streaming com `format` JSON no Ollama: conferir que o conteúdo final é igual ao da chamada sem streaming.
 - Testes existentes que leem `task.status_changed` ou `run.stalled`: atualizar junto.
 
-## Etapas
+## 🔄 Etapas
 
 - [x] Auditoria e diagnóstico
 - [x] Unidade 1

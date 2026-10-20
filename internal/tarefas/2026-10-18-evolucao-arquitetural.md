@@ -1,5 +1,7 @@
 # Checklist: Evolução arquitetural — decomposição adaptativa, contexto suficiente, conclusão verificável
 
+![tarefas](/media/icons/tarefas.svg){width=48}
+
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |
@@ -8,7 +10,7 @@
 | Agente / tarefa | Evolução arquitetural (fases A–G) |
 | Regras consultadas | [Hub](/docs/regras/README.md), [validacoes-testes.md](/docs/regras/validacoes-testes.md), [resumo-projeto.md](/docs/regras/resumo-projeto.md) |
 
-## Objetivo
+## 🎯 Objetivo
 
 O orquestrador decompõe só o necessário, monta contexto suficiente por operação, classifica falhas, replaneja por política e só declara conclusão com evidência verificável. Mudança incremental, preservando dados SQLite e a API.
 
@@ -16,7 +18,7 @@ O orquestrador decompõe só o necessário, monta contexto suficiente por opera�
 
 Nenhuma: evolução concluída. Sequência: [validação do plano, verificação independente e progresso real](/internal/tarefas/2026-10-18-validacao-verificacao-progresso.md).
 
-## Diagnóstico (fase A — evidências)
+## ⚠️ Diagnóstico (fase A — evidências)
 
 | # | Achado | Onde |
 |---|--------|------|
@@ -49,7 +51,7 @@ Nenhuma: evolução concluída. Sequência: [validação do plano, verificação
 | 10 | F | Retomada: reabrir banco, revalidar arquivos (hash) antes de repetir operação | 5 | médio | cenários 15, 16 |
 | 11 | G | Métricas de progresso verificável; ponta a ponta multi-etapa | todas | baixo | cenários 1, 4, 5, 20 |
 
-## Etapas
+## 🔄 Etapas
 
 - [x] Criar este arquivo a partir do modelo e preencher metadados
 - [x] Identificar ramos de regras necessários no hub

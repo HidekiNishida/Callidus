@@ -1,15 +1,17 @@
 # Knowledge Graph (`knowledge/`) — Grafo de Símbolos, Imports e Arquivos
 
+![arquitetura](/media/icons/arquitetura.svg){width=48}
+
 Índice incremental do código do projeto: arquivos, símbolos (classes, funções), imports e requisitos. Usado para busca semântica e navegação no contexto.
 
-## Módulos
+## 🏗️ Módulos
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
 | [`indexer.py`](indexer.py) | `index_python_file`, `extract_symbols` | **Scan AST** — visita `ast.Module` → `ClassDef`, `FunctionDef`, `Import`, `ImportFrom` |
 | [`graph_service.py`](graph_service.py) | `KnowledgeGraphService` | **Persistência + API** — `reindex`, `search`, `neighbors`, `touch_file` |
 
-## Indexador AST (`indexer.py`)
+## 🏗️ Indexador AST (`indexer.py`)
 
 ```python
 def index_python_file(path: Path, project_root: Path) -> list[tuple[str, str, dict]]:
@@ -27,7 +29,7 @@ def index_python_file(path: Path, project_root: Path) -> list[tuple[str, str, di
     return symbols
 ```
 
-## KnowledgeGraphService (`graph_service.py`)
+## 🏗️ KnowledgeGraphService (`graph_service.py`)
 
 ```python
 class KnowledgeGraphService:
@@ -48,14 +50,14 @@ class KnowledgeGraphService:
         """Reindexa um único arquivo após write/edit/move (incremental)"""
 ```
 
-## Modelo de Dados (KG)
+## 🏗️ Modelo de Dados (KG)
 
 | Tabela | Entidade | Chaves |
 |--------|----------|--------|
 | `kg_nodes` | `KgNodeModel` | `id`, `project_id`, `kind` (file/class/function/import/requirement), `ref` (path ou fqn), `label`, `meta_json`, `updated_at` — **unique (project_id, kind, ref)** |
 | `kg_edges` | `KgEdgeModel` | `id`, `project_id`, `src_id`, `dst_id`, `rel` (imports/defines/references/covers) — **unique (project_id, src_id, dst_id, rel)** |
 
-## API (Rotas)
+## 🔌 API (Rotas)
 
 | Rota | Descrição |
 |------|-----------|
@@ -63,13 +65,13 @@ class KnowledgeGraphService:
 | `GET /projects/{id}/knowledge/search?q=...&limit=...` | Busca textual |
 | `GET /projects/{id}/knowledge/neighbors?ref=...&depth=...` | Vizinhos no grafo |
 
-## Integração com Orquestrador
+## 🔌 Integração com Orquestrador
 
 - `touch_file` chamado após `write_file`/`edit_file`/`move_file` (tools builtins)
 - `guide_digest(project_root, objective)` usa `search` para achar símbolos relevantes ao objetivo
 - `capability_line(model_id)` + `guide_digest` injetados no prompt de decomposição
 
-## Testes
+## 🧪 Testes
 
 ```bash
 pytest tests/test_knowledge_graph.py -v

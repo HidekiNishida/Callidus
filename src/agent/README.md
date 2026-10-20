@@ -1,16 +1,20 @@
 # Pacote `agent` — Runtime do Callidus
 
+![arquitetura](/media/icons/arquitetura.svg){width=48}
+
+O mapa do núcleo: módulos, camadas e por onde começar a ler.
+
 Núcleo do **Callidus**: orquestração explícita, persistência SQLite, modelos locais e ferramentas determinísticas.
 
-## Módulos (Subpacotes)
+## 🏗️ Módulos (Subpacotes)
 
 | Pasta | README | Responsabilidade Principal |
 |-------|--------|---------------------------|
 | [`api/`](api/README.md) | [README.md](api/README.md) | **FastAPI** — rotas HTTP, SSE, SPA estática, deps (DB, Settings, ToolRegistry) |
 | [`domain/`](domain/README.md) | [README.md](domain/README.md) | **Contratos de domínio** — enums, máquina de estados, schemas Pydantic, falhas |
-| [`persistence/`](persistence/README.md) | [README.md](persistence/README.md) | **SQLAlchemy 2 + SQLite** — models (20 tabelas), database (engine/session), migrações manuais |
+| [`persistence/`](persistence/README.md) | [README.md](persistence/README.md) | **SQLAlchemy 2 + SQLite** — models (22 tabelas), database (engine/session), migrações manuais |
 | [`automation/`](automation/README.md) | [README.md](automation/README.md) | **Automações persistentes** — definição aprovada, gatilhos (temporal/evento), ações (Callidus/script), dependências, disparo idempotente, supervisor headless e adaptadores nativos (launchd/systemd/Windows) |
-| [`services/`](services/README.md) | [README.md](services/README.md) | **Regras de negócio** — 15 services: Project, Conversation, Task, Run, Contract, Memory, KnowledgeGraph, Metrics, AutonomousWorker, Scheduler, Attempt + **Executor compartilhado**, **AgentService**, **QueryService**, **AgentScheduler** |
+| [`services/`](services/README.md) | [README.md](services/README.md) | **Regras de negócio** — 18 services: Project, Conversation, Task, Run, Contract, Attempt, Metrics, AutonomousWorker, Scheduler, AgentScheduler, Agent, Query, Executor compartilhado, Attachments, Branches, Cascade, FsBrowse, Inbox |
 | [`orchestrator/`](orchestrator/README.md) | [README.md](orchestrator/README.md) | **Ciclo de execução** — runner (step, run_until_idle), planner, strategy (abordagem profissional), decomposition, atomizer, plan_validation, consolidation, global_verify, requirements, progress, stagnation, replan, closing, usage, resume |
 | [`orchestrator/execution/`](orchestrator/execution/README.md) | [README.md](orchestrator/execution/README.md) | **Execução de uma tarefa** — executor (despacho, verificação, evidência), model_operation (contexto, ferramentas, escrita), runtime, providers, guards, writes, journal, workspace |
 | [`tools/`](tools/README.md) | [README.md](tools/README.md) | **Ferramentas** — registry central, 17 builtins (arquivos, comandos, git, testes, browser, memória), browser (Playwright), diffing, aliases |
@@ -28,14 +32,14 @@ Núcleo do **Callidus**: orquestração explícita, persistência SQLite, modelo
 | [`i18n/`](i18n/README.md) | [README.md](i18n/README.md) | **Internacionalização** — `detect_language(text)` → `pt`/`en`/`es` + `language_instruction(locale)` |
 | [`skills/`](skills/README.md) | [README.md](skills/README.md) | **Skills sob demanda** — contrato (`SkillSpec`), catálogo em Markdown, `SkillRegistry`, `SkillSelector` (seleção e injeção no prompt) |
 
-## Arquivos na Raiz do `agent/`
+## 📁 Arquivos na Raiz do `agent/`
 
 | Arquivo | Propósito | Funções/Classes Exportadas |
 |---------|-----------|---------------------------|
 | [`config.py`](config.py) | **Configuração central** via `.env` + variáveis de ambiente (pydantic-settings) | `Settings` (todas as opções), `Settings.resolved_database_url()`, `get_settings()` |
 | [`__init__.py`](__init__.py) | Marca pacote + versão | `__version__ = "0.1.0"` |
 
-## Fluxo Principal (Orquestrador)
+## 🔄 Fluxo Principal (Orquestrador)
 
 ```mermaid
 flowchart LR
@@ -58,7 +62,7 @@ flowchart LR
   CLOSE --> DONE[RunStatus.COMPLETED]
 ```
 
-## Configuração (Variáveis-Chave)
+## ⚙️ Configuração (Variáveis-Chave)
 
 | Variável | Padrão | Efeito |
 |----------|--------|--------|
@@ -74,17 +78,17 @@ flowchart LR
 | `MAX_ORCHESTRATOR_STEPS` | `100` | Passos máximos por `run_until_idle` |
 | `ENABLE_BACKGROUND_WORKER` | `true` | Liga `AutonomousWorker` no startup |
 
-## Documentação Técnica Relacionada
+## 📚 Documentação Técnica Relacionada
 
 | Documento | Foco |
 |-----------|------|
 | [Visão geral da arquitetura](/docs/architecture/visao-geral.md) | Camadas, fases, ADRs |
-| [Modelo de dados](/docs/architecture/modelo-dados.md) | 14 tabelas, campos, relações |
+| [Modelo de dados](/docs/architecture/modelo-dados.md) | 22 tabelas, campos, relações |
 | [Máquina de estados](/docs/architecture/maquina-estados.md) | TaskStatus, RunStatus, transições |
 | [Execução local](/docs/architecture/execucao-local.md) | Instalação, padrões, conversas, memória, UI |
 | [Requisitos, verificação, progresso](/docs/architecture/requisitos-verificacao-progresso.md) | Rastreabilidade, validação plano, verificação independente, estagnação, pausa/retomada |
 
-## Testes Relacionados
+## 🧪 Testes Relacionados
 
 ```bash
 # Orquestrador E2E (mock)

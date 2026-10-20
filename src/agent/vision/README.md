@@ -1,14 +1,16 @@
 # Visão (`vision/`) — Referências de Imagem para Contexto
 
+![integracoes](/media/icons/integracoes.svg){width=48}
+
 Prepara referências a imagens (base64/data URI) quando o perfil do modelo suporta visão (`supports_vision=True`).
 
-## Módulos
+## 🏗️ Módulos
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
 | [`context.py`](context.py) | `ImageReference`, `validate_image_path` | **Referências** — path → base64/data URI, validação de formato/tamanho |
 
-## ImageReference (`context.py`)
+## 🛠️ ImageReference (`context.py`)
 
 ```python
 # context.py
@@ -21,7 +23,7 @@ class ImageReference:
     height: int | None = None
 ```
 
-## Validação
+## 🧪 Validação
 
 ```python
 def validate_image_path(project_root: str, raw_path: str) -> Path:
@@ -37,13 +39,13 @@ def validate_image_path(project_root: str, raw_path: str) -> Path:
     return full
 ```
 
-## Integração Futura
+## 🔌 Integração Futura
 
 - `OperationContextBuilder` → detecta `task.metadata.images` → carrega via `ImageReference` → injeta no prompt (messages com `images: [base64...]`)
 - `ModelProfile.supports_vision` (detectado por tokens no model_id: `-vl`, `vl:`, `vision`, `llava`, `moondream`)
 - Provedores: Ollama suporta `images` no `/api/chat`; llama.cpp via OpenAI compat
 
-## Testes
+## 🧪 Testes
 
 ```bash
 # Ainda não há testes específicos de visão

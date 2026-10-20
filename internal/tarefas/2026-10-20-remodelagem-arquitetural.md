@@ -1,5 +1,7 @@
 # Checklist: Remodelagem arquitetural, documentação e manutenibilidade
 
+![tarefas](/media/icons/tarefas.svg){width=48}
+
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |
@@ -8,7 +10,7 @@
 | Agente / tarefa | Remodelagem arquitetural completa (orquestrador, API, documentação, regras) |
 | Regras consultadas | [Hub](/docs/regras/README.md) · [AGENTS.md](/AGENTS.md) |
 
-## Objetivo
+## 🎯 Objetivo
 
 Deixar o Callidus mais fácil de compreender e de modificar sem perder identidade nem contrato:
 separar o **ciclo** do run da **execução** de uma tarefa, organizar a API em roteadores por
@@ -20,7 +22,7 @@ Nenhuma. Commits: `f0ade1c` (execução × ciclo), `6313849` (API por assunto),
 `0a37195` (regras e documentação), `4adfec8` (cabeçalhos e docstrings), `61e6aa4` e
 `ecebbfd` (índices).
 
-## Etapas
+## 🔄 Etapas
 
 - [x] Etapa A — diagnóstico: inventário, baseline (661 testes), problemas confirmados
 - [x] Etapa B — convenções: `AGENTS.md` como fonte canônica; padrão de cabeçalho de 7 campos
@@ -61,5 +63,6 @@ Nenhuma. Commits: `f0ade1c` (execução × ciclo), `6313849` (API por assunto),
 O `runner.py` passou de ~2150 para ~1000 linhas: a execução de uma tarefa mora em
 `src/agent/orchestrator/execution/`. O provedor continua injetável por
 `runner._select_provider` (mesmo ponto de injeção usado pelos testes). A API foi dividida em
-`system_/project_/conversation_/task_/run_routes.py` + `presenters.py` + `live_view.py`;
+`system_routes.py`, `project_routes.py`, `conversation_routes.py`, `task_routes.py` e
+`run_routes.py`, mais `presenters.py` e `live_view.py`;
 `main.py` é a fachada. Nenhum endpoint, status, payload, evento ou estado mudou.

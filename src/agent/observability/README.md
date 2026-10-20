@@ -1,8 +1,10 @@
 # Observabilidade (`observability/`) — EventBus, SSE, Streaming e Snapshots
 
+![metricas](/media/icons/metricas.svg){width=48}
+
 Barramento de eventos em memória para entrega tempo real (SSE), anel de histórico, operações ao vivo e snapshots de run.
 
-## Módulos
+## 🏗️ Módulos
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
@@ -13,7 +15,7 @@ Barramento de eventos em memória para entrega tempo real (SSE), anel de histór
 | [`sanitize.py`](sanitize.py) | `is_sensitive_path(path)`, `sanitize_event_data(data)` | **Sanitização** — remove diff de paths sensíveis (`.env`, `secrets`, `keys`, `passwords`, `tokens`) |
 | [`contracts.py`](contracts.py) | `EventEnvelope`, `AgentStarted`, `ToolStarted`, `ToolOutput`, `ModelOutputDelta`, `RunProgress`, etc. | **Tipos TypedDict** — contratos dos eventos para type safety |
 
-## EventBus (`bus.py`)
+## 📊 EventBus (`bus.py`)
 
 ```python
 class EventBus:
@@ -36,7 +38,7 @@ class EventBus:
 - `outputs: dict[output_id, dict]` — model streaming ativo (text acumulado, status, seq)
 - `operations: dict[key, dict]` — tool/command/test ativos (output acumulado tail)
 
-## Emissor (`emitter.py`)
+## 📊 Emissor (`emitter.py`)
 
 ```python
 def emit(event_type: str, data: dict, task_id: UUID|None=None, commit: bool=False):
@@ -54,7 +56,7 @@ def emit(event_type: str, data: dict, task_id: UUID|None=None, commit: bool=Fals
         session.add(EventLogModel(...))  # grava no SQLite
 ```
 
-## Eventos Principais
+## 🏗️ Eventos Principais
 
 | Evento | Quando | Data-Chave |
 |--------|--------|------------|
@@ -71,7 +73,7 @@ def emit(event_type: str, data: dict, task_id: UUID|None=None, commit: bool=Fals
 | `plan.validated` | Validação plano | `verdict`, `findings`, `coverage`, `fixes`, `version`, `fingerprint` |
 | `verification.started/passed/failed/inconclusive` | Verificação | `verifier`, `criterion`, `summary`, `exit_code` |
 
-## Streaming Real (Modelo)
+## 🔄 Streaming Real (Modelo)
 
 ```python
 # providers/observed.py → observed_chat
@@ -90,7 +92,7 @@ async def observed_chat(provider, request, purpose, stream=True):
     return resp
 ```
 
-## SSE Endpoints (API)
+## 🔌 SSE Endpoints (API)
 
 | Rota | Descrição |
 |------|-----------|
@@ -98,7 +100,7 @@ async def observed_chat(provider, request, purpose, stream=True):
 | `GET /live?run_id=...` | Estado live: outputs streaming + operations ativas + seq + stats |
 | `GET /snapshot?run_id=...` | Foto completa: run, tasks, events, outputs, operations |
 
-## Configuração (Settings)
+## ⚙️ Configuração (Settings)
 
 | Variável | Padrão | Efeito |
 |----------|--------|--------|
@@ -110,7 +112,7 @@ async def observed_chat(provider, request, purpose, stream=True):
 | `event_text_limit` | `20000` | Truncamento por campo de evento |
 | `event_output_limit` | `200000` | Limite maior para resposta final |
 
-## Testes
+## 🧪 Testes
 
 ```bash
 # Observabilidade unitária

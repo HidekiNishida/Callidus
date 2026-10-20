@@ -1,5 +1,9 @@
 # Dados locais (`data/`)
 
+![arquivos](/media/icons/arquivos.svg){width=48}
+
+O que vive na pasta de dados do Callidus e o que não deve ir para lá.
+
 Diretório **gitignored** em runtime (SQLite, MCP ativo).
 
 | Arquivo versionado | Uso |

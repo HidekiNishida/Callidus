@@ -1,14 +1,18 @@
 # Execução autônoma em segundo plano
 
+![fluxos](/media/icons/fluxos.svg){width=48}
+
+O worker autônomo: o laço em segundo plano e o escalonador.
+
 Runs com `config_json.autonomous = true` são avançados pelo worker asyncio (`autonomous_worker.py`), iniciado no lifespan da API quando `ENABLE_BACKGROUND_WORKER` (padrão `true`).
 
-## Ciclo
+## 🔄 Ciclo
 
 1. Listar runs `ACTIVE` com flag autônoma.
 2. `RunOrchestrator.step` por run (commit por tick).
 3. Intervalo configurável (2s).
 
-## Controles
+## 🧠 Controles
 
 - `POST /runs/{id}/autonomous/enable`
 - `POST /runs/{id}/autonomous/disable`
@@ -16,7 +20,7 @@ Runs com `config_json.autonomous = true` são avançados pelo worker asyncio (`a
 - Pausar/cancelar run interrompe avanço útil mesmo com flag ligada; passo em run pausado não faz nada.
 - `POST /runs/{id}/resume` retoma um run pausado (por pedido ou por [limite operacional](/docs/architecture/requisitos-verificacao-progresso.md#progresso-real-estagnação-limites-pausa-e-retomada)); `?retry_blocked=true` devolve etapas bloqueadas ao planejamento.
 
-## Recuperação
+## 🔄 Recuperação
 
 Estado em SQLite; após reinício da API o worker retoma runs ativos autônomos. Nada vive só em memória: reabrir o banco e chamar `step` continua do ponto salvo.
 
@@ -24,7 +28,7 @@ A evidência de verificação guarda em `detail_json.artifacts` a impressão dig
 
 Na retomada, se um arquivo mudou depois da verificação, a aceitação global recusa ("evidência ausente ou desatualizada") e `reopen_verification_gaps` devolve a tarefa a `VERIFYING` com `last_failure.cause = stale_evidence`: o estado atual é verificado de novo antes de repetir qualquer operação, e só se reprovar a operação é refeita, com o motivo no contexto. Evidência antiga nunca é apagada. Ao refazer, o contexto lê os arquivos-alvo do disco naquele momento.
 
-## Término do run
+## 🔄 Término do run
 
 Quando nenhuma tarefa pode avançar (e o replanejamento não tem mais o que fazer), o run nunca fica em espera infinita:
 
@@ -44,7 +48,7 @@ Quando nenhuma tarefa pode avançar (e o replanejamento não tem mais o que faze
 O replanejamento marca os irmãos que cancela com `superseded_by_replan` — sem a marcação, o pai
 ficava `BLOCKED` mesmo com o plano novo já concluído.
 
-## A resposta final carrega os fatos
+## 🎯 A resposta final carrega os fatos
 
 O texto que o modelo escreve para a pessoa é curto e, por desenho, não cita verificações. Mas
 quem lê não pode depender do julgamento do modelo para saber se os testes passaram: uma resposta
@@ -56,7 +60,7 @@ as execuções que reprovaram. Ele não depende do modelo e é escrito a partir 
 persistidas. Medido em 20/10/2026: no cenário de verificação reprovada, o texto do modelo
 reportava sucesso com a suíte vermelha; com o rodapé, a reprovação aparece.
 
-## Permissões ao pelo do pedido
+## 🔐 Permissões ao pelo do pedido
 
 "Não altere nenhum arquivo do projeto" é uma restrição do pedido, e restrição vira **permissão**:
 
@@ -72,7 +76,7 @@ reportava sucesso com a suíte vermelha; com o rodapé, a reprovação aparece.
 No mesmo cenário de 20/10/2026, o agente alterava `app.py` apesar do pedido; com a permissão, o
 arquivo ficou intacto e o run concluiu reportando a reprovação da suíte.
 
-## Verificação proporcional ao risco
+## 🧪 Verificação proporcional ao risco
 
 | Etapa | Verificação |
 |-------|-------------|
@@ -83,7 +87,7 @@ arquivo ficou intacto e o run concluiu reportando a reprovação da suíte.
 
 Folha com metadados mas sem ação (`tool`, `verification`, `model_operation`, `final_answer`, `mcp_tool`) vira operação de modelo, em vez de passar por `skipped_to_verify` e concluir sem ter feito nada.
 
-## Replanejamento
+## 🔄 Replanejamento
 
 `replan_under` roda no início de cada passo e aplica `replan_decision` ao primeiro filho parado (BLOCKED/FAILED) ainda não substituído:
 
@@ -96,7 +100,7 @@ Folha com metadados mas sem ação (`tool`, `verification`, `model_operation`, `
 
 Ao replanejar: irmãos pendentes são cancelados, o que concluiu fica; o filho parado é marcado `superseded_by_replan` (BLOCKED vira CANCELLED) e deixa de contar como pendência; entram "Ver o que ainda falta" e "Seguir com o plano corrigido", um nó `subsystem` que é decomposto de novo com o que já foi feito, o motivo da parada e o pedido de outra abordagem. Esse nó herda `replan_count`, então replanejamentos aninhados dividem o mesmo orçamento.
 
-## Profundidade funcional
+## 🧪 Profundidade funcional
 
 Não há profundidade máxima de decomposição. Uma etapa é dividida enquanto não for executável (`executable_leaf`, atomizador, plano que não copia os irmãos). A proteção contra recursão é separada da decisão de dividir (`_recursion_guard`) e só age quando a árvore cresce sem fim:
 
@@ -108,7 +112,7 @@ Não há profundidade máxima de decomposição. Uma etapa é dividida enquanto 
 
 Ao acionar, a etapa é executada como operação de modelo, sem nova divisão, e o motivo fica em `metadata_json.recursion_guard`.
 
-## Progresso e métricas
+## 📊 Progresso e métricas
 
 Progresso é estado verificável, não atividade (`orchestrator/progress.py`):
 
@@ -133,7 +137,7 @@ Cada evento `orchestrator.action` grava `payload.progress`. `GET /runs/{id}/metr
 | `pauses`, `resumes` | motivo, limite e próxima ação de cada pausa; quantas retomadas |
 | `artifacts_validated` | arquivos cobertos por evidência aprovada e atual |
 
-## Falhas categorizadas
+## ⚠️ Falhas categorizadas
 
 Toda tentativa que falha é classificada por `src/agent/domain/failures.py` em **categoria** (o que fazer) e **causa** (o que houve):
 

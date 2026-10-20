@@ -1,5 +1,9 @@
 # Internal (`internal/`)
 
+![arquivos](/media/icons/arquivos.svg){width=48}
+
+Trabalho interno: rascunhos, auditorias e evidências — nunca regra vigente.
+
 Evidências e checklists — **não** fonte normativa de regras.
 
 | Pasta | Função |

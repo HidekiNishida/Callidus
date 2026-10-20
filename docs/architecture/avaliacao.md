@@ -1,5 +1,9 @@
 # Avaliação reproduzível do Callidus
 
+![testes](/media/icons/testes.svg){width=48}
+
+A avaliação reproduzível com critérios objetivos de aceite.
+
 Ferramenta de medição: [`lab/avaliar.py`](/lab/avaliar.py). Executa um conjunto de cenários com o
 **Ollama local** num banco e numa pasta de trabalho **isolados** — nada do banco, dos projetos ou
 das credenciais do usuário é tocado. Cada cenário tem critérios de aceite **objetivos**, e o
@@ -15,7 +19,7 @@ git stash push -- src && python lab/avaliar.py --label antes --max-steps 120 && 
 
 Saída: `lab/out/avaliacao-<label>.json` (resumo + cenário a cenário) e um resumo no terminal.
 
-## Modo de execução
+## 🔄 Modo de execução
 
 | Parâmetro | Padrão | Papel |
 |-----------|--------|-------|
@@ -30,7 +34,7 @@ O provedor e o modelo vêm da **configuração**, não do código: o cenário mo
 usado; se o Ollama não estiver disponível, a avaliação real não pode ser feita (e isso precisa
 ser dito, não estimada).
 
-## Cenários e critérios de aceite
+## 🧪 Cenários e critérios de aceite
 
 | Cenário | O que mede | Critérios |
 |---------|-----------|-----------|
@@ -44,7 +48,7 @@ O `verificacao_reprova` é o cenário anti-conclusão-falsa: o pedido é "execut
 resultado, não altere nenhum arquivo", a suíte do projeto está quebrada. O comportamento correto
 é rodar, reportar a reprovação e **não** mexer no projeto.
 
-## Resultado medido (20/10/2026, `gpt-oss:20b` via Ollama local)
+## 🎯 Resultado medido (20/10/2026, `gpt-oss:20b` via Ollama local)
 
 Mesmos cenários, mesmo modelo, mesmo ambiente; a diferença é só o código.
 
@@ -90,7 +94,7 @@ avaliação de novo produz variação. O que se mantém estável entre execuçõ
 o plano do modelo passa a ser usado, a execução reprovada é reportada, o pedido de somente
 leitura é respeitado.
 
-## Testes determinísticos
+## 🧪 Testes determinísticos
 
 A avaliação real depende do Ollama. Os testes de unidade cobrem os mesmos comportamentos sem
 modelo, com respostas controladas:

@@ -1,15 +1,18 @@
 # Provedores (`providers/`) — Ollama, llama.cpp, OpenRouter, OpenAI-compatível, Anthropic, Gemini, Mock
 
+![integracoes](/media/icons/integracoes.svg){width=48}
+
 Abstração única de inferência: interface `LLMProvider`, perfis de modelo, capacidades declaradas,
 streaming real e catálogo configurável. A camada não conhece skills, memória nem o ciclo do agente.
 
-## Arquivos
+## 📁 Arquivos
 
 | Arquivo | Classe / função | Propósito |
 |---------|-----------------|-----------|
 | [`base.py`](base.py) | `LLMProvider` (ABC), `ModelProfile`, `ChatCompletionRequest/Response`, `ChatMessage`, `ToolCall`, `ProviderCapabilities`, `ProviderHealth`, `ProviderError` e subclasses | **Contrato base** — `list_models()`, `chat()`, `chat_streaming()`, `capabilities()`, `health_check()` |
 | [`http.py`](http.py) | `HttpClientConfig`, `validate_base_url`, `map_http_error`, `redact`, `get_json`, `post_json`, `stream_lines` | **Transporte comum** — tempo limite, TLS, sem redirecionamento, erros tipados, redação de segredos, retry só em falha transitória |
 | [`registry.py`](registry.py) | `ProviderSpec`, `ProviderCatalog`, `load_catalog`, `build_provider`, `build_provider_by_name` | **Configuração declarativa** — arquivo YAML/JSON, interpolação `${VAR}`, fábrica de instâncias |
+| [`secrets.py`](secrets.py) | Segredos gravados pela interface: pasta `0700`, arquivo `0600`, leitura/escrita/apagamento
 | [`ollama.py`](ollama.py) | `OllamaProvider` | **Ollama** (local ou remoto) — API nativa `/api/chat` + `/api/tags`, streaming linha a linha, `think` em modelos reasoning |
 | [`llamacpp.py`](llamacpp.py) | `LlamaCppProvider` | **llama.cpp** (local ou remoto) — `llama-server` pela API compatível com OpenAI, streaming SSE, chave por cabeçalho ou arquivo |
 | [`openai_compatible.py`](openai_compatible.py) | `OpenAICompatibleProvider` | **Adaptador reutilizável** para qualquer serviço no formato OpenAI (gateways, provedores compatíveis) |
@@ -19,7 +22,7 @@ streaming real e catálogo configurável. A camada não conhece skills, memória
 | [`mock.py`](mock.py) | `MockProvider` | Testes e execução offline — determinístico, sem rede |
 | [`observed.py`](observed.py) | `observed_chat` | **Wrapper** — chama o provider + emite eventos no EventBus (`agent.started`, `agent.output.delta`, `agent.output.completed/failed`) |
 
-## Interface Comum (`base.py`)
+## 🔌 Interface Comum (`base.py`)
 
 ```python
 class LLMProvider(ABC):
@@ -73,7 +76,7 @@ respondeu vazio". Detalhes: [ciclo-ferramentas.md](/docs/architecture/ciclo-ferr
 | `ProviderResponseError` | corpo ilegível | — |
 | `ProviderConfigError` | URL/tipo/credencial de configuração inválidos | — |
 
-## Recursos por provedor
+## ⚙️ Recursos por provedor
 
 | Provedor | Streaming | Ferramentas | Ciclo (`tool_loop`) | JSON estruturado | Visão | Lista de modelos | Autenticação |
 |----------|-----------|-----------|--------------------|------------------|--------|------------------|--------------|
@@ -88,7 +91,7 @@ respondeu vazio". Detalhes: [ciclo-ferramentas.md](/docs/architecture/ciclo-ferr
 > O suporte real de ferramentas e JSON estruturado depende do **modelo** escolhido, não só do
 > provedor. O Callidus não promete o que o modelo não faz.
 
-## Configuração
+## ⚙️ Configuração
 
 Duas formas, que podem conviver:
 
@@ -153,7 +156,7 @@ providers:
 | `models_cache_ttl` | OpenRouter, Gemini, compatível com OpenAI | Tempo de cache da lista de modelos (seg) |
 | `referer` / `title` | OpenRouter | Cabeçalhos `HTTP-Referer` e `X-Title` |
 
-## Seleção e troca de provedor
+## ⚙️ Seleção e troca de provedor
 
 ```python
 # src/agent/orchestrator/runner.py
@@ -172,7 +175,7 @@ Nome desconhecido é **erro explícito** (`ProviderConfigError`). Não há troca
 fallback silencioso mudaria custo, privacidade e qualidade da resposta. O mock só entra como
 fallback quando `ALLOW_MOCK_FALLBACK=true` (opt-in explícito).
 
-## Segurança
+## 🔐 Segurança
 
 - Credenciais nunca são impressas: `redact()` remove a chave de mensagens de erro e de logs.
 - TLS fica ligado (`verify_tls=true`); redirecionamento HTTP é desligado por padrão.
@@ -182,7 +185,7 @@ fallback quando `ALLOW_MOCK_FALLBACK=true` (opt-in explícito).
 - Retry só acontece em falha transitória **antes** de o servidor processar a requisição
   (conexão recusada e 429). Timeout e erro 5xx não são repetidos: podem custar inferência duplicada.
 
-## Como registrar um novo adaptador
+## ⚙️ Como registrar um novo adaptador
 
 1. Crie `src/agent/providers/<nome>.py` com uma classe que herda de `LLMProvider`.
 2. Implemente `list_models()` e `_chat()`; `_chat_streaming()` só se o serviço transmitir de verdade. Não sobrescreva `chat`: a exclusividade de inferência mora no contrato base.
@@ -193,7 +196,7 @@ fallback quando `ALLOW_MOCK_FALLBACK=true` (opt-in explícito).
 6. Escreva os testes com `httpx.MockTransport` (sem rede, sem credencial real) e atualize a
    tabela de recursos acima e a documentação em [`docs/architecture/provedores.md`](../../../docs/architecture/provedores.md).
 
-## Testes
+## 🧪 Testes
 
 ```bash
 pytest tests/test_providers_registry.py -v        # configuração declarativa

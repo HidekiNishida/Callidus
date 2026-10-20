@@ -1,5 +1,7 @@
 # Checklist: Rebrand — Agente de IA Local → Callidus
 
+![tarefas](/media/icons/tarefas.svg){width=48}
+
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |
@@ -8,7 +10,7 @@
 | Agente / tarefa | Rebrand completo: nome, símbolo, interface, documentação e identificadores técnicos |
 | Regras consultadas | [Hub](/docs/regras/README.md), [marca.md](/docs/regras/marca.md), [principios.md](/docs/regras/principios.md), [documentacao.md](/docs/regras/documentacao.md), [organizacao-arquivos.md](/docs/regras/organizacao-arquivos.md), [valiacoes-testes.md](/docs/regras/validacoes-testes.md), [verificacao-final.md](/docs/regras/verificacao-final.md) |
 
-## Objetivo
+## 🎯 Objetivo
 
 Trocar o nome do produto para **Callidus**, aplicando o símbolo novo na interface (sidebar, favicon, bolhas de chat, estado vazio, quadro ao vivo) e em toda a documentação, mantendo compatibilidade com os identificadores técnicos antigos (`agente-api`, `agente-local-ui-v1`, `.agente/anexos/`, `agente-inbox://`) para não quebrar ambientes existentes.
 
@@ -16,7 +18,7 @@ Trocar o nome do produto para **Callidus**, aplicando o símbolo novo na interfa
 
 Nenhuma — tarefa concluída. Evolução futura sugerida: permitir escolha de tema (light/dark) com o símbolo adaptado.
 
-## Etapas
+## 🔄 Etapas
 
 - [x] Gerar assets web a partir dos SVGs de `media/` (símbolo, wordmark, favicon) em `web/static/assets/brand/`
 - [x] Verificar renderização dos assets com `rsvg-convert`

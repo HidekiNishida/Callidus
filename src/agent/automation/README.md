@@ -1,9 +1,11 @@
 # Automações — runtime de tarefas persistentes
 
+![configuracao](/media/icons/configuracao.svg){width=48}
+
 Automações persistentes, autônomas e multiplataforma: o Callidus planeja, grava,
 dispara, executa, verifica e recupera tarefas automaticamente.
 
-## As quatro responsabilidades
+## 🏗️ As quatro responsabilidades
 
 | Responsabilidade | Onde | O que garante |
 |------------------|------|---------------|
@@ -12,7 +14,7 @@ dispara, executa, verifica e recupera tarefas automaticamente.
 | **Runtime e supervisor** | [`supervisor.py`](supervisor.py) + [`service/`](service/) | O runtime vivo sem a interface e o arranque nativo do sistema |
 | **Execução** | [`executor.py`](executor.py) + [`actions/`](actions/) | Dependências → ação → evidência → estado |
 
-## Mapa dos módulos
+## 🏗️ Mapa dos módulos
 
 | Arquivo | Responsabilidade |
 |---------|------------------|
@@ -29,7 +31,7 @@ dispara, executa, verifica e recupera tarefas automaticamente.
 | [`service/`](service/) | Adaptadores nativos: `launchd`, `systemd`, Agendador de Tarefas do Windows |
 | [`cli.py`](cli.py) | `callidus-supervisor`: rodar, instalar, iniciar, parar, diagnosticar |
 
-## Máquina de estados do disparo
+## 🔄 Máquina de estados do disparo
 
 ```mermaid
 stateDiagram-v2
@@ -55,7 +57,7 @@ stateDiagram-v2
 ao worker e o disparo fica `running`; a reconciliação fecha o estado quando o run
 chega a um estado terminal.
 
-## Idempotência
+## 🔄 Idempotência
 
 A chave de idempotência é única no banco (`automation_firings.idempotency_key`):
 
@@ -66,7 +68,7 @@ A chave de idempotência é única no banco (`automation_firings.idempotency_key
 Reprocessar o mesmo disparo (reinício, tique duplicado, evento repetido) nunca cria
 uma segunda execução equivalente.
 
-## Comandos
+## 🛠️ Comandos
 
 ```bash
 callidus-supervisor run                    # primeiro plano (é o que o serviço executa)
@@ -77,7 +79,7 @@ callidus-supervisor diagnose               # automações, próximos disparos, p
 callidus-supervisor uninstall              # remove o serviço nativo
 ```
 
-## Ligações
+## 📚 Ligações
 
 - [Persistência](/src/agent/persistence/README.md) — tabelas `automations`, `automation_firings`, `automation_events`
 - [Serviços](/src/agent/services/README.md) — `scheduler.py` (fachada do agendamento)

@@ -56,7 +56,7 @@ flowchart TB
 
 Subpastas novas: só quando houver **vários** arquivos do mesmo tema. Uma pasta para um arquivo isolado é desperdício.
 
-Detalhes de forma de escrita: [documentacao.md](/docs/regras/documentacao.md).  
+Detalhes de forma de escrita: [documentacao.md](/docs/regras/documentacao.md).
 Estado de tarefa: [checklists-tarefas.md](/docs/regras/checklists-tarefas.md).
 
 ---

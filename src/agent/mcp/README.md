@@ -1,8 +1,10 @@
 # MCP (`mcp/`) — Integração stdio com SDK `mcp`
 
+![integracoes](/media/icons/integracoes.svg){width=48}
+
 Permite ao agente chamar ferramentas de servidores MCP locais via subprocess stdio (JSON-RPC 2.0).
 
-## Módulos
+## 🏗️ Módulos
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
@@ -10,7 +12,7 @@ Permite ao agente chamar ferramentas de servidores MCP locais via subprocess std
 | [`manager.py`](manager.py) | `McpManager` | **Gerenciador** — carrega config, `list_servers`, `list_tools`, `discover`, `call_tool` |
 | [`stdio_transport.py`](stdio_transport.py) | `StdioTransport` | **Transporte** — `ClientSession` sobre stdio subprocess |
 
-## Configuração (`data/mcp.json`)
+## ⚙️ Configuração (`data/mcp.json`)
 
 ```json
 {
@@ -33,7 +35,7 @@ Permite ao agente chamar ferramentas de servidores MCP locais via subprocess std
 
 **Copie o template**: `cp data/mcp.example.json data/mcp.json`
 
-## McpManager (`manager.py`)
+## 🔌 McpManager (`manager.py`)
 
 ```python
 mgr = McpManager(config_path=Path("data/mcp.json"))
@@ -51,7 +53,7 @@ discovered = await mgr.discover()  # {"servers": [...], "tools": [...]}
 result = await mgr.call_tool("filesystem:read_file", {"path": "/allowed/file.txt"})
 ```
 
-## StdioTransport (`stdio_transport.py`)
+## 🔌 StdioTransport (`stdio_transport.py`)
 
 ```python
 class StdioTransport:
@@ -73,11 +75,11 @@ class StdioTransport:
         self._proc.terminate()
 ```
 
-## Integração com Orquestrador
+## 🔌 Integração com Orquestrador
 
 ### Tool `mcp_tool` (metadata da task)
 ```python
-# runner.py → _execute_task
+# execution/executor.py → TaskExecutor.execute
 if meta.get("mcp_tool"):
     mgr = McpManager(settings.mcp_config_path or settings.data_dir / "mcp.json")
     out = await mgr.call_tool(meta["mcp_tool"], meta.get("mcp_args") or {})
@@ -92,7 +94,7 @@ if meta.get("mcp_tool"):
 | `POST /mcp/discover` | Conecta e descobre ferramentas de todos os servidores |
 | `POST /mcp/call` | Chama ferramenta: `{"tool_id": "server:name", "arguments": {...}}` |
 
-## Fluxo de Chamada MCP
+## 🔄 Fluxo de Chamada MCP
 
 ```mermaid
 sequenceDiagram
@@ -109,7 +111,7 @@ sequenceDiagram
   MGR-->>ORCH: out dict
 ```
 
-## Testes
+## 🧪 Testes
 
 ```bash
 pytest tests/test_mcp_manager.py -v

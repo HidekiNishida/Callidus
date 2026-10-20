@@ -1,5 +1,7 @@
 # Checklist: Repositório local com documentação do Project
 
+![tarefas](/media/icons/tarefas.svg){width=48}
+
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |
@@ -8,7 +10,7 @@
 | Agente / tarefa | bc-7874d165 — migrar store → git local |
 | Regras consultadas | [Hub](/docs/regras/README.md) |
 
-## Objetivo
+## 🎯 Objetivo
 
 Criar em `~/Documents/Projetos/Callidus/` um repositório git espelhando docs/media/internal do Agent Store, reescrever links `/cursor/stores/self/…` e registrar README + estratégia git vs Context.
 
@@ -16,7 +18,7 @@ Criar em `~/Documents/Projetos/Callidus/` um repositório git espelhando docs/me
 
 Nenhuma — tarefa encerrada; opcional: configurar remote GitHub e script de sync store ↔ repo.
 
-## Etapas
+## 🔄 Etapas
 
 - [x] Criar este arquivo a partir do modelo e preencher metadados
 - [x] Identificar ramos de regras necessários no hub

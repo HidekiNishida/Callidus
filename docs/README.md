@@ -1,11 +1,15 @@
 # Documentação (`docs/`) — Índice geral
 
+![referencias](/media/icons/referencias.svg){width=48}
+
+O índice geral da documentação: onde está cada assunto e quando consultá-lo.
+
 Índice de nível 1: **onde está cada assunto** e **quando consultar**. A estratégia é de
 divulgação progressiva — comece por [`../README.md`](../README.md), siga o link do assunto e
 desça até o detalhe. Quem procura uma funcionalidade em código deve usar os
 [READMEs de módulo](/src/agent/README.md) e o [mapa de módulos](/docs/architecture/visao-geral.md).
 
-## Como escolher por onde começar
+## 🗺️ Como escolher por onde começar
 
 | Se você quer… | Comece por |
 |---------------|-----------|
@@ -20,7 +24,7 @@ desça até o detalhe. Quem procura uma funcionalidade em código deve usar os
 | Trabalhar na interface | [frontend.md](/docs/architecture/frontend.md) · [api/README.md](/src/agent/api/README.md) |
 | Escrever ou ajustar testes | [validacoes-testes.md](/docs/regras/validacoes-testes.md) · [tests/](/tests) |
 
-## Arquitetura e runtime
+## 🏗️ Arquitetura e runtime
 
 | Documento | Assunto | Quando consultar |
 |-----------|---------|------------------|
@@ -46,7 +50,7 @@ desça até o detalhe. Quem procura uma funcionalidade em código deve usar os
 | [architecture/limitacoes.md](/docs/architecture/limitacoes.md) | Lacunas conhecidas | Antes de prometer algo que ainda não existe |
 | [architecture/diagnostico-evolucao.md](/docs/architecture/diagnostico-evolucao.md) | Diagnóstico e plano de evolução | Ao planejar a próxima versão |
 
-## Regras de trabalho
+## 🗺️ Regras de trabalho
 
 | Documento | Assunto | Quando consultar |
 |-----------|---------|------------------|
@@ -61,7 +65,21 @@ desça até o detalhe. Quem procura uma funcionalidade em código deve usar os
 | [regras/navegacao-agentes.md](/docs/regras/navegacao-agentes.md) | Navegação entre agentes e papéis | Ao definir quem faz o quê |
 | [regras/readmes-pastas.md](/docs/regras/readmes-pastas.md) | Regra do README por pasta | Ao criar uma pasta |
 
-## Contexto e continuidade
+## 🧪 Verificação da própria documentação
+
+As regras acima são verificáveis por máquina — a verificação é leve e reproduzível:
+
+```bash
+source .venv/bin/activate
+python scripts/check_docs.py         # links e âncoras
+python scripts/check_references.py   # arquivos e símbolos citados
+python scripts/check_markdown.py     # estrutura dos documentos
+```
+
+Detalhes: [scripts/README.md](/scripts/README.md) · regra completa:
+[regras/documentacao.md](/docs/regras/documentacao.md).
+
+## 📚 Contexto e continuidade
 
 | Documento | Assunto | Quando consultar |
 |-----------|---------|------------------|

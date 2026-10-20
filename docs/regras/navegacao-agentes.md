@@ -60,7 +60,7 @@ flowchart TD
 
 ### Heurística de “mínimo suficiente”
 
-Pergunte: *“Sem este parágrafo, eu erraria a ação?”*  
+Pergunte: *“Sem este parágrafo, eu erraria a ação?”*
 Se não, não leia / não carregue.
 
 ---

@@ -1,8 +1,10 @@
 # Verificação (`verification/`) — Checks Determinísticos Independentes
 
+![testes](/media/icons/testes.svg){width=48}
+
 Verificação proporcional ao risco: quem executa **não** aprova o próprio resultado. Evidência persistida e reavaliada na retomada.
 
-## Módulos
+## 🏗️ Módulos
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
@@ -10,7 +12,7 @@ Verificação proporcional ao risco: quem executa **não** aprova o próprio res
 | [`recovery.py`](recovery.py) | `diagnose_verification_failure`, `plan_recovery`, `recovery_signature`, `RecoveryDiagnosis` | **Ciclo de recuperação** — classifica a causa da reprovação e decide diagnóstico → correção → re-verificação |
 | [`fingerprint.py`](fingerprint.py) | `snapshot(root, spec, tool_args)` | **Impressão digital** — SHA256 dos arquivos avaliados; detecta evidência desatualizada na retomada |
 
-## Verificadores Suportados (`runner.py`)
+## 🧪 Verificadores Suportados (`runner.py`)
 
 | Tipo (`spec.type`) | Verificador | Quando Usa | Critério |
 |-------------------|-------------|------------|----------|
@@ -24,10 +26,10 @@ Verificação proporcional ao risco: quem executa **não** aprova o próprio res
 | `acceptance_manual` | — | Critério subjetivo humano | `passed=None` (inconclusivo → `BLOCKED`) |
 | `stages` | — | Etapas anteriores concluídas | `passed=True` (atalho) |
 
-## Fluxo de Verificação (`_finalize_verification` no runner.py)
+## 🔄 Fluxo de Verificação (`TaskExecutor.finalize_verification`)
 
 ```python
-async def _finalize_verification(run, project, task, work_root, implicit_spec=None):
+async def finalize_verification(run, project, task, work_root_path=None, implicit_spec=None):
     spec = task.metadata.get("verification") or implicit_spec or task.metadata.get("implicit_verification")
     if not spec:
         # Sem verificação declarada → completa sem evidência (apenas leitura/operação sem risco)
@@ -68,7 +70,7 @@ async def _finalize_verification(run, project, task, work_root, implicit_spec=No
         return {"action": "verify_inconclusive"}
 ```
 
-## Ciclo de Recuperação (`recovery.py`)
+## 🔄 Ciclo de Recuperação (`recovery.py`)
 
 Verificação reprovada não encerra a tarefa: o agente **diagnostica**, **corrige** e **re-verifica**.
 
@@ -91,7 +93,7 @@ plan = plan_recovery(diagnosis, attempt_count=recoveries, max_recoveries=setting
 
 A assinatura da falha (`recovery_signature`) ignora números, paths e hashes — a mesma causa não vira laço diferente. O limite é `verification_max_recoveries` (2 por padrão).
 
-## Verificação Implícita (Escrita de Arquivo)
+## 🧪 Verificação Implícita (Escrita de Arquivo)
 
 Quando o modelo faz `model_operation` (edit_file/write_file), o orquestrador cria verificação implícita:
 
@@ -105,7 +107,7 @@ implicit = {
 }
 ```
 
-## Fingerprint (`fingerprint.py`)
+## 🛠️ Fingerprint (`fingerprint.py`)
 
 ```python
 def snapshot(root: str, spec: dict, tool_args: dict) -> dict:
@@ -121,7 +123,7 @@ def snapshot(root: str, spec: dict, tool_args: dict) -> dict:
 
 **Na retomada**: `reopen_verification_gaps` compara fingerprint salvo vs atual → se mudou, evidência vira `desatualizada` e tarefa reabre para verificar de novo.
 
-## Estados de Evidência (`detail_json.state`)
+## 🧪 Estados de Evidência (`detail_json.state`)
 
 | Estado | `passed` | Efeito na Task |
 |--------|----------|----------------|
@@ -131,7 +133,7 @@ def snapshot(root: str, spec: dict, tool_args: dict) -> dict:
 | `inconclusivo` | `null` | → `BLOCKED` (nunca conta como sucesso) |
 | `desatualizado` | mantém | Deixa de valer; tarefa reabre para verificar de novo |
 
-## Verificação Proporcional ao Risco
+## 🧪 Verificação Proporcional ao Risco
 
 | Risco | Verificador | Exemplo |
 |-------|-------------|---------|
@@ -140,7 +142,7 @@ def snapshot(root: str, spec: dict, tool_args: dict) -> dict:
 | Alto (comportamento) | `pytest` / `script` / `command` | Testes unitários, integração, build |
 | Global (integração) | Etapa `Verificação global` | Todos os requisitos obrigatórios `satisfied` |
 
-## Testes
+## 🧪 Testes
 
 ```bash
 # Verificação independente

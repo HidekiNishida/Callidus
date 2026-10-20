@@ -1,14 +1,16 @@
 # Guias (`guides/`) — Descoberta de Capacidade por Modelo
 
+![exemplos](/media/icons/exemplos.svg){width=48}
+
 Fornece linhas de capacidade específicas do modelo e resumo de guias do projeto (AGENTS.md, READMEs) para injeção no prompt de decomposição.
 
-## Módulos
+## 🏗️ Módulos
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
 | [`discover.py`](discover.py) | `capability_line(model_id)`, `guide_digest(project_root, objective)` | **Descoberta** — capability line do modelo + digest de guias do projeto |
 
-## Capability Line (`capability_line`)
+## 💡 Capability Line (`capability_line`)
 
 ```python
 # discover.py
@@ -25,7 +27,7 @@ def capability_line(model_id: str) -> str:
     return "Modelo genérico: responda SOMENTE JSON válido conforme schema."
 ```
 
-## Guide Digest (`guide_digest`)
+## 💡 Guide Digest (`guide_digest`)
 
 ```python
 # discover.py
@@ -42,7 +44,7 @@ def guide_digest(project_root: str, objective: str) -> str:
     return "\n\n".join(parts) if parts else "Sem guias de projeto encontrados."
 ```
 
-## Uso no Orquestrador
+## 🔄 Uso no Orquestrador
 
 ### Decomposição (`orchestrator/decomposition.py`)
 ```python
@@ -63,7 +65,7 @@ prompt = (
 )
 ```
 
-## Testes
+## 🧪 Testes
 
 ```bash
 pytest tests/test_guides_and_closing.py -v

@@ -60,6 +60,57 @@ def _resolve(source: Path, target: str) -> Path | None:
     return (source.parent / clean).resolve()
 
 
+def _normalizar(texto: str) -> str:
+    """Forma comparável de um título ou de uma âncora.
+
+    A comparação ignora a diátese do gerador de âncoras (espaços duplicados,
+    travessões, acentos): o que importa é que a seção exista.
+
+    Args:
+        texto: título ou âncora.
+
+    Returns:
+        A forma normalizada (sem pontuação, espaços ou acentos).
+    """
+    limpo = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", texto)
+    limpo = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", limpo)
+    limpo = re.sub(r"[^\w\s]", "", limpo.strip().lower())
+    return re.sub(r"\s+", "", limpo)
+
+
+def _ancoras_validas(arquivo: Path) -> list[str]:
+    """Âncoras internas de um documento que não correspondem a nenhum título.
+
+    Args:
+        arquivo: documento Markdown.
+
+    Returns:
+        Lista de âncoras quebradas (vazio quando todas existem).
+    """
+    texto = arquivo.read_text(encoding="utf-8")
+    dentro = False
+    titulos: set[str] = set()
+    for line in texto.splitlines():
+        if line.strip().startswith("```"):
+            dentro = not dentro
+            continue
+        if dentro:
+            continue
+        if line.startswith("#"):
+            titulos.add(_normalizar(re.sub(r"^#+\s*", "", line)))
+    quebradas: list[str] = []
+    for linha in texto.splitlines():
+        if linha.strip().startswith("```"):
+            dentro = not dentro
+            continue
+        if dentro:
+            continue
+        for alvo in re.findall(r"\]\(#([^)]+)\)", linha):
+            if _normalizar(unquote(alvo)) not in titulos:
+                quebradas.append(alvo)
+    return quebradas
+
+
 def main(argv: list[str]) -> int:
     """Verifica os links da documentação.
 
@@ -79,6 +130,9 @@ def main(argv: list[str]) -> int:
                 continue
             if not resolved.exists():
                 broken.append(f"{file.relative_to(ROOT)}: {match.group(1)}")
+    for file in _targets(paths):
+        for alvo in _ancoras_validas(file):
+            broken.append(f"{file.relative_to(ROOT)}: âncora «#{alvo}» não corresponde a nenhum título")
     if not broken:
         print("Links internos da documentação conferidos: nenhum quebrado.")
         return 0

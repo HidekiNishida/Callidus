@@ -25,6 +25,8 @@ keywords:
   - dependências
 ---
 
+![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
+
 ## Critérios de ativação
 - Tarefas de planejamento de novas camadas, refatorações globais ou decomposição complexa
 
@@ -41,5 +43,5 @@ keywords:
 - Diagramas e contratos de interface consistentes
 - Ausência de dependências circulares
 
-## Riscos
+## ⚠️ Riscos
 - Sobre-engenharia com abstrações vazias ou excesso de indireção

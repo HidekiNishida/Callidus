@@ -1,8 +1,10 @@
 # Serviços (`services/`) — Regras de Negócio (15 Services)
 
+![configuracao](/media/icons/configuracao.svg){width=48}
+
 Camada de aplicação sobre o ORM: CRUD, transições, worker autônomo, scheduler, métricas, contratos, memória, knowledge graph — e a camada de **agentes** (agente lógico, execução, consulta e escalonador).
 
-## Módulos (15 Services)
+## 🏗️ Módulos (18 Services)
 
 | Arquivo | Classe | Responsabilidade |
 |---------|--------|------------------|
@@ -24,8 +26,10 @@ Camada de aplicação sobre o ORM: CRUD, transições, worker autônomo, schedul
 | [`agent_service.py`](agent_service.py) | `AgentService` | **Agente lógico** — `ensure_agent`, `start_execution`, `suspend`, `resume`, `save_checkpoint`, `record_finding`, `discard` |
 | [`query_service.py`](query_service.py) | `QueryService` | **Consultas entre agentes** — `ask`, `resolve`, `answer_from_persisted`, `pending_for` |
 | [`agent_scheduler.py`](agent_scheduler.py) | `AgentScheduler` | **Escalonador por eventos** — fila de operações elegíveis, uma por vez, sem espera que gasta token |
+| [`branches.py`](branches.py) | `ancestor_chain`, `memory_visible`, `visible_tasks` | **Visibilidade por ramo** — a memória do projeto vale para todos; a da conversa segue o ramo e os anteriores |
+| [`cascade.py`](cascade.py) | `delete_cascade` | **Remoção em cascata** — apaga a linha e tudo que depende dela, na ordem topológica do grafo de chaves estrangeiras |
 
-## Fluxos Principais
+## 🔄 Fluxos Principais
 
 ### Criação de Tarefa (`TaskService.create_task`)
 ```python
@@ -73,13 +77,14 @@ AgentService(session).suspend(agent.id)                 # libera a execução, g
 
 query = QueryService(session).ask(pai.id, filho.id, "causa da falha?")
 resposta = await QueryService(session).resolve(query.id)  # estado persistido primeiro
+```
 
 ### Tentativas (`AttemptService`)
 - **Dedup**: `prompt_fp` = hash(messages + generation params) — mesmo prompt não reenvia
 - **Fingerprint**: hash da resposta (stdout/stderr/result) — detecta loop de output
 - **Contadores**: `count_attempts(task_id)`, `attempts_exhausted(task_id)` (respeita `max_attempts_per_task`)
 
-## Testes
+## 🧪 Testes
 
 ```bash
 # CRUD básico

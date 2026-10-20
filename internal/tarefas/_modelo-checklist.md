@@ -1,5 +1,9 @@
 # Checklist: ⟨título curto da atividade⟩
 
+![tarefas](/media/icons/tarefas.svg){width=48}
+
+O modelo de checklist usado por toda atividade do projeto.
+
 | Campo | Valor |
 |-------|-------|
 | Estado | em andamento |
@@ -8,7 +12,7 @@
 | Agente / tarefa | ⟨id ou descrição⟩ |
 | Regras consultadas | [Hub](/docs/regras/README.md) |
 
-## Objetivo
+## 🎯 Objetivo
 
 ⟨1–3 frases: o que sucesso significa⟩
 
@@ -16,7 +20,7 @@
 
 ⟨Uma linha: o primeiro passo concreto a fazer agora⟩
 
-## Etapas
+## 🔄 Etapas
 
 - [ ] Criar este arquivo a partir do modelo e preencher metadados
 - [ ] Identificar ramos de regras necessários no hub

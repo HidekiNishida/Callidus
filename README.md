@@ -4,6 +4,10 @@
 
 # Callidus
 
+![objetivo](/media/icons/objetivo.svg){width=48}
+
+A porta de entrada do Callidus: o que é, como rodar e para onde ir.
+
 > **Um agente de programação que roda na sua máquina** — você pede, ele planeja, divide em tarefas pequenas, chama um modelo local (Ollama/llama.cpp), executa ferramentas determinísticas, verifica o resultado e devolve a resposta final.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
@@ -18,7 +22,7 @@
 
 ---
 
-## 📌 Visão Geral & Proposta de Valor
+## 🎯 Visão Geral & Proposta de Valor
 
 ### O que é
 Um **agente de desenvolvimento autônomo** que opera 100% local (sem nuvem obrigatória). Você escreve um pedido no chat (ex.: "crie uma tela de login") e o agente:
@@ -234,7 +238,7 @@ sequenceDiagram
 | **`src/agent/domain/state_machine.py`** | Transições válidas de `TaskStatus` | Toda mudança de status (`TaskService.update_status`) | `TaskStatus` atual → `TaskStatus` alvo → `bool` / `raise InvalidTransitionError` |
 | **`src/agent/domain/schemas.py`** | Contratos Pydantic (API boundaries) | Serialização/validação request/response | JSON HTTP ↔ Modelos SQLAlchemy |
 | **`src/agent/domain/failures.py`** | Classificação de falhas (categoria, causa) | `AttemptService.record`, `RunOrchestrator._remember_failure` | Exceção/resultado bruto → `Failure` estruturado (signature, strategy) |
-| **`src/agent/persistence/models.py`** | Modelos SQLAlchemy (tabelas) | Migração/criação tabelas + runtime ORM | 14 tabelas: projects, tasks, runs, attempts, events, memory, evidence, kg_nodes/edges, contracts, context_snapshots, branches, deps, scheduled_runs |
+| **`src/agent/persistence/models.py`** | Modelos SQLAlchemy (tabelas) | Migração/criação tabelas + runtime ORM | 22 tabelas: projects, project_remotes, conversations, tasks, branches, task_dependencies, execution_runs, scheduled_runs, automations, automation_firings, automation_events, operation_attempts, event_logs, memory_records, kg_nodes, kg_edges, task_contracts, context_snapshots, evidences, agents, agent_executions, agent_queries |
 | **`src/agent/persistence/database.py`** | Engine, session_factory, init_db | Startup (`get_engine`) + testes | `Settings.resolved_database_url()` → `Engine` + `sessionmaker` |
 | **`src/agent/services/project_service.py`** | CRUD projetos + memória + knowledge graph | API `/projects/*`, `/memory/*`, `/knowledge/*` | DB → ProjectModel, MemoryRecord, KgNode/Edge |
 | **`src/agent/services/conversation_service.py`** | CRUD conversas + branches + fork | API `/conversations/*`, `/projects/{id}/conversations/*` | DB → ConversationModel, BranchModel |
@@ -242,7 +246,7 @@ sequenceDiagram
 | **`src/agent/services/run_service.py`** | CRUD runs + pause/resume/cancel | API `/runs/*`, AutonomousWorker | DB → ExecutionRunModel + `RunStatus` |
 | **`src/agent/services/autonomous_worker.py`** | Loop background: step() runs autônomos | `enable_background_worker=true` (startup) | `RunOrchestrator.step()` a cada 2s para runs `ACTIVE` + `autonomous=true` |
 | **`src/agent/services/contract_service.py`** | Contratos de tarefa (inputs/outputs/invariants/acceptance) | API `/tasks/{id}/contract`, Orchestrator (validate_for_run) | DB → TaskContractModel |
-| **`src/agent/services/attempt_service.py`** | Tentativas: dedup (prompt_fp), fingerprint, contadores | `RunOrchestrator._execute_task`, `_finalize_verification` | DB → OperationAttemptModel |
+| **`src/agent/services/attempt_service.py`** | Tentativas: dedup (prompt_fp), fingerprint, contadores | `TaskExecutor.execute`, `TaskExecutor.finalize_verification` | DB → OperationAttemptModel |
 | **`src/agent/services/metrics_service.py`** | Métricas de projeto/run | API `/projects/{id}/metrics`, `/runs/{id}/metrics` | DB → agregações (tasks por status, tokens, tentativas, evidências) |
 | **`src/agent/services/inbox.py`** | Projeto "inbox" (sem pasta escolhida) | Criação de tarefas/conversas sem project_id | Resolve pasta do usuário (`Path.home()`) |
 | **`src/agent/services/fs_browse.py`** | Navegação de pastas (API `/fs/browse`, `/fs/pick-folder`) | UI escolhe pasta do projeto | `os.listdir` + `pick_folder_native` (macOS `osascript`) |
@@ -265,10 +269,10 @@ sequenceDiagram
 | **`src/agent/orchestrator/usage.py`** | Acúmulo de tokens (prompt + completion) | `remember_usage` (provider) + `_apply_provider_usage` | `provider.last_usage` → `task.metadata_json.usage` |
 | **`src/agent/context/assembler.py`** | Monta componentes do prompt da operação | `OperationContextBuilder.build_for_task` | `ContextComponent[]` (required + optional) → `BudgetResult` (messages + tokens) |
 | **`src/agent/context/budget.py`** | Orçamento de tokens + compactação | `assemble_messages` + `compact_text` | `ModelProfile` + components → `messages` dentro de `input_budget` (erra `ContextBudgetError`) |
-| **`src/agent/context/operation_builder.py`** | Constrói contexto específico da task | `RunOrchestrator._execute_task` (model_operation) | `project_id, task, profile, run_id` → `BudgetResult` + `ContextSnapshotModel` |
-| **`src/agent/providers/base.py`** | Interface `LLMProvider` + `ModelProfile` + `ProviderCapabilities` + erros tipados | Factory `_select_provider` + `profile_from_run_config` | `ChatCompletionRequest` → `ChatCompletionResponse` (streaming opcional, `tool_calls`, capacidades declaradas) |
+| **`src/agent/context/operation_builder.py`** | Constrói contexto específico da task | `ModelOperation.run` (model_operation) | `project_id, task, profile, run_id` → `BudgetResult` + `ContextSnapshotModel` |
+| **`src/agent/providers/base.py`** | Interface `LLMProvider` + `ModelProfile` + `ProviderCapabilities` + erros tipados | `select_provider` (execution/providers.py) + `profile_from_run_config` | `ChatCompletionRequest` → `ChatCompletionResponse` (streaming opcional, `tool_calls`, capacidades declaradas) |
 | **`src/agent/providers/http.py`** | Transporte HTTP comum (timeout, TLS, erros, redação, retry) | Todo provedor HTTP | `HttpClientConfig` → `httpx` → erros tipados (`timeout`, `conexão`, `401`, `429`, `5xx`) |
-| **`src/agent/providers/registry.py`** | Configuração declarativa + fábrica de provedores | `_select_provider` + API `/providers` | Arquivo YAML/JSON + `${VAR}` → `ProviderSpec` → instância do provedor |
+| **`src/agent/providers/registry.py`** | Configuração declarativa + fábrica de provedores | `select_provider` (execution/providers.py) + API `/providers` | Arquivo YAML/JSON + `${VAR}` → `ProviderSpec` → instância do provedor |
 | **`src/agent/providers/ollama.py`** | Provider Ollama (`/api/chat`, streaming) | `default_provider=ollama` | HTTP `httpx` → Ollama local ou remoto → tokens estimados (`prompt_eval_count`, `eval_count`) |
 | **`src/agent/providers/llamacpp.py`** | Provider llama.cpp (OpenAI-compat `/v1`) | `default_provider=llamacpp` | HTTP `httpx` → llama-server local ou remoto → tokens (`usage.prompt_tokens`, `usage.completion_tokens`) |
 | **`src/agent/providers/openai_compatible.py`** | Adaptador reutilizável de API compatível com OpenAI | `type: openai_compatible` | HTTP `httpx` → gateway/provedor compatível → `chat/completions` (stream ou não) |
@@ -277,11 +281,11 @@ sequenceDiagram
 | **`src/agent/providers/gemini.py`** | Provider Gemini (`generateContent` nativo) | `type: gemini` | HTTP `httpx` → `generativelanguage.../generateContent` → `contents`/`parts` e `usageMetadata` |
 | **`src/agent/providers/mock.py`** | Provider mock (keyword_map) | Testes / `ALLOW_MOCK_FALLBACK` | `keyword_map` → resposta canned |
 | **`src/agent/providers/observed.py`** | Wrapper `observed_chat` (emite eventos de streaming) | Toda chamada a provider no Orchestrator | `provider.chat/stream` → EventBus (`agent.started`, `agent.output.delta`, `agent.output.completed`) |
-| **`src/agent/tools/registry.py`** | Registro central + execução + aliases | `build_default_registry()` + `RunOrchestrator._tools.execute` | `ToolSpec` + `ToolHandler` → `canonical_tool_id` → execução + eventos (`tool.started/completed/failed`) |
+| **`src/agent/tools/registry.py`** | Registro central + execução + aliases | `build_default_registry()` + `TaskExecutor` (via `ToolRegistry.execute`) | `ToolSpec` + `ToolHandler` → `canonical_tool_id` → execução + eventos (`tool.started/completed/failed`) |
 | **`src/agent/tools/builtins.py`** | 17 ferramentas prioritárias | Registry registra todas | `ToolContext(project_root, run_id, task_id, memory_saver, browser_mode)` → resultado dict |
-| **`src/agent/tools/browser.py`** | Navegador (Playwright CDP) | `browser_mode=headless|visible` + tool `browser` | `browser_call(action, args, headed)` → snapshot/click/type/scroll/search |
+| **`src/agent/tools/browser.py`** | Navegador (Playwright CDP) | `browser_mode=headless\|visible` + tool `browser` | `browser_call(action, args, headed)` → snapshot/click/type/scroll/search |
 | **`src/agent/tools/diffing.py`** | Diff unificado (linhas added/removed) | `write_file`, `edit_file`, `move_file` | `unified_diff_text(path, before, after)` → `{added, removed, diff}` |
-| **`src/agent/verification/runner.py`** | Verificações determinísticas | `_finalize_verification` + API `/verification` (futuro) | `spec.type` (pytest/script/command/file_contains/syntax/file_exists/static_analysis) → `VerificationResult` + `EvidenceModel` |
+| **`src/agent/verification/runner.py`** | Verificações determinísticas | `TaskExecutor.finalize_verification` + API `/verification` (futuro) | `spec.type` (pytest/script/command/file_contains/syntax/file_exists/static_analysis) → `VerificationResult` + `EvidenceModel` |
 | **`src/agent/verification/recovery.py`** | Ciclo diagnóstico → correção → re-verificação | Verificação reprovada | `VerificationResult` → `RecoveryDiagnosis` (causa + ação) → retry com orientação ou bloqueio |
 | **`src/agent/verification/fingerprint.py`** | Hash de artefatos (valida evidência na retomada) | `EvidenceModel.detail_json.artifacts` | `snapshot(root, spec, tool_args)` → `{"path": hash_sha256}` |
 | **`src/agent/observability/bus.py`** | EventBus em memória (ring, assinantes, operations) | `emit()` + SSE subscribers | `EventBus.publish(env)` → ring (seq) + queues (subscribers) + live outputs/operations |
@@ -522,7 +526,7 @@ código: [src/agent/providers/README.md](/src/agent/providers/README.md).
 
 ---
 
-## ⚡ Máquina de Estados e Resiliência
+## 🔄 Máquina de Estados e Resiliência
 
 ### Diagrama de Estados da Tarefa (`TaskStatus`)
 
@@ -699,24 +703,24 @@ pytest tests/test_observability_*.py -v
 | 1 | [`README.md`](README.md) | Este arquivo — visão geral completa |
 | 2 | [`docs/architecture/visao-geral.md`](docs/architecture/visao-geral.md) | Arquitetura em camadas + fases + ADRs |
 | 3 | [`docs/architecture/maquina-estados.md`](docs/architecture/maquina-estados.md) | Estados + transições + conclusão |
-| 4 | [`docs/architecture/modelo-dados.md`](docs/architecture/modelo-dados.md) | 17 tabelas + campos essenciais |
+| 4 | [`docs/architecture/modelo-dados.md`](docs/architecture/modelo-dados.md) | 22 tabelas + campos essenciais |
 | 5 | [`docs/architecture/execucao-local.md`](docs/architecture/execucao-local.md) | Instalação + padrões + conversas + memória + UI |
 | 6 | [`docs/architecture/requisitos-verificacao-progresso.md`](docs/architecture/requisitos-verificacao-progresso.md) | Requisitos rastreáveis + validação + verificação + progresso real + paus/retomada |
 | 7 | [`docs/architecture/skills-estrategia.md`](docs/architecture/skills-estrategia.md) | Skills sob demanda + estratégia profissional + decomposição recursiva + recuperação |
 | 8 | [`docs/architecture/hierarquia-agentes.md`](docs/architecture/hierarquia-agentes.md) | **Hierarquia de agentes** — executor compartilhado, ciclo de vida, consultas sob demanda, escalonador |
 | 9 | [`src/agent/config.py`](src/agent/config.py) | Todas as configurações + `resolved_database_url()` |
-| 9 | [`src/agent/domain/state_machine.py`](src/agent/domain/state_machine.py) | Transições válidas (código executável) |
-| 10 | [`src/agent/persistence/models.py`](src/agent/persistence/models.py) | Modelos SQLAlchemy (tabelas reais) |
-| 11 | [`src/agent/orchestrator/runner.py`](src/agent/orchestrator/runner.py) | **Coração do ciclo** — `step()`, `_step_body()`, planejamento, estagnação e pausa |
-| 12 | [`src/agent/orchestrator/execution/README.md`](src/agent/orchestrator/execution/README.md) | **Execução de uma tarefa** — despacho, operação de modelo, escrita e verificação |
-| 13 | [`src/agent/orchestrator/decomposition.py`](src/agent/orchestrator/decomposition.py) | Como o plano nasce (modelo → template → mock) |
-| 14 | [`src/agent/orchestrator/plan_validation.py`](src/agent/orchestrator/plan_validation.py) | Regras determinísticas que aceitam/bloqueiam planos |
-| 15 | [`src/agent/verification/runner.py`](src/agent/verification/runner.py) | Verificadores determinísticos (pytest, file_contains, syntax, static_analysis) |
-| 16 | [`src/agent/tools/builtins.py`](src/agent/tools/builtins.py) | 17 ferramentas reais + `TOOL_CATALOG` que o modelo vê |
-| 17 | [`src/agent/providers/ollama.py`](src/agent/providers/ollama.py) | Integração HTTP + streaming real com Ollama |
-| 18 | [`src/agent/services/autonomous_worker.py`](src/agent/services/autonomous_worker.py) | Loop background que roda sozinho |
-| 19 | [`web/static/assets/app/`](web/static/assets/app/) | SPA Vue 3: chat, plano, diff, acompanhamento, paleta de comandos, provedores e ajustes (responsivo) |
-| 20 | [`tests/test_e2e_orchestrator.py`](tests/test_e2e_orchestrator.py) | Teste E2E completo (mock provider) |
+| 10 | [`src/agent/domain/state_machine.py`](src/agent/domain/state_machine.py) | Transições válidas (código executável) |
+| 11 | [`src/agent/persistence/models.py`](src/agent/persistence/models.py) | Modelos SQLAlchemy (tabelas reais) |
+| 12 | [`src/agent/orchestrator/runner.py`](src/agent/orchestrator/runner.py) | **Coração do ciclo** — `step()`, `_step_body()`, planejamento, estagnação e pausa |
+| 13 | [`src/agent/orchestrator/execution/README.md`](src/agent/orchestrator/execution/README.md) | **Execução de uma tarefa** — despacho, operação de modelo, escrita e verificação |
+| 14 | [`src/agent/orchestrator/decomposition.py`](src/agent/orchestrator/decomposition.py) | Como o plano nasce (modelo → template → mock) |
+| 15 | [`src/agent/orchestrator/plan_validation.py`](src/agent/orchestrator/plan_validation.py) | Regras determinísticas que aceitam/bloqueiam planos |
+| 16 | [`src/agent/verification/runner.py`](src/agent/verification/runner.py) | Verificadores determinísticos (pytest, file_contains, syntax, static_analysis) |
+| 17 | [`src/agent/tools/builtins.py`](src/agent/tools/builtins.py) | 17 ferramentas reais + `TOOL_CATALOG` que o modelo vê |
+| 18 | [`src/agent/providers/ollama.py`](src/agent/providers/ollama.py) | Integração HTTP + streaming real com Ollama |
+| 19 | [`src/agent/services/autonomous_worker.py`](src/agent/services/autonomous_worker.py) | Loop background que roda sozinho |
+| 20 | [`web/static/assets/app/`](web/static/assets/app/) | SPA Vue 3: chat, plano, diff, acompanhamento, paleta de comandos, provedores e ajustes (responsivo) |
+| 21 | [`tests/test_e2e_orchestrator.py`](tests/test_e2e_orchestrator.py) | Teste E2E completo (mock provider) |
 
 ### READMEs dos Subdiretórios (Índices Navegáveis)
 
@@ -733,7 +737,7 @@ pytest tests/test_observability_*.py -v
 
 ---
 
-## 📂 Estrutura do Repositório (Resumo)
+## 🏗️ Estrutura do Repositório (Resumo)
 
 ```text
 Callidus/
@@ -742,7 +746,7 @@ Callidus/
 ├── backups/              # Backups manuais do SQLite
 ├── data/                 # Runtime (gitignored): agent.db, mcp.json, logs
 ├── docs/
-│   ├── architecture/     # 16 docs técnicos (visão, estados, modelo, execução, requisitos, skills, automações, etc.)
+│   ├── architecture/     # 23 docs técnicos (visão, decisões, estados, modelo, execução, requisitos, skills, automações, etc.)
 │   ├── regras/           # Como agentes trabalham (readmes-pastas, commits, checklists, etc.)
 │   ├── project-context.md
 │   └── README.md
@@ -801,7 +805,7 @@ Callidus/
 
 ---
 
-## 🔗 Links Úteis Rápidos
+## 📚 Links Úteis Rápidos
 
 - **API Docs (Swagger)**: `http://127.0.0.1:8765/docs`
 - **Health Check**: `GET /health`

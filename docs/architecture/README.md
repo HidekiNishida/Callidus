@@ -4,7 +4,7 @@
 
 Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 
-## Documentos
+## 📚 Documentos
 
 | Doc | Tema |
 |-----|------|

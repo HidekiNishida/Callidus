@@ -1,8 +1,10 @@
 # Contexto (`context/`) — Orçamento de Tokens + Montagem de Prompt
 
+![configuracao](/media/icons/configuracao.svg){width=48}
+
 Gestão determinística do que cabe na janela de contexto do modelo: componentes com prioridade, compactação seletiva e erro se obrigatórios não couberem.
 
-## Módulos
+## 🏗️ Módulos
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
@@ -10,7 +12,7 @@ Gestão determinística do que cabe na janela de contexto do modelo: componentes
 | [`assembler.py`](assembler.py) | `build_operation_context` | **Prompt da operação** — componentes fixos + opcionais (tentativas, contrato, arquivos-alvo, objetivo global, deps) |
 | [`operation_builder.py`](operation_builder.py) | `OperationContextBuilder.build_for_task` | **Builder por task** — usa `assembler` + grava `ContextSnapshotModel` |
 
-## Componentes do Prompt (Prioridades)
+## 🏗️ Componentes do Prompt (Prioridades)
 
 ```python
 # assembler.py - build_operation_context
@@ -43,7 +45,7 @@ O bloco `skills` (prioridade 75) traz as competências selecionadas sob demanda
 - o bloco é limitado a **12% do orçamento de entrada** do modelo e a `skills_max_per_operation` skills (2);
 - por ser **opcional**, é descartado quando o orçamento aperta — o obrigatório nunca é cortado.
 
-## Orçamento (`budget.py`)
+## ⚙️ Orçamento (`budget.py`)
 
 ```python
 def assemble_messages(profile: ModelProfile, components: list[ContextComponent]) -> BudgetResult:
@@ -59,7 +61,7 @@ def assemble_messages(profile: ModelProfile, components: list[ContextComponent])
 
 **`ContextBudgetError`**: levantada se required > `input_budget` — orchestrator tenta `compact=True` uma vez, se ainda falha → task `BLOCKED` com detalhe do maior componente.
 
-## OperationContextBuilder (`operation_builder.py`)
+## ⚙️ OperationContextBuilder (`operation_builder.py`)
 
 ```python
 class OperationContextBuilder:
@@ -81,7 +83,7 @@ class OperationContextBuilder:
         # 4. Retorna (BudgetResult, snapshot)
 ```
 
-## Uso no Orquestrador (`runner.py`)
+## 🔄 Uso no Orquestrador (`runner.py`)
 
 ```python
 builder = OperationContextBuilder(session)
@@ -93,7 +95,7 @@ except ContextBudgetError:
     # Se ainda falha → _context_overflow → task BLOCKED
 ```
 
-## Configuração (Settings)
+## ⚙️ Configuração (Settings)
 
 | Variável | Padrão | Efeito |
 |----------|--------|--------|
@@ -102,7 +104,7 @@ except ContextBudgetError:
 | `DEFAULT_OUTPUT_RESERVE` | `1024` | Reserva para completion (`ModelProfile.output_reserve`) |
 | `skills_max_per_operation` | `2` | Quantas skills entram no prompt da operação |
 
-## Testes
+## 🧪 Testes
 
 ```bash
 pytest tests/test_context_budget.py -v

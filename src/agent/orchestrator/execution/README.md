@@ -1,12 +1,14 @@
 # Execução de Tarefa (`orchestrator/execution/`) — Como uma Etapa Roda
 
+![fluxos](/media/icons/fluxos.svg){width=48}
+
 O pacote onde **uma** tarefa da árvore é executada: o despacho (MCP, modelo, ferramenta do plano,
 verificação), a operação de modelo, a escrita do arquivo e a evidência.
 
 O [`runner.py`](../runner.py) continua sendo o dono do **ciclo** (quando rodar, qual etapa,
 quando pausar); este pacote é o dono do **como**.
 
-## Arquivos
+## 📁 Arquivos
 
 | Arquivo | Símbolos principais | Responsabilidade |
 |---------|---------------------|------------------|
@@ -21,7 +23,7 @@ quando pausar); este pacote é o dono do **como**.
 | [`journal.py`](journal.py) | `note_thought`, `remember_failure` | Diário da execução: o que está acontecendo e o que já falhou |
 | [`workspace.py`](workspace.py) | `work_root` | Resolve a pasta de trabalho (projeto ou conversa) |
 
-## Contratos
+## 🧠 Contratos
 
 | Entrada | Quem chama | Garantia |
 |---------|-----------|----------|
@@ -29,14 +31,14 @@ quando pausar); este pacote é o dono do **como**.
 | `TaskExecutor.finalize_verification(...)` | `execute`, `write_final_answer` | Grava `EvidenceModel`; nunca aprova o resultado de quem executou |
 | `ExecutionRuntime.provider_factory` | `RunOrchestrator` | Ponto de injeção do provedor (mesmo lugar onde os testes injetam o seu) |
 
-## Invariantes
+## 🧠 Invariantes
 
 - **A verificação é independente de quem executa**: o modelo propõe, o verificador julga.
 - **A recusa de escrita é resultado, não bloqueio**: repetir o mesmo pedido não muda a permissão.
 - **A evidência nunca é apagada**: reprovar reabre a etapa, mas o histórico permanece.
 - **O provedor é explícito**: nome desconhecido é erro; o mock só entra com autorização.
 
-## Testes
+## 🧪 Testes
 
 ```bash
 pytest tests/test_model_tool_operation.py -v        # operação de modelo e ciclo de ferramentas

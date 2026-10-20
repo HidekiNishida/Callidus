@@ -1,5 +1,7 @@
 # Checklist: Hierarquia de Agentes Recursiva, Executor Compartilhado e Consultas Sob Demanda
 
+![tarefas](/media/icons/tarefas.svg){width=48}
+
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |
@@ -8,7 +10,7 @@
 | Agente / tarefa | Evolução arquitetural: agentes lógicos, execução sequencial, estado persistente, consultas entre gerações — **e** etapa de validação/otimização |
 | Regras consultadas | [Hub](/docs/regras/README.md), [principios.md](/docs/regras/principios.md), [validacoes-testes.md](/docs/regras/validacoes-testes.md), [readmes-pastas.md](/docs/regras/readmes-pastas.md), [documentacao.md](/docs/regras/documentacao.md), [checklists-tarefas.md](/docs/regras/checklists-tarefas.md), [verificacao-final.md](/docs/regras/verificacao-final.md) |
 
-## Objetivo
+## 🎯 Objetivo
 
 Evoluir o Callidus para coordenar uma hierarquia recursiva de agentes com estado
 persistente, execução estritamente sequencial no executor compartilhado e consultas
@@ -23,7 +25,7 @@ haver necessidade demonstrada): serialização entre processos via trava externa
 (universal), e indexação semântica das descobertas para as perguntas indiretas que a
 busca lexical não alcança.
 
-## Etapas
+## 🔄 Etapas
 
 ### Implementação
 

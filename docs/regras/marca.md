@@ -4,7 +4,7 @@
 
 **Regra:** o projeto se chama **Callidus**. Toda interface, documentação, metadado de API e mensagem de usuário usa o nome "Callidus" e o símbolo oficial. Termos genéricos em português ("o agente", "o runtime") continuam valendo como substantivo comum — não são nome de produto.
 
-## Identidade
+## 🎯 Identidade
 
 | Peça | Arquivo | Uso |
 |------|---------|-----|
@@ -30,7 +30,7 @@ python scripts/build_brand_assets.py
 | `callidus-lockup-vertical.svg` | Símbolo + nome, vertical (docs) |
 | `favicon.svg` | Símbolo sobre fundo escuro quadrado |
 
-## Onde o nome aparece
+## ⚙️ Onde o nome aparece
 
 | Camada | Onde |
 |--------|------|
@@ -40,7 +40,7 @@ python scripts/build_brand_assets.py
 | Runtime | `src/agent/brand.py` — constantes centralizadas (`BRAND_NAME`, `BRAND_TAGLINE`, caminhos) |
 | Documentação | Títulos, `project-context.md` (campo "Nome do Project"), READMEs de pacote |
 
-## Renomeação de identificadores técnicos
+## 🎯 Renomeação de identificadores técnicos
 
 Identificadores antigos continuam aceitos para não quebrar ambientes existentes:
 

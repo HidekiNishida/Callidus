@@ -1,5 +1,9 @@
 # Máquina de estados das tarefas
 
+![arquitetura](/media/icons/arquitetura.svg){width=48}
+
+Os estados de tarefa, run e agente e as transições válidas entre eles.
+
 Estados (`TaskStatus`):
 
 | Estado | Significado |
@@ -15,7 +19,7 @@ Estados (`TaskStatus`):
 | `FAILED` | Falha não recuperável dentro dos limites |
 | `CANCELLED` | Interrompida pelo usuário |
 
-## Transições permitidas (implementação: `domain/state_machine.py`)
+## 🔄 Transições permitidas (implementação: `domain/state_machine.py`)
 
 ```mermaid
 stateDiagram-v2
@@ -48,7 +52,7 @@ stateDiagram-v2
 
 Transições inválidas levantam `InvalidTransitionError` — nunca silenciosamente.
 
-## Agente lógico e execução
+## 🔄 Agente lógico e execução
 
 A tarefa tem a máquina acima; o **agente lógico** e a **execução** têm as suas
 (implementação: `domain/agent_lifecycle.py`).
@@ -86,7 +90,7 @@ Transições inválidas levantam `InvalidAgentTransition`: estado inconsistente 
 nunca correção silenciosa. Detalhes:
 [hierarquia-agentes.md](/docs/architecture/hierarquia-agentes.md).
 
-## Conclusão
+## 🎯 Conclusão
 
 `VERIFYING → BLOCKED`: verificação que não pôde rodar (executável ausente, aprovação pendente) ou inconclusiva; não é falha da implementação.
 

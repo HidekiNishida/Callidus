@@ -1,14 +1,16 @@
 # Segurança (`security/`) — Resolução Segura de Paths
 
+![seguranca](/media/icons/seguranca.svg){width=48}
+
 Garante que todas as operações de arquivo fiquem dentro do `project_root` autorizado. Usado por todas as ferramentas builtins e MCP.
 
-## Módulos
+## 🏗️ Módulos
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
 | [`paths.py`](paths.py) | `resolve_under_root(root, raw)`, `PathSecurityError` | **Resolução segura** — normaliza, resolve symlinks, verifica se está dentro de `root` |
 
-## `resolve_under_root(root, raw)` → `Path`
+## 🔐 `resolve_under_root(root, raw)` → `Path`
 
 ```python
 # paths.py
@@ -25,7 +27,7 @@ def resolve_under_root(root: str | Path, raw: str) -> Path:
     return candidate
 ```
 
-## Proteções
+## 🧠 Proteções
 
 | Ameaça | Como Previne |
 |--------|--------------|
@@ -34,7 +36,7 @@ def resolve_under_root(root: str | Path, raw: str) -> Path:
 | Paths absolutos | `root / raw` força relatividade ao root |
 | Null bytes / encoding | `Path` nativo lida; validação extra se necessário |
 
-## Uso nas Ferramentas (`tools/builtins.py`)
+## 🛠️ Uso nas Ferramentas (`tools/builtins.py`)
 
 ```python
 async def _read_file(ctx, args):
@@ -48,11 +50,11 @@ async def _read_file(ctx, args):
 
 Todas as 17 ferramentas builtins usam `_resolve(ctx, raw)` que chama `resolve_under_root`.
 
-## MCP
+## 🔌 MCP
 
 Servidores MCP configurados em `mcp.json` devem receber apenas paths dentro do projeto autorizado. O `McpManager` não valida paths — responsabilidade do servidor MCP (ex: `@modelcontextprotocol/server-filesystem` recebe `--path /allowed`).
 
-## Testes
+## 🧪 Testes
 
 ```bash
 # Segurança de paths é testada indiretamente via ferramentas

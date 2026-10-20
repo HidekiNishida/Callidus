@@ -1,10 +1,14 @@
 # Ciclo de ferramentas da operação
 
+![fluxos](/media/icons/fluxos.svg){width=48}
+
+O ciclo de inspeção com ferramentas antes da resposta do modelo.
+
 Módulo: [`src/agent/orchestrator/tool_loop.py`](/src/agent/orchestrator/tool_loop.py) ·
 Consumidor: [`runner.py`](/src/agent/orchestrator/runner.py) ·
 Provedores: [`ollama.py`](/src/agent/providers/ollama.py), [`openai_compatible.py`](/src/agent/providers/openai_compatible.py)
 
-## O problema
+## 🎯 O problema
 
 Um modelo treinado para ferramentas (o `gpt-oss:20b` é um deles) **não responde "crie o arquivo
 X" com JSON**: ele pede a ferramenta. Enviado um pedido sem ferramentas declaradas, o servidor
@@ -17,7 +21,7 @@ Evidência (conversa real de 19/10/2026, run `37ada39b…`): 39 chamadas ao mode
 vazias, run pausada em `blocked_attempts` sem nenhuma alteração no disco. Reprodução isolada do
 pedido com o mesmo modelo: `content` vazio e `thinking` terminando em "Let's read them".
 
-## O que existe agora
+## 🎯 O que existe agora
 
 A etapa de operação (`metadata.model_operation`) roda um **ciclo de ferramentas** explícito:
 
@@ -30,7 +34,7 @@ A etapa de operação (`metadata.model_operation`) roda um **ciclo de ferramenta
    direto para a verificação.
 5. Se o modelo responder em JSON (protocolo antigo), o caminho JSON continua valendo.
 
-```
+```text
 modelo ──tool_calls──▶ registro de ferramentas ──resultado──▶ modelo
    │                                                             │
    └────────────── resposta em JSON ──▶ verificação ◀──────────┘
@@ -40,7 +44,7 @@ O prompt da operação (`context/operation_builder.py`) diz ao modelo que ele po
 ferramentas e que a alteração pode ser feita com `write_file`/`edit_file`, e informa o orçamento de
 leituras (mesmo limite do ciclo).
 
-## A cobrança única
+## 🎯 A cobrança única
 
 Um modelo pequeno responde ao ciclo de duas formas: ou entrega o JSON pedido, ou responde
 `{}`/texto e para. O `{}` era tratado como "resposta inválida" e a **etapa inteira recomeçava**:
@@ -56,7 +60,7 @@ sem reler nada. Se ainda assim não vier o payload, a etapa segue para o diagnó
 Medido com `gpt-oss:20b` (Ollama local, 5 cenários): as falhas de modelo caíram de 15 para 1 e as
 chamadas ao modelo de 65 para 9 — ver [avaliacao.md](/docs/architecture/avaliacao.md).
 
-## Contratos
+## 🧠 Contratos
 
 | Objeto | Onde | O que garante |
 |--------|------|---------------|
@@ -67,7 +71,7 @@ chamadas ao modelo de 65 para 9 — ver [avaliacao.md](/docs/architecture/avalia
 | `AttemptKind.MODEL` com `iteration_fp` | `services/attempt_service.py` | Iteração interna do ciclo **não** conta como tentativa da tarefa (o orçamento de tentativas é da estratégia, não das leituras) |
 | `run_tool_loop(payload_ok, deliverable_hint)` | `tool_loop.py` | Cobrança única quando a resposta não é o payload esperado |
 
-## Permissões da etapa
+## 🔐 Permissões da etapa
 
 As ferramentas oferecidas no ciclo dependem da etapa: uma etapa de um pedido **somente leitura**
 recebe só as ferramentas de inspeção (`_operation_tools_for`), e a escrita é recusada antes de
@@ -75,7 +79,7 @@ tocar o disco, nos três caminhos (chamada de ferramenta durante o ciclo, JSON c
 e etapa de plano com `tool: write_file`). "Não altere nenhum arquivo" deixa de ser um texto no
 prompt — vira permissão. Ver [execucao-autonoma.md](/docs/architecture/execucao-autonoma.md#permissões-ao-pelo-do-pedido).
 
-## Limites
+## ⚠️ Limites
 
 - `max_tool_iterations` (padrão 6, `Settings`): rodadas de inspeção. Ao estourar, o ciclo faz uma
   última chamada com o mesmo histórico e a instrução de fazer a alteração agora.
@@ -83,7 +87,7 @@ prompt — vira permissão. Ver [execucao-autonoma.md](/docs/architecture/execuc
 - A escrita continua passando pelo registro de ferramentas: uma só origem de mutação no disco.
 - Provedores sem `tool_loop` (Anthropic, Gemini, mock) seguem no protocolo JSON de uma tacada.
 
-## Diagnóstico
+## ⚠️ Diagnóstico
 
 | Sintoma | Causa | O que fazer |
 |---------|-------|-------------|

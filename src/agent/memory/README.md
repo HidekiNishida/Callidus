@@ -1,15 +1,17 @@
 # Memória (`memory/`) — Extração e Gravação (Project + Conversation)
 
+![arquivos](/media/icons/arquivos.svg){width=48}
+
 Sistema de memória tipada com dois escopos: projeto (canônica) e conversa (contextual/execution/evidence/procedure).
 
-## Módulos
+## 🏗️ Módulos
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
 | [`store.py`](store.py) | `extract_memory_request(text)`, `memory_saver(args)` | **Interface** — detecta pedidos "lembre-se" + tool `remember` |
 | [`__init__.py`](__init__.py) | Re-exporta | `from agent.memory import extract_memory_request` |
 
-## Tipos de Memória (`MemoryKind`)
+## 🧠 Tipos de Memória (`MemoryKind`)
 
 | Kind | Escopo | Uso | Exemplo |
 |------|--------|-----|---------|
@@ -19,7 +21,7 @@ Sistema de memória tipada com dois escopos: projeto (canônica) e conversa (con
 | `EVIDENCE` | Task | Testes, logs, comandos | "pytest passou em tests/test_api.py" |
 | `PROCEDURE` | Projeto/Conv | Padrões reutilizáveis | "Como rodar testes: pytest -xvs" |
 
-## Extração Automática (`extract_memory_request`)
+## 🧠 Extração Automática (`extract_memory_request`)
 
 ```python
 # store.py
@@ -39,9 +41,9 @@ def extract_memory_request(text: str) -> tuple[str, str] | None:
     return None
 ```
 
-**Chamado em**: `api/main.py` → `create_task` (se usuário pede pra lembrar) + `tools/builtins.py` → `_remember` (tool explícita).
+**Chamado em**: `api/task_routes.py` → `create_task` (se o usuário pede para lembrar) + `tools/builtins.py` → `_remember` (tool explícita).
 
-## Tool `remember` (`tools/builtins.py`)
+## 🛠️ Tool `remember` (`tools/builtins.py`)
 
 ```python
 async def _remember(ctx: ToolContext, args: dict) -> dict:
@@ -50,7 +52,7 @@ async def _remember(ctx: ToolContext, args: dict) -> dict:
     return ctx.memory_saver(args)  # args: content, title?, scope?
 ```
 
-## Gravação (`ProjectService.add_memory`)
+## 🧠 Gravação (`ProjectService.add_memory`)
 
 ```python
 # services/project_service.py
@@ -70,13 +72,13 @@ def add_memory(self, project_id, data: MemoryCreate) -> MemoryRecordModel:
     return record
 ```
 
-## Uso no Contexto (Futuro)
+## ⚙️ Uso no Contexto (Futuro)
 
 - Memórias canônicas injetadas no prompt via `OperationContextBuilder` (global_rules)
 - Memórias contextuais da conversa injetadas conforme relevância
 - Compactação futura: nova versão com `source_refs` apontando para registros anteriores
 
-## Testes
+## 🧪 Testes
 
 ```bash
 # Memória + conversas + i18n

@@ -1,8 +1,12 @@
 # Requisitos, validação do plano, verificação independente e progresso real
 
+![testes](/media/icons/testes.svg){width=48}
+
+Como uma tarefa é verificada, medida e levada a bom término.
+
 Três mecanismos que complementam a decomposição, o contexto e a consolidação descritos em [execucao-autonoma.md](/docs/architecture/execucao-autonoma.md).
 
-## Requisitos rastreáveis
+## 🧪 Requisitos rastreáveis
 
 `src/agent/orchestrator/requirements.py`. Sem tabela nova: os requisitos ficam no contrato da raiz (`task_contracts.acceptance_json.requirements`) e a cobertura em `tasks.metadata_json.covers`.
 
@@ -53,7 +57,7 @@ já provou. Em sentido contrário, três regras impedem a conclus��o prematu
 
 **Cobertura implícita × declarada.** Se nenhuma irmã declara `covers`, toda etapa herda os requisitos do pai (cobertura implícita). Se alguma declara, a etapa sem declaração é apoio e não cobre nada, para que uma etapa genérica não mascare um requisito esquecido. No replanejamento, os requisitos da etapa parada e das irmãs não feitas passam para "Seguir com o plano corrigido".
 
-## Validação do plano antes da execução
+## 🧪 Validação do plano antes da execução
 
 `src/agent/orchestrator/plan_validation.py`. Roda logo depois de cada decomposição, sobre as etapas já gravadas (uma única implementação para planos novos e alterados). Todas as regras são determinísticas.
 
@@ -120,7 +124,7 @@ Se ainda não puder executar, nada do plano roda: as etapas são canceladas com 
 
 **Versões e revalidação.** `metadata_json.plan_validation` do pai guarda o resultado atual: veredito, achados, cobertura, bloqueadas, correções, veredito inicial, `version` e `fingerprint`. Cada versão gera um evento `plan.validated` com o plano completo. Antes de executar uma etapa, o runner compara a impressão do plano do pai (etapas, cobertura, ferramenta, verificação, dependências) e, se mudou (replanejamento, dependência nova), valida de novo (`plan_revalidated`).
 
-## Verificação independente
+## 🧪 Verificação independente
 
 Quem executa não aprova o próprio resultado. A resposta do modelo ("pronto, corrigido") não é evidência; só verificadores determinísticos geram evidência (`verification/runner.py`), escolhidos pelo risco ([verificação proporcional](/docs/architecture/execucao-autonoma.md#verificação-proporcional-ao-risco)).
 
@@ -174,7 +178,7 @@ sumir ou mudar.
 
 Nenhum resultado é inventado: sem execução não há linha de evidência. Evidência nunca é apagada. Só a mais recente vale, e só se passou, não foi marcada como desatualizada e os arquivos não mudaram.
 
-## Aceite global por requisito
+## 🧪 Aceite global por requisito
 
 O run só termina como concluído quando cada requisito obrigatório está `comprovado` (`satisfied`), além das condições anteriores (evidências atuais e consolidação sem falha). `não aplicável` e `informativo` não bloqueiam; requisito declarado `bloqueado` bloqueia.
 
@@ -194,7 +198,7 @@ Raiz sem filhas é a própria folha e cobre todos os requisitos.
 
 **Relatório parcial.** Se ainda assim faltar, o run para (`run_stalled`) com `consolidated_result_json.requirements` e uma tabela "Requisitos" na mensagem (comprovado, não executado, sem evidência...), além das pendências. Na conclusão, o mesmo relatório fica em `requirements`, com os ids das evidências.
 
-## Progresso real: estagnação, limites, pausa e retomada
+## 🔄 Progresso real: estagnação, limites, pausa e retomada
 
 Atividade não é progresso: chamada ao modelo, tentativa nova, plano novo ou tarefa "concluída" sem evidência não contam. Progresso é o estado verificável melhorar (`orchestrator/progress.made_progress`: mais tarefas verificadas, ou menos pendências sem perder verificadas), gravado em cada `orchestrator.action`.
 
@@ -242,7 +246,7 @@ Passo em run pausado não faz nada (`run_paused`).
 
 O trabalho comprovado não é refeito. As evidências desatualizadas são reabertas no aceite global.
 
-## Ciclo integrado
+## 🔄 Ciclo integrado
 
 Não há um laço monolítico novo. Cada etapa do ciclo conceitual fica no componente que já tinha essa responsabilidade:
 
@@ -251,13 +255,13 @@ Não há um laço monolítico novo. Cada etapa do ciclo conceitual fica no compo
 | 1–2. Estado persistido, objetivo e critérios | `RunOrchestrator._step_body` lê do banco; `ensure_requirements` grava os requisitos na primeira passagem da raiz |
 | 3–4. Cobertura e integridade do plano; corrigir ou bloquear | `validate_and_repair` ao decompor; `_revalidate_plan` quando o plano muda |
 | 5–6. Tarefa elegível; atomicidade, contexto e contrato | `_pick_next_task`, `_recursion_guard`, orçamento de contexto, `ContractService.validate_for_run` |
-| 7–8. Executar; persistir resultado e tentativa | `_execute_task`, `AttemptService.record` |
-| 9–10. Verificar artefatos; evidências e requisitos | `_finalize_verification`, `requirement_status` |
+| 7–8. Executar; persistir resultado e tentativa | `TaskExecutor.execute`, `AttemptService.record` |
+| 9–10. Verificar artefatos; evidências e requisitos | `TaskExecutor.finalize_verification`, `requirement_status` |
 | 11–12. Progresso real; corrigir, replanejar ou pausar | `progress_state` em cada ação, `_check_stagnation`, `replan_under`, `limit_reached`/`_pause_run` |
 | 13–14. Dependências; consolidar | `dependencies_satisfied`, `consolidate_parent` |
 | 15–16. Aceite global; relatório fiel | `evaluate_global_acceptance`, `reopen_verification_gaps`, `correct_requirement_gaps`, relatório `requirements` na conclusão, na parada e na pausa |
 
-## Retomada e integridade
+## 🔄 Retomada e integridade
 
 - **Fonte de verdade.** O banco é a fonte de verdade: requisitos no contrato, cobertura e validação do plano nos metadados, versões do plano em `plan.validated`, evidências ligadas à tentativa (`attempt_id`), progresso em cada `orchestrator.action`. Nada depende da memória do modelo.
 - **Interrupção.** Cada passo grava tudo na mesma sessão. Interromper entre passos deixa o último estado consistente, e o passo seguinte recomeça da tarefa selecionada.
@@ -265,7 +269,7 @@ Não há um laço monolítico novo. Cada etapa do ciclo conceitual fica no compo
 - **Pausa e retomada.** A pausa por limite não muda tarefas. A retomada só reativa o run e reinicia o orçamento, e o que foi comprovado não é refeito. `apply_resume` (pedido de continuar pelo chat) reaproveita o run pausado.
 - **Repetir sem duplicar.** A correção por requisito é criada uma vez por requisito. A etapa de verificação global também é criada uma vez. Repetir uma escrita grava o mesmo conteúdo.
 
-## Limitações e casos inconclusivos
+## ⚠️ Limitações e casos inconclusivos
 
 - A derivação de requisitos é determinística e textual: itens enumerados do objetivo e dos critérios de aceite. Um pedido em prosa corrida vira um único requisito. O contrato pode declarar requisitos explícitos.
 - A evidência de mudança é proporcional, mas depende do que existe: sem testes no projeto, a escrita é aceita por conteúdo e sintaxe do arquivo, e nada garante o comportamento.

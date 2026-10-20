@@ -1,5 +1,7 @@
 # Checklist: Validação do plano, verificação independente e progresso real
 
+![tarefas](/media/icons/tarefas.svg){width=48}
+
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |
@@ -9,7 +11,7 @@
 | Regras consultadas | [Hub](/docs/regras/README.md), [validacoes-testes.md](/docs/regras/validacoes-testes.md), [resumo-projeto.md](/docs/regras/resumo-projeto.md) |
 | Antecessor | [evolução arquitetural](/internal/tarefas/2026-10-18-evolucao-arquitetural.md) (concluída) |
 
-## Objetivo
+## 🎯 Objetivo
 
 Validar o plano antes de executá-lo (cobertura de requisitos e integridade estrutural), aceitar resultados só com evidência independente e distinguir atividade de progresso, com limites operacionais que pausam sem perder trabalho. Mudança incremental, sem tabela nova enquanto as existentes servirem.
 
@@ -17,7 +19,7 @@ Validar o plano antes de executá-lo (cobertura de requisitos e integridade estr
 
 Nenhuma: evolução concluída. Melhorias possíveis estão em "Limitações e casos inconclusivos" do [documento](/docs/architecture/requisitos-verificacao-progresso.md#limitações-e-casos-inconclusivos).
 
-## Diagnóstico (fase A — evidências)
+## ⚠️ Diagnóstico (fase A — evidências)
 
 | # | Achado | Onde |
 |---|--------|------|
@@ -52,14 +54,14 @@ Nenhuma: evolução concluída. Melhorias possíveis estão em "Limitações e c
 | 5 | E | Assinatura normalizada de erro, estagnação, resposta em 10 passos, limites configuráveis, pausa com diagnóstico e `POST /runs/{id}/resume` | alto | 20–22, 25 |
 | 6 | G | Métricas de requisitos e pausas, retomada, ponta a ponta com correção, documentação | baixo | 26, 27, 30 |
 
-## Riscos
+## ⚠️ Riscos
 
 - Exigir evidência por requisito pode reprovar runs que hoje concluem (pergunta simples, leitura). Mitigação: requisito de resposta aceita a evidência estrutural da resposta final; requisito de mudança exige verificador.
 - Validação rígida pode bloquear planos do modelo local que não declaram `covers`. Mitigação: sem `covers` declarado, a cobertura é implícita e o resultado fica "válido com ressalvas" ou "inconclusivo", nunca bloqueia sozinho.
 - Gravar progresso e validar a cada passo custa consultas; árvore limitada por `max_tasks_per_run`.
 - Testes antigos que montam árvores à mão podem cair na validação; rodar a suíte inteira a cada unidade.
 
-## Etapas
+## 🔄 Etapas
 
 - [x] Criar este arquivo e preencher metadados
 - [x] Fase A: inspeção e diagnóstico (baseline 147 passam)

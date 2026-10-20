@@ -1,8 +1,12 @@
 # Código-fonte (`src/`)
 
+![referencias](/media/icons/referencias.svg){width=48}
+
+O mapa do código-fonte: onde fica cada camada.
+
 Pacote Python instalável **`callidus`** (`pip install -e .`).
 
-## Estrutura
+## 🏗️ Estrutura
 
 | Caminho | README | Responsabilidade |
 |---------|--------|------------------|
@@ -26,14 +30,14 @@ Pacote Python instalável **`callidus`** (`pip install -e .`).
 | `agent/util/` | [README.md](agent/util/README.md) | Parse JSON tolerante |
 | `agent/i18n/` | [README.md](agent/i18n/README.md) | Detecção de idioma + instrução no prompt |
 
-## Arquivos-chave na raiz do `agent/`
+## 📁 Arquivos-chave na raiz do `agent/`
 
 | Arquivo | Propósito |
 |---------|-----------|
 | [`config.py`](agent/config.py) | **Configuração central** (pydantic-settings): todas as variáveis de ambiente, `resolved_database_url()`, `get_settings()` |
 | [`__init__.py`](agent/__init__.py) | Define `__version__ = "0.1.0"` (versão do pacote; API anuncia 0.5.0) |
 
-## Execução
+## ⚙️ Execução
 
 ```bash
 # Instalação
@@ -46,7 +50,7 @@ callidus-api  # http://127.0.0.1:8765/
 pytest
 ```
 
-## Documentação Relacionada
+## 📚 Documentação Relacionada
 
 - [Arquitetura — visão geral](/docs/architecture/visao-geral.md)
 - [Modelo de dados](/docs/architecture/modelo-dados.md)

@@ -1,5 +1,9 @@
 # Limitações conhecidas (v0.5)
 
+![restricoes](/media/icons/restricoes.svg){width=48}
+
+O que o Callidus ainda não faz — e por quê.
+
 1. **Decomposição LLM** — depende de Ollama reachable; fallback template genérico pode ser grosso em repos grandes.
 2. **Visão** — referências preparadas; envio multimodal ao provedor requer perfil `supports_vision`.
 3. **Concorrência** — uma inferência ativa por vez no executor compartilhado (`MAX_CONCURRENT_INFERENCES=1`), garantida para todas as sessões e threads do **processo**. **Dois processos** inferem em paralelo (medido): serializar exigiria trava externa, não justificada na instalação local. Ferramentas externas (compilador, testes, terminal) têm ciclo de vida próprio e podem rodar fora desse limite.

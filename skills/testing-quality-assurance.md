@@ -28,6 +28,8 @@ keywords:
   - regressão
 ---
 
+![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
+
 ## Critérios de ativação
 - Subtarefas de validação e verificação de contratos
 - Criação de novos casos de teste para módulos ou APIs
@@ -45,6 +47,6 @@ keywords:
 - Execução com exit_code == 0
 - Todos os critérios de aceite verificados objetivamente
 
-## Riscos
+## ⚠️ Riscos
 - Testes frágeis que dependem de ordem de execução ou estado global
 - Asserções vazias que produzem falso positivo

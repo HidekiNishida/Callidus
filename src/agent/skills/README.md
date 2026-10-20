@@ -1,5 +1,7 @@
 # `src/agent/skills/` — Skills do Callidus
 
+![conceitos](/media/icons/conceitos.svg){width=48}
+
 Competências reutilizáveis injetadas sob demanda no contexto da operação.
 
 | Módulo | Papel |

@@ -1,5 +1,7 @@
 # Checklist: Diagramas tema + dimensões de teste + verificação final
 
+![tarefas](/media/icons/tarefas.svg){width=48}
+
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |
@@ -8,7 +10,7 @@
 | Agente / tarefa | complemento regras (theme-aware, matriz de testes, gate final) |
 | Regras consultadas | [Hub](/docs/regras/README.md) |
 
-## Objetivo
+## 🎯 Objetivo
 
 Documentar diagramas light/dark, expandir dimensões de cobertura de testes e gate de verificação final antes de encerrar tarefas.
 
@@ -16,7 +18,7 @@ Documentar diagramas light/dark, expandir dimensões de cobertura de testes e ga
 
 Nenhuma — concluída.
 
-## Etapas
+## 🔄 Etapas
 
 - [x] Atualizar `ativos-visuais.md` com padrões light/dark
 - [x] Expandir `validacoes-testes.md` com matriz de dimensões

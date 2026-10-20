@@ -1,5 +1,7 @@
 # Checklist: Automações persistentes, autônomas e multiplataforma
 
+![tarefas](/media/icons/tarefas.svg){width=48}
+
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |
@@ -8,7 +10,7 @@
 | Agente / tarefa | Runtime de automações (definição, disparo, supervisor, execução, adaptadores nativos) |
 | Regras consultadas | [Hub](/docs/regras/README.md) |
 
-## Objetivo
+## 🎯 Objetivo
 
 O Callidus executa tarefas automáticas conforme horários, recorrências, condições e
 eventos — independentemente da interface estar aberta — e sobrevive a
@@ -19,7 +21,7 @@ reinicializações, indisponibilidade temporária e disparo duplicado.
 Nada pendente nesta entrega. O serviço nativo ainda precisa ser instalado na máquina
 do usuário (`callidus-supervisor install`) para rodar sem a interface.
 
-## Etapas
+## 🔄 Etapas
 
 - [x] Auditar o scheduler existente e **reproduzir** as falhas (run sem `root_task_id`,
       `session.get` com string, ciclo de vida da API, `_stop_event` sem loop)

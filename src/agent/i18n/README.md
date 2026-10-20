@@ -1,14 +1,16 @@
 # Internacionalização (`i18n/`) — Detecção de Idioma + Instrução no Prompt
 
+![configuracao](/media/icons/configuracao.svg){width=48}
+
 Suporte a português, inglês e espanhol: detecção automática do idioma do objetivo e injeção de instrução no prompt.
 
-## Módulos
+## 🏗️ Módulos
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
 | [`locale.py`](locale.py) | `detect_language(text)`, `language_instruction(locale)`, `translate(text, locale)` | **Idioma** — detecção heurística + instrução para o modelo + tradução simples de labels |
 
-## Detecção (`detect_language`)
+## 🧠 Detecção (`detect_language`)
 
 ```python
 # locale.py
@@ -30,7 +32,7 @@ def detect_language(text: str) -> str:
     return "es"
 ```
 
-## Instrução no Prompt (`language_instruction`)
+## 🧠 Instrução no Prompt (`language_instruction`)
 
 ```python
 # locale.py
@@ -42,7 +44,7 @@ def language_instruction(locale: str) -> str:
     }.get(locale, "Responda em português do Brasil.")
 ```
 
-## Tradução de Labels (`translate`)
+## 🧠 Tradução de Labels (`translate`)
 
 ```python
 # locale.py
@@ -54,10 +56,10 @@ def translate(text: str, locale: str) -> str:
         "es": {...},
     }
     # Procura chaves conhecidas no texto e substitui
-    # Usado em api/main.py → _thought_trace para traduzir phases/actions
+    # Usado em api/live_view.py → thought_trace para traduzir phases/actions
 ```
 
-## Uso no Código
+## 🔌 Uso no Código
 
 ### Orquestrador (início do run)
 ```python
@@ -74,17 +76,17 @@ prompt = f"{language_instruction(language)}\n{browser_line}\nObjetivo: {objectiv
 
 ### Fechamento (resposta final)
 ```python
-# closing.py → _write_final_answer
+# execution/executor.py → TaskExecutor.write_final_answer
 prompt = f"{language_instruction(str(config.get('locale') or 'pt'))}\n{capability_line(profile.model_id)}\n..."
 ```
 
-### UI (api/main.py → _thought_trace)
+### UI (api/live_view.py → thought_trace)
 ```python
 locale = locale_for_task(session, by_id.get(event.task_id))
 text = translate(text, locale)
 ```
 
-## Testes
+## 🧪 Testes
 
 ```bash
 pytest tests/test_conversations_memory_i18n.py -v

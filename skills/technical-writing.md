@@ -25,6 +25,8 @@ keywords:
   - especificação
 ---
 
+![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
+
 ## Critérios de ativação
 - Criação ou atualização de documentação, guias, READMEs ou resumos técnicos
 
@@ -41,5 +43,5 @@ keywords:
 - Links e referências válidos
 - Documentação passa em checagens automáticas de integridade
 
-## Riscos
+## ⚠️ Riscos
 - Documentação obsoleta ou divergente da implementação real

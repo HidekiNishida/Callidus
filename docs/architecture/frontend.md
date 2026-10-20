@@ -1,5 +1,9 @@
 # Interface web
 
+![integracoes](/media/icons/integracoes.svg){width=48}
+
+A SPA: streaming de eventos, estado da interface e comunicação com a API.
+
 <p align="center">
   <img src="/web/static/assets/brand/callidus-wordmark.svg" alt="Callidus" width="300" />
 </p>
@@ -9,7 +13,7 @@ Estáticos em [`web/static/`](/web/static/) · Análise UX: [ux-ui.md](/docs/arc
 A interface é uma **SPA em Vue 3** (build global versionado localmente, sem etapa de build),
 servida pela API em `/`. Ela conversa só com a API HTTP — nenhuma regra de negócio no navegador.
 
-## Arquitetura
+## 🏗️ Arquitetura
 
 | Arquivo | Responsabilidade |
 |---------|------------------|
@@ -28,7 +32,7 @@ servida pela API em `/`. Ela conversa só com a API HTTP — nenhuma regra de ne
 O redutor (`live-state.js`) e os renderizadores (`live-view.js`) são os mesmos testados pelo Node
 ([`tests/web/`](/tests/web/)) — o painel de acompanhamento não tem lógica duplicada.
 
-## Telas
+## 💡 Telas
 
 | Tela | Onde | O que faz |
 |------|------|-----------|
@@ -97,7 +101,7 @@ tarefa (que abre os detalhes ao lado).
 citações, linhas horizontais, links e imagens — o HTML do modelo é escapado antes de qualquer
 marcação.
 
-## Layout responsivo
+## 💡 Layout responsivo
 
 A interface se adapta em três faixas, sem esconder função essencial:
 
@@ -109,7 +113,7 @@ A interface se adapta em três faixas, sem esconder função essencial:
 
 Regras de toque (Material/HIG aplicadas): alvo mínimo de 40–44 px, folga de 8 px entre alvos, nenhuma ação depende de *hover*, navegação principal na zona do polegar (barra inferior), `safe-area-inset-bottom` respeitada e tipografia mínima de 15 px no campo de texto.
 
-## Movimento
+## 💡 Movimento
 
 Tokens de motion no `style.css` (`--dur-1` a `--dur-4`, `--ease`, `--ease-out`, `--spring`) e animações
 em todas as interações:
@@ -127,7 +131,7 @@ em todas as interações:
 
 `prefers-reduced-motion: reduce` desliga todas as animações e transições.
 
-## Configuração de provedores pela interface
+## ⚙️ Configuração de provedores pela interface
 
 A tela **Provedores** grava a configuração declarativa (YAML ou JSON) e mantém as credenciais
 fora do repositório:
@@ -145,7 +149,7 @@ fora do repositório:
 A chave também pode continuar vindo do ambiente (`api_key_env`), que é a opção preferida em
 servidores com variáveis de ambiente.
 
-## Identidade visual (Callidus)
+## 💡 Identidade visual (Callidus)
 
 | Peça | Arquivo | Onde aparece |
 |------|---------|--------------|
@@ -160,7 +164,7 @@ versões web em `web/static/assets/brand/` são geradas por
 [`scripts/build_brand_assets.py`](/scripts/build_brand_assets.py) — rode o script depois de trocar
 qualquer SVG em `media/`.
 
-## Layout (v0.6)
+## 💡 Layout (v0.6)
 
 | Zona | Função |
 |------|--------|
@@ -171,13 +175,13 @@ qualquer SVG em `media/`.
 | **Acompanhamento** | Estado da run em tempo real (mesmo redutor testado) |
 | **Statusbar** | Estado do run, provedor/modelo em uso, versão |
 
-## Tema
+## ⚙️ Tema
 
 Claro e escuro, com o tema guardado em `localStorage` (`callidus-theme`) e aplicado no
 `document.documentElement.dataset.theme`. As cores saem de tokens CSS (`--bg`, `--surface`,
 `--accent`, …) — trocar a paleta é editar o bloco `:root` do `style.css`.
 
-## Gerência de projetos
+## 🧠 Gerência de projetos
 
 A interface permite configurar tudo o que é ajustável sem editar arquivo:
 
@@ -194,12 +198,12 @@ A interface permite configurar tudo o que é ajustável sem editar arquivo:
   (`src/agent/remote/`). O botão **Testar conexão** confirma o acesso antes de salvar.
 - **Aparência** (Ajustes → Geral): tema claro/escuro e densidade.
 
-## Preferências
+## ⚙️ Preferências
 
 Persistidas em `localStorage`: `callidus-ui-v1` (projeto, provedor, modelo), `callidus-theme` e
 `callidus-density`.
 
-## Regras de uso
+## 🗺️ Regras de uso
 
 - Só existe **uma execução por vez**: com envio em andamento ou run ativo, o composer não aceita
   novo pedido.
@@ -207,7 +211,7 @@ Persistidas em `localStorage`: `callidus-ui-v1` (projeto, provedor, modelo), `ca
   texto volta.
 - Nenhuma credencial é exibida, copiada ou logada pela interface.
 
-## Testes
+## 🧪 Testes
 
 ```bash
 pytest tests/test_web_frontend.py -v     # shell, módulos, rotas, responsivo e motion

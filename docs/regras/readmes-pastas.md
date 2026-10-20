@@ -4,7 +4,7 @@
 
 Voltar ao [Hub](/docs/regras/README.md) · Organização: [organizacao-arquivos.md](/docs/regras/organizacao-arquivos.md)
 
-## Regra (padrão do repositório)
+## 🧠 Regra (padrão do repositório)
 
 **Toda pasta que contém código, scripts, testes ou documentação técnica deve ter um `README.md` local** servindo de índice: o que existe ali, para que serve, links para filhos e para o hub canônico.
 
@@ -15,7 +15,7 @@ Voltar ao [Hub](/docs/regras/README.md) · Organização: [organizacao-arquivos.
 | Tabela ou lista de **links relativos/absolutos** para filhos | Links quebrados |
 | Link “voltar” para o pai ou [README raiz](/README.md) | Segredos ou paths de máquina efêmeros |
 
-## Onde aplicar
+## 🧠 Onde aplicar
 
 | Área | Índice |
 |------|--------|
@@ -27,11 +27,11 @@ Voltar ao [Hub](/docs/regras/README.md) · Organização: [organizacao-arquivos.
 | Scripts ops | [/scripts/README.md](/scripts/README.md) |
 | Trabalho interno | [/internal/README.md](/internal/README.md) |
 
-## Manutenção
+## 🛠️ Manutenção
 
 Ao **criar pasta nova** com mais de um artefato ou módulo: adicionar/atualizar o `README.md` da pasta **no mesmo commit** que introduz a estrutura.
 
-## Checklist
+## 🛠️ Checklist
 
 - [ ] README da pasta aponta para o pai
 - [ ] Links usam caminhos `/…` na raiz do repo quando cruzam árvores

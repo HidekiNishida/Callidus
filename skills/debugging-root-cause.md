@@ -30,6 +30,8 @@ keywords:
   - regressão
 ---
 
+![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
+
 ## Critérios de ativação
 - Correção de bugs, exceções em runtime, quebras de testes ou regressões
 - Investigação de comportamentos anômalos relatados
@@ -49,6 +51,6 @@ keywords:
 - O teste ou cenário reproduzível passa comprovadamente
 - Nenhum teste prévio foi quebrado
 
-## Riscos
+## ⚠️ Riscos
 - Mascarar o defeito com tratamento genérico (ex.: catch-all silencioso)
 - Introduzir regressões em fluxos que dependiam do comportamento anterior

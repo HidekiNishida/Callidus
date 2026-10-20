@@ -1,8 +1,10 @@
 # API (`api/`) — FastAPI HTTP + SSE + SPA Estática
 
+![integracoes](/media/icons/integracoes.svg){width=48}
+
 Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) e serving da SPA estática.
 
-## Arquivos
+## 📁 Arquivos
 
 | Arquivo | Responsabilidade |
 |---------|------------------|
@@ -20,7 +22,7 @@ Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) 
 | [`provider_routes.py`](provider_routes.py) | **Rotas de configuração de provedores** — catálogo, modelos, diagnóstico e credencial |
 | [`deps.py`](deps.py) | **Dependências FastAPI** — `db_session`, `read_settings`, `get_engine`, `ToolRegistry`, `McpManager` |
 
-## Rotas Principais (Resumo)
+## 🔌 Rotas Principais (Resumo)
 
 | Método | Rota | Descrição |
 |--------|------|-----------|
@@ -64,7 +66,7 @@ Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) 
 | `DELETE` | `/projects/{id}` | Remove o projeto e o que pertence a ele (conversas, tarefas, execuções, memória, grafo). **Os arquivos da pasta não são apagados** |
 | `POST` | `/debug/chat/ollama` | Chat direto Ollama (debug) |
 
-## Provedores (configuração)
+## 🔌 Provedores (configuração)
 
 Rotas em [`provider_routes.py`](provider_routes.py):
 
@@ -80,21 +82,21 @@ Rotas em [`provider_routes.py`](provider_routes.py):
 | `PUT` | `/providers/config/{nome}/secret` | Grava a credencial em arquivo `0600` e aponta a configuração |
 | `DELETE` | `/providers/config/{nome}/secret` | Apaga a credencial |
 
-## Observabilidade (SSE + EventBus)
+## 📊 Observabilidade (SSE + EventBus)
 
 - **`GET /events?run_id=...&after_seq=...`** — Stream de eventos (ring buffer + assinantes)
 - **`GET /live?run_id=...`** — Estado live (outputs streaming, operations, seq, stats)
 - **`GET /snapshot?run_id=...`** — Foto completa (run, tasks, events, outputs, operations)
 - **EventBus** ([`../observability/bus.py`](../observability/bus.py)): ring buffer (seq monotônico), assinantes com queue, operations live (model streaming, tool output)
 
-## SPA Estática
+## 🔌 SPA Estática
 
 - Servida em `/` (index.html) + `/assets/*` — SPA **Vue 3** em [`web/static/assets/app/`](/web/static/assets/app/)
   (vendor do Vue versionado em `/assets/vendor/`); detalhes em [frontend.md](/docs/architecture/frontend.md)
 - Headers `Cache-Control: no-cache` para evitar cache agressivo do navegador
 - Pasta configurável via `STATIC_WEB_DIR` ou `web/static` (padrão)
 
-## Lifespan (Startup/Shutdown)
+## ⚙️ Lifespan (Startup/Shutdown)
 
 ```python
 @asynccontextmanager
@@ -110,11 +112,11 @@ async def lifespan(app: FastAPI):
             await stop_background_worker()
 ```
 
-## Configuração via Settings
+## ⚙️ Configuração via Settings
 
 Todas as opções em [`../config.py`](../config.py) — `api_host`, `api_port`, `shutdown_grace_seconds`, `static_web_dir`, `mcp_config_path`, `enable_background_worker`, limites de observabilidade (`event_text_limit`, `stream_delta_interval_ms`, `stream_subscriber_queue`, `stream_ring_size`, `stream_max_seconds`).
 
-## Testes
+## 🧪 Testes
 
 ```bash
 # API HTTP

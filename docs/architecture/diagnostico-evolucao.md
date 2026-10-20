@@ -1,12 +1,16 @@
 # Diagnóstico e evolução (v0.5)
 
-## Estado anterior (v0.4)
+![exemplos](/media/icons/exemplos.svg){width=48}
+
+O diagnóstico do estado atual e o plano de evolução.
+
+## 🎯 Estado anterior (v0.4)
 
 - Orquestrador explícito com decomposição (builtin E2E, Ollama, template, mock).
 - Persistência SQLite: tarefas, runs, tentativas, evidências, memória.
 - Ferramentas locais, verificação pytest, MCP stdio, UI web com árvore e inspetor.
 
-## Lacunas endereçadas nesta evolução
+## 🎯 Lacunas endereçadas nesta evolução
 
 | Responsabilidade | Módulo | Status |
 |------------------|--------|--------|
@@ -19,7 +23,7 @@
 | Contratos | `services/contract_service.py` | Validação quando `requires_contract` |
 | Métricas | `services/metrics_service.py`, `orchestrator/progress.py` | Agregados por projeto e por run; progresso verificável |
 
-## Incrementos v0.5.1
+## 🎯 Incrementos v0.5.1
 
 - Consolidação exige evidência passante em subtarefas de verificação; reabertura hierárquica.
 - Verificação global antes de `run_completed`; gaps reabrem tarefas de verificação.
@@ -27,7 +31,7 @@
 - Grafo: arestas `imports` via AST.
 - Máquina de estados: `COMPLETED → VERIFYING` para correções auditáveis.
 
-## Próximos incrementos
+## 🎯 Próximos incrementos
 
 - Indexação multi-linguagem e relações `calls` mais precisas.
 - UI gráfica do grafo e diff de contexto por snapshot.

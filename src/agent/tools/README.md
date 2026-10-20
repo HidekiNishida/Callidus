@@ -1,8 +1,10 @@
 # Ferramentas (`tools/`) — Registro, Execução e 17 Builtins
 
+![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
+
 Ferramentas determinísticas que o agente executa no filesystem/projeto autorizado. Registro central com aliases, aprovação, timeouts e observabilidade.
 
-## Módulos
+## 🏗️ Módulos
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
@@ -11,7 +13,7 @@ Ferramentas determinísticas que o agente executa no filesystem/projeto autoriza
 | [`browser.py`](browser.py) | `browser_call`, `search_web` | Navegador (Playwright CDP) — navigate, snapshot, click, type, press, scroll, search, close |
 | [`diffing.py`](diffing.py) | `unified_diff_text` | Diff unificado (added/removed lines) para `file.changed/created` events |
 
-## ToolContext (Contexto de Execução)
+## 🛠️ ToolContext (Contexto de Execução)
 
 ```python
 @dataclass
@@ -23,7 +25,7 @@ class ToolContext:
     browser_mode: str          # "off" | "headless" | "visible"
 ```
 
-## 17 Ferramentas Builtins
+## 🛠️ 17 Ferramentas Builtins
 
 | ID | Descrição | Args Principais | Aprovação |
 |----|-----------|-----------------|-----------|
@@ -45,7 +47,7 @@ class ToolContext:
 | `system_info` | Sistema, usuário, pasta home | — | Não |
 | `browser` | Navegador (quando ligado) | `action`, `url?`, `text?`, `selector?`, `query?` | Não |
 
-## Aliases (O que o Modelo Costuma Inventar → Real)
+## 🛠️ Aliases (O que o Modelo Costuma Inventar → Real)
 
 ```python
 TOOL_ALIASES = {
@@ -65,9 +67,9 @@ TOOL_ALIASES = {
 }
 ```
 
-## TOOL_CATALOG (O que o Modelo Vê no Prompt)
+## 🛠️ TOOL_CATALOG (O que o Modelo Vê no Prompt)
 
-```
+```text
 "Ferramentas locais (use exatamente estes ids): 
 list_dir, glob_files, read_file, search_grep, edit_file, write_file, 
 delete_file, make_dir, move_file, run_pytest, run_script, run_command, git_status, git_diff.
@@ -82,7 +84,7 @@ search usa query. navigate usa url http(s). click usa text ou selector.
 Não invente outros nomes."
 ```
 
-## Execução (`ToolRegistry.execute`)
+## 🛠️ Execução (`ToolRegistry.execute`)
 
 ```python
 async def execute(tool_id, ctx, args, *, approved=False):
@@ -105,27 +107,27 @@ async def execute(tool_id, ctx, args, *, approved=False):
     return result
 ```
 
-## Eventos Emitidos (Observabilidade)
+## 📊 Eventos Emitidos (Observabilidade)
 
 - `tool.started` / `tool.completed` / `tool.failed` — call_id, tool, args (preview), duration, summary
 - `file.read` / `file.changed` / `file.created` / `file.deleted` — path, diff (added/removed), sensitive flag
 - `command.started` / `command.output` (streaming) / `command.completed` / `command.failed`
 - `test.started` / `test.output` / `test.completed` / `test.failed`
 
-## Segurança de Paths
+## 🔐 Segurança de Paths
 
 Todas as ferramentas de arquivo usam `resolve_under_root(project_root, raw)` ([`../security/paths.py`](../security/paths.py)):
 - Resolve caminho absoluto
 - Verifica se está dentro de `project_root`
 - Levanta `PathSecurityError` se tentativa de escape (`../`, symlinks fora, etc.)
 
-## Navegador (`browser.py`)
+## 🛠️ Navegador (`browser.py`)
 
 - **Modos**: `off` (erro), `headless` (invisível), `visible` (janela Chrome via Playwright)
 - **Ações**: `navigate(url)`, `snapshot()`, `click(text/selector)`, `type(text/selector)`, `press(key)`, `scroll(direction)`, `search(query)`, `close()`
 - **Search**: `search_web(query)` → DuckDuckGo HTML scrape (fallback se Playwright indisponível)
 
-## Testes
+## 🧪 Testes
 
 ```bash
 # Ferramentas builtins

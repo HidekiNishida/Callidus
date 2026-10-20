@@ -30,6 +30,8 @@ keywords:
   - componente
 ---
 
+![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
+
 ## Critérios de ativação
 - Criação ou modificação de arquivos de código-fonte, classes, funções e endpoints
 - Implementação de funcionalidades novas ou expansão de subsistemas
@@ -49,6 +51,6 @@ keywords:
 - Testes unitários/integração comprovando a funcionalidade implementada
 - Nenhuma quebra em fluxos preexistentes
 
-## Riscos
+## ⚠️ Riscos
 - Quebra de compatibilidade em APIs públicas ou serviços consumidores
 - Efeitos colaterais em estado persistente ou concorrência

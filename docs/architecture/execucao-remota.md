@@ -1,12 +1,16 @@
 # Execução em computador remoto
 
+![integracoes](/media/icons/integracoes.svg){width=48}
+
+O projeto rodando em outro computador, por SSH.
+
 Voltar ao [Hub](/docs/architecture/README.md) · Configuração: [provedores.md](/docs/architecture/provedores.md)
 
 Um projeto pode rodar em **outro computador** (servidor Linux, macOS ou Windows). Com isso, os
 comandos, leituras, escritas e listagens do projeto são executados no servidor — o Callidus
 continua rodando na sua máquina.
 
-## Como configurar
+## ⚙️ Como configurar
 
 Na interface: **Ajustes → Projetos → ícone de servidor** (ou a API `PUT /projects/{id}/remote`).
 
@@ -23,7 +27,7 @@ Na interface: **Ajustes → Projetos → ícone de servidor** (ou a API `PUT /pr
 O botão **Testar conexão** confirma o acesso antes de salvar (roda `uname -s` no POSIX e
 `$PSVersionTable` no PowerShell). **Usar máquina local** remove a configuração.
 
-## Como funciona
+## 🧠 Como funciona
 
 | Peça | Papel |
 |------|-------|
@@ -42,13 +46,13 @@ Regras:
    `[IO.File]::WriteAllBytes` e `Get-ChildItem` no PowerShell.
 4. **Sem senha no comando**: use chave SSH. A senha não é guardada pela interface.
 
-## O que continua local
+## 🧠 O que continua local
 
 - O agente, o modelo e a memória rodam na máquina do Callidus.
 - O **diff** e os eventos de arquivo são calculados localmente a partir do que o servidor devolve.
 - O `git-diff` do projeto usa o repositório local (o remoto não é inspecionado por Git).
 
-## Limitações conhecidas
+## ⚠️ Limitações conhecidas
 
 1. A configuração é por projeto; não há “grupo de servidores”.
 2. Sem SFTP: arquivos transferem por `base64` no canal SSH (bem para arquivos de texto; arquivos

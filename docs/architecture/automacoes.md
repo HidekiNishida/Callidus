@@ -12,18 +12,18 @@ máquina.
 
 ## Sumário
 
-1. [O problema do agendamento anterior](#o-problema-do-agendamento-anterior)
-2. [As quatro responsabilidades](#as-quatro-responsabilidades)
-3. [A definição da automação](#a-definição-da-automação)
-4. [Gatilhos](#gatilhos)
-5. [Ações](#ações)
-6. [Dependências](#dependências)
-7. [O supervisor e a inicialização nativa](#o-supervisor-e-a-inicialização-nativa)
-8. [Máquina controladora × destino](#máquina-controladora--destino)
-9. [Confiabilidade](#confiabilidade)
-10. [Segurança](#segurança)
-11. [API](#api)
-12. [Limitações conhecidas](#limitações-conhecidas)
+1. [1. O problema do agendamento anterior](#1-o-problema-do-agendamento-anterior)
+2. [2. As quatro responsabilidades](#2-as-quatro-responsabilidades)
+3. [3. A definição da automação](#3-a-definição-da-automação)
+4. [4. Gatilhos](#4-gatilhos)
+5. [5. Ações](#5-ações)
+6. [6. Dependências](#6-dependências)
+7. [7. O supervisor e a inicialização nativa](#7-o-supervisor-e-a-inicialização-nativa)
+8. [8. Máquina controladora × destino](#8-máquina-controladora--destino)
+9. [9. Confiabilidade](#9-confiabilidade)
+10. [10. Segurança](#10-segurança)
+11. [11. API](#11-api)
+12. [12. Limitações conhecidas](#12-limitações-conhecidas)
 
 ---
 

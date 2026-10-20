@@ -1,8 +1,10 @@
 # Domínio (`domain/`) — Contratos, Estados e Falhas
 
+![conceitos](/media/icons/conceitos.svg){width=48}
+
 Definições centrais compartilhadas por toda a aplicação: enums, máquina de estados, schemas Pydantic (fronteiras API/DB) e classificação de falhas.
 
-## Arquivos
+## 📁 Arquivos
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
@@ -13,7 +15,7 @@ Definições centrais compartilhadas por toda a aplicação: enums, máquina de 
 | [`schemas.py`](schemas.py) | `ProjectCreate/Read/Update`, `ConversationCreate/Read/Update/Fork/Move`, `BranchRead`, `TaskCreate/Read/StatusUpdate/DependencyCreate`, `ExecutionRunCreate/Read`, `EventRead`, `MemoryCreate/Read`, `AgentRead`, `AgentAsk`, `AgentDiscard`, `AgentQueryRead`, `ResumeBody` | **Contratos Pydantic** — validação request/response + `model_config = {"from_attributes": True}` |
 | [`failures.py`](failures.py) | `Failure`, `FailureCategory`, `FailureCause`, `classify_context_error`, `classify_model_output`, `classify_provider_error`, `classify_tool_result`, `classify_verification` | **Classificação estruturada** de falhas (categoria + causa + signature + strategy) |
 
-## Machine de Estados (`TaskStatus`)
+## 🔄 Machine de Estados (`TaskStatus`)
 
 ```mermaid
 stateDiagram-v2
@@ -49,14 +51,14 @@ stateDiagram-v2
 
 **`TERMINAL_STATUSES`**: `COMPLETED`, `FAILED`, `CANCELLED`
 
-## Tipos de Tarefa (`TaskKind`)
+## 🧠 Tipos de Tarefa (`TaskKind`)
 | Kind | Significado |
 |------|-------------|
 | `OBJECTIVE` | Raiz do objetivo (criada pelo usuário) |
 | `SUBSYSTEM` | Agrupa operações relacionadas |
 | `OPERATION` | Folha atômica (tool, model_operation, verification, final_answer) |
 
-## Tipos de Memória (`MemoryKind`)
+## 🧠 Tipos de Memória (`MemoryKind`)
 | Kind | Escopo | Uso |
 |------|--------|-----|
 | `CANONICAL` | Projeto | Requisitos/decisões imutáveis (objetivo global) |
@@ -65,7 +67,7 @@ stateDiagram-v2
 | `EVIDENCE` | Task | Testes, logs, comandos |
 | `PROCEDURE` | Projeto/Conv | Padrões reutilizáveis |
 
-## Status de Run (`RunStatus`)
+## 🔄 Status de Run (`RunStatus`)
 | Status | Significado |
 |--------|-------------|
 | `ACTIVE` | Rodando (worker ou steps manuais) |
@@ -74,7 +76,7 @@ stateDiagram-v2
 | `FAILED` | Estagnado sem recuperação automática |
 | `CANCELLED` | Interrompido pelo usuário |
 
-## Classificação de Falhas (`FailureCategory` × `FailureCause`)
+## ⚠️ Classificação de Falhas (`FailureCategory` × `FailureCause`)
 
 | Categoria | Causas Principais |
 |-----------|-------------------|
@@ -86,14 +88,14 @@ stateDiagram-v2
 
 **`Failure`** carrega: `category`, `cause`, `detail` + `as_dict()` → serializado em `OperationAttemptModel.failure_json` e `TaskModel.metadata_json.failures`.
 
-## Uso no Código
+## 🔌 Uso no Código
 
 ```python
 # Transição de status (services/task_service.py)
 from agent.domain.state_machine import validate_transition, InvalidTransitionError
 validate_transition(current, target)  # levanta InvalidTransitionError se inválido
 
-# Schemas nas rotas (api/main.py)
+# Schemas nas rotas (api/*_routes.py)
 from agent.domain.schemas import TaskCreate, TaskRead, ExecutionRunCreate
 
 # Classificação de falha (orchestrator/runner.py)
@@ -101,7 +103,7 @@ from agent.domain.failures import classify_model_output, FailureCategory
 failure = classify_model_output(content, err, missing)
 ```
 
-## Testes
+## 🧪 Testes
 
 ```bash
 pytest tests/test_state_machine.py -v

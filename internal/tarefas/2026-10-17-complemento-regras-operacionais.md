@@ -1,5 +1,7 @@
 # Checklist: Complemento das regras operacionais
 
+![tarefas](/media/icons/tarefas.svg){width=48}
+
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |
@@ -8,7 +10,7 @@
 | Agente / tarefa | complemento regras (organização, validações, self-increment, commits, checklists) |
 | Regras consultadas | [Hub](/docs/regras/README.md) |
 
-## Objetivo
+## 🎯 Objetivo
 
 Documentar cinco regras novas como filhos do hub (sem substituir a arquitetura), com ícones, template de checklist e atualização de contexto/navegação/princípios.
 
@@ -16,7 +18,7 @@ Documentar cinco regras novas como filhos do hub (sem substituir a arquitetura),
 
 Nenhuma — atividade concluída; coordenador pode revisar o hub.
 
-## Etapas
+## 🔄 Etapas
 
 - [x] Criar ícones SVG das cinco regras
 - [x] Escrever `organizacao-arquivos.md`

@@ -1,5 +1,7 @@
 # Checklist: Evolução do Agente Local — Skills, Prompt Estratégico, Decomposição Recursiva e Execução Profissional
 
+![tarefas](/media/icons/tarefas.svg){width=48}
+
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |
@@ -8,7 +10,7 @@
 | Agente / tarefa | Engenharia completa: Skills, Estratégia Profissional, Decomposição Recursiva, Integridade e Verificação |
 | Regras consultadas | [Hub](/docs/regras/README.md), [principios.md](/docs/regras/principios.md), [validacoes-testes.md](/docs/regras/validacoes-testes.md), [commits.md](/docs/regras/commits.md), [verificacao-final.md](/docs/regras/verificacao-final.md), [resumo-projeto.md](/docs/regras/resumo-projeto.md), [readmes-pastas.md](/docs/regras/readmes-pastas.md), [checklists-tarefas.md](/docs/regras/checklists-tarefas.md) |
 
-## Objetivo
+## 🎯 Objetivo
 
 Evoluir a arquitetura do Callidus de ponta a ponta: integrar sistema de Skills reutilizáveis sob demanda, camada de definição de abordagem profissional e estratégia executável, decomposição hierárquica recursiva e adaptativa com limites seguros, integridade rigorosa de estados/consolidação/conclusão com suporte a subtarefas opcionais e falhas parciais, verificação independente multicritério e controle fino de tokens e observabilidade.
 
@@ -16,7 +18,7 @@ Evoluir a arquitetura do Callidus de ponta a ponta: integrar sistema de Skills r
 
 Nenhuma — tarefa concluída. Evolução futura sugerida: cache do catálogo de skills por `mtime` e estratégias de verificação alternativa na recuperação.
 
-## Etapas
+## 🔄 Etapas
 
 - [x] Descoberta, auditoria e linha de base (218 testes existentes validados e corrigidas regressões preexistentes)
 - [x] Matriz de requisitos e mapeamento de lacunas arquiteturais

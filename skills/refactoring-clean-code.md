@@ -23,6 +23,8 @@ keywords:
   - desacoplar
 ---
 
+![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
+
 ## Critérios de ativação
 - Otimização estrutural, simplificação de complexidade ciclomática e desacoplamento
 
@@ -40,5 +42,5 @@ keywords:
 - 100% dos testes de regressão mantidos passando
 - Clareza e manutenibilidade do código melhoradas
 
-## Riscos
+## ⚠️ Riscos
 - Alteração inadvertida de comportamentos sutis ou casos especiais

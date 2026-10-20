@@ -1,6 +1,10 @@
 # Execução local
 
-## Instalação
+![configuracao](/media/icons/configuracao.svg){width=48}
+
+Como instalar e executar o Callidus na própria máquina.
+
+## ⚙️ Instalação
 
 ```bash
 cd "~/Documents/Projetos/Callidus"
@@ -23,7 +27,7 @@ Atalho sem o script: `PYTHONPATH=src callidus-api`
 
 O script `agente-api` continua disponível como alias do `callidus-api`.
 
-## Padrões (documentação e runtime)
+## 🧠 Padrões (documentação e runtime)
 
 | Variável | Padrão | Efeito |
 |----------|--------|--------|
@@ -36,7 +40,7 @@ O script `agente-api` continua disponível como alias do `callidus-api`.
 
 Ordem de decomposição: **builtin e2e** (objetivo contém `e2e`) → **provedor escolhido** (Ollama ou llama.cpp) → template genérico → mock (se permitido).
 
-## API e UI
+## 🔌 API e UI
 
 ```bash
 callidus-api
@@ -46,7 +50,7 @@ callidus-api
 
 Demo sem Ollama: objetivo com `e2e` usa provider `mock` automaticamente na UI.
 
-## Conversas, memória e idioma
+## 🧠 Conversas, memória e idioma
 
 Cada projeto é um grupo de conversas. A pasta pode ficar em branco: nesse caso o agente usa a pasta do usuário do sistema. O botão **+** cria o projeto assim, e **Alterar pasta** troca o diretório depois, no projeto ou numa conversa. Uma conversa nova sem projeto também não pede pasta; usa a mesma pasta do usuário até alguém escolher outra. A ferramenta `system_info` informa sistema, usuário e essa pasta.
 
@@ -64,14 +68,14 @@ Quando a tarefa para no meio, o botão de resumo lista onde parou, o que foi fei
 
 O navegador no compositor tem três modos: desligado, invisível e janela. Ligado, a ferramenta `browser` pesquisa, abre páginas, lê, clica, digita e rola. A janela usa o Chrome instalado quando o Playwright está disponível.
 
-## MCP
+## 🔌 MCP
 
 ```bash
 cp data/mcp.example.json data/mcp.json
 curl -X POST http://127.0.0.1:8765/mcp/discover
 ```
 
-## Testes
+## 🧪 Testes
 
 ```bash
 pytest

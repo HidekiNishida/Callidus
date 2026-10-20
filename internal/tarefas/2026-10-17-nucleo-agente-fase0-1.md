@@ -1,5 +1,7 @@
 # Checklist: agente local — fases 0–8
 
+![tarefas](/media/icons/tarefas.svg){width=48}
+
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |
@@ -8,11 +10,11 @@
 | Agente / tarefa | Construção completa solicitada |
 | Regras consultadas | [Hub](/docs/regras/README.md) |
 
-## Objetivo
+## 🎯 Objetivo
 
 Entregar runtime funcional com API, orquestrador, ferramentas, verificação, UI web, testes E2E e documentação.
 
-## Etapas
+## 🔄 Etapas
 
 - [x] Fases 0–1 (núcleo persistente)
 - [x] Fases 2–5 (runtime, ferramentas, decomposição, verificação)

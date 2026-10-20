@@ -6,7 +6,7 @@ Comparativo inspirado em **Cursor**, **Hermes** e IDEs agentic — adaptado ao n
 
 Voltar: [frontend.md](/docs/architecture/frontend.md) · [visao-geral.md](/docs/architecture/visao-geral.md)
 
-## Referências estudadas
+## 📚 Referências estudadas
 
 A interface atual segue padrões que já se provaram em ferramentas de agente de código:
 
@@ -17,7 +17,7 @@ A interface atual segue padrões que já se provaram em ferramentas de agente de
 | **Kilo Code** (extensão VS Code) | Abas de configuração (Providers, Auto-Approve, Models) com busca; painel em abas;Gerência de sessão por item com ação direta |
 | **Material 3 / HIG** | Barra inferior com 3–5 destinos na zona do polegar; alvos de toque ≥ 44 px; folha inferior no lugar de dropdown; `safe-area` |
 
-## O que copiamos (valor alto, baixo risco)
+## 🎯 O que copiamos (valor alto, baixo risco)
 
 | Padrão (Cursor / agentes) | Nossa implementação |
 |---------------------------|---------------------|
@@ -34,7 +34,7 @@ A interface atual segue padrões que já se provaram em ferramentas de agente de
 | Feed de eventos | **Atividade** legível + filtro por tarefa |
 | Atalhos | `Ctrl+Enter` executar auto · `Ctrl+.` passo |
 
-## O que não copiamos (preserva a arquitetura)
+## 🎯 O que não copiamos (preserva a arquitetura)
 
 | Funcionalidade comum | Motivo de não priorizar |
 |----------------------|-------------------------|
@@ -43,7 +43,7 @@ A interface atual segue padrões que já se provaram em ferramentas de agente de
 | Indexação semântica global | Custo RAM/tokens; grep + plano local primeiro |
 | Autocomplete inline | Produto IDE, não orquestrador |
 
-## Hierarquia visual (layout v0.6)
+## 💡 Hierarquia visual (layout v0.6)
 
 ```mermaid
 flowchart LR
@@ -59,7 +59,7 @@ flowchart LR
 A interface é uma SPA **Vue 3** (`web/static/assets/app/`), sem etapa de build: o vendor do Vue é
 versionado localmente e a tela funciona offline. Detalhes: [frontend.md](/docs/architecture/frontend.md).
 
-## Atividade ao vivo no chat
+## 🔄 Atividade ao vivo no chat
 
 | Padrão adotado | Onde aparece |
 |----------------|--------------|
@@ -72,7 +72,7 @@ versionado localmente e a tela funciona offline. Detalhes: [frontend.md](/docs/a
 | Rolagem que respeita a leitura | O feed acompanha só se o usuário estiver no fim |
 | Diff expansível | Edição de arquivo com “ver diff” na hora, no chat e no acompanhamento |
 
-## Regras de responsividade e movimento
+## 💡 Regras de responsividade e movimento
 
 | Regra | Como aparece |
 |-------|--------------|
@@ -83,7 +83,7 @@ versionado localmente e a tela funciona offline. Detalhes: [frontend.md](/docs/a
 | Respeito ao sistema | `prefers-reduced-motion` desliga transições; `prefers-contrast: more` reforça bordas |
 | Sem estouro de layout | Nenhuma faixa horizontal em 390 px, 768 px, 1024 px e 1440 px |
 
-## Métricas de sucesso UX
+## 📊 Métricas de sucesso UX
 
 1. Criar projeto + objetivo + ver execução **sem ler JSON bruto**.
 2. Identificar bloqueio (**BLOCKED/FAILED**) em &lt; 5 s na árvore.
@@ -92,8 +92,8 @@ versionado localmente e a tela funciona offline. Detalhes: [frontend.md](/docs/a
 5. Confirmar que a credencial nunca aparece na tela, no log ou no arquivo de configuração.
 6. Concluir um pedido pelo celular sem rodar a interface de desktop.
 
-## Manutenção
+## 🛠️ Manutenção
 
-Código UI: [web/static/assets/app/](/web/static/assets/app/) · Endpoints: [api/main.py](/src/agent/api/main.py)
+Código UI: [web/static/assets/app/](/web/static/assets/app/) · Endpoints: [api/](/src/agent/api/README.md)
 (`/overview`, `/git-diff`, `/config/ui-defaults`) e [api/provider_routes.py](/src/agent/api/provider_routes.py)
 (`/providers/config`, `/providers/{nome}/test`).
