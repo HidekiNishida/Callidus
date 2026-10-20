@@ -76,18 +76,47 @@ export const ChatView = {
     const models = Vue.computed(() => state.providerModels[state.provider] || []);
     const logRef = Vue.ref(null);
 
+    // Rolagem automática: acompanha o feed enquanto o usuário estiver no fim; se ele
+    // subiu para ler, a rolagem é parada até ele voltar ao fim.
     Vue.watch(
-      () => messages.value.map((message) => message.stages.length).join(","),
+      () =>
+        messages.value
+          .map((message) => `${message.stages.length}:${message.activity.length}`)
+          .join(","),
       () => {
         const element = logRef.value;
-        if (element) element.scrollTop = element.scrollHeight;
+        if (!element) return;
+        const stick = atBottom.value && !userTookOver.value;
+        Vue.nextTick(() => {
+          if (stick && !userTookOver.value) {
+            element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+          }
+        });
       },
+      { flush: "pre" },
     );
     const thoughts = Vue.computed(() => {
       const live = state.live;
       if (!live) return [];
       const noisy = /^(Planejando|Pronta para executar|Concluída sem teste|Liberada|Aguardando|Começando)/;
       return (live.thoughts || []).filter((item) => !noisy.test(item.text || ""));
+    });
+
+    // Etiquetas do plano (estilo Kilo): as tarefas da mensagem atual que ainda estão
+    // em aberto; somem quando concluem e mudam quando o planejamento muda.
+    const planTags = Vue.computed(() => {
+      const rootsNow = roots();
+      const last = rootsNow[rootsNow.length - 1];
+      if (!last) return [];
+      return childrenOf(last.id)
+        .filter((task) => task.status !== "COMPLETED" && task.status !== "CANCELLED")
+        .map((task) => ({
+          id: task.id,
+          title: task.display_title || task.title,
+          status: task.status,
+          statusText: statusLabel(task.status),
+          active: ["RUNNING", "PLANNING", "VERIFYING", "RETRY_PENDING"].includes(task.status),
+        }));
     });
 
     const changedFiles = Vue.computed(() => {
@@ -104,6 +133,9 @@ export const ChatView = {
     });
 
     const atBottom = Vue.ref(true);
+    // O usuário assumiu o controle da rolagem (roda do mouse/toque): a rolagem automática
+    // para até ele voltar ao fim.
+    const userTookOver = Vue.ref(false);
     // Entradas abertas e fechadas pelo usuário (o que tem diff abre sozinho).
     const openIds = Vue.reactive(new Set());
     const closedIds = Vue.reactive(new Set());
@@ -138,6 +170,14 @@ export const ChatView = {
       const element = logRef.value;
       if (!element) return;
       atBottom.value = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+      if (atBottom.value) userTookOver.value = false;
+    }
+
+    function onUserScrollIntent() {
+      userTookOver.value = true;
+      const element = logRef.value;
+      // Cancela a rolagem suave em andamento para não arrastar o usuário até o fim.
+      if (element) element.scrollTo({ top: element.scrollTop, behavior: "auto" });
     }
 
     function scrollToBottom() {
@@ -194,9 +234,11 @@ export const ChatView = {
       messages,
       logRef,
       changedFiles,
+      planTags,
       currentStage,
       atBottom,
       onScroll,
+      onUserScrollIntent,
       scrollToBottom,
       isOpen,
       toggleEntry,
@@ -219,7 +261,14 @@ export const ChatView = {
   },
   template: `
     <section class="chat">
-      <div class="chat-log" ref="logRef" v-if="messages.length" @scroll="onScroll">
+      <div
+        class="chat-log"
+        ref="logRef"
+        v-if="messages.length"
+        @scroll="onScroll"
+        @wheel="onUserScrollIntent"
+        @touchstart="onUserScrollIntent"
+      >
         <article v-for="message in messages" :key="message.id" class="turn">
           <div class="bubble user">
             <div class="bubble-meta">
@@ -385,6 +434,24 @@ export const ChatView = {
         Mensagem agendada: «{{ state.queued.objective.slice(0, 60) }}{{ state.queued.objective.length > 60 ? '…' : '' }}»
         <button type="button" class="link-btn" @click="cancelQueued()">cancelar</button>
       </p>
+
+      <div class="plan-strip" v-if="planTags.length" aria-label="Tarefas do plano">
+        <div class="plan-strip-inner">
+          <button
+            type="button"
+            class="plan-tag"
+            v-for="tag in planTags"
+            :key="tag.id"
+            :class="['plan-' + tag.status.toLowerCase(), { active: tag.active }]"
+            :title="tag.title + ' — ' + tag.statusText"
+            @click="selectTask(tag.id)"
+          >
+            <span class="status-dot" :class="'status-' + tag.status"></span>
+            <span class="plan-tag-title">{{ tag.title }}</span>
+            <span class="plan-tag-status">{{ tag.statusText }}</span>
+          </button>
+        </div>
+      </div>
 
       <form class="composer" @submit.prevent="sendMessage()">
         <div class="chips" v-if="state.attachments.length">

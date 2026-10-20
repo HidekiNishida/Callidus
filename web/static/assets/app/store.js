@@ -68,6 +68,7 @@ export const state = reactive({
 
 let stream = null;
 let pollTimer = null;
+let taskTimer = null;
 
 /** Estado do redutor de acompanhamento (tarefas, saídas, arquivos, verificações). */
 state.liveState = { data: null, version: 0 };
@@ -433,6 +434,7 @@ export async function startRun() {
     body: JSON.stringify({ root_task_id: root.id, config: runConfig() }),
   });
   state.currentRootId = root.id;
+  startTaskPolling();
   await api(`/runs/${state.currentRun.id}/autonomous/enable`, { method: "POST" }).catch(() => {});
   try {
     await connectStream(state.currentRun.id);
@@ -467,6 +469,7 @@ export async function autoRun() {
     state.running = false;
     await refreshTasks();
     await refreshRun(runId);
+    stopTaskPolling();
     await flushQueue();
   }
 }
@@ -512,6 +515,7 @@ export async function resumeRun() {
 
 export async function cancelRun() {
   if (!state.currentRun) return;
+  stopTaskPolling();
   await api(`/runs/${state.currentRun.id}/cancel`, { method: "POST" }).catch((err) => toast(err.message, "error"));
   disconnectStream();
   state.currentRun = null;
@@ -558,6 +562,25 @@ export async function connectStream(runId) {
       state.liveState.version += 1;
     },
   });
+}
+
+/** While the run is active, the task list is refreshed so the plan tags follow along. */
+function startTaskPolling() {
+  stopTaskPolling();
+  taskTimer = setInterval(() => {
+    if (state.running || state.currentRun?.status === "ACTIVE") {
+      refreshTasks();
+    } else {
+      stopTaskPolling();
+    }
+  }, 2500);
+}
+
+function stopTaskPolling() {
+  if (taskTimer) {
+    clearInterval(taskTimer);
+    taskTimer = null;
+  }
 }
 
 export function disconnectStream() {

@@ -1,8 +1,9 @@
-// web/static/assets/app/components/live.js — painel de acompanhamento (reduzir + stream)
-import { state, refreshTasks } from "../store.js";
+// web/static/assets/app/components/live.js — painel de execução (estado do redutor em tempo real)
+import { state, refreshTasks, selectTask } from "../store.js";
 import {
   renderActivity,
   renderFiles,
+  renderFilters,
   renderHeader,
   renderMetrics,
   renderOutputs,
@@ -21,17 +22,24 @@ export const LivePanel = {
       errorsOnly: false,
       text: "",
     });
+    // Conjuntos de ids: o Vue detecta mudanças em Set reativo (Vue 3).
     const expanded = Vue.reactive(new Set());
     const collapsed = Vue.reactive(new Set());
+    const openSeqs = Vue.reactive(new Set());
+    const selected = Vue.ref(null);
 
     const header = Vue.computed(() => {
       void state.liveState.version;
       return state.liveState.data ? renderHeader(state.liveState.data) : "";
     });
+    const filterBar = Vue.computed(() => {
+      void state.liveState.version;
+      return state.liveState.data ? renderFilters(state.liveState.data, filters) : "";
+    });
     const tree = Vue.computed(() => {
       void state.liveState.version;
       return state.liveState.data
-        ? renderTree(state.liveState.data, { expanded, collapsed, selected: state.selectedTaskId })
+        ? renderTree(state.liveState.data, { expanded, collapsed, selected: selected.value })
         : "";
     });
     const outputs = Vue.computed(() => {
@@ -40,7 +48,7 @@ export const LivePanel = {
     });
     const files = Vue.computed(() => {
       void state.liveState.version;
-      return state.liveState.data ? renderFiles(state.liveState.data, filters, new Set()) : "";
+      return state.liveState.data ? renderFiles(state.liveState.data, filters, openSeqs) : "";
     });
     const verifications = Vue.computed(() => {
       void state.liveState.version;
@@ -59,12 +67,77 @@ export const LivePanel = {
       return state.liveState.data ? renderMetrics(state.liveState.data) : "";
     });
 
+    /** Um único handler para todas as interações do painel (delegação de eventos). */
+    function onClick(event) {
+      const target = event.target.closest("[data-obs-cat], [data-obs-errors], [data-obs-clear-task], [data-obs-toggle], [data-obs-task], [data-obs-file]");
+      if (!target) return;
+
+      if (target.dataset.obsCat) {
+        const category = target.dataset.obsCat;
+        if (filters.categories.has(category)) filters.categories.delete(category);
+        else filters.categories.add(category);
+        bump();
+        return;
+      }
+      if (target.dataset.obsErrors !== undefined) {
+        filters.errorsOnly = !filters.errorsOnly;
+        bump();
+        return;
+      }
+      if (target.dataset.obsClearTask !== undefined) {
+        filters.taskId = null;
+        bump();
+        return;
+      }
+      if (target.dataset.obsToggle) {
+        const id = target.dataset.obsToggle;
+        if (expanded.has(id)) expanded.delete(id);
+        else expanded.add(id);
+        bump();
+        return;
+      }
+      if (target.dataset.obsFile !== undefined) {
+        const seq = Number(target.dataset.obsFile);
+        if (openSeqs.has(seq)) openSeqs.delete(seq);
+        else openSeqs.add(seq);
+        bump();
+        return;
+      }
+      if (target.dataset.obsTask) {
+        const id = target.dataset.obsTask;
+        if (!id) return;
+        selected.value = id;
+        filters.taskId = id;
+        selectTask(id);
+        bump();
+      }
+    }
+
+    function onSearch(event) {
+      const target = event.target.closest("[data-obs-text]");
+      if (!target) return;
+      filters.text = target.value;
+      bump();
+    }
+
+    // Mudou algo no redutor: força o redesenho dos blocos.
+    function bump() {
+      state.liveState.version += 1;
+    }
+
+    Vue.watch(
+      () => filters.text,
+      () => bump(),
+    );
+
     return {
       state,
       filters,
       expanded,
       collapsed,
+      openSeqs,
       header,
+      filterBar,
       tree,
       outputs,
       files,
@@ -72,17 +145,22 @@ export const LivePanel = {
       tools,
       activity,
       metrics,
+      onClick,
+      onSearch,
       refreshTasks,
       icon,
     };
   },
   template: `
-    <section class="live-view">
-      <div v-if="!state.liveState.data" class="boot">
-        <span class="spinner"></span> Acompanhando a execução…
+    <section class="live-view" @click="onClick" @input="onSearch">
+      <div v-if="!state.liveState.data" class="chat-empty">
+        <h2>Nenhuma execução ativa</h2>
+        <p>Quando você enviar um pedido, o acompanhamento da execução aparece aqui: plano, chamadas ao modelo, arquivos alterados e verificações.</p>
       </div>
       <template v-else>
         <header class="obs-head" v-html="header"></header>
+
+        <div class="obs-filters" v-html="filterBar"></div>
 
         <details class="obs-area" open>
           <summary>Plano da execução</summary>

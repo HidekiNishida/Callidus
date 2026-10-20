@@ -68,6 +68,9 @@ versionado localmente e a tela funciona offline. Detalhes: [frontend.md](/docs/a
 | Estado por item (running/ok/falha) | Ícone, cor e tempo de execução de cada linha |
 | Resumo do que foi feito | Cabeçalho com contagens e botão recolher/abrir detalhes |
 | Verbo em português | Tradução de todas as ferramentas e eventos |
+| Etiquetas do plano (Kilo) | Faixa fixa acima do prompt com as tarefas em aberto |
+| Rolagem que respeita a leitura | O feed acompanha só se o usuário estiver no fim |
+| Diff expansível | Edição de arquivo com “ver diff” na hora, no chat e no acompanhamento |
 
 ## Regras de responsividade e movimento
 

@@ -73,6 +73,26 @@ assim que a execução atual termina.
 tarefa raiz), então a segunda mensagem não herda o que aconteceu na primeira. O painel de
 detalhes acompanha a tarefa selecionada e ignora respostas antigas que chegam fora de ordem.
 
+**Rolagem automática**: a conversa acompanha o feed enquanto o usuário estiver no fim. Se ele sobe
+para ler (roda do mouse ou toque), a rolagem automática para — e volta a acompanhar quando ele
+retorna ao fim. O botão flutuante de “rolar para o fim” aparece quando há conteúdo abaixo.
+
+**Etiquetas do plano (acima do prompt)**: as tarefas em aberto do plano atual viram etiquetas
+fixas acima do campo de envio (estilo Kilo). Elas acompanham o planejamento: mudam de estado
+(concluída, em execução, bloqueada), somem quando a tarefa é concluída e podem ser clicadas para
+abrir os detalhes da tarefa. Quando há muitas, a faixa rola na horizontal.
+
+**Painel de execução (“Acompanhamento”)**: mostra o cabeçalho da run (situação, progresso,
+conexão), a barra de filtros (categoria, só falhas, busca por texto), a árvore de tarefas com
+contadores e evidências, as chamadas ao modelo, os arquivos alterados (com o diff expansível), as
+verificações, as ferramentas, a atividade e as métricas. Todas as interações funcionam dentro da
+interface: expandir a árvore, alternar filtros, filtrar por texto, abrir o diff e selecionar a
+tarefa (que abre os detalhes ao lado).
+
+**Resposta final em markdown**: títulos, ênfase, código, listas (com aninhamento), tabelas,
+citações, linhas horizontais, links e imagens — o HTML do modelo é escapado antes de qualquer
+marcação.
+
 ## Layout responsivo
 
 A interface se adapta em três faixas, sem esconder função essencial:

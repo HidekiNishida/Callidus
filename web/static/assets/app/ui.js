@@ -56,45 +56,217 @@ export function escapeHtml(text) {
     .replace(/'/g, "&#39;");
 }
 
-/** Markdown leve para a resposta final do agente (sem HTML cru). */
+/**
+ * Markdown da resposta final do agente: títulos, ênfase, código, listas (aninhadas),
+ * tabelas, citações, linhas horizontais, links e imagens. O HTML é escapado antes de
+ * qualquer marcação — o conteúdo do modelo nunca vira HTML cru.
+ */
 export function renderMarkdown(text) {
-  const blocks = String(text ?? "").split(/\n{2,}/);
+  const lines = String(text ?? "").replace(/\r\n?/g, "\n").split("\n");
   const out = [];
-  for (const block of blocks) {
-    const raw = block.trim();
-    if (!raw) continue;
-    const heading = raw.match(/^(#{1,4})\s+(.*)$/s);
-    if (heading) {
-      const level = heading[1].length;
-      out.push(`<h${level + 2}>${inline(heading[2])}</h${level + 2}>`);
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+
+    if (!line.trim()) {
+      index += 1;
       continue;
     }
-    if (/^[-*]\s+/m.test(raw) && raw.split("\n").every((line) => /^[-*]\s+/.test(line.trim()) || !line.trim())) {
-      const items = raw
-        .split("\n")
-        .filter((line) => line.trim())
-        .map((line) => `<li>${inline(line.replace(/^[-*]\s+/, ""))}</li>`)
+
+    // Bloco de código
+    if (/^\s*```/.test(line)) {
+      const lang = line.trim().slice(3).trim();
+      const buffer = [];
+      index += 1;
+      while (index < lines.length && !/^\s*```/.test(lines[index])) {
+        buffer.push(lines[index]);
+        index += 1;
+      }
+      index += 1;
+      out.push(
+        `<pre class="md-code"${lang ? ` data-lang="${escapeHtml(lang)}"` : ""}><code>${escapeHtml(buffer.join("\n"))}</code></pre>`,
+      );
+      continue;
+    }
+
+    // Tabela (cabeçalho + separador)
+    if (isTableRow(line) && isTableSeparator(lines[index + 1] || "")) {
+      const header = splitTableRow(line);
+      const align = splitTableRow(lines[index + 1]).map((cell) => {
+        const left = cell.startsWith(":");
+        const right = cell.endsWith(":");
+        if (left && right) return "center";
+        if (right) return "right";
+        return "left";
+      });
+      index += 2;
+      const rows = [];
+      while (index < lines.length && isTableRow(lines[index])) {
+        rows.push(splitTableRow(lines[index]));
+        index += 1;
+      }
+      const head = header
+        .map((cell, position) => `<th style="text-align:${align[position] || "left"}">${inline(cell)}</th>`)
         .join("");
-      out.push(`<ul>${items}</ul>`);
+      const body = rows
+        .map(
+          (row) =>
+            `<tr>${row
+              .map((cell, position) => `<td style="text-align:${align[position] || "left"}">${inline(cell)}</td>`)
+              .join("")}</tr>`,
+        )
+        .join("");
+      out.push(`<div class="md-table-wrap"><table class="md-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`);
       continue;
     }
-    if (/^```/.test(raw)) {
-      const code = raw.replace(/^```[a-z]*\n?/i, "").replace(/```$/, "");
-      out.push(`<pre class="md-code"><code>${escapeHtml(code)}</code></pre>`);
+
+    // Título
+    const heading = line.match(/^\s*(#{1,6})\s+(.*?)\s*#*\s*$/);
+    if (heading) {
+      const level = Math.min(6, heading[1].length + 2);
+      out.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+      index += 1;
       continue;
     }
-    out.push(`<p>${inline(raw).replace(/\n/g, "<br>")}</p>`);
+
+    // Linha horizontal
+    if (/^\s*([-*_])\s*(\1\s*){2,}$/.test(line)) {
+      out.push("<hr />");
+      index += 1;
+      continue;
+    }
+
+    // Citação
+    if (/^\s*>\s?/.test(line)) {
+      const buffer = [];
+      while (index < lines.length && /^\s*>\s?/.test(lines[index])) {
+        buffer.push(lines[index].replace(/^\s*>\s?/, ""));
+        index += 1;
+      }
+      out.push(`<blockquote>${renderMarkdown(buffer.join("\n"))}</blockquote>`);
+      continue;
+    }
+
+    // Lista (com aninhamento por indentação)
+    if (isListItem(line)) {
+      const items = [];
+      while (index < lines.length && (isListItem(lines[index]) || (lines[index].trim() && items.length && /\s{2,}/.test(lines[index])))) {
+        const current = lines[index];
+        const match = current.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+        if (match) {
+          items.push({ indent: match[1].length, ordered: /\d/.test(match[2]), text: match[3] });
+        } else if (items.length) {
+          items[items.length - 1].text += ` ${current.trim()}`;
+        }
+        index += 1;
+      }
+      out.push(renderList(items));
+      continue;
+    }
+
+    // Parágrafo
+    const buffer = [];
+    while (
+      index < lines.length &&
+      lines[index].trim() &&
+      !isListItem(lines[index]) &&
+      !/^\s*(#{1,6})\s+/.test(lines[index]) &&
+      !/^\s*```/.test(lines[index]) &&
+      !/^\s*>\s?/.test(lines[index]) &&
+      !isTableRow(lines[index])
+    ) {
+      buffer.push(lines[index]);
+      index += 1;
+    }
+    if (buffer.length) {
+      out.push(`<p>${inline(buffer.join("\n")).replace(/\n/g, "<br />")}</p>`);
+    } else {
+      index += 1;
+    }
   }
+
   return out.join("");
 }
 
+function isListItem(line) {
+  return /^\s*([-*+]|\d+[.)])\s+/.test(line);
+}
+
+function isTableRow(line) {
+  return line.includes("|") && line.trim().length > 2;
+}
+
+function isTableSeparator(line) {
+  return /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
+}
+
+function splitTableRow(line) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function renderList(items) {
+  if (!items.length) return "";
+  let index = 0;
+
+  // Níveis por indentação: cada subnível entra dentro do <li> do item anterior.
+  function level(indent) {
+    let html = "";
+    let tag = null;
+    while (index < items.length) {
+      const item = items[index];
+      if (item.indent < indent) break;
+      if (item.indent > indent) {
+        const nested = level(item.indent);
+        if (nested) html = html.replace(/<\/li>$/, `${nested}</li>`);
+        continue;
+      }
+      const wanted = item.ordered ? "ol" : "ul";
+      if (tag && tag !== wanted) {
+        html += `</${tag}>`;
+        tag = null;
+      }
+      if (!tag) {
+        tag = wanted;
+        html += `<${tag}>`;
+      }
+      html += `<li>${inline(item.text)}`;
+      index += 1;
+      if (index < items.length && items[index].indent > item.indent) {
+        html += level(items[index].indent);
+      }
+      html += `</li>`;
+    }
+    if (tag) html += `</${tag}>`;
+    return html;
+  }
+
+  const base = Math.min(...items.map((item) => item.indent));
+  return `<div class="md-list">${level(base)}</div>`;
+}
+
+/** Marcações dentro da linha: código, links, imagens, ênfase e riscado. */
 function inline(text) {
-  let value = escapeHtml(text);
-  value = value.replace(/`([^`]+)`/g, "<code>$1</code>");
-  value = value.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  value = value.replace(/(^|\s)\*([^*]+)\*/g, "$1<em>$2</em>");
-  value = value.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-  return value;
+  const codes = [];
+  let out = escapeHtml(text);
+  out = out.replace(/`([^`]+)`/g, (_match, code) => {
+    codes.push(code);
+    return `\u0000${codes.length - 1}\u0000`;
+  });
+  out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<img src="$2" alt="$1" loading="lazy" />');
+  out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  out = out.replace(/\*\*\*([^*]+)\*\*\*/g, "<strong><em>$1</em></strong>");
+  out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  out = out.replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  out = out.replace(/(^|[\s(])_([^_\n]+)_/g, "$1<em>$2</em>");
+  out = out.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+  out = out.replace(/\u0000(\d+)\u0000/g, (_match, position) => `<code>${codes[Number(position)]}</code>`);
+  return out;
 }
 
 export function stamp(iso) {

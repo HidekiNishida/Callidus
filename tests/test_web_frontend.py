@@ -198,6 +198,50 @@ def test_mensagem_enviada_durante_a_execucao_entra_na_fila():
     assert "cancelQueued" in store
 
 
+def test_rolagem_automatica_para_quando_o_usuario_esta_no_fim():
+    """A rolagem acompanha o feed só enquanto o usuário estiver no fim da conversa."""
+    chat = (APP_DIR / "components" / "chat.js").read_text(encoding="utf-8")
+    assert "const stick = atBottom.value && !userTookOver.value;" in chat
+    assert "behavior: \"smooth\"" in chat
+    assert "scrollHeight" in chat
+    assert "@scroll=\"onScroll\"" in chat
+    # o usuário assume o controle (roda/toque) e a rolagem suave em andamento é cancelada
+    assert "onUserScrollIntent" in chat
+    assert "userTookOver" in chat
+
+
+def test_etiquetas_do_plano_acima_do_prompt():
+    """As tarefas do plano viram etiquetas fixas acima do campo de envio (estilo Kilo)."""
+    chat = (APP_DIR / "components" / "chat.js").read_text(encoding="utf-8")
+    css = (APP_DIR / "style.css").read_text(encoding="utf-8")
+    assert "plan-strip" in chat
+    assert "plan-tag" in chat
+    assert "planTags" in chat
+    # concluídas somem, em aberto ficam
+    assert "COMPLETED" in chat
+    # rolagem horizontal quando há muitas etiquetas
+    assert ".plan-strip-inner" in css and "overflow-x: auto" in css
+
+
+def test_painel_de_execucao_tem_interacoes():
+    """O painel de execução responde: filtros, árvore, diff e seleção de tarefa."""
+    live = (APP_DIR / "components" / "live.js").read_text(encoding="utf-8")
+    css = (APP_DIR / "style.css").read_text(encoding="utf-8")
+    for hook in ("data-obs-cat", "data-obs-errors", "data-obs-toggle", "data-obs-task", "data-obs-file"):
+        assert hook in live, hook
+    assert "renderFilters" in live and "renderTree" in live and "renderFiles" in live
+    # estilos do redutor (a classe `obs-` nunca teve estilo na interface nova)
+    assert ".obs-node" in css and ".obs-chip" in css and ".obs-diff" in css
+
+
+def test_markdown_da_resposta_final_e_completo():
+    """A resposta final é formatada: títulos, listas aninhadas, tabelas, código e citações."""
+    ui = (APP_DIR / "ui.js").read_text(encoding="utf-8")
+    for feature in ("md-table", "blockquote", "md-code", "renderList", "isTableSeparator", "inline("):
+        assert feature in ui, feature
+    assert "escapeHtml" in ui
+
+
 def test_execucao_automatica_continua_o_run():
     """O modo automático faz o servidor conduzir os passos (a execução não para no 1º passo)."""
     store = (APP_DIR / "store.js").read_text(encoding="utf-8")
