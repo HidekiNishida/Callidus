@@ -25,6 +25,7 @@ Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 | [context-builder.md](/docs/architecture/context-builder.md) | Contexto por operação |
 | [execucao-autonoma.md](/docs/architecture/execucao-autonoma.md) | Worker autônomo |
 | [requisitos-verificacao-progresso.md](/docs/architecture/requisitos-verificacao-progresso.md) | Requisitos rastreáveis, validação do plano, verificação independente, progresso real |
+| [avaliacao.md](/docs/architecture/avaliacao.md) | **Avaliação reproduzível** — cenários com critérios objetivos e resultado medido com o modelo local |
 | [skills-estrategia.md](/docs/architecture/skills-estrategia.md) | Skills sob demanda, estratégia profissional, decomposição recursiva e recuperação da verificação |
 | [hierarquia-agentes.md](/docs/architecture/hierarquia-agentes.md) | **Hierarquia de agentes** — executor compartilhado, ciclo de vida, consultas sob demanda, escalonador e descarte |
 
