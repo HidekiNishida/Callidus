@@ -29,6 +29,7 @@ data/*
 !data/README.md
 backups/
 dist/
+lab/out/
 web/node_modules/
 *.egg-info/
 
