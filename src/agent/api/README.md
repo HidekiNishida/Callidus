@@ -6,9 +6,18 @@ Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) 
 
 | Arquivo | Responsabilidade |
 |---------|------------------|
-| [`main.py`](main.py) | **App FastAPI** — lifespan (engine, background worker), rotas principais, mounting SPA, `run()` entrypoint |
+| [`main.py`](main.py) | **App FastAPI** — lifespan (engine, background worker, agendador), montagem dos roteadores, montagem da SPA e `run()` (ponto de entrada) |
+| [`system_routes.py`](system_routes.py) | **Rotas de sistema** — health, provedores embutidos, ferramentas, MCP, defaults da interface e debug do chat |
+| [`project_routes.py`](project_routes.py) | **Rotas de projeto** — CRUD do projeto, computador remoto, filesystem, grafo de conhecimento, métricas, visão ao vivo, eventos e memória |
+| [`conversation_routes.py`](conversation_routes.py) | **Rotas de conversa** — conversas soltas, mover, renomear, bifurcar, ativar ramo e conversas do projeto |
+| [`task_routes.py`](task_routes.py) | **Rotas de tarefa** — criação/leitura, status, dependências, contrato, snapshots de contexto, tentativas e evidências |
+| [`run_routes.py`](run_routes.py) | **Rotas de execução** — iniciar, avançar, pausar, retomar, cancelar, modo autônomo e métricas do run |
+| [`presenters.py`](presenters.py) | **Apresentação de leitura** — `present_task` e `present_conversation` (payload único para toda a API) |
+| [`live_view.py`](live_view.py) | **Visão ao vivo** — linha do tempo de pensamentos, texto legível das ações e tradução por idioma |
 | [`observe_routes.py`](observe_routes.py) | **Rotas de observabilidade** — SSE `/events`, `/live`, `/snapshot`, histórico, diff git |
 | [`agent_routes.py`](agent_routes.py) | **Rotas da hierarquia de agentes** — árvore, suspender, retomar, descartar, consultar e métricas de recursos |
+| [`automation_routes.py`](automation_routes.py) | **Rotas das automações** — definição, gatilhos, ações, disparos e supervisor |
+| [`provider_routes.py`](provider_routes.py) | **Rotas de configuração de provedores** — catálogo, modelos, diagnóstico e credencial |
 | [`deps.py`](deps.py) | **Dependências FastAPI** — `db_session`, `read_settings`, `get_engine`, `ToolRegistry`, `McpManager` |
 
 ## Rotas Principais (Resumo)
