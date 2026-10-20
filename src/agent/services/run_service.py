@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from agent.domain.enums import RunStatus, TaskStatus
 from agent.domain.schemas import ExecutionRunCreate, TaskStatusUpdate
 from agent.persistence.models import EventLogModel, ExecutionRunModel, TaskModel
+from agent.services.agent_service import AgentService
 
 
 class RunService:
@@ -44,6 +45,9 @@ class RunService:
                 payload_json={"root_task_id": str(task.id)},
             )
         )
+        # O run começa com um agente lógico na raiz: é quem delega e quem recebe as
+        # respostas dos filhos.
+        AgentService(self._session).ensure_agent(task.id)
         return run
 
     def list_runs(self, project_id: uuid.UUID) -> list[ExecutionRunModel]:

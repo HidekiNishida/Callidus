@@ -11,6 +11,7 @@ from agent.domain.enums import TaskStatus
 from agent.domain.schemas import TaskStatusUpdate
 from agent.persistence.models import EvidenceModel, TaskModel
 from agent.services.task_service import TaskService
+from agent.services.agent_service import AgentNotFoundError, AgentService
 from agent.verification.fingerprint import is_current
 
 
@@ -127,6 +128,14 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
             report["final_answer"] = result["markdown"]
             report["sources"] = result.get("sources") or []
     parent.consolidated_result_json = report
+    # O que o filho produziu vira descoberta persistida do agente dele: é isso que
+    # permite ao pai consultar o filho depois, sem reexecutar o trabalho.
+    agents = AgentService(session)
+    for child in kids:
+        try:
+            agents.record_task_result(child.id)
+        except AgentNotFoundError:  # pragma: no cover - tarefa sem agente é normal
+            continue
     if with_caveats:
         parent.metadata_json = {**(parent.metadata_json or {}), "completed_with_caveats": True}
     current = TaskStatus(parent.status)

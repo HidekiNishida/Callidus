@@ -8,6 +8,7 @@ from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, Uniqu
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
+from agent.domain.agent_enums import AgentStatus, ExecutionStatus, QueryStatus
 from agent.domain.enums import MemoryKind, RunStatus, TaskKind, TaskStatus
 
 
@@ -258,3 +259,106 @@ class EvidenceModel(Base):
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     detail_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AgentModel(Base):
+    """Agente lógico: identidade, papel, instruções, permissões e responsabilidade.
+
+    Existe independente da execução: um agente suspenso continua consultável e
+    recuperável. A hierarquia é recursiva (`parent_id` aponta para outro agente) e não
+    depende de uma quantidade fixa de gerações.
+    """
+
+    __tablename__ = "agents"
+    __table_args__ = (Index("ix_agents_task", "task_id"), Index("ix_agents_parent", "parent_id"))
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    # Agente que delegou a este agente (o "pai" lógico).
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agents.id", ondelete="SET NULL"), nullable=True
+    )
+    # Tarefa que este agente executa. A relação é 1:1 na prática, mas não por
+    # restrição: o agente pode acompanhar a tarefa e continuar existindo depois dela.
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
+    role: Mapped[str] = mapped_column(String(64), default="worker")
+    instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    permissions_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default=AgentStatus.IDLE.value)
+    depth: Mapped[int] = mapped_column(Integer, default=0)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class AgentExecutionModel(Base):
+    """Execução: instância ativa que usa modelo, contexto e ferramentas.
+
+    É o que ocupa memória de inferência. Quando termina, o que fica é o `checkpoint_json`
+    — estado estruturado, não transcrição — e as referências a artefatos.
+    """
+
+    __tablename__ = "agent_executions"
+    __table_args__ = (Index("ix_agent_executions_agent", "agent_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agents.id"), nullable=False)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("execution_runs.id"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(32), default=ExecutionStatus.PENDING.value)
+    attempt: Mapped[int] = mapped_column(Integer, default=0)
+    # Estado estruturado para retomar: objetivo, etapa, descobertas, decisões.
+    checkpoint_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Referências a arquivos, trechos e artefatos examinados (o histórico bruto fica
+    # nos eventos, que são a trilha de auditoria).
+    context_refs_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AgentQueryModel(Base):
+    """Consulta de um agente a outro.
+
+    Identificador, origem, destino, tarefa relacionada, estado, limite de tentativas e
+    correlação da resposta — o que impede respostas associadas à tarefa errada.
+    """
+
+    __tablename__ = "agent_queries"
+    __table_args__ = (
+        Index("ix_agent_queries_target", "target_agent_id"),
+        Index("ix_agent_queries_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    requester_agent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agents.id"), nullable=False
+    )
+    target_agent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agents.id"), nullable=False
+    )
+    # Agente que realmente respondeu (pode ser um descendente do alvo).
+    answered_by_agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agents.id"), nullable=True
+    )
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    questions_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(32), default=QueryStatus.PENDING.value)
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+

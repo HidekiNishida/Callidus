@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from agent.domain.agent_enums import AgentStatus, ExecutionStatus, QueryStatus
 from agent.domain.enums import MemoryKind, RunStatus, TaskKind, TaskStatus
 
 
@@ -174,5 +175,65 @@ class MemoryRead(BaseModel):
     version: int
     source_refs_json: list[str] | None
     created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AgentRead(BaseModel):
+    """Agente lógico: identidade, papel, estado e o que ele sabe."""
+
+    id: UUID
+    project_id: UUID
+    parent_id: UUID | None = None
+    task_id: UUID | None = None
+    role: str = "worker"
+    instructions: str | None = None
+    status: AgentStatus = AgentStatus.IDLE
+    depth: int = 0
+    children: int = 0
+    execution_status: ExecutionStatus | None = None
+    findings: list[dict] = Field(default_factory=list)
+    checkpoint: dict = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentAsk(BaseModel):
+    """Consulta de um agente a outro."""
+
+    requester_agent_id: UUID
+    question: str | list[str]
+    task_id: UUID | None = None
+    correlation_id: str | None = None
+    provider: str | None = None
+
+
+class AgentDiscard(BaseModel):
+    """Descarte do estado recuperável de um agente."""
+
+    reason: str = ""
+    purge: bool = False
+    force: bool = False
+
+
+class AgentQueryRead(BaseModel):
+    """Consulta e sua resposta (correlacionadas por identificador)."""
+
+    id: UUID
+    project_id: UUID
+    requester_agent_id: UUID
+    target_agent_id: UUID
+    answered_by_agent_id: UUID | None = None
+    task_id: UUID | None = None
+    correlation_id: str
+    questions_json: list[str] = Field(default_factory=list)
+    status: QueryStatus = QueryStatus.PENDING
+    answer: str | None = None
+    answer_json: dict | None = None
+    attempts: int = 0
+    max_attempts: int = 3
+    error_message: str | None = None
+    created_at: datetime
+    answered_at: datetime | None = None
 
     model_config = {"from_attributes": True}
