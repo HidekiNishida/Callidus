@@ -114,8 +114,15 @@ export const ChatView = {
       const rootsNow = roots();
       const last = rootsNow[rootsNow.length - 1];
       if (!last) return [];
+      // Só há etiquetas enquanto a execução desta mensagem está em curso: uma tarefa
+      // parada (planejando sem nada acontecendo) não aparece.
+      const run = state.currentRun;
+      const running = run && run.status === "ACTIVE" && run.root_task_id === last.id;
+      if (!running) return [];
       return childrenOf(last.id)
-        .filter((task) => task.status !== "COMPLETED" && task.status !== "CANCELLED")
+        .filter(
+          (task) => !["COMPLETED", "CANCELLED", "BLOCKED", "FAILED"].includes(task.status),
+        )
         .map((task) => ({
           id: task.id,
           title: task.display_title || task.title,
@@ -268,6 +275,12 @@ export const ChatView = {
       toast,
       sendMessage,
       selectTask,
+      stepRun,
+      autoRun,
+      pauseRun,
+      cancelRun,
+      resumeRun,
+      cancelQueued,
       icon,
       stamp,
     };
@@ -377,7 +390,7 @@ export const ChatView = {
                 <span>{{ message.pause.reason || 'limite operacional atingido' }}</span>
                 <span class="muted small" v-if="message.pause.next_action">Próximo passo: {{ message.pause.next_action }}</span>
               </div>
-              <button type="button" class="btn-ghost small" @click="resumeRun()">Retomar</button>
+              <button type="button" class="btn-ghost small" @click="resumeRun(message.id)">Retomar</button>
             </div>
 
             <div class="answer" v-if="message.reply" v-html="message.reply"></div>

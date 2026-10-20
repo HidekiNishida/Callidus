@@ -83,7 +83,8 @@ rolando interrompa o acompanhamento).
 fixas acima do campo de envio (estilo Kilo) — e **não** aparecem dentro da bolha da mensagem.
 Elas acompanham o planejamento: mudam de estado (concluída, em execução, bloqueada), somem quando a
 tarefa é concluída e podem ser clicadas para abrir os detalhes da tarefa. Quando há muitas, a faixa
-rola na horizontal.
+rola na horizontal. A faixa aparece **enquanto a execução da mensagem está em curso**: com a run
+pausada ou terminada, nada fica parado na tela.
 
 **Painel de execução (“Acompanhamento”)**: mostra o cabeçalho da run (situação, progresso,
 conexão), a barra de filtros (categoria, só falhas, busca por texto), a árvore de tarefas com

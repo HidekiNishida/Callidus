@@ -188,6 +188,28 @@ def test_atividade_fica_por_mensagem_e_os_detalhes_seguem_a_selecao():
     assert "inspectorToken" in store
 
 
+def test_retomar_usa_a_execucao_da_mensagem_e_continua():
+    """O botão Retomar retoma a run da mensagem (com `retry_blocked`) e segue executando."""
+    store = (APP_DIR / "store.js").read_text(encoding="utf-8")
+    chat = (APP_DIR / "components" / "chat.js").read_text(encoding="utf-8")
+    assert "root_task_id === rootTaskId" in store
+    assert "resume?retry_blocked=true" in store
+    assert "connectStream(run.id)" in store
+    assert "void autoRun();" in store
+    assert "@click=\"resumeRun(message.id)\"" in chat
+    # os controles de execução precisam estar expostos no componente do chat
+    for handler in ("resumeRun", "cancelRun", "stepRun", "autoRun", "pauseRun"):
+        assert handler in chat, handler
+
+
+def test_etiquetas_do_plano_so_while_a_execucao_esta_ativa():
+    """Uma tarefa parada (sem nada acontecendo) não aparece como etiqueta."""
+    chat = (APP_DIR / "components" / "chat.js").read_text(encoding="utf-8")
+    assert 'run.status === "ACTIVE"' in chat
+    assert "run.root_task_id === last.id" in chat
+    assert '"BLOCKED", "FAILED"' in chat
+
+
 def test_mensagem_enviada_durante_a_execucao_entra_na_fila():
     """Enviar durante a execução agenda a mensagem (antes ela se perdia)."""
     store = (APP_DIR / "store.js").read_text(encoding="utf-8")

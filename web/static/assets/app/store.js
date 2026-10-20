@@ -500,14 +500,30 @@ export async function pauseRun() {
   await refreshTasks();
 }
 
-export async function resumeRun() {
-  if (!state.currentRun) return;
+export async function resumeRun(rootTaskId) {
+  // A execução pausada é a da mensagem (tarefa raiz) — não a última da lista.
+  const workspace = workspaceId();
+  const runs = await api(`/projects/${workspace}/runs`).catch(() => []);
+  const run =
+    runs.find((item) => item.root_task_id === rootTaskId) ||
+    (state.currentRun?.status === "PAUSED" ? state.currentRun : null);
+  if (!run) {
+    toast("Não encontrei a execução pausada desta mensagem", "error");
+    return;
+  }
   try {
-    await api(`/runs/${state.currentRun.id}/resume`, { method: "POST" });
-    state.currentRun = { ...state.currentRun, status: "ACTIVE" };
-    await connectStream(state.currentRun.id);
+    // `retry_blocked` devolve as etapas bloqueadas para planejamento (a causa já foi diagnosticada).
+    await api(`/runs/${run.id}/resume?retry_blocked=true`, { method: "POST" });
+    state.currentRun = { ...run, status: "ACTIVE" };
+    state.currentRootId = rootTaskId;
+    await connectStream(run.id);
+    startTaskPolling();
     await refreshTasks();
     toast("Execução retomada", "ok");
+    if (state.autoMode) {
+      // Sem isto a execução ficaria "ativa" sem avançar.
+      void autoRun();
+    }
   } catch (err) {
     toast(err.message || "Falha ao retomar a execução", "error");
   }
