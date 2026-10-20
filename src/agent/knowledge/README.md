@@ -1,7 +1,5 @@
 # Knowledge Graph (`knowledge/`) — Grafo de Símbolos, Imports e Arquivos
 
-![arquitetura](/media/icons/arquitetura.svg){width=48}
-
 Índice incremental do código do projeto: arquivos, símbolos (classes, funções), imports e requisitos. Usado para busca semântica e navegação no contexto.
 
 ## 🏗️ Módulos

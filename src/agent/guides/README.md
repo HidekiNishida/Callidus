@@ -1,7 +1,5 @@
 # Guias (`guides/`) — Descoberta de Capacidade por Modelo
 
-![exemplos](/media/icons/exemplos.svg){width=48}
-
 Fornece linhas de capacidade específicas do modelo e resumo de guias do projeto (AGENTS.md, READMEs) para injeção no prompt de decomposição.
 
 ## 🏗️ Módulos

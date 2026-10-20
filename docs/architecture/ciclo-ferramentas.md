@@ -1,7 +1,5 @@
 # Ciclo de ferramentas da operação
 
-![fluxos](/media/icons/fluxos.svg){width=48}
-
 O ciclo de inspeção com ferramentas antes da resposta do modelo.
 
 Módulo: [`src/agent/orchestrator/tool_loop.py`](/src/agent/orchestrator/tool_loop.py) ·

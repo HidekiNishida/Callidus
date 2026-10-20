@@ -1,7 +1,5 @@
 # Preferências do Project
 
-![configuracao](/media/icons/configuracao.svg){width=48}
-
 Preferências permanentes do coordenador (uso restrito).
 
 - Marca: o projeto se chama **Callidus**. Interface, documentação, metadados e mensagens usam o nome "Callidus" e o símbolo em [`media/Callidus Logo.svg`](/media/Callidus%20Logo.svg); o pacote instalável é `callidus` e o script da API é `callidus-api` (com `agente-api` mantido como alias). (2026-10-19)

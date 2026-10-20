@@ -1,7 +1,5 @@
 # Segurança (`security/`) — Resolução Segura de Paths
 
-![seguranca](/media/icons/seguranca.svg){width=48}
-
 Garante que todas as operações de arquivo fiquem dentro do `project_root` autorizado. Usado por todas as ferramentas builtins e MCP.
 
 ## 🏗️ Módulos

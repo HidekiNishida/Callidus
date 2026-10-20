@@ -1,7 +1,5 @@
 # Provedores de inferência
 
-![Provedores](/media/icons/projeto.svg){width=48}
-
 Voltar ao [Hub](/docs/architecture/README.md) · Código: [`src/agent/providers/`](/src/agent/providers/README.md)
 
 O Callidus fala com modelos por **provedores**: Ollama, llama.cpp, OpenRouter, qualquer serviço

@@ -1,7 +1,5 @@
 # Verificação Final Antes de Encerrar
 
-![Verificação](/media/icons/verificacao.svg){width=48}
-
 Voltar ao [Hub](/docs/regras/README.md) · Testes: [validacoes-testes.md](/docs/regras/validacoes-testes.md) · Tarefas: [checklists-tarefas.md](/docs/regras/checklists-tarefas.md)
 
 **Regra:** antes de fechar qualquer tarefa, o agente deve verificar **todos os arquivos envolvidos**, **incluindo documentação relacionada**, garantindo consistência entre código ↔ docs ↔ checklists ↔ regras.
@@ -33,8 +31,6 @@ Não declare “concluído” só porque o código compilou ou o chat parece ok.
 ---
 
 ## Checklist final concreto
-
-![Checklist](/media/icons/checklist.svg){width=32}
 
 Copie para o arquivo de tarefa ou marque item a item:
 

@@ -1,7 +1,5 @@
 # Grafo de conhecimento do projeto
 
-![arquitetura](/media/icons/arquitetura.svg){width=48}
-
 O grafo de conhecimento do projeto e o que ele indexa.
 
 Representação persistente em SQLite (`kg_nodes`, `kg_edges`) para localizar arquivos, símbolos Python, documentos e requisitos canônicos sem carregar o repositório inteiro no prompt.

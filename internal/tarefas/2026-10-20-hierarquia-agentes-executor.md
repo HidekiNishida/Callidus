@@ -1,7 +1,5 @@
 # Checklist: Hierarquia de Agentes Recursiva, Executor Compartilhado e Consultas Sob Demanda
 
-![tarefas](/media/icons/tarefas.svg){width=48}
-
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |

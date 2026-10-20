@@ -1,7 +1,5 @@
 # Execução autônoma em segundo plano
 
-![fluxos](/media/icons/fluxos.svg){width=48}
-
 O worker autônomo: o laço em segundo plano e o escalonador.
 
 Runs com `config_json.autonomous = true` são avançados pelo worker asyncio (`autonomous_worker.py`), iniciado no lifespan da API quando `ENABLE_BACKGROUND_WORKER` (padrão `true`).

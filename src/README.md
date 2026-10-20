@@ -1,7 +1,5 @@
 # Código-fonte (`src/`)
 
-![referencias](/media/icons/referencias.svg){width=48}
-
 O mapa do código-fonte: onde fica cada camada.
 
 Pacote Python instalável **`callidus`** (`pip install -e .`).

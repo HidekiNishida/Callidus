@@ -1,7 +1,5 @@
 # Marca do Callidus
 
-![Organização](/media/icons/organizacao.svg){width=48}
-
 **Regra:** o projeto se chama **Callidus**. Toda interface, documentação, metadado de API e mensagem de usuário usa o nome "Callidus" e o símbolo oficial. Termos genéricos em português ("o agente", "o runtime") continuam valendo como substantivo comum — não são nome de produto.
 
 ## 🎯 Identidade

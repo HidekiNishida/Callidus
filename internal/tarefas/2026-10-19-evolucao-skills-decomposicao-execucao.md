@@ -1,7 +1,5 @@
 # Checklist: Evolução do Agente Local — Skills, Prompt Estratégico, Decomposição Recursiva e Execução Profissional
 
-![tarefas](/media/icons/tarefas.svg){width=48}
-
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |

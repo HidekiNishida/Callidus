@@ -1,7 +1,5 @@
 # Observabilidade (`observability/`) — EventBus, SSE, Streaming e Snapshots
 
-![metricas](/media/icons/metricas.svg){width=48}
-
 Barramento de eventos em memória para entrega tempo real (SSE), anel de histórico, operações ao vivo e snapshots de run.
 
 ## 🏗️ Módulos

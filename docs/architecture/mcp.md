@@ -1,7 +1,5 @@
 # Integração MCP
 
-![integracoes](/media/icons/integracoes.svg){width=48}
-
 A integração com servidores MCP por stdio.
 
 Gerenciador: [src/agent/mcp/](/src/agent/mcp/README.md)

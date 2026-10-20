@@ -1,7 +1,5 @@
 # Gatilhos das automações
 
-![fluxos](/media/icons/fluxos.svg){width=48}
-
 **Quando** a automação dispara. Um gatilho é um contrato temporal ou de evento: o supervisor
 pergunta quais automações estão elegíveis e o resultado vira um disparo.
 

@@ -1,7 +1,5 @@
 # Automações persistentes e autônomas
 
-![Arquitetura](/media/icons/organizacao.svg){width=48}
-
 Voltar ao [Hub](/docs/architecture/README.md) · [Modelo de dados](/docs/architecture/modelo-dados.md) · [Execução autônoma](/docs/architecture/execucao-autonoma.md)
 
 O Callidus executa tarefas automáticas: conforme horários, recorrências,

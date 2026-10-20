@@ -1,7 +1,5 @@
 # API (`api/`) — FastAPI HTTP + SSE + SPA Estática
 
-![integracoes](/media/icons/integracoes.svg){width=48}
-
 Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) e serving da SPA estática.
 
 ## 📁 Arquivos

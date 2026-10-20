@@ -1,7 +1,5 @@
 # Execução local
 
-![configuracao](/media/icons/configuracao.svg){width=48}
-
 Como instalar e executar o Callidus na própria máquina.
 
 ## ⚙️ Instalação

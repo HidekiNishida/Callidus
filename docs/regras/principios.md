@@ -1,7 +1,5 @@
 # Princípios Centrais
 
-![Princípios](/media/icons/principios.svg){width=48}
-
 Voltar ao [Hub de regras](/docs/regras/README.md) · Contexto: [project-context.md](/docs/project-context.md)
 
 Estes princípios têm prioridade sobre hábitos ad hoc. Em conflito, aplique-os nesta ordem.
@@ -154,8 +152,6 @@ Complementam os centrais — detalhe em cada filho:
 ---
 
 ## Checklist do agente
-
-![Checklist](/media/icons/checklist.svg){width=32}
 
 - [ ] Sei qual princípio aplica se houver conflito
 - [ ] Sei onde gravar o artefato (docs / media / internal / internal/tarefas)

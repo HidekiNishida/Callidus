@@ -1,7 +1,5 @@
 # Checklist: ⟨título curto da atividade⟩
 
-![tarefas](/media/icons/tarefas.svg){width=48}
-
 O modelo de checklist usado por toda atividade do projeto.
 
 | Campo | Valor |

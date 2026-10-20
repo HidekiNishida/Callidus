@@ -1,7 +1,5 @@
 # Visão (`vision/`) — Referências de Imagem para Contexto
 
-![integracoes](/media/icons/integracoes.svg){width=48}
-
 Prepara referências a imagens (base64/data URI) quando o perfil do modelo suporta visão (`supports_vision=True`).
 
 ## 🏗️ Módulos

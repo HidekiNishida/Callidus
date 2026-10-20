@@ -1,7 +1,5 @@
 # Diagnóstico e evolução (v0.5)
 
-![exemplos](/media/icons/exemplos.svg){width=48}
-
 O diagnóstico do estado atual e o plano de evolução.
 
 ## 🎯 Estado anterior (v0.4)

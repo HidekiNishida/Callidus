@@ -1,7 +1,5 @@
 # MCP (`mcp/`) — Integração stdio com SDK `mcp`
 
-![integracoes](/media/icons/integracoes.svg){width=48}
-
 Permite ao agente chamar ferramentas de servidores MCP locais via subprocess stdio (JSON-RPC 2.0).
 
 ## 🏗️ Módulos

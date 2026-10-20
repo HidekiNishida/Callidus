@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Navegação e leitura">
-  <rect width="64" height="64" rx="12" fill="#0F766E"/>
-  <path d="M14 16 L32 26 L32 52 L14 42 Z" fill="#CCFBF1"/>
-  <path d="M50 16 L32 26 L32 52 L50 42 Z" fill="#5EEAD4"/>
-  <line x1="32" y1="26" x2="32" y2="52" stroke="#0F766E" stroke-width="2.5"/>
-</svg>

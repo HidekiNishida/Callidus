@@ -1,7 +1,5 @@
 # Orquestrador (`orchestrator/`) — Ciclo de Execução do Callidus
 
-![fluxos](/media/icons/fluxos.svg){width=48}
-
 **Coração do agente**: transforma um objetivo em tarefas atômicas, executa ferramentas/modelo, verifica resultados, consolida, replaneja falhas e escreve a resposta final.
 
 ## 🏗️ Módulos

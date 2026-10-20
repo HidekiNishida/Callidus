@@ -1,7 +1,5 @@
 # Decisões de arquitetura (ADR)
 
-![Projeto](/media/icons/projeto.svg){width=48}
-
 Registro das decisões estruturais do Callidus: **contexto, problema, alternativas, decisão,
 consequências e estado**. O resumo curto está em
 [visao-geral.md](/docs/architecture/visao-geral.md#decisões-adr-resumido).

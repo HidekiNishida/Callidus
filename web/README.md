@@ -1,7 +1,5 @@
 # Interface web (`web/`)
 
-![integracoes](/media/icons/integracoes.svg){width=48}
-
 A interface web do Callidus: SPA estática, streaming e estado.
 
 SPA servida pela API em `/` — **Vue 3** (build global, sem etapa de build), com tema claro/escuro.

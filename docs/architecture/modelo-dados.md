@@ -1,7 +1,5 @@
 # Modelo de dados
 
-![arquivos](/media/icons/arquivos.svg){width=48}
-
 O modelo de dados: as 22 tabelas, seus campos e as transições gravadas.
 
 Persistência principal: SQLite em `data/agent.db` (configurável via `AGENT_DATA_DIR`).

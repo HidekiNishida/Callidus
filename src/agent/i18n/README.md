@@ -1,7 +1,5 @@
 # Internacionalização (`i18n/`) — Detecção de Idioma + Instrução no Prompt
 
-![configuracao](/media/icons/configuracao.svg){width=48}
-
 Suporte a português, inglês e espanhol: detecção automática do idioma do objetivo e injeção de instrução no prompt.
 
 ## 🏗️ Módulos

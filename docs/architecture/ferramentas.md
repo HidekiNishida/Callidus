@@ -1,7 +1,5 @@
 # Ferramentas e segurança
 
-![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
-
 As ferramentas determinísticas: registro, execução e permissões.
 
 Registro: `src/agent/tools/registry.py` · builtins: `src/agent/tools/builtins.py`

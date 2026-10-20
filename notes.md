@@ -1,7 +1,5 @@
 # Notes (espelho local)
 
-![configuracao](/media/icons/configuracao.svg){width=48}
-
 Anotações de contexto do coordenador (uso restrito).
 
 Status efêmero do Project. O painel **Notes** no Cursor pode estar mais atual; este arquivo existe no git por completude.

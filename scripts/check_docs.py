@@ -40,6 +40,18 @@ def _targets(paths: list[Path]) -> list[Path]:
     return [f for f in files if "__pycache__" not in f.parts]
 
 
+def _sem_codigo(texto: str) -> str:
+    """Remove os trechos entre crases (código inline) antes de procurar links.
+
+    Args:
+        texto: conteúdo do documento.
+
+    Returns:
+        O texto sem os trechos de código inline.
+    """
+    return re.sub(r"`[^`\n]*`", "", texto)
+
+
 def _resolve(source: Path, target: str) -> Path | None:
     """Resolve o destino de um link a partir do arquivo que o contém.
 
@@ -124,7 +136,7 @@ def main(argv: list[str]) -> int:
     broken: list[str] = []
     for file in _targets(paths):
         text = file.read_text(encoding="utf-8")
-        for match in LINK.finditer(text):
+        for match in LINK.finditer(_sem_codigo(text)):
             resolved = _resolve(file, match.group(1))
             if resolved is None:
                 continue

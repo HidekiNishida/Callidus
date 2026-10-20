@@ -1,7 +1,5 @@
 # Padrões de Ativos Visuais
 
-![Ativos visuais](/media/icons/ativos-visuais.svg){width=48}
-
 Voltar ao [Hub](/docs/regras/README.md) · Documentação: [documentacao.md](/docs/regras/documentacao.md)
 
 Ícones, imagens, diagramas e tabelas são parte do sistema de regras: aceleram leitura humana e parsing por agentes.
@@ -37,44 +35,30 @@ Não coloque assets de documentação em `internal/` se forem referenciados por 
 
 ## Catálogo de ícones atuais
 
-### Conjunto de regras (identidade do hub)
+Ícones são **marcadores pequenos de navegação** — nunca cabeçalhos. O catálogo abaixo é o
+conjunto do hub de regras; ele marca as linhas da tabela de navegação.
 
 | Arquivo | Uso |
 |---------|-----|
-| ![hub](/media/icons/hub.svg){width=24} `hub.svg` | Hub / índice |
-| ![principios](/media/icons/principios.svg){width=24} `principios.svg` | Princípios |
-| ![documentacao](/media/icons/documentacao.svg){width=24} `documentacao.svg` | Documentação |
-| ![navegacao](/media/icons/navegacao.svg){width=24} `navegacao.svg` | Navegação de agentes |
-| ![mcp](/media/icons/mcp.svg){width=24} `mcp.svg` | MCP / integrações |
-| ![ativos](/media/icons/ativos-visuais.svg){width=24} `ativos-visuais.svg` | Ativos visuais |
-| ![checklist](/media/icons/checklist.svg){width=24} `checklist.svg` | Checklists genéricos em docs |
-| ![alerta](/media/icons/alerta.svg){width=24} `alerta.svg` | Avisos / anti-padrões |
-| ![projeto](/media/icons/projeto.svg){width=24} `projeto.svg` | Contexto do projeto |
-| ![organizacao](/media/icons/organizacao.svg){width=24} `organizacao.svg` | Organização de arquivos |
-| ![validacoes](/media/icons/validacoes.svg){width=24} `validacoes.svg` | Validações e testes |
-| ![auto](/media/icons/autoaperfeicoamento.svg){width=24} `autoaperfeicoamento.svg` | Autoaperfeiçoamento |
-| ![commits](/media/icons/commits.svg){width=24} `commits.svg` | Commits automáticos |
-| ![tarefas](/media/icons/tarefas.svg){width=24} `tarefas.svg` | Checklists de atividade |
-| ![verificacao](/media/icons/verificacao.svg){width=24} `verificacao.svg` | Verificação final |
+| <img src="/media/icons/hub.svg" width="20" alt="hub"> `hub.svg` | Hub / índice |
+| <img src="/media/icons/principios.svg" width="20" alt="principios"> `principios.svg` | Princípios |
+| <img src="/media/icons/documentacao.svg" width="20" alt="documentacao"> `documentacao.svg` | Documentação |
+| <img src="/media/icons/navegacao.svg" width="20" alt="navegacao"> `navegacao.svg` | Navegação de agentes |
+| <img src="/media/icons/mcp.svg" width="20" alt="mcp"> `mcp.svg` | MCP / integrações |
+| <img src="/media/icons/ativos-visuais.svg" width="20" alt="ativos"> `ativos-visuais.svg` | Ativos visuais |
+| <img src="/media/icons/checklist.svg" width="20" alt="checklist"> `checklist.svg` | Checklists genéricos em docs |
+| <img src="/media/icons/alerta.svg" width="20" alt="alerta"> `alerta.svg` | Avisos / anti-padrões |
+| <img src="/media/icons/projeto.svg" width="20" alt="projeto"> `projeto.svg` | Contexto do projeto |
+| <img src="/media/icons/organizacao.svg" width="20" alt="organizacao"> `organizacao.svg` | Organização de arquivos |
+| <img src="/media/icons/validacoes.svg" width="20" alt="validacoes"> `validacoes.svg` | Validações e testes |
+| <img src="/media/icons/autoaperfeicoamento.svg" width="20" alt="auto"> `autoaperfeicoamento.svg` | Autoaperfeiçoamento |
+| <img src="/media/icons/commits.svg" width="20" alt="commits"> `commits.svg` | Commits automáticos |
+| <img src="/media/icons/tarefas.svg" width="20" alt="tarefas"> `tarefas.svg` | Checklists de atividade |
+| <img src="/media/icons/verificacao.svg" width="20" alt="verificacao"> `verificacao.svg` | Verificação final |
 
-### Conjunto de categorias (identidade do documento)
-
-Um ícone por **categoria de conteúdo**; o mesmo emoji marca a mesma categoria nas seções.
-A tabela completa (emoji ↔ SVG ↔ significado) está em
+Caminho absoluto base: `/media/icons/`. A **categoria** de um documento ou de uma seção é
+marcada por **emoji**, não por SVG — ver
 [documentacao.md](/docs/regras/documentacao.md#marcadores-visuais).
-
-| Arquivo | Categoria | Arquivo | Categoria |
-|---------|-----------|---------|-----------|
-| ![objetivo](/media/icons/objetivo.svg){width=24} `objetivo.svg` | Objetivo e propósito | ![referencias](/media/icons/referencias.svg){width=24} `referencias.svg` | Referências e materiais |
-| ![conceitos](/media/icons/conceitos.svg){width=24} `conceitos.svg` | Conceitos e fundamentos | ![desenvolvimento](/media/icons/desenvolvimento.svg){width=24} `desenvolvimento.svg` | Desenvolvimento e manutenção |
-| ![arquitetura](/media/icons/arquitetura.svg){width=24} `arquitetura.svg` | Arquitetura e estrutura | ![testes](/media/icons/testes.svg){width=24} `testes.svg` | Testes e validação |
-| ![configuracao](/media/icons/configuracao.svg){width=24} `configuracao.svg` | Configuração e funcionamento | ![seguranca](/media/icons/seguranca.svg){width=24} `seguranca.svg` | Segurança e permissões |
-| ![fluxos](/media/icons/fluxos.svg){width=24} `fluxos.svg` | Fluxos e processos | ![arquivos](/media/icons/arquivos.svg){width=24} `arquivos.svg` | Arquivos e diretórios |
-| ![integracoes](/media/icons/integracoes.svg){width=24} `integracoes.svg` | Integrações e dependências | ![metricas](/media/icons/metricas.svg){width=24} `metricas.svg` | Métricas e observabilidade |
-| ![restricoes](/media/icons/restricoes.svg){width=24} `restricoes.svg` | Restrições, riscos e cuidados | ![exemplos](/media/icons/exemplos.svg){width=24} `exemplos.svg` | Exemplos e recomendações |
-| ![leitura](/media/icons/leitura.svg){width=24} `leitura.svg` | Navegação e leitura | — | — |
-
-Caminho absoluto base: `/media/icons/`.
 
 ---
 
@@ -95,22 +79,32 @@ Se faltar ícone: **criar SVG local** neste diretório (não depender de URL ext
 
 ## Como embutir em Markdown
 
-Cabeçalho de página (recomendado):
+**O cabeçalho de uma página não leva ícone.** A silhueta é: título, uma frase de propósito e
+a volta para o hub. Ícone grande no topo pesa e rouba a atenção do que importa — o texto.
 
 ```markdown
-![MCP](/media/icons/mcp.svg){width=48}
+# Título Claro
+
+Frase de propósito: o que este documento responde e para quem.
+
+Voltar ao [Hub](/docs/regras/README.md)
 ```
 
-Inline em tabela:
+Onde um ícone ajuda de verdade é **dentro de uma tabela de navegação**, como marcador
+discreto. O Markdown padrão não dimensiona imagem: use HTML inline (que o GitHub renderiza)
+com `width` pequeno.
 
 ```markdown
-![Hub](/media/icons/hub.svg){width=28}
+| <img src="/media/icons/hub.svg" width="20" alt="Hub"> `hub.svg` | Hub / índice |
 ```
 
-Avisos:
+**Não** use a forma `![ícone](caminho){width=20}`: o Markdown padrão não entende esse
+atributo e o renderizador mostra o `{width=20}` como texto ao lado da imagem.
+
+Aviso dentro do texto:
 
 ```markdown
-![Alerta](/media/icons/alerta.svg){width=28} Texto do aviso.
+<img src="/media/icons/alerta.svg" width="20" alt="Alerta"> Texto do aviso.
 ```
 
 Prefira caminhos absolutos do store para o Context resolver com estabilidade.
@@ -226,8 +220,6 @@ Atualize **este** arquivo e o [hub](/docs/regras/README.md) quando o catálogo m
 ---
 
 ## Checklist
-
-![Checklist](/media/icons/checklist.svg){width=32}
 
 - [ ] Asset no path correto sob `media/`
 - [ ] SVG com viewBox 64×64 e aria-label (ícones)

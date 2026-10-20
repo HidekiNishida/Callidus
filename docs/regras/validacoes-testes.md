@@ -1,7 +1,5 @@
 # Validações e Testes
 
-![Validações](/media/icons/validacoes.svg){width=48}
-
 Voltar ao [Hub](/docs/regras/README.md) · Fechamento: [verificacao-final.md](/docs/regras/verificacao-final.md) · Autoaperfeiçoamento: [autoaperfeicoamento.md](/docs/regras/autoaperfeicoamento.md)
 
 **Regra:** para tudo que for criado ou alterado, criar (ou atualizar) **validações e testes** seguindo boas práticas — proporcionais ao tipo de artefato — e cobrir as **dimensões relevantes** da mudança (segurança, performance, limites, stress, escalabilidade, etc.).
@@ -158,8 +156,6 @@ Seguir [mcps.md](/docs/regras/mcps.md): discovery → auth → call de prova →
 ---
 
 ## Checklist
-
-![Checklist](/media/icons/checklist.svg){width=32}
 
 - [ ] Identifiquei tipo de artefato e risco
 - [ ] Percorri a [matriz de dimensões](#matriz-de-dimensões-de-cobertura) e marquei N/A vs cobrir

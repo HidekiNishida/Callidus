@@ -1,7 +1,5 @@
 # Checklist: Complemento das regras operacionais
 
-![tarefas](/media/icons/tarefas.svg){width=48}
-
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |

@@ -1,7 +1,5 @@
 # Checklist: agente local — fases 0–8
 
-![tarefas](/media/icons/tarefas.svg){width=48}
-
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |

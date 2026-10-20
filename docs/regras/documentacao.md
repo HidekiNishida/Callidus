@@ -1,7 +1,5 @@
 # Como Escrever e Manter Documentação Hierárquica
 
-![Documentação](/media/icons/documentacao.svg){width=48}
-
 Voltar ao [Hub](/docs/regras/README.md) · Princípios: [principios.md](/docs/regras/principios.md) · Visuais: [ativos-visuais.md](/docs/regras/ativos-visuais.md)
 
 Este guia é o contrato de **forma**: nomes, pastas, templates, links e quando enriquecer com visuais.
@@ -112,8 +110,6 @@ diagrama. O padrão para documentos com mais de uma tela:
 ````markdown
 # Título Claro
 
-![Tema](/media/icons/<categoria>.svg){width=48}
-
 Voltar ao [Hub](/docs/regras/README.md) · Princípios: [principios.md](/docs/regras/principios.md)
 
 Frase de propósito: o que este documento responde e para quem.
@@ -158,44 +154,37 @@ Regras de estrutura:
 
 ## Marcadores visuais
 
-O projeto usa **dois** recursos, com significados fixos:
+A categoria de um conteúdo é marcada por **emoji**, com significado fixo no projeto inteiro.
+Ícone SVG é **marcador pequeno de navegação** (tabela de índice), nunca cabeçalho.
 
-| Recurso | Onde | Significado |
-|---------|------|-------------|
-| **Ícone SVG** (`/media/icons/`) | Topo da página (48px) e no índice (24px) | **Identidade do documento** — a categoria do conteúdo |
-| **Emoji** no título da seção | Seções de nível 2 | **Categoria da seção** — o mesmo emoji significa sempre a mesma coisa |
-
-Categorias e seus marcadores:
-
-| Categoria | Emoji | Ícone SVG |
-|-----------|-------|-----------|
-| Objetivo e propósito | 🎯 | `objetivo.svg` |
-| Conceitos e fundamentos | 🧠 | `conceitos.svg` |
-| Arquitetura e estrutura | 🏗️ | `arquitetura.svg` |
-| Configuração e funcionamento | ⚙️ | `configuracao.svg` |
-| Fluxos e processos | 🔄 | `fluxos.svg` |
-| Integrações e dependências | 🔌 | `integracoes.svg` |
-| Testes e validação | 🧪 | `testes.svg` |
-| Segurança e permissões | 🔐 | `seguranca.svg` |
-| Arquivos e diretórios | 📁 | `arquivos.svg` |
-| Métricas e observabilidade | 📊 | `metricas.svg` |
-| Restrições, riscos e cuidados | ⚠️ | `restricoes.svg` |
-| Exemplos e recomendações | 💡 | `exemplos.svg` |
-| Referências e materiais | 📚 | `referencias.svg` |
-| Desenvolvimento e manutenção | 🛠️ | `desenvolvimento.svg` |
-| Navegação e leitura | 🗺️ | `leitura.svg` |
+| Categoria | Emoji | Onde aparece |
+|-----------|-------|--------------|
+| Objetivo e propósito | 🎯 | Seção de visão, escopo ou proposta |
+| Conceitos e fundamentos | 🧠 | Seção de conceito, terminologia ou regra de negócio |
+| Arquitetura e estrutura | 🏗️ | Seção de módulos, camadas ou decisões |
+| Configuração e funcionamento | ⚙️ | Seção de instalação, configuração ou uso |
+| Fluxos e processos | 🔄 | Seção de ciclo, etapas ou orquestração |
+| Integrações e dependências | 🔌 | Seção de provedor, MCP ou interface externa |
+| Testes e validação | 🧪 | Seção de testes, verificação ou aceite |
+| Segurança e permissões | 🔐 | Seção de credencial, permissão ou caminho seguro |
+| Arquivos e diretórios | 📁 | Seção de estrutura de pastas ou arquivos |
+| Métricas e observabilidade | 📊 | Seção de eventos, métricas ou streaming |
+| Restrições, riscos e cuidados | ⚠️ | Seção de limitação, risco ou pendência |
+| Exemplos e recomendações | 💡 | Seção de exemplo, dica ou boa prática |
+| Referências e materiais | 📚 | Seção de documento relacionado ou referência |
+| Desenvolvimento e manutenção | 🛠️ | Seção de contribuição, extensão ou manutenção |
+| Navegação e leitura | 🗺️ | Seção de índice, ordem de leitura ou mapa |
 
 Regras de uso:
 
 - **Um emoji por seção**, no início do título — nunca em cada linha de uma lista.
 - **Documento com sumário de âncoras**: deixe o texto do título **sem emoji**, porque a
-  âncora é gerada a partir do texto e o emoji a torna frágil. Use o ícone SVG no topo
-  para a identidade do documento.
-- Ícones SVG do **hub de regras** (`hub.svg`, `principios.svg`, `documentacao.svg`,
-  `navegacao.svg`, `mcps.svg`, `ativos-visuais.svg`, `checklist.svg`, `alerta.svg`,
-  `projeto.svg`, `organizacao.svg`, `validacoes.svg`, `autoaperfeicoamento.svg`,
-  `commits.svg`, `tarefas.svg`, `verificacao.svg`) seguem o mesmo estilo e são a
-  identidade do conjunto de regras.
+  âncora é gerada a partir do texto e o emoji a torna frágil.
+- **Cabeçalho de página não leva ícone** (nem SVG, nem emoji): a silhueta é título, uma
+  frase de propósito e a volta para o hub. Ícone grande no topo é ruído visual.
+- Ícone SVG entra **dentro de tabela de navegação**, como marcador discreto, em HTML inline
+  (`<img src="…" width="20" alt="…">`). A forma `![…](…){width=20}` **não** é Markdown
+  padrão e aparece com o `{width=20}` escrito ao lado da imagem.
 - Ícone **novo** → SVG local em `/media/icons/`, no padrão do catálogo
   ([ativos-visuais.md](/docs/regras/ativos-visuais.md)), com `role="img"` e `aria-label`
   em português.
@@ -307,8 +296,6 @@ Padrões detalhados: [ativos-visuais.md](/docs/regras/ativos-visuais.md).
 ---
 
 ## Checklist de publicação
-
-![Checklist](/media/icons/checklist.svg){width=32}
 
 - [ ] Arquivo no lugar certo (`docs/` vs `internal/` vs `media/`)
 - [ ] Nome kebab-case

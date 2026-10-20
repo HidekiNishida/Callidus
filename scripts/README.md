@@ -1,7 +1,5 @@
 # Scripts operacionais
 
-![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
-
 Os scripts de manutenção e verificação do próprio projeto.
 
 ## 🧪 Verificação

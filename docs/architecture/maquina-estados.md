@@ -1,7 +1,5 @@
 # Máquina de estados das tarefas
 
-![arquitetura](/media/icons/arquitetura.svg){width=48}
-
 Os estados de tarefa, run e agente e as transições válidas entre eles.
 
 Estados (`TaskStatus`):

@@ -4,8 +4,6 @@
 
 # Callidus
 
-![objetivo](/media/icons/objetivo.svg){width=48}
-
 A porta de entrada do Callidus: o que é, como rodar e para onde ir.
 
 > **Um agente de programação que roda na sua máquina** — você pede, ele planeja, divide em tarefas pequenas, chama um modelo local (Ollama/llama.cpp), executa ferramentas determinísticas, verifica o resultado e devolve a resposta final.

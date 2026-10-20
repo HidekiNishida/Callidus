@@ -1,7 +1,5 @@
 # Documentação (`docs/`) — Índice geral
 
-![referencias](/media/icons/referencias.svg){width=48}
-
 O índice geral da documentação: onde está cada assunto e quando consultá-lo.
 
 Índice de nível 1: **onde está cada assunto** e **quando consultar**. A estratégia é de

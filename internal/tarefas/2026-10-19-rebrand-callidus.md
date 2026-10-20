@@ -1,7 +1,5 @@
 # Checklist: Rebrand — Agente de IA Local → Callidus
 
-![tarefas](/media/icons/tarefas.svg){width=48}
-
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |

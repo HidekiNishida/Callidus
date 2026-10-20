@@ -30,8 +30,6 @@ keywords:
   - componente
 ---
 
-![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
-
 ## Critérios de ativação
 - Criação ou modificação de arquivos de código-fonte, classes, funções e endpoints
 - Implementação de funcionalidades novas ou expansão de subsistemas

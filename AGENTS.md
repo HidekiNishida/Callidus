@@ -1,7 +1,5 @@
 # AGENTS.md — Regras de Engenharia do Callidus
 
-![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
-
 As regras de engenharia que todo agente segue ao escrever código.
 
 > **Fonte canônica** das regras de desenvolvimento do Callidus: código, testes, documentação e
@@ -348,8 +346,8 @@ O padrão completo está em
 visuais, precisão factual e checklist de publicação. Em resumo:
 
 - H1 único, sem salto de nível, sumário quando o documento é longo.
-- Ícone de categoria no topo (SVG em `/media/icons/`) e emoji de categoria nas seções H2
-  (quando o documento não usar âncoras).
+- Cabeçalho enxuto: título, uma frase de propósito e a volta para o hub — **sem** ícone.
+- Emoji de categoria nas seções H2 (quando o documento não usar âncoras).
 - Bloco de código com linguagem; tabela para comparação; diagrama quando explicar um fluxo.
 - Números, nomes e comandos **verificados no código** antes de serem escritos.
 

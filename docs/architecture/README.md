@@ -1,7 +1,5 @@
 # Arquitetura do runtime
 
-![Projeto](/media/icons/projeto.svg){width=48}
-
 Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 
 ## 📚 Documentos

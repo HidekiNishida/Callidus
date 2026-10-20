@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Testes e validação">
-  <rect width="64" height="64" rx="12" fill="#047857"/>
-  <path d="M24 12 L24 28 L14 48 A4 4 0 0 0 17 54 L47 54 A4 4 0 0 0 50 48 L40 28 L40 12" fill="none" stroke="#A7F3D0" stroke-width="3.5" stroke-linejoin="round"/>
-  <line x1="20" y1="14" x2="44" y2="14" stroke="#ECFDF5" stroke-width="3.5" stroke-linecap="round"/>
-  <path d="M19 40 L45 40 L50 48 A4 4 0 0 1 47 54 L17 54 A4 4 0 0 1 14 48 Z" fill="#6EE7B7"/>
-  <circle cx="27" cy="45" r="2.5" fill="#ECFDF5"/>
-  <circle cx="37" cy="48" r="2" fill="#ECFDF5"/>
-</svg>

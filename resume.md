@@ -1,7 +1,5 @@
 # Resumo do projeto — Agente de IA Local
 
-![referencias](/media/icons/referencias.svg){width=48}
-
 O mapa vivo de módulos, funções e comportamentos do código.
 
 Resumo didático e completo do projeto inteiro: **propósito, por quê, quando e onde** de cada diretório, arquivo,
@@ -15,12 +13,6 @@ o funcionamento e a arquitetura.
 ---
 
 ## 🎯 Visão geral
-
-
-
-
-
-
 
 **O que é:** um agente de programação que roda **na própria máquina**. Você escreve um pedido no chat
 (ex.: "crie uma tela de login"), e o agente planeja, divide em tarefas pequenas, chama um modelo de linguagem
@@ -413,7 +405,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `main() -> None` — Entry point do script — remove arquivos `.pth` com prefixo `_` do site-packages, corrigindo a instalação editável do pacote em Python 3.14+. Executado manualmente quando o `pip install -e .` falha.
 
-
 - `_site_packages() → Path` — Devolve o caminho do site-packages do virtualenv em uso.
 - `_unhide(path) → None` — Remove a flag UF_HIDDEN (macOS) do arquivo, se houver.
 - `_write_pth(site_packages) → Path` — Grava o .pth com o caminho de src/ e devolve o arquivo criado.
@@ -559,7 +550,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** conferir a integridade estrutural dos documentos Markdown (título, hierarquia de cabeçalhos, blocos de código, tabelas e diagramas Mermaid). **Quando/onde:** ao mexer em documentação.
 
-
 - `analyse(path) → list[str]` — Analisa um documento Markdown e devolve os problemas encontrados.
 - `main(argv) → int` — Analisa os documentos indicados e imprime o resultado.
 
@@ -571,7 +561,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** conferir que os documentos apontam para arquivos e símbolos que realmente existem no código. **Quando/onde:** ao mexer em documentação que cita caminhos, endpoints ou funções.
 
-
 - `main(argv) → int` — Verifica as referências da documentação contra o código.
 
 - `_modulos() → dict[str, set[str]]` — Índice de símbolos por módulo Python do projeto.
@@ -581,7 +570,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `scripts/check_imports.py`
 
 **Propósito:** Conferir que uma alteração não removeu importações nem definições de símbolos do código anterior. **Quando/onde:** depois de refatorações e movimentações de arquivo.
-
 
 - `symbols_of(source) → tuple[set[str], set[str]] | None` — Importações e definições de um código Python.
 - `compare() → list[str]` — Compara cada arquivo Python alterado com a versão no HEAD.
@@ -596,7 +584,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Detectar se a edição de um arquivo Python alterou código além de comentários e docstrings. **Quando/onde:** auditoria final de uma mudança que só deveria ter mexido em documentação.
 
-
 - `stripped_tree(source) → str | None` — Árvore sintática sem docstrings, em forma textual comparável.
 - `compare() → list[str]` — Compara o código (sem docstrings) de cada arquivo alterado com a versão no HEAD.
 - `main(argv) → int` — Executa a comparação e imprime o resultado.
@@ -608,6 +595,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Conferir que os links internos da documentação existem no repositório. **Quando/onde:** antes de publicar mudanças de documentação.
 
+- `_sem_codigo(texto) → str` — Remove os trechos entre crases (código inline) antes de procurar links.
 
 - `main(argv) → int` — Verifica os links da documentação.
 
@@ -618,7 +606,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `scripts/padronizar_cabecalhos.py`
 
 **Propósito:** Aplicar o cabeçalho padrão (campos `Arquivo`, `Nome`, `Propósito`, …) nos módulos Python, sem alterar o código. **Quando/onde:** ao padronizar uma pasta de módulos.
-
 
 - `header_for(path) → str` — Monta o cabeçalho padrão de um módulo.
 - `insert_header(path, header, narrative) → bool` — Insere (ou funde) o cabeçalho na primeira instrução do módulo.
@@ -671,7 +658,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `lifespan(app: FastAPI)` — Gerenciador de contexto assíncrono do FastAPI: inicializa o engine, liga o worker em background se habilitado e garante o desligamento dele no `finally`.
 - `run() -> None` — Entry point do console script `agente-api` — sobe o Uvicorn com a aplicação FastAPI no host/porta configurados.
 
-
 - `_RevalidatedStatic` — Sem isso o navegador guarda a interface por heurística e mistura HTML antigo com módulos novos.
 - `file_response(self, *args, **kwargs)` — Devolve o arquivo com o cabeçalho que proíbe o cache.
 - `spa_index()` — Devolve o `index.html` da interface.
@@ -702,7 +688,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ui_defaults(settings: Settings=Depends(read_settings)) -> dict` — `GET /config/ui-defaults`: devolve os padrões de configuração da interface (provider, model_id, URLs de Ollama/llama.cpp, aprovação de tools e template genérico).
 - `_mcp_path(settings: Settings) -> Path` — Resolve o arquivo de configuração MCP: usa `settings.mcp_config_path` ou `data_dir/mcp.json`; se não existir, cai no `data/mcp.example.json` da raiz do repositório.
 
-
 - `list_providers(settings) → dict` — Provedores disponíveis: os do arquivo de configuração mais os embutidos. Nenhuma.
 - `provider_by_name(name, settings)` — Constrói o provedor pedido ou responde com o erro correspondente.
 - `provider_models(name, settings) → dict` — Lista os modelos de um provedor configurado.
@@ -729,7 +714,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `project_metrics(project_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /projects/{project_id}/metrics`: devolve as métricas agregadas do projeto via `MetricsService.project_metrics`; 404 projeto inexistente.
 - `start_run(project_id: uuid.UUID, body: ExecutionRunCreate, session: Session=Depends(db_session)) -> ExecutionRunRead` — `POST /projects/{project_id}/runs`: inicia uma execução para o projeto a partir de `ExecutionRunCreate` e devolve `ExecutionRunRead`; 404 projeto inexistente.
 - `update_project(project_id: uuid.UUID, body: ProjectUpdate, session: Session=Depends(db_session)) -> ProjectRead` — `PATCH /projects/{project_id}`: atualiza nome e/ou `root_path` do projeto; 404 projeto inexistente, 400 valor inválido.
-
 
 - `delete_project(project_id, session) → dict` — Remove o projeto e o que pertence a ele (conversas, tarefas, execuções, memória, grafo).
 - `RemoteIn` — Configuração do computador remoto de um projeto.
@@ -773,7 +757,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `update_task_status(task_id: uuid.UUID, body: TaskStatusUpdate, session: Session=Depends(db_session)) -> TaskRead` — `PATCH /tasks/{task_id}/status`: aplica a mudança de status validando a máquina de estados; 404 tarefa inexistente, 409 transição inválida.
 - `upsert_task_contract(task_id: uuid.UUID, body: dict, session: Session=Depends(db_session)) -> dict` — `PUT /tasks/{task_id}/contract`: grava (cria ou atualiza) o contrato com inputs/outputs/invariantes/aceite e devolve o impacto da mudança; 404 tarefa inexistente.
 
-
 - `create_task(project_id, body, session) → TaskRead` — Cria uma tarefa no projeto, materializando anexos e memórias pedidas no objetivo.
 - `list_tasks(project_id, session) → list[TaskRead]` — Lista as tarefas de um projeto.
 ### `src/agent/api/run_routes.py`
@@ -786,7 +769,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `pause_run(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/pause`: pausa a execução via `RunService.pause_run` e devolve `{id, status}`.
 - `resume_run(run_id: uuid.UUID, retry_blocked: bool=False, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/resume`: retoma a run pausada, opcionalmente repetindo tarefas bloqueadas (`retry_blocked`); 404 run inexistente, 409 quando não pode retomar.
 - `run_metrics(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /runs/{run_id}/metrics`: devolve as métricas da execução (tokens, tempos) via `MetricsService.run_metrics` ou 404 se a run não existir.
-
 
 - `start_run(project_id, body, session) → ExecutionRunRead` — Inicia uma execução no projeto.
 - `list_runs(project_id, session) → list[ExecutionRunRead]` — Lista as execuções de um projeto.
@@ -835,7 +817,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [assembler.py](/src/agent/context/assembler.py)
 - Arquivo: [budget.py](/src/agent/context/budget.py)
 - Arquivo: [operation_builder.py](/src/agent/context/operation_builder.py)
-
 
 - `replay(since) → AsyncIterator[str]` — Relê o histórico persistido a partir de um `seq` e emite o que falta.
 ### `src/agent/context/README.md`
@@ -901,7 +882,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [failures.py](/src/agent/domain/failures.py)
 - Arquivo: [schemas.py](/src/agent/domain/schemas.py)
 - Arquivo: [state_machine.py](/src/agent/domain/state_machine.py)
-
 
 - `_requirements_block(self, task) → str` — Requisitos obrigatórios que esta etapa responde, com o critério de cada um.
 - `_inspection_budget(self) → int` — Quantas leituras o modelo pode fazer antes de responder (o mesmo limite do ciclo).
@@ -969,7 +949,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `TaskDependencyCreate(BaseModel)` — Payload de criação de dependência entre tarefas, exigindo `depends_on_task_id`. Usado para declarar de qual tarefa uma etapa depende.
 - `TaskRead(BaseModel)` — Modelo de leitura de tarefa com identificação, vínculos, título, objetivo, escopo, aceite, status, `kind`, ordem, metadados, resultado consolidado, timestamps e tokens de uso. `from_attributes` habilita a serialização a partir do ORM.
 - `TaskStatusUpdate(BaseModel)` — Payload de mudança de status de uma tarefa, com `status` e `reason` opcional. Usado para transições manuais via API.
-
 
 - `AgentRead` — Agente lógico: identidade, papel, estado e o que ele sabe.
 - `AgentAsk` — Consulta de um agente a outro.
@@ -1332,7 +1311,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `usable_markdown(text: str) -> bool` — Indica se o texto tem formato Markdown aproveitável: exige tamanho mínimo de 40 caracteres, proíbe início com `{` ou `[` (JSON de ferramenta) e exige marcadores como `#`, item de lista, separador de tabela ou bloco de código. Entrada: texto bruto; saída: booleano.
 - `usable_reply(text: str) -> bool` — valida se resposta do modelo serve como final.
 
-
 - `verification_footer(session, root) → str` — Fatos verificados do trabalho, em texto determinístico.
 ### `src/agent/orchestrator/consolidation.py`
 
@@ -1348,7 +1326,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `superseded(task: TaskModel) -> bool` — Indica que a etapa parada foi substituída por um replanejamento (`metadata.superseded_by_replan`) e por isso deixa de contar como pendência. Entrada: modelo da tarefa; saída: booleano.
 - `verification_evidence_ok(session: Session, task: TaskModel) -> bool` — evidência válida e atual.
 - `verification_spec(task: TaskModel) -> dict | None` — Devolve a especificação de verificação declarada na tarefa ou, para escritas sem declaração, a verificação implícita que já rodou. Entrada: modelo da tarefa; saída: dicionário de spec ou `None`.
-
 
 - `latest_verification_failed(session, task) → bool` — A verificação mais recente desta etapa reprovou (não é ausência de evidência).
 - `inherits_read_only(session, task) → bool` — A tarefa (ou um de seus ancestrais) é de um pedido que proíbe alterar arquivos.
@@ -1376,7 +1353,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `requirements_block(requirements: list[dict[str, Any]] | None) -> str` — Monta o bloco de texto com os requisitos que o plano precisa cobrir e instrui o modelo a declarar `metadata.covers` em cada subtarefa. Entrada: lista de requisitos; saída: string (vazia quando não há requisitos).
 - `resolve_decomposition_plan(*, settings: Settings, run_config: dict[str, Any], objective: str, project_root: str, provider: LLMProvider | None=None, requirements: list[dict[str, Any]] | None=None) -> tuple[DecompositionResult | None, str]` — builtin e2e → modelo → template genérico → mock.
 - `seal_repeated_steps(parent_title: str, plan: DecompositionResult) -> DecompositionResult` — filho com mesmo título do pai vira model_operation.
-
 
 - `norm(items) → list[str]` — Normaliza uma lista de títulos para comparação.
 
@@ -1431,7 +1407,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `validate_and_repair(session: Session, parent: TaskModel, *, project_root: str, run_config: dict[str, Any] | None, max_tasks: int | None, run_id: uuid.UUID | None, extra_issues: list[Issue] | None=None) -> PlanValidation` — Valida o plano da tarefa contra as regras determinísticas e o repara quando possível (sanitiza dependências, cancela duplicatas, corrige cobertura); devolve a `PlanValidation` com veredito e correções.
 - `validate_children(session: Session, parent: TaskModel, *, project_root: str, run_config: dict[str, Any] | None=None, max_tasks: int | None=None, extra_issues: list[Issue] | None=None) -> PlanValidation` — Aplica todas as regras estruturais do plano: objetivo e critérios, cobertura de requisitos, ferramentas inexistentes ou bloqueadas, arquivos de entrada ausentes, duplicatas, dependências e orçamento de tarefas. Entrada: sessão, tarefa pai e parâmetros de execução; saída: `PlanValidation` com veredito, issues, cobertura, etapas bloqueadas e fingerprint do plano.
 
-
 - `repair_steps(session, parent, validation) → list[str]` — Correções locais de etapa: a etapa passa a fazer o que é possível fazer.
 
 - `_anchor_present(project_root, path, anchor) → bool` — O trecho que a edição pretende substituir existe no arquivo?.
@@ -1477,7 +1452,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `requirement_status(session: Session, root: TaskModel) -> list[dict[str, Any]]` — uncovered/failed/pending/unverified/satisfied/não_aplicável.
 - `root_of(session: Session, task: TaskModel) -> TaskModel` — sobe até raiz (parent_id=None).
 - `siblings_declare_covers(session: Session, task: TaskModel) -> bool` — Diz se alguma tarefa irmã da mesma fase declara `covers`, o que torna a tarefa sem declaração uma etapa de apoio. Entrada: sessão e tarefa; saída: booleano.
-
 
 - `_verification_rejected(session, task) → bool` — A etapa **concluiu** e a verificação mais recente reprovou.
 - `_unproven_by_superseded(session, root, reqs, req_id, live_coverers) → bool` — Uma etapa substituída tinha uma verificação que reprovou e ninguém a refez.
@@ -1527,7 +1501,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_profile_from_config(run_config: dict, settings: Settings) -> ModelProfile` — Deriva o `ModelProfile` (modelo, limites de contexto e geração) da configuração do run e das configurações globais. Entrada: configuração do run e settings; saída: `ModelProfile`.
 - `_select_provider(settings: Settings, run_config: dict) -> LLMProvider` — Escolhe o provider LLM a partir do nome configurado (`ollama`, `llamacpp` ou `mock`), aplicando timeout e mapa de palavras-chave do mock. Entrada: settings e configuração do run; saída: instância de `LLMProvider`.
 
-
 - `_widen_output_budget(self, task, *, factor) → int` — Aumenta o orçamento de resposta da etapa (o modelo gastou tudo e devolveu nada).
 - `_sync_agent_execution(self, task, run_id) → None` — Alinha o estado do agente lógico com o estado da tarefa.
 
@@ -1564,7 +1537,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `TaskExecutor.work_root(project, task) -> str` — Calcula a raiz de trabalho efetiva do projeto, considerando a conversa da tarefa. Entrada: projeto e tarefa opcional; saída: caminho da raiz de trabalho.
 - `TaskExecutor._provider(settings, config)` — Provedor do run segundo a política da execução (a fábrica injetada ou a padrão do pacote).
 
-
 - `_session(self)` — Sessão SQLAlchemy em uso.
 - `_settings(self)` — Configuração do processo.
 - `_tasks(self)` — Serviço de tarefas (transições de estado e dependências).
@@ -1585,7 +1557,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ModelOperation` — Fluxo da operação de modelo; usa os colaboradores do executor que a criou. **Observações:** nada aqui aprova o próprio resultado — a escrita concluída segue para a verificação.
 - `ModelOperation.run(run, project, task, config, root_path, ctx) -> dict[str, Any]` — Monta o contexto da operação, chama o modelo (com ciclo de ferramentas quando o provedor suporta), aplica a alteração respondendo ao pedido e devolve o desfecho da etapa. Entrada: run, projeto, tarefa, configuração, pasta de trabalho e contexto de ferramentas; saída: dicionário de ação.
 - `ModelOperation._context_overflow(run, project, task, provider_name, profile, exc) -> dict[str, Any]` — Trata o estouro de orçamento de contexto: explica qual componente obrigatório não cabe, registra a tentativa, bloqueia a tarefa e devolve `blocked_context`. Entrada: run, projeto, tarefa, provider, perfil e a exceção; saída: dicionário de ação com a falha.
-
 
 - `_runtime(self)` — Colaboradores da execução (sessão, settings, serviços, ferramentas).
 - `_chat_model(provider_obj, request, *, purpose, stream)` — Chamada ao modelo dentro do ciclo: registra a evidência de cada iteração.
@@ -1675,7 +1646,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ProfessionalStrategy.needs_atomization() -> bool` — Indica se a etapa interna deve ser subdividida recursivamente em diagnóstico → correção → verificação, o que ocorre para tarefas complexas (rank >= 2). Entrada: instância da estratégia; saída: booleano.
 - `ProfessionalStrategy.render_summary() -> str` — Renderiza a estratégia como texto estruturado (domínio, complexidade, especialidades, requisitos, riscos e critérios de aceitação) para inspeção e injeção no contexto.
 
-
 - `is_read_only_request(objective) → bool` — O pedido proíbe explicitamente alterar o projeto?.
 - `protects_test_files(objective) → bool` — O pedido manda mexer nos testes? Se não, os testes são protegidos.
 - `looks_like_test_file(path) → bool` — O caminho aponta para um arquivo de teste?.
@@ -1718,7 +1688,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `create_db_engine(settings: Settings | None=None) -> Engine` — `pool_pre_ping=True`, `future=True`.
 - `init_db(engine: Engine | None=None, settings: Settings | None=None) -> Engine` — `Base.metadata.create_all`.
 - `session_scope(session_factory: sessionmaker[Session]) -> Generator[Session, None, None]` — context manager que abre uma sessão, faz `commit` no sucesso, `rollback` em exceção e sempre fecha. Entrada: fábrica de sessões; saída: gerador que entrega a `Session` ativa. Quando os serviços do agente abrem transações curtas.
-
 
 - `migrate_legacy_schedules(engine) → int` — Converte as linhas antigas de `scheduled_runs` em automações.
 
@@ -1765,7 +1734,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [observed.py](/src/agent/providers/observed.py)
 - Arquivo: [ollama.py](/src/agent/providers/ollama.py)
 
-
 - `ProjectRemoteModel` — Computador remoto do projeto: quando existe, as ações do projeto rodam lá por SSH.
 - `AutomationModel` — Automação persistente: a definição aprovada de um trabalho que roda sozinho.
 - `AutomationFiringModel` — Disparo de uma automação: a unidade de trabalho registrada e recuperável.
@@ -1794,7 +1762,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `LLMProvider.list_models() -> list[str]` — Devolve a lista de modelos disponíveis no provider (ids), para a UI e a escolha de perfil.
 - `ModelProfile(BaseModel)` — Símbolo do módulo — ver a descrição do arquivo.
 - `ProviderError(RuntimeError)` — exceção base.
-
 
 - `ToolCall` — Chamada de ferramenta pedida pelo modelo. `arguments` é o objeto já decodificado.
 - `ProviderCapabilities` — O que o provedor realmente oferece. Recurso ausente é declarado, nunca simulado.
@@ -1831,7 +1798,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_data_url(encoded: str) -> str` — monta a `data:` URL de uma imagem base64, inferindo `image/jpeg` (prefixo `/9j/`) ou `image/png`. Entrada: base64 da imagem; saída: string `data:<mime>;base64,<dados>`.
 - `_openai_message(message) -> dict` — converte uma `ChatMessage` no formato OpenAI: texto simples quando não há imagens, ou lista de partes `text` + `image_url` quando há. Entrada: mensagem do request; saída: dicionário `{role, content}`.
 
-
 - `read_api_key_file(path) → str` — `llama-server --api-key-file` guarda a chave em arquivo; o conteúdo vira o bearer token.
 - `capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
 
@@ -1854,7 +1820,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `MockProvider.list_models() -> list[str]` — Devolve as chaves do mapa de palavras-chave configurado — os modelos do provider de teste.
 - `decomposition_json(subtasks: list[dict[str, Any]]) -> str` — serializa a lista de subtarefas no JSON `{"subtasks": [...]}` usado como resposta simulada da decomposição. Entrada: lista de specs; saída: string JSON com `ensure_ascii=False`.
 
-
 - `capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
 
 - `_chat(self, request) → ChatCompletionResponse` — Devolve a resposta correspondente ao pedido, de forma determinística.
@@ -1866,7 +1831,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** Wrapper `observed_chat` — emite eventos streaming no EventBus.
 
 - `observed_chat(provider: LLMProvider, request: ChatCompletionRequest, *, purpose: str, stream: bool=True) -> ChatCompletionResponse` — Chama o provider emitindo os eventos de streaming no barramento (`agent.started`, `agent.output.delta`, `agent.output.completed/failed`) e agrupa os fragmentos; devolve a resposta completa.
-
 
 - `publish(text) → None` — Publica um fragmento do texto recebido, com o deslocamento acumulado.
 - `on_delta(piece) → None` — Acumula um fragmento e agenda sua publicação em lote.
@@ -1898,7 +1862,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - Arquivo: [README.md](/src/agent/security/README.md)
 - Arquivo: [paths.py](/src/agent/security/paths.py)
-
 
 - `capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
 
@@ -1959,7 +1922,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `attachment_note(refs: list[dict]) -> str` — texto para anexar ao objective.
 - `materialize_attachments(project_root: str, task_id: str, items: list) -> list[dict]` — salva arquivos, retorna refs `{path, mime, size}`.
 
-
 - `_attachments_folder(project_root, task_id) → str` — Pasta de anexos da tarefa. Mantém a pasta legada quando ela já tem arquivos,.
 ### `src/agent/services/attempt_service.py`
 
@@ -1973,7 +1935,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `AttemptService.prompt_already_sent(task_id: uuid.UUID, prompt_fp: str) -> bool` — Indica se o mesmo prompt (mesmo fingerprint) já foi enviado para a tarefa — evita repetir a mesma chamada.
 - `AttemptService.record(*, run_id: uuid.UUID, task_id: uuid.UUID, kind: AttemptKind, provider: str | None, request: dict | None, response: dict | None, success: bool, error: str | None=None, project_id: uuid.UUID | None=None, failure: Failure | None=None) -> OperationAttemptModel` — Grava uma `OperationAttemptModel` (tipo, provider, request, response, sucesso e falha) e devolve a linha persistida.
 - `AttemptService.repeated_output_detected(task_id: uuid.UUID, output_fingerprint: str, window: int=3) -> bool` — Indica se a mesma saída (mesmo fingerprint) apareceu na janela recente de tentativas — sinal de loop.
-
 
 - `count_model_calls(self, task_id) → int` — Chamadas ao modelo da tarefa, incluindo as iterações do ciclo de ferramentas.
 - `count_tool_calls(self, task_id) → int` — Chamadas de ferramenta feitas pela tarefa.
@@ -1990,7 +1951,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `start_background_worker() -> asyncio.Task` — inicia loop (lifespan API).
 - `stop_background_worker() -> None` — cancela task.
 
-
 - `build_scheduler(settings) → AgentScheduler` — Escalonador do worker, com os tratadores de etapa de run e de consulta.
 
 - `_run_step(operation) → dict` — Avança um run autônomo e devolve a ação do passo.
@@ -2003,7 +1963,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ancestor_chain(branches: dict[uuid.UUID, BranchModel], branch_id: uuid.UUID | None) -> list[BranchModel]` — cadeia ancestral até raiz.
 - `memory_visible(*, memory_branch_id: uuid.UUID | None, memory_created_at: datetime | None, conversation_id: uuid.UUID | None, task_branch_id: uuid.UUID | None, branches: dict[uuid.UUID, BranchModel]) -> bool` — memória visível se branch ancestral ou mesma branch.
 - `visible_tasks(tasks: list[TaskModel], branch: BranchModel, branches: dict[uuid.UUID, BranchModel]) -> list[TaskModel]` — filtra tasks visíveis na branch ativa.
-
 
 - `root_id(task) → uuid.UUID` — Identificador da raiz da conversa à qual a branch pertence.
 ### `src/agent/services/contract_service.py`
@@ -2055,7 +2014,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `browse_directories(path: str | None=None) -> dict` — lista entradas (path, kind=dir/file), `os.listdir`.
 - `pick_folder_native() -> str` — macOS `osascript` para escolher pasta no Finder.
 
-
 - `create_directory(path, name) → dict` — Cria uma pasta dentro de `path` (que precisa estar no alcance permitido).
 ### `src/agent/services/inbox.py`
 
@@ -2093,7 +2051,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ProjectService.update_project(project_id: uuid.UUID, *, name: str | None=None, root_path: str | None=None) -> ProjectModel` — Atualiza nome, pasta raiz e/ou descrição do projeto e devolve a linha persistida.
 - `_is_leaked_test_project(root_path: str) -> bool` — Detecta caminhos residuais de `pytest-of-`/`/T/pytest-` ou o pseudo-caminho de inbox; devolve `True` para descartar esses projetos. Quando `list_projects` filtra projetos que escaparam de testes automatizados.
 
-
 - `get_remote(self, project_id) → dict | None` — Configuração do computador remoto do projeto (None quando o projeto é local).
 - `set_remote(self, project_id, config) → dict` — Grava a configuração do computador remoto do projeto.
 - `clear_remote(self, project_id) → bool` — Remove a configuração do computador remoto do projeto.
@@ -2126,7 +2083,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `schedule_enabled_on_run(session, schedule_id: str) -> ScheduledRunModel` — Marca o schedule como habilitado (`enabled = True`) e devolve a linha; levanta `LookupError` se o id não existir. Quando se reativa um agendamento.
 - `start_scheduler() -> None` — inicia scheduler, agenda jobs ativos.
 - `stop_scheduler() -> None` — para scheduler.
-
 
 - `current_supervisor() → AutomationSupervisor | None` — Supervisor de automações em execução.
 - `legacy_scheduled_run(session, schedule_id) → ScheduledRunModel | None` — Linha antiga de `scheduled_runs` (compatibilidade de leitura).
@@ -2301,7 +2257,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `python_for(project_root: str) -> str` — escolhe o interpretador do projeto: o `python` do `.venv`/`venv` se existir, senão o `sys.executable` do agente. Entrada: raiz do projeto; saída: caminho do interpretador. Quando `_run_command`, `_run_script` e `_run_pytest` montam o argv.
 - `register_all(registry: ToolRegistry) -> None` — registra todas builtins.
 
-
 - `_run_command_remote(ctx, args, *, kind) → dict` — Comando executado no computador remoto do projeto (SSH), com saída em tempo real.
 - `_out(stream) → DeltaBatcher` — Monta a resposta da ferramenta com a saída capturada e o código de saída.
 - `_out(text) → None` — Monta a resposta da ferramenta com a saída capturada e o código de saída.
@@ -2429,7 +2384,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `Settings(BaseSettings)` — Objeto de configuração (pydantic-settings) com todas as opções do runtime: diretório de dados, URL do banco, provedores e modelos, orçamentos de contexto, limites de tentativas, recursão e run, observabilidade e caminhos da interface.
 - `Settings.resolved_database_url() -> str` — Devolve a URL final do SQLite — nos testes força `data_dir/agent.db` para não gravar no banco real; em produção usa `database_url` ou `data/agent.db`, criando o diretório quando necessário.
 - `get_settings() -> Settings` — Cria uma instância de `Settings` e, se `mcp_config_path` não foi definido, preenche com `data_dir/mcp.json`. Chamada sempre que alguém precisa da configuração atual.
-
 
 - `resolved_provider_config_path(self) → Path` — Arquivo de provedores em uso: o configurado ou, por padrão, `data/providers.yaml`.
 - `resolved_secrets_dir(self) → Path` — Pasta das credenciais gravadas pela interface (fora do versionamento).
@@ -3008,7 +2962,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ask_agent(agent_id, body, session, settings) → AgentQueryRead` — Consulta dirigida: o solicitante pergunta ao alvo e recebe a resposta.
 - `resource_metrics(session, settings) → dict` — Métricas de recursos e de uso — só o que o Callidus sabe medir de fato.
 
-
 - `_agent_read(service, agent) → AgentRead` — Converte um agente persistido na visão pública da interface.
 - `_count_by(rows, attribute) → dict[str, int]` — Conta as linhas agrupadas pelo valor de um atributo.
 ### `src/agent/api/automation_routes.py`
@@ -3034,7 +2987,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `test_automation(automation_id, body, session, settings) → dict` — Verifica a prontidão e, com `execute`, dispara um teste controlado.
 - `cancel_automation(automation_id, session) → dict` — Cancela os disparos pendentes da automação.
 
-
 - `_present(session, row) → dict[str, Any]` — Serializa uma automação persistida no formato entregue à interface.
 - `_present_firing(row) → dict[str, Any]` — Serializa um disparo de automação no formato entregue à interface.
 - `_readable_errors(exc) → list[dict]` — Erros de validação legíveis (o `ctx` do pydantic carrega objetos não serializáveis).
@@ -3054,18 +3006,15 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `clear_provider_secret(name, settings) → dict` — Apaga a credencial gravada e limpa a referência no arquivo de configuração.
 - `test_provider(name, settings) → dict` — Testa a conexão com o provedor: lista os modelos, sem gastar inferência.
 
-
 - `_catalog(settings) → ProviderCatalog` — Carrega o catálogo de provedores das configurações.
 - `_config_payload(settings) → dict[str, Any]` — Monta o payload da configuração de provedores, sem credenciais.
 ### `src/agent/automation/__init__.py`
 
 **Propósito:** __init__ — módulo do projeto.
 
-
 ### `src/agent/automation/actions/__init__.py`
 
 **Propósito:** __init__ — módulo do projeto.
-
 
 ### `src/agent/automation/actions/base.py`
 
@@ -3079,7 +3028,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `build_action(spec) → Action` — Instancia a ação de uma especificação.
 - `execute(self, ctx) → ActionResult` — Executa a ação aprovada e devolve o resultado (saída, código de saída e erro).
 
-
 - `Action.execute(self, ctx) → ActionResult` — Executa a ação aprovada e devolve o resultado (saída, código de saída e erro).
 ### `src/agent/automation/actions/callidus.py`
 
@@ -3087,7 +3035,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `CallidusActionRunner` — Ação Callidus.
 - `execute(self, ctx) → ActionResult` — Cria a tarefa raiz, inicia o run e o entrega ao worker autônomo.
-
 
 - `_uuid_or_none(value) → uuid.UUID | None` — Converte um texto em UUID, tolerando ausência e valor inválido.
 - `_resolve_objective(self, ctx) → str | None` — Objetivo da execução, conforme a política de versão.
@@ -3104,7 +3051,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `ScriptActionRunner` — Ação de script.
 - `execute(self, ctx) → ActionResult` — Valida as permissões e executa o script no destino configurado.
-
 
 - `_remote_config(remote_cfg)` — Traduz a configuração do destino em `RemoteConfig` (o mesmo do projeto remoto).
 - `_command(self) → list[str]` — Comando a executar, já com o interpretador quando informado.
@@ -3140,7 +3086,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `build_parser() → argparse.ArgumentParser` — Monta o interpretador de argumentos da linha de comando.
 - `main(argv) → int` — Ponto de entrada da linha de comando.
 
-
 - `_print(payload) → None` — Imprime um payload em JSON.
 - `_run_forever(settings, interval) → None` — Roda o supervisor e o worker autônomo até receber um sinal de parada.
 - `_request_stop(*_args) → None` — Envia o pedido de parada do supervisor e devolve a resposta do comando.
@@ -3160,7 +3105,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `AutomationDefinition` — Definição completa de uma automação — o que a API e a interface enviam.
 - `model_post_init(self, _context) → None` — Confere que os campos exigidos pelo tipo de gatilho estão presentes.
 - `label(self) → str` — Rótulo legível da dependência, para mensagens e evidências.
-
 
 - `_fuso_valido(cls, value) → str` — Valida o fuso informado no gatilho.
 - `_comando_lista(cls, value) → list[str]` — Normaliza o comando da ação de script em uma lista de textos não vazios.
@@ -3184,7 +3128,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `blocking(self) → list[DependencyReport]` — Indica se a dependência impede a execução quando não está satisfeita.
 - `as_dict(self) → dict[str, Any]` — Verificação agregada como dicionário serializável.
 - `check_all(self, specs) → DependencyCheck` — Verifica todas as dependências e aciona a inicialização autorizada.
-
 
 - `_remote_config(remote_cfg)` — Configuração do destino remoto, convertida no contrato do transporte SSH.
 - `_check_one(self, spec) → DependencyReport` — Verifica uma dependência conforme o seu tipo.
@@ -3247,7 +3190,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `dispatch_event(self, automation, candidate) → AutomationFiringModel | None` — Registra o disparo de um evento interno (idempotente pelo identificador do evento).
 - `dispatch_manual(self, automation, *, tag, state, result, scheduled_for) → AutomationFiringModel | None` — Disparo manual ("executar agora", "testar"). Sempre único.
 
-
 - `_create(self, automation, *, key, scheduled_for, state, result) → AutomationFiringModel | None` — Cria a linha de disparo, respeitando a chave de idempotência.
 - `_advance(self, automation, last_occurrence, now) → None` — Avança o marcador de última execução e recalcula o próximo disparo.
 
@@ -3282,7 +3224,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `execute(self, firing) → ExecutionOutcome` — Executa um disparo: dependências, ação, evidência e estado.
 - `reconcile(self) → list[ExecutionOutcome]` — Fecha os disparos que ficaram rodando, olhando o estado real do run.
 
-
 - `_seconds(value)` — Converte segundos em um intervalo de tempo.
 - `_target_info(self, automation) → dict[str, Any]` — Resolve o destino da automação: local ou remoto, com suas permissões.
 - `_next_attempt(self, policy, attempt) → datetime` — Instante da próxima tentativa, com backoff exponencial limitado.
@@ -3308,7 +3249,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `redact_evidence(evidence) → dict[str, Any]` — Sanitiza a evidência antes de persistir (segredos não entram no banco nem nos logs).
 - `which_or_none(executable) → str | None` — Localiza um executável no `PATH`.
 
-
 - `PermissionDenied.__init__(self, message, *, reason) → None` — Registra a violação com o caminho e o motivo.
 ### `src/agent/automation/service/__init__.py`
 
@@ -3332,7 +3272,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `start(self) → dict[str, Any]` — Inicia o serviço.
 - `stop(self) → dict[str, Any]` — Para o serviço.
 - `status(self) → ServiceStatus` — Situação do serviço.
-
 
 - `_run(self, args, *, timeout) → tuple[int, str, str]` — Executa um comando do sistema operacional.
 - `_which(self, executable) → str | None` — Localiza um executável no `PATH`.
@@ -3360,7 +3299,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `stop(self) → dict[str, Any]` — Para o agente do `launchd`.
 - `status(self) → ServiceStatus` — Situação do agente do `launchd`.
 
-
 - `_plist_path(self, label) → Path` — Caminho do arquivo `plist` do agente.
 
 - `LaunchdAdapter._plist_path(self, label) → Path` — Caminho do arquivo `plist` do agente.
@@ -3381,7 +3319,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `start(self) → dict[str, Any]` — Inicia o serviço de usuário.
 - `stop(self) → dict[str, Any]` — Para o serviço de usuário.
 - `status(self) → ServiceStatus` — Situação do serviço, consultando o escopo de usuário e o de sistema.
-
 
 - `_user_unit_path(self) → Path` — Caminho da unidade de usuário.
 - `_system_unit_path(self) → Path` — Caminho da unidade de sistema.
@@ -3412,7 +3349,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `stop(self) → dict[str, Any]` — Interrompe a execução da tarefa agendada.
 - `status(self) → ServiceStatus` — Situação da tarefa agendada.
 
-
 - `_task_name(self) → str` — Nome da tarefa agendada.
 - `_is_admin(self) → bool` — Indica se o processo roda com privilégio administrativo.
 
@@ -3440,7 +3376,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `to_definition(self, row) → AutomationDefinition` — Documento validado da automação gravada.
 - `trigger_of(self, row)` — Gatilho da automação, já instanciado.
 - `next_occurrence(self, row, *, after) → datetime | None` — Próximo instante elegível da automação.
-
 
 - `_uuid_or_none(value) → uuid.UUID | None` — Converte um valor em UUID, tolerando ausência e texto inválido.
 - `_recompute_next_run(self, row) → None` — Recalcula o próximo disparo a partir do gatilho da definição.
@@ -3476,7 +3411,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `tick(self) → dict[str, Any]` — Um ciclo completo: recuperação → disparo → execução.
 - `status(self) → dict[str, Any]` — Situação do runtime: automações, disparos e contadores.
 - `diagnose(self) → dict[str, Any]` — Diagnóstico detalhado: automações vencidas, dependências e disparos pendentes.
-
 
 - `_heartbeat(self, session) → None` — Grava o batimento do runtime — é o que `status` mostra de outro processo.
 - `_tick_with(self, session) → dict[str, Any]` — Executa as três etapas do tique em uma sessão.
@@ -3516,7 +3450,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** __init__ — módulo do projeto.
 
-
 ### `src/agent/automation/triggers/base.py`
 
 **Propósito:** base — módulo do projeto.
@@ -3527,7 +3460,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `build_trigger(spec) → Trigger` — Instancia o gatilho de uma especificação.
 - `next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois de `after` (UTC).
 - `occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela (UTC) — usado para recuperar disparos perdidos.
-
 
 - `Trigger.next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois de `after` (UTC).
 - `Trigger.occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela (UTC) — usado para recuperar disparos perdidos.
@@ -3542,7 +3474,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `next_occurrence(self, after) → datetime | None` — Eventos não têm horário próprio: o próximo disparo depende do evento.
 - `occurrences(self, start, end, *, limit) → list[datetime]` — Eventos não têm horário próprio: nada a listar na janela.
 - `candidate_events(self, session, *, since, limit) → list[EventCandidate]` — Eventos elegíveis, dos mais recentes para os mais antigos.
-
 
 - `_matches_filter(payload, criteria) → bool` — Confere se o payload casa com os critérios de filtro do gatilho.
 
@@ -3569,7 +3500,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
 - `next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois do instante informado.
 - `occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
-
 
 - `OnceTrigger.next_occurrence(self, after) → datetime | None` — Instante único, quando ainda está no futuro.
 - `OnceTrigger.occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
@@ -3610,7 +3540,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `transition_agent(current, target) → AgentStatus` — Devolve o novo estado do agente após validar a transição.
 - `transition_execution(current, target) → ExecutionStatus` — Devolve o novo estado da execução após validar a transição.
 
-
 - `InvalidAgentTransition.__init__(self, current, target) → None` — Monta o registro de ciclo de vida do agente.
 ### `src/agent/orchestrator/plan_contract.py`
 
@@ -3634,7 +3563,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `asked_tools(self) → list[str]` — Lista as ferramentas que o modelo pediu no ciclo.
 - `applied(self) → bool` — Diz se o modelo deixou alguma alteração aplicada no disco.
 
-
 - `_execute(call_item) → tuple[dict[str, Any], dict[str, Any]]` — Executa uma chamada de ferramenta pedida pelo modelo.
 - `_budget_note() → str` — Monta a nota de orçamento de chamadas de ferramenta que entra na conversa.
 
@@ -3649,7 +3577,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `AnthropicProvider` — Anthropic Messages API (`/v1/messages`). A API não é compatível com OpenAI: usa.
 - `capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
 - `list_models(self, *, force) → list[str]` — Lista os modelos disponíveis na API, com cache curto.
-
 
 - `_media_type(encoded) → str` — Deduz o tipo de mídia de uma imagem codificada em base64.
 - `_image_block(encoded) → dict[str, Any]` — Monta o bloco de imagem aceito pela Messages API.
@@ -3677,7 +3604,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `GeminiProvider` — Gemini (`/v1beta/models/{model}:generateContent`). A API não é compatível com OpenAI:.
 - `capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
 - `list_models(self, *, force) → list[str]` — Lista os modelos disponíveis na API, com cache curto.
-
 
 - `_media_type(encoded) → str` — Deduz o tipo de mídia de uma imagem codificada em base64.
 - `_image_part(encoded) → dict[str, Any]` — Monta a parte de imagem aceita pela API do Gemini.
@@ -3717,7 +3643,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `operation()` — Executa a requisição HTTP e devolve a resposta tipada do provedor.
 - `operation()` — Executa a requisição HTTP e devolve a resposta tipada do provedor.
 
-
 - `_is_private_address(host) → bool` — Indica se um endereço IP é interno (privado, loopback, link-local, reservado ou multicast).
 - `_response_excerpt(response, limit) → str` — Trecho inicial do corpo da resposta, para compor mensagens de erro.
 - `_retryable(exc) → bool` — Indica se o erro vale uma retentativa.
@@ -3738,7 +3663,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
 - `list_models(self, *, force) → list[str]` — Modelos disponíveis no serviço. Com `models_cache_ttl` a lista é cacheada em memória,.
 
-
 - `_data_url(encoded) → str` — Monta a URL de dados de uma imagem base64.
 - `_client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
 - `_body(self, request) → dict` — Monta o corpo da requisição de inferência no formato da API compatível com OpenAI.
@@ -3758,7 +3682,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** openrouter — módulo do projeto.
 
 - `OpenRouterProvider` — OpenRouter fala o formato compatível com OpenAI (`/api/v1/chat/completions`) e acrescenta.
-
 
 - `OpenRouterProvider.__init__(self, base_url, *, model, api_key, headers, timeout, max_retries, allow_private_hosts, verify_tls, referer, title, models_cache_ttl) → None` — Configura o provedor com os cabeçalhos opcionais de identificação do OpenRouter.
 ### `src/agent/providers/registry.py`
@@ -3787,7 +3710,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `spec(self, name) → ProviderSpec` — Especificação de um provedor, com erro explícito quando o nome não existe.
 - `build(self, name, settings) → Any` — Instancia o provedor nomeado.
 
-
 - `_interpolate(value) → Any` — Aplica a interpolação de ambiente em toda a estrutura da configuração.
 
 - `ProviderSpec.kind(self) → str` — Tipo do provedor normalizado em minúsculas.
@@ -3814,7 +3736,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** __init__ — módulo do projeto.
 
-
 ### `src/agent/remote/ssh.py`
 
 **Propósito:** ssh — módulo do projeto.
@@ -3834,7 +3755,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `move(self, source, target) → None` — Move ou renomeia um caminho no servidor remoto.
 - `check(self) → dict[str, Any]` — Diagnóstico: o servidor responde? Qual o sistema?.
 - `pump(stream, chunks, sink)` — Transfere os dados entre a sessão local e o canal remoto.
-
 
 - `_resolve_key(key_path) → str | None` — Resolve o caminho da chave SSH privada, quando informada.
 - `_host_preenchido(cls, value) → str` — Valida que o host do computador remoto foi informado.
@@ -3875,7 +3795,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `glob_files(ctx, args) → dict` — Busca arquivos remotos pelo nome.
 - `search_grep(ctx, args) → dict` — Busca um padrão no conteúdo dos arquivos remotos.
 
-
 - `_guard(ctx, path) → dict | None` — Mantém a trava de segurança: o caminho tem de ficar dentro do projeto.
 ### `src/agent/services/agent_scheduler.py`
 
@@ -3896,7 +3815,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `run_forever(self) → None` — Laço principal. Dorme na fila — nenhuma inferência para procurar trabalho.
 - `wait_idle(self, timeout) → bool` — Espera a fila esvaziar — sem consumir token. `True` se esvaziou no prazo.
 - `stop(self) → None` — Interrompe o laço do escalonador.
-
 
 - `_pick(self) → SchedulerOperation | None` — Retira a próxima operação, respeitando prioridade e tempo de espera.
 - `_sync_idle(self) → None` — Marca o escalonador como ocioso quando não há pendências nem operação em curso.
@@ -3954,7 +3872,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `discard_checks(self, agent_id) → dict[str, Any]` — Verifica o que impede descartar o agente agora.
 - `discard(self, agent_id, *, purge, reason, force) → dict[str, Any]` — Descarta o estado recuperável do agente.
 
-
 - `_utcnow_iso() → str` — Instante atual em UTC, no formato ISO 8601.
 - `_role_for_kind(kind) → str` — Papel do agente derivado do tipo da tarefa.
 - `_set_agent_status(self, agent, target) → AgentModel` — Move o agente para um novo estado, validando a transição.
@@ -3998,7 +3915,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `delete_cascade(session, root_table, root_id) → dict[str, int]` — Remove a linha e tudo que depende dela, na ordem segura (filhos antes dos pais).
 
-
 - `_children_map() → dict[str, list[tuple[Any, str]]]` — Tabela pai → [(tabela filha, coluna filha)] segundo as chaves estrangeiras do modelo.
 - `_scope(session, root_table, root_id) → dict[str, set]` — Conjunto de ids por tabela que descendem da linha raiz.
 - `_deletion_order(scope) → list[str]` — Ordem topológica: cada tabela é apagada antes das tabelas que ela referencia.
@@ -4017,7 +3933,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `acquire(self, *, purpose, provider, model) → ExecutionSlot` — Toma o slot de inferência. O chamador é responsável por `release()`.
 - `release(self, *, error, slot) → None` — Devolve o slot. `error` distingue falha, cancelamento e sucesso.
 - `metrics(self) → ExecutorMetrics` — Fotografia das métricas do executor.
-
 
 - `_waiter(self, loop) → asyncio.Event` — Evento de espera associado a um laço de eventos.
 - `_wake_all(self) → None` — Acorda todos os laços em espera (chamado quando um slot é devolvido).
@@ -4046,7 +3961,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `resolve(self, query_id, *, provider, profile) → AgentQueryModel` — Resolve a consulta: estado persistido primeiro, inferência só se faltar.
 - `answer(self, query_id, answer, *, evidence, artifacts, uncertainty, answered_by_agent_id) → AgentQueryModel` — Registra a resposta de um agente a uma consulta (caminho sem inferência).
 - `cancel(self, query_id, *, reason) → AgentQueryModel` — Cancela uma consulta pendente.
-
 
 - `_declara_ausencia(texto) → bool` — O texto diz que não há evidência disponível?.
 - `_sem_acento(text) → str` — Remove diacríticos.
@@ -4114,7 +4028,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `secoes(texto) → dict[str, tuple[int, int]]` — Seções de arquivo do `resume.md` e seus limites de linha.
 - `main(argv) → int` — Preenche as lacunas do `resume.md` e informa o que foi acrescentado.
-
 
 - `_assinatura(no) → str` — Assinatura legível de uma função ou método.
 - `_retorno(no) → str` — Tipo de retorno declarado, quando houver.
@@ -4240,7 +4153,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `web/static/assets/app/components/sidebar.js`
 
 **Propósito:** sidebar — módulo do projeto.
-
 
 ### `web/static/assets/app/components/topbar.js`
 
@@ -4440,566 +4352,453 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** This directory contains data from the pytest's cache plugin,.
 
-
 ### `data/debug-e2e/workspace/calc.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `data/debug-e2e/workspace/tests/test_calc.py`
 
 **Propósito:** Documento do projeto..
 
-
 ### `docs/architecture/automacoes.md`
 
 **Propósito:** Voltar ao [Hub](/docs/architecture/README.md) · [Modelo de dados](/docs/architecture/modelo-dados.md) · [Execução autônoma](/docs/architecture/execucao-autonoma.md).
-
 
 ### `docs/architecture/avaliacao.md`
 
 **Propósito:** A avaliação reproduzível com critérios objetivos de aceite.
 
-
 ### `docs/architecture/ciclo-ferramentas.md`
 
 **Propósito:** O ciclo de inspeção com ferramentas antes da resposta do modelo.
-
 
 ### `docs/architecture/execucao-remota.md`
 
 **Propósito:** O projeto rodando em outro computador, por SSH.
 
-
 ### `docs/architecture/hierarquia-agentes.md`
 
 **Propósito:** Voltar ao [Hub](/docs/architecture/README.md) · [Visão geral](/docs/architecture/visao-geral.md) · [Provedores](/docs/architecture/provedores.md).
-
 
 ### `docs/architecture/provedores.md`
 
 **Propósito:** Voltar ao [Hub](/docs/architecture/README.md) · Código: [`src/agent/providers/`](/src/agent/providers/README.md).
 
-
 ### `docs/regras/marca.md`
 
 **Propósito:** **Regra:** o projeto se chama **Callidus**. Toda interface, documentação, metadado de API e mensagem de usuário usa o nome "Callidus" e o símbolo oficial. Termos genéricos em português ("o agente", "o runtime") continuam valendo como substantivo comum — não são nome de produto.
-
 
 ### `internal/tarefas/2026-10-17-complemento-regras-operacionais.md`
 
 **Propósito:** | Campo | Valor |.
 
-
 ### `internal/tarefas/2026-10-17-diagramas-dimensoes-verificacao.md`
 
 **Propósito:** | Campo | Valor |.
-
 
 ### `internal/tarefas/2026-10-17-nucleo-agente-fase0-1.md`
 
 **Propósito:** | Campo | Valor |.
 
-
 ### `internal/tarefas/2026-10-17-repositorio-local.md`
 
 **Propósito:** | Campo | Valor |.
-
 
 ### `internal/tarefas/2026-10-18-evolucao-arquitetural.md`
 
 **Propósito:** | Campo | Valor |.
 
-
 ### `internal/tarefas/2026-10-18-observabilidade-tempo-real.md`
 
 **Propósito:** | Campo | Valor |.
-
 
 ### `internal/tarefas/2026-10-18-validacao-verificacao-progresso.md`
 
 **Propósito:** | Campo | Valor |.
 
-
 ### `internal/tarefas/2026-10-19-evolucao-skills-decomposicao-execucao.md`
 
 **Propósito:** | Campo | Valor |.
-
 
 ### `internal/tarefas/2026-10-19-rebrand-callidus.md`
 
 **Propósito:** | Campo | Valor |.
 
-
 ### `internal/tarefas/2026-10-20-automacoes-persistentes.md`
 
 **Propósito:** | Campo | Valor |.
-
 
 ### `internal/tarefas/2026-10-20-hierarquia-agentes-executor.md`
 
 **Propósito:** | Campo | Valor |.
 
-
 ### `internal/tarefas/2026-10-20-remodelagem-arquitetural.md`
 
 **Propósito:** | Campo | Valor |.
-
 
 ### `internal/tarefas/_modelo-checklist.md`
 
 **Propósito:** O modelo de checklist usado por toda atividade do projeto.
 
-
 ### `lab/avaliar.py`
 
 **Propósito:** Avaliação reproduzível do Callidus com o modelo local de referência.
-
 
 ### `lab/out/baseline-root/src/main.js`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/baseline-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/diag1-root/check_verification.py`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/diag1-root/src/main.js`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/diag1-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/diag2-root/src/main.js`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/diag2-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed10-root/src/main.js`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed10-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed11-root/README.md`
 
 **Propósito:** Este é o README do projeto Callidus.
-
 
 ### `lab/out/fixed11-root/src/main.js`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed11-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed12-root/src/main.js`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed12-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed13-root/src/main.js`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed13-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed14-root/src/main.js`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed14-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed15-root/answer.py`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed15-root/src/main.js`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed15-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed16-root/src/main.js`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed16-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed17-root/src/main.js`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed17-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed18-root/src/main.js`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed18-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed19-root/src/main.js`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed19-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed3-root/src/main.js`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed3-root/structure.py`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed3-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed4-root/src/main.js`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed4-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed5-root/src/main.js`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed5-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed6-root/src/main.js`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed6-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed7-root/src/main.js`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed7-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed8-root/src/main.js`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed8-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/out/fixed9-root/src/main.js`
 
 **Propósito:** Documento do projeto..
 
-
 ### `lab/out/fixed9-root/tests/test_frontend.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `lab/run_scenario.py`
 
 **Propósito:** Cenário controlado: reproduz a última conversa real ("continue") com gpt-oss:20b.
 
-
 ### `src/agent/automation/README.md`
 
 **Propósito:** Automações persistentes, autônomas e multiplataforma: o Callidus planeja, grava,.
-
 
 ### `src/agent/remote/README.md`
 
 **Propósito:** Transporte das ações de um projeto (comandos, leituras, escritas) quando o projeto roda em.
 
-
 ### `tests/conftest.py`
 
 **Propósito:** Arquivo: tests/conftest.py.
-
 
 ### `tests/fixtures/README.md`
 
 **Propósito:** Projetos de exemplo usados pelos testes de ponta a ponta.
 
-
 ### `tests/fixtures/sample_project/calc.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `tests/fixtures/sample_project/tests/test_calc.py`
 
 **Propósito:** Documento do projeto..
 
-
 ### `tests/test_agent_api.py`
 
 **Propósito:** Arquivo: tests/test_agent_api.py.
-
 
 ### `tests/test_agent_hierarchy_e2e.py`
 
 **Propósito:** Arquivo: tests/test_agent_hierarchy_e2e.py.
 
-
 ### `tests/test_agent_resilience.py`
 
 **Propósito:** Arquivo: tests/test_agent_resilience.py.
-
 
 ### `tests/test_agent_scheduler.py`
 
 **Propósito:** Arquivo: tests/test_agent_scheduler.py.
 
-
 ### `tests/test_agent_service.py`
 
 **Propósito:** Arquivo: tests/test_agent_service.py.
-
 
 ### `tests/test_anthropic_provider.py`
 
 **Propósito:** Arquivo: tests/test_anthropic_provider.py.
 
-
 ### `tests/test_api_smoke.py`
 
 **Propósito:** Arquivo: tests/test_api_smoke.py.
-
 
 ### `tests/test_automation_api.py`
 
 **Propósito:** Arquivo: tests/test_automation_api.py.
 
-
 ### `tests/test_automation_end_to_end.py`
 
 **Propósito:** Arquivo: tests/test_automation_end_to_end.py.
-
 
 ### `tests/test_automation_platforms.py`
 
 **Propósito:** Arquivo: tests/test_automation_platforms.py.
 
-
 ### `tests/test_automation_runtime.py`
 
 **Propósito:** Arquivo: tests/test_automation_runtime.py.
-
 
 ### `tests/test_brand.py`
 
 **Propósito:** Arquivo: tests/test_brand.py.
 
-
 ### `tests/test_context_requirements.py`
 
 **Propósito:** Arquivo: tests/test_context_requirements.py.
-
 
 ### `tests/test_execution_package.py`
 
 **Propósito:** Arquivo: tests/test_execution_package.py.
 
-
 ### `tests/test_executor_scope.py`
 
 **Propósito:** Arquivo: tests/test_executor_scope.py.
-
 
 ### `tests/test_gemini_provider.py`
 
 **Propósito:** Arquivo: tests/test_gemini_provider.py.
 
-
 ### `tests/test_http_transport.py`
 
 **Propósito:** Arquivo: tests/test_http_transport.py.
-
 
 ### `tests/test_inference_executor.py`
 
 **Propósito:** Arquivo: tests/test_inference_executor.py.
 
-
 ### `tests/test_llamacpp_remote.py`
 
 **Propósito:** Arquivo: tests/test_llamacpp_remote.py.
-
 
 ### `tests/test_model_tool_operation.py`
 
 **Propósito:** Arquivo: tests/test_model_tool_operation.py.
 
-
 ### `tests/test_ollama_provider.py`
 
 **Propósito:** Arquivo: tests/test_ollama_provider.py.
-
 
 ### `tests/test_openai_compatible_provider.py`
 
 **Propósito:** Arquivo: tests/test_openai_compatible_provider.py.
 
-
 ### `tests/test_openrouter_provider.py`
 
 **Propósito:** Arquivo: tests/test_openrouter_provider.py.
-
 
 ### `tests/test_plan_contract.py`
 
 **Propósito:** Arquivo: tests/test_plan_contract.py.
 
-
 ### `tests/test_project_delete.py`
 
 **Propósito:** Arquivo: tests/test_project_delete.py.
-
 
 ### `tests/test_provider_config_api.py`
 
 **Propósito:** Arquivo: tests/test_provider_config_api.py.
 
-
 ### `tests/test_provider_security.py`
 
 **Propósito:** Arquivo: tests/test_provider_security.py.
-
 
 ### `tests/test_provider_selection.py`
 
 **Propósito:** Arquivo: tests/test_provider_selection.py.
 
-
 ### `tests/test_providers_api.py`
 
 **Propósito:** Arquivo: tests/test_providers_api.py.
-
 
 ### `tests/test_providers_registry.py`
 
 **Propósito:** Arquivo: tests/test_providers_registry.py.
 
-
 ### `tests/test_query_service.py`
 
 **Propósito:** Arquivo: tests/test_query_service.py.
-
 
 ### `tests/test_recovery_and_reporting.py`
 
 **Propósito:** Arquivo: tests/test_recovery_and_reporting.py.
 
-
 ### `tests/test_remote_ssh.py`
 
 **Propósito:** Arquivo: tests/test_remote_ssh.py.
-
 
 ### `tests/test_request_permissions.py`
 
 **Propósito:** Arquivo: tests/test_request_permissions.py.
 
-
 ### `tests/test_tool_loop.py`
 
 **Propósito:** Arquivo: tests/test_tool_loop.py.
-
 
 ### `tests/test_truncated_output.py`
 
 **Propósito:** Arquivo: tests/test_truncated_output.py.
 
-
 ### `tests/test_verification_integrity.py`
 
 **Propósito:** Arquivo: tests/test_verification_integrity.py.
 
-
 ### `tests/test_web_frontend.py`
 
 **Propósito:** Documento do projeto..
-
 
 ### `tests/web/chat-scroll.test.mjs`
 
@@ -5009,253 +4808,232 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `data/providers.yaml`
 
 **Propósito:** Exemplo de configuração de provedores (modelo de referência)..
-
 
 ### `lab/out/avaliacao-antes.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/avaliacao-depois.json`
 
 **Propósito:** Configuração de runtime do Callidus..
-
 
 ### `lab/out/avaliacao-depois2.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/baseline-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
 
 ### `lab/out/baseline.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/diag1-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
 
 ### `lab/out/diag1.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/diag2-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
 
 ### `lab/out/diag2.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/fixed10-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
 
 ### `lab/out/fixed10.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/fixed11-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
 
 ### `lab/out/fixed11.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/fixed12-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
 
 ### `lab/out/fixed12.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/fixed13-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
 
 ### `lab/out/fixed13.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/fixed14-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
 
 ### `lab/out/fixed14.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/fixed15-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
 
 ### `lab/out/fixed15.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/fixed16-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
 
 ### `lab/out/fixed16.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/fixed17-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
 
 ### `lab/out/fixed17.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/fixed18-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
 
 ### `lab/out/fixed18.json`
 
 **Propósito:** Configuração de runtime do Callidus..
 
-
 ### `lab/out/fixed19-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
 
 ### `lab/out/fixed3-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
 
-
 ### `lab/out/fixed3.json`
 
 **Propósito:** Configuração de runtime do Callidus..
-
 
 ### `lab/out/fixed4-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
 
-
 ### `lab/out/fixed4.json`
 
 **Propósito:** Configuração de runtime do Callidus..
-
 
 ### `lab/out/fixed5-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
 
-
 ### `lab/out/fixed5.json`
 
 **Propósito:** Configuração de runtime do Callidus..
-
 
 ### `lab/out/fixed6-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
 
-
 ### `lab/out/fixed6.json`
 
 **Propósito:** Configuração de runtime do Callidus..
-
 
 ### `lab/out/fixed7-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
 
-
 ### `lab/out/fixed7.json`
 
 **Propósito:** Configuração de runtime do Callidus..
-
 
 ### `lab/out/fixed8-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
 
-
 ### `lab/out/fixed8.json`
 
 **Propósito:** Configuração de runtime do Callidus..
-
 
 ### `lab/out/fixed9-root/src/styles.css`
 
 **Propósito:** Folha de estilo da interface (design system, temas e layout)..
 
-
 ### `lab/out/fixed9.json`
 
 **Propósito:** Configuração de runtime do Callidus..
-
 
 ### `media/Callidus Logo.svg`
 
 **Propósito:** Recurso visual da marca..
 
-
 ### `media/Callidus Name + Logo Horizontal.svg`
 
 **Propósito:** Logotipo em texto da marca (fonte)..
-
 
 ### `media/Callidus Name + Logo Vertical.svg`
 
 **Propósito:** Logotipo em texto da marca (fonte)..
 
-
 ### `media/Callidus Name.svg`
 
 **Propósito:** Logotipo em texto da marca (fonte)..
 
+### `providers.example.yaml`
+
+**Propósito:** Exemplo de configuração de provedores (modelo de referência)..
+
+### `web/static/assets/app/style.css`
+
+**Propósito:** Folha de estilo da interface (design system, temas e layout)..
+
+### `web/static/assets/brand/callidus-lockup-vertical.svg`
+
+**Propósito:** Logotipo vertical da marca (fonte)..
+
+### `web/static/assets/brand/callidus-lockup.svg`
+
+**Propósito:** Recurso visual da marca..
+
+### `web/static/assets/brand/callidus-mark-current.svg`
+
+**Propósito:** Símbolo da marca (fonte)..
+
+### `web/static/assets/brand/callidus-mark.svg`
+
+**Propósito:** Símbolo da marca (fonte)..
+
+### `web/static/assets/brand/callidus-wordmark.svg`
+
+**Propósito:** Logotipo em texto da marca (fonte)..
+
+### `web/static/assets/brand/favicon.svg`
+
+**Propósito:** Ícone de aba do navegador..
+
+### `internal/tarefas/2026-10-20-auditoria-documentacao.md`
+
+**Propósito:** | Campo | Valor |.
+
 
 ### `media/icons/alerta.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
-### `media/icons/arquitetura.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
-### `media/icons/arquivos.svg`
 
 **Propósito:** Recurso visual da marca..
 
@@ -5280,32 +5058,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** Recurso visual da marca..
 
 
-### `media/icons/conceitos.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
-### `media/icons/configuracao.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
-### `media/icons/desenvolvimento.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
 ### `media/icons/documentacao.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
-### `media/icons/exemplos.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
-### `media/icons/fluxos.svg`
 
 **Propósito:** Recurso visual da marca..
 
@@ -5315,32 +5068,12 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** Recurso visual da marca..
 
 
-### `media/icons/integracoes.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
-### `media/icons/leitura.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
 ### `media/icons/mcp.svg`
 
 **Propósito:** Recurso visual da marca..
 
 
-### `media/icons/metricas.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
 ### `media/icons/navegacao.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
-### `media/icons/objetivo.svg`
 
 **Propósito:** Recurso visual da marca..
 
@@ -5360,27 +5093,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** Recurso visual da marca..
 
 
-### `media/icons/referencias.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
-### `media/icons/restricoes.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
-### `media/icons/seguranca.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
 ### `media/icons/tarefas.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
-### `media/icons/testes.svg`
 
 **Propósito:** Recurso visual da marca..
 
@@ -5394,42 +5107,3 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Recurso visual da marca..
 
-
-### `providers.example.yaml`
-
-**Propósito:** Exemplo de configuração de provedores (modelo de referência)..
-
-
-### `web/static/assets/app/style.css`
-
-**Propósito:** Folha de estilo da interface (design system, temas e layout)..
-
-
-### `web/static/assets/brand/callidus-lockup-vertical.svg`
-
-**Propósito:** Logotipo vertical da marca (fonte)..
-
-
-### `web/static/assets/brand/callidus-lockup.svg`
-
-**Propósito:** Recurso visual da marca..
-
-
-### `web/static/assets/brand/callidus-mark-current.svg`
-
-**Propósito:** Símbolo da marca (fonte)..
-
-
-### `web/static/assets/brand/callidus-mark.svg`
-
-**Propósito:** Símbolo da marca (fonte)..
-
-
-### `web/static/assets/brand/callidus-wordmark.svg`
-
-**Propósito:** Logotipo em texto da marca (fonte)..
-
-
-### `web/static/assets/brand/favicon.svg`
-
-**Propósito:** Ícone de aba do navegador..

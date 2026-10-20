@@ -23,8 +23,6 @@ keywords:
   - desacoplar
 ---
 
-![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
-
 ## Critérios de ativação
 - Otimização estrutural, simplificação de complexidade ciclomática e desacoplamento
 

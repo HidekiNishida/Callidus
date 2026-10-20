@@ -1,7 +1,5 @@
 # Fixtures de teste
 
-![testes](/media/icons/testes.svg){width=48}
-
 Projetos de exemplo usados pelos testes de ponta a ponta.
 
 Projetos mínimos **não coletados** pelo pytest (`norecursedirs`).

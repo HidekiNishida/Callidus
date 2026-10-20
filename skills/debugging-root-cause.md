@@ -30,8 +30,6 @@ keywords:
   - regressão
 ---
 
-![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
-
 ## Critérios de ativação
 - Correção de bugs, exceções em runtime, quebras de testes ou regressões
 - Investigação de comportamentos anômalos relatados

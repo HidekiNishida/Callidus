@@ -1,7 +1,5 @@
 # Context Builder por operação
 
-![configuracao](/media/icons/configuracao.svg){width=48}
-
 A montagem do contexto e o orçamento de tokens.
 
 Cada chamada ao modelo para uma tarefa passa por `OperationContextBuilder`, que monta mensagens mínimas e persiste um `ContextSnapshotModel`.

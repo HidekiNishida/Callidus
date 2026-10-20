@@ -1,7 +1,5 @@
 # Interface web
 
-![integracoes](/media/icons/integracoes.svg){width=48}
-
 A SPA: streaming de eventos, estado da interface e comunicação com a API.
 
 <p align="center">

@@ -1,7 +1,5 @@
 # Verificação (`verification/`) — Checks Determinísticos Independentes
 
-![testes](/media/icons/testes.svg){width=48}
-
 Verificação proporcional ao risco: quem executa **não** aprova o próprio resultado. Evidência persistida e reavaliada na retomada.
 
 ## 🏗️ Módulos

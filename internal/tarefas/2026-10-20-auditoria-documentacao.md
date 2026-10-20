@@ -42,7 +42,7 @@ Nenhuma. A regra permanente está em [AGENTS.md](/AGENTS.md) (seção 12) e em
 | READMEs ausentes em 4 pastas de código | `automation/actions/`, `automation/service/`, `automation/triggers/`, `skills/catalog/` |
 | `resume.md` com 1052 itens sem descrição | Preenchido a partir das docstrings do código (2087 itens carimbados) |
 | 209 seções sem marcador de categoria | Emoji de categoria aplicado conforme o catálogo |
-| Documentos sem identidade visual | Cabeçalho com ícone de categoria em 78 documentos |
+| Ícone de 48px no cabeçalho + `{width=48}` literal | Cabeçalho enxuto (título, propósito, volta); ícone só como marcador de 20px em índice, em HTML inline |
 
 ## Verificações
 
@@ -61,12 +61,19 @@ Nenhuma. A regra permanente está em [AGENTS.md](/AGENTS.md) (seção 12) e em
 | `/AGENTS.md` | Seção 12: documentação como parte da implementação |
 | `/docs/regras/documentacao.md` | Padrão oficial: estrutura, marcadores, precisão, responsabilidade |
 | `/docs/regras/ativos-visuais.md` | Catálogo dos 29 ícones (conjunto de regras + de categorias) |
-| `/media/icons/*.svg` | 15 ícones de categoria novos + rótulos corrigidos |
+| `/media/icons/*.svg` | Rótulos corrompidos corrigidos; conjunto de categoria **removido** (virou emoji) |
 | `/scripts/check_markdown.py` | Estrutura Markdown, tabelas, blocos e diagramas |
 | `/scripts/check_references.py` | Arquivos e símbolos citados existem |
 | `/scripts/preencher_resume.py` | Preenche o `resume.md` a partir das docstrings do código |
 
 ## Notas de retomada
+
+**Ajuste posterior (feedback do usuário):** o ícone no cabeçalho foi retirado — o
+`{width=48}` é sintaxe que o Markdown padrão não entende (o renderizador mostra o atributo
+ao lado da imagem) e um bloco colorido de 48px no topo de cada página pesa mais do que
+ajuda. A categoria passou a ser marcada só pelo emoji da seção, e o SVG ficou como marcador
+discreto (20px, HTML inline) dentro das tabelas de índice. Os 15 ícones de categoria foram
+removidos; sobraram os 15 do conjunto de regras.
 
 O `resume.md` passou de 2.660 para 5.434 linhas: ele agora cobre **todo** o inventário
 (2.087 itens) e o `carimbar` voltou a funcionar — antes ele recusava gravar porque ~999 itens

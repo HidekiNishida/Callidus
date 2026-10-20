@@ -1,7 +1,5 @@
 # Skills, Estratégia e Decomposição Recursiva
 
-![Arquitetura](/media/icons/organizacao.svg){width=48}
-
 Voltar ao [Hub da arquitetura](/docs/architecture/README.md) · Regras: [princípios](/docs/regras/principios.md) · [validações](/docs/regras/validacoes-testes.md)
 
 **O que é:** o conjunto de peças que faz o agente **agir como um profissional** diante de um pedido:

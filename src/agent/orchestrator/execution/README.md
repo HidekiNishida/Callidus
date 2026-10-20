@@ -1,7 +1,5 @@
 # Execução de Tarefa (`orchestrator/execution/`) — Como uma Etapa Roda
 
-![fluxos](/media/icons/fluxos.svg){width=48}
-
 O pacote onde **uma** tarefa da árvore é executada: o despacho (MCP, modelo, ferramenta do plano,
 verificação), a operação de modelo, a escrita do arquivo e a evidência.
 

@@ -1,7 +1,5 @@
 # Automações — runtime de tarefas persistentes
 
-![configuracao](/media/icons/configuracao.svg){width=48}
-
 Automações persistentes, autônomas e multiplataforma: o Callidus planeja, grava,
 dispara, executa, verifica e recupera tarefas automaticamente.
 

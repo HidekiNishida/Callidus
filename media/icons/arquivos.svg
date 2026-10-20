@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Arquivos e diretórios">
-  <rect width="64" height="64" rx="12" fill="#A16207"/>
-  <path d="M10 20 A4 4 0 0 1 14 16 L26 16 L30 22 L50 22 A4 4 0 0 1 54 26 L54 48 A4 4 0 0 1 50 52 L14 52 A4 4 0 0 1 10 48 Z" fill="#FEF3C7"/>
-  <line x1="10" y1="30" x2="54" y2="30" stroke="#FCD34D" stroke-width="3"/>
-</svg>

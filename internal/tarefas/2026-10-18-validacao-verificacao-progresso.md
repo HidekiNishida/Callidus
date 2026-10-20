@@ -1,7 +1,5 @@
 # Checklist: Validação do plano, verificação independente e progresso real
 
-![tarefas](/media/icons/tarefas.svg){width=48}
-
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |

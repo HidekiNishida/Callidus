@@ -1,7 +1,5 @@
 # Análise UX/UI e princípios da plataforma
 
-![Hub](/media/icons/hub.svg){width=48}
-
 Comparativo inspirado em **Cursor**, **Hermes** e IDEs agentic — adaptado ao nosso diferencial: **árvore verificável**, não chat monolítico.
 
 Voltar: [frontend.md](/docs/architecture/frontend.md) · [visao-geral.md](/docs/architecture/visao-geral.md)

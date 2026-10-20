@@ -1,7 +1,5 @@
 # Organização de Arquivos e Nomenclatura
 
-![Organização](/media/icons/organizacao.svg){width=48}
-
 Voltar ao [Hub](/docs/regras/README.md) · Documentação: [documentacao.md](/docs/regras/documentacao.md) · Navegação: [navegacao-agentes.md](/docs/regras/navegacao-agentes.md)
 
 **Regra:** separar tudo em pastas hierárquicas com nomenclatura clara e separação inteligente por tópico — para que agentes leiam só o necessário (eficiência de tokens). Isto **complementa** qualquer arquitetura técnica do projeto; não a substitui.
@@ -103,8 +101,6 @@ Isto vale para docs **e** para distribuição de código/config quando houver re
 ---
 
 ## Checklist
-
-![Checklist](/media/icons/checklist.svg){width=32}
 
 - [ ] Cada arquivo/pasta tem uma responsabilidade clara
 - [ ] Nome kebab-case e autoexplicativo

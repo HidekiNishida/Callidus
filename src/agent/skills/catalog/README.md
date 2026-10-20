@@ -1,7 +1,5 @@
 # Catálogo de skills
 
-![conceitos](/media/icons/conceitos.svg){width=48}
-
 O catálogo é a fonte das **skills** que o Callidus sabe aplicar: a pasta guarda o carregador
 que lê o catálogo e monta o índice de competências disponível.
 

@@ -1,7 +1,5 @@
 # Execução em computador remoto
 
-![integracoes](/media/icons/integracoes.svg){width=48}
-
 O projeto rodando em outro computador, por SSH.
 
 Voltar ao [Hub](/docs/architecture/README.md) · Configuração: [provedores.md](/docs/architecture/provedores.md)

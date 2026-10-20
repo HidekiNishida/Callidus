@@ -1,7 +1,5 @@
 # Checklist: Observabilidade em tempo real
 
-![tarefas](/media/icons/tarefas.svg){width=48}
-
 | Campo | Valor |
 |-------|-------|
 | Estado | em andamento |

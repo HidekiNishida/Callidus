@@ -1,7 +1,5 @@
 # Checklist: Repositório local com documentação do Project
 
-![tarefas](/media/icons/tarefas.svg){width=48}
-
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |

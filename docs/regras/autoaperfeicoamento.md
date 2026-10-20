@@ -1,7 +1,5 @@
 # Autoaperfeiçoamento do Callidus
 
-![Autoaperfeiçoamento](/media/icons/autoaperfeicoamento.svg){width=48}
-
 Voltar ao [Hub](/docs/regras/README.md) · Organização: [organizacao-arquivos.md](/docs/regras/organizacao-arquivos.md)
 
 **Regra (self-increment):** em toda mudança relevante que possa influenciar o projeto como um todo ou o trabalho futuro, o agente deve **atualizar a si mesmo** — docs, regras, checklists e convenções — no mesmo ciclo da tarefa.
@@ -95,8 +93,6 @@ Não editar `notes.md` / `preferences.md` (coordenador), salvo ordem explícita.
 ---
 
 ## Checklist
-
-![Checklist](/media/icons/checklist.svg){width=32}
 
 - [ ] Avaliei se a mudança influencia trabalho futuro
 - [ ] Atualizei doc/regra canônica (e hub se necessário)

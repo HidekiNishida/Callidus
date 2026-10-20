@@ -1,7 +1,5 @@
 # Provedores (`providers/`) — Ollama, llama.cpp, OpenRouter, OpenAI-compatível, Anthropic, Gemini, Mock
 
-![integracoes](/media/icons/integracoes.svg){width=48}
-
 Abstração única de inferência: interface `LLMProvider`, perfis de modelo, capacidades declaradas,
 streaming real e catálogo configurável. A camada não conhece skills, memória nem o ciclo do agente.
 

@@ -1,7 +1,5 @@
 # Ferramentas (`tools/`) — Registro, Execução e 17 Builtins
 
-![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
-
 Ferramentas determinísticas que o agente executa no filesystem/projeto autorizado. Registro central com aliases, aprovação, timeouts e observabilidade.
 
 ## 🏗️ Módulos

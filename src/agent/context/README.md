@@ -1,7 +1,5 @@
 # Contexto (`context/`) — Orçamento de Tokens + Montagem de Prompt
 
-![configuracao](/media/icons/configuracao.svg){width=48}
-
 Gestão determinística do que cabe na janela de contexto do modelo: componentes com prioridade, compactação seletiva e erro se obrigatórios não couberem.
 
 ## 🏗️ Módulos

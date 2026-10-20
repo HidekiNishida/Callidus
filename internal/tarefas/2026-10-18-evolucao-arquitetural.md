@@ -1,7 +1,5 @@
 # Checklist: Evolução arquitetural — decomposição adaptativa, contexto suficiente, conclusão verificável
 
-![tarefas](/media/icons/tarefas.svg){width=48}
-
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |

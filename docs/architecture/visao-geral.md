@@ -1,7 +1,5 @@
 # Arquitetura — visão geral
 
-![Projeto](/media/icons/projeto.svg){width=48}
-
 Entrada: [README do repositório](/README.md) · Contexto: [project-context.md](/docs/project-context.md)
 
 ## 🧠 Princípio central

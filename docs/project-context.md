@@ -4,8 +4,6 @@
   <img src="/media/Callidus Name + Logo Horizontal.svg" alt="Callidus" width="360" />
 </p>
 
-![Projeto](/media/icons/projeto.svg){width=48}
-
 **Entrada de regras:** [docs/regras/README.md](/docs/regras/README.md)
 
 Este arquivo guarda o **contexto estável** do Project: metas, restrições e ponteiros. Detalhes operacionais de “como trabalhar” vivem no hub de regras — não duplique regras aqui; **aponte** para elas.

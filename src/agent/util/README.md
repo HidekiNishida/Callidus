@@ -1,7 +1,5 @@
 # Utilitários (`util/`) — Parse JSON Tolerante
 
-![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
-
 Utilitários compartilhados sem dependências externas.
 
 ## 🏗️ Módulos

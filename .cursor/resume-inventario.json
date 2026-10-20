@@ -452,6 +452,7 @@
   "sym:scripts/check_docs.py::_ancoras_validas(arquivo: Path) -> list[str]",
   "sym:scripts/check_docs.py::_normalizar(texto: str) -> str",
   "sym:scripts/check_docs.py::_resolve(source: Path, target: str) -> Path | None",
+  "sym:scripts/check_docs.py::_sem_codigo(texto: str) -> str",
   "sym:scripts/check_docs.py::_targets(paths: list[Path]) -> list[Path]",
   "sym:scripts/check_docs.py::main(argv: list[str]) -> int",
   "sym:scripts/check_imports.py::_changed_files() -> list[str]",

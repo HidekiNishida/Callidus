@@ -1,7 +1,5 @@
 # Testes (`tests/`)
 
-![testes](/media/icons/testes.svg){width=48}
-
 Como a suíte é organizada e o que cada arquivo verifica.
 
 Suíte **pytest** — `pytest` na raiz do repo (config em [pyproject.toml](/pyproject.toml)).

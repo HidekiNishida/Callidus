@@ -1,7 +1,5 @@
 # Execução Remota (`remote/`) — Projeto em Outro Computador
 
-![integracoes](/media/icons/integracoes.svg){width=48}
-
 Transporte das ações de um projeto (comandos, leituras, escritas) quando o projeto roda em
 outro computador por **SSH**.
 

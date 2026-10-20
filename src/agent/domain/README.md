@@ -1,7 +1,5 @@
 # Domínio (`domain/`) — Contratos, Estados e Falhas
 
-![conceitos](/media/icons/conceitos.svg){width=48}
-
 Definições centrais compartilhadas por toda a aplicação: enums, máquina de estados, schemas Pydantic (fronteiras API/DB) e classificação de falhas.
 
 ## 📁 Arquivos

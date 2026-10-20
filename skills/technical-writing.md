@@ -25,8 +25,6 @@ keywords:
   - especificação
 ---
 
-![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
-
 ## Critérios de ativação
 - Criação ou atualização de documentação, guias, READMEs ou resumos técnicos
 

@@ -1,7 +1,5 @@
 # Ações das automações
 
-![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
-
 O que a automação **faz** quando dispara: a ação é um contrato executável, registrado por
 tipo e escolhido pelo `executor.py` no momento do disparo.
 

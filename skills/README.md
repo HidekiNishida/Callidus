@@ -1,7 +1,5 @@
 # Catálogo de Skills do Callidus
 
-![conceitos](/media/icons/conceitos.svg){width=48}
-
 As skills do Callidus: competências progressivas que o agente carrega sob demanda.
 
 Este diretório contém as **Skills** (competências reutilizáveis) do Callidus. Cada arquivo define metadados, critérios de ativação, proibições, procedimentos práticos, ferramentas autorizadas, regras de validação, riscos e palavras-chave.

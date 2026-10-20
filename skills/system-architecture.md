@@ -25,8 +25,6 @@ keywords:
   - dependências
 ---
 
-![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
-
 ## Critérios de ativação
 - Tarefas de planejamento de novas camadas, refatorações globais ou decomposição complexa
 

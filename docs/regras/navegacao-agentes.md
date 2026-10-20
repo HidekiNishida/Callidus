@@ -1,7 +1,5 @@
 # Navegação de Documentação para Agentes
 
-![Navegação](/media/icons/navegacao.svg){width=48}
-
 Voltar ao [Hub](/docs/regras/README.md) · Princípios: [principios.md](/docs/regras/principios.md)
 
 Este documento ensina agentes (e humanos) a **atravessar** a árvore: entrar pelo hub, abrir só os ramos necessários e sair com o contexto certo — sem varrer o store inteiro.
@@ -83,7 +81,7 @@ Se não, não leia / não carregue.
 | Bug / diagnóstico de ambiente | hub → ramos citados pelo sintoma | mcps se ferramenta falhar |
 | Feature de produto (quando houver repo) | hub + princípios + navegação + validações | docs de feature sob `docs/` |
 
-![Alerta](/media/icons/alerta.svg){width=28} Se a tarefa **não** exige um ramo, **não** o abra “por precaução”.
+<img src="/media/icons/alerta.svg" width="20" alt="Alerta"> Se a tarefa **não** exige um ramo, **não** o abra “por precaução”.
 
 ---
 
@@ -124,8 +122,6 @@ Se não, não leia / não carregue.
 ---
 
 ## Checklist
-
-![Checklist](/media/icons/checklist.svg){width=32}
 
 - [ ] Entrei pelo hub (ou context → hub)
 - [ ] Criei/abri checklist em `internal/tarefas/`

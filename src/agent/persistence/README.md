@@ -1,7 +1,5 @@
 # Persistência (`persistence/`) — SQLAlchemy 2 + SQLite
 
-![arquivos](/media/icons/arquivos.svg){width=48}
-
 Camada de dados: modelos ORM, engine, session factory e inicialização do banco.
 
 ## 📁 Arquivos

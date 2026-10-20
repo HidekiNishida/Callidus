@@ -1,7 +1,5 @@
 # Memória (`memory/`) — Extração e Gravação (Project + Conversation)
 
-![arquivos](/media/icons/arquivos.svg){width=48}
-
 Sistema de memória tipada com dois escopos: projeto (canônica) e conversa (contextual/execution/evidence/procedure).
 
 ## 🏗️ Módulos

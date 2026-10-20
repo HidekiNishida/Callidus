@@ -1,7 +1,5 @@
 # Checklists de Atividade e Estado da Tarefa
 
-![Tarefas](/media/icons/tarefas.svg){width=48}
-
 Voltar ao [Hub](/docs/regras/README.md) · Template: [`_modelo-checklist.md`](/internal/tarefas/_modelo-checklist.md)
 
 **Regra:** para **toda** atividade, criar um arquivo de checklist/estado com etapas em mini-tarefas; marcar `- [x]` ao concluir; se interrompido, o agente retoma lendo esse arquivo.
@@ -115,8 +113,6 @@ Algoritmo do agente:
 ---
 
 ## Checklist desta regra
-
-![Checklist](/media/icons/checklist.svg){width=32}
 
 - [ ] Criei arquivo a partir do modelo no path correto
 - [ ] Etapas são mini-tarefas marcáveis

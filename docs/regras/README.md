@@ -1,7 +1,5 @@
 # Regras do Callidus — Hub de Entrada
 
-![Hub](/media/icons/hub.svg){width=48}
-
 **Comece sempre aqui.** Este hub é o ponto de entrada obrigatório para humanos e agentes de IA que trabalham no Project **Callidus**.
 
 Leia este índice, escolha apenas os ramos necessários à tarefa e siga os links. Não carregue a árvore inteira por padrão — veja [Navegação para agentes](/docs/regras/navegacao-agentes.md).
@@ -48,21 +46,21 @@ Contexto estável do projeto: [project-context.md](/docs/project-context.md).
 
 | Ícone | Documento | Quando ler |
 |-------|-----------|------------|
-| ![Princípios](/media/icons/principios.svg){width=28} | [principios.md](/docs/regras/principios.md) | Sempre na primeira sessão; ao duvidar de prioridade |
-| ![Documentação](/media/icons/documentacao.svg){width=28} | [documentacao.md](/docs/regras/documentacao.md) | Ao criar, editar ou reorganizar docs |
-| ![Navegação](/media/icons/navegacao.svg){width=28} | [navegacao-agentes.md](/docs/regras/navegacao-agentes.md) | No início de toda tarefa (como atravessar a árvore) |
-| ![MCP](/media/icons/mcp.svg){width=28} | [mcps.md](/docs/regras/mcps.md) | Quando a tarefa depende de MCP ou ferramentas externas |
-| ![Ativos](/media/icons/ativos-visuais.svg){width=28} | [ativos-visuais.md](/docs/regras/ativos-visuais.md) | Ao adicionar ícones, imagens, diagramas ou tabelas visuais |
-| ![Organização](/media/icons/organizacao.svg){width=28} | [organizacao-arquivos.md](/docs/regras/organizacao-arquivos.md) | Ao criar pastas, nomear arquivos ou separar temas |
-| ![Organização](/media/icons/organizacao.svg){width=28} | [readmes-pastas.md](/docs/regras/readmes-pastas.md) | Ao criar pasta de código/docs — **README.md** índice |
-| ![Marca](/media/icons/organizacao.svg){width=28} | [marca.md](/docs/regras/marca.md) | Ao criar/alterar nome, símbolo, logo ou textos de marca na interface e nos docs |
-| ![Validações](/media/icons/validacoes.svg){width=28} | [validacoes-testes.md](/docs/regras/validacoes-testes.md) | Ao criar/alterar qualquer artefato que precise verificação |
-| ![Autoaperfeiçoamento](/media/icons/autoaperfeicoamento.svg){width=28} | [autoaperfeicoamento.md](/docs/regras/autoaperfeicoamento.md) | Quando a mudança influencia trabalho futuro / regras |
-| ![Commits](/media/icons/commits.svg){width=28} | [commits.md](/docs/regras/commits.md) | Ao fechar mudança em repo git (ou para saber o que fazer sem repo) |
-| ![Tarefas](/media/icons/tarefas.svg){width=28} | [checklists-tarefas.md](/docs/regras/checklists-tarefas.md) | **Toda** atividade: criar/atualizar estado e retomar |
-| ![Verificação](/media/icons/verificacao.svg){width=28} | [verificacao-final.md](/docs/regras/verificacao-final.md) | **Antes de encerrar** qualquer tarefa |
-| ![Documentação](/media/icons/documentacao.svg){width=28} | [resumo-projeto.md](/docs/regras/resumo-projeto.md) | **Toda** tarefa que altera o repo: manter o [`resume.md`](/resume.md) em dia |
-| ![Organização](/media/icons/organizacao.svg){width=28} | [AGENTS.md](/AGENTS.md) | **Fonte canônica** das regras de engenharia — cabeçalho, docstrings, camadas, SOLID, testes, documentação e sincronização |
+| <img src="/media/icons/principios.svg" width="20" alt="Princípios"> | [principios.md](/docs/regras/principios.md) | Sempre na primeira sessão; ao duvidar de prioridade |
+| <img src="/media/icons/documentacao.svg" width="20" alt="Documentação"> | [documentacao.md](/docs/regras/documentacao.md) | Ao criar, editar ou reorganizar docs |
+| <img src="/media/icons/navegacao.svg" width="20" alt="Navegação"> | [navegacao-agentes.md](/docs/regras/navegacao-agentes.md) | No início de toda tarefa (como atravessar a árvore) |
+| <img src="/media/icons/mcp.svg" width="20" alt="MCP"> | [mcps.md](/docs/regras/mcps.md) | Quando a tarefa depende de MCP ou ferramentas externas |
+| <img src="/media/icons/ativos-visuais.svg" width="20" alt="Ativos"> | [ativos-visuais.md](/docs/regras/ativos-visuais.md) | Ao adicionar ícones, imagens, diagramas ou tabelas visuais |
+| <img src="/media/icons/organizacao.svg" width="20" alt="Organização"> | [organizacao-arquivos.md](/docs/regras/organizacao-arquivos.md) | Ao criar pastas, nomear arquivos ou separar temas |
+| <img src="/media/icons/organizacao.svg" width="20" alt="Organização"> | [readmes-pastas.md](/docs/regras/readmes-pastas.md) | Ao criar pasta de código/docs — **README.md** índice |
+| <img src="/media/icons/organizacao.svg" width="20" alt="Marca"> | [marca.md](/docs/regras/marca.md) | Ao criar/alterar nome, símbolo, logo ou textos de marca na interface e nos docs |
+| <img src="/media/icons/validacoes.svg" width="20" alt="Validações"> | [validacoes-testes.md](/docs/regras/validacoes-testes.md) | Ao criar/alterar qualquer artefato que precise verificação |
+| <img src="/media/icons/autoaperfeicoamento.svg" width="20" alt="Autoaperfeiçoamento"> | [autoaperfeicoamento.md](/docs/regras/autoaperfeicoamento.md) | Quando a mudança influencia trabalho futuro / regras |
+| <img src="/media/icons/commits.svg" width="20" alt="Commits"> | [commits.md](/docs/regras/commits.md) | Ao fechar mudança em repo git (ou para saber o que fazer sem repo) |
+| <img src="/media/icons/tarefas.svg" width="20" alt="Tarefas"> | [checklists-tarefas.md](/docs/regras/checklists-tarefas.md) | **Toda** atividade: criar/atualizar estado e retomar |
+| <img src="/media/icons/verificacao.svg" width="20" alt="Verificação"> | [verificacao-final.md](/docs/regras/verificacao-final.md) | **Antes de encerrar** qualquer tarefa |
+| <img src="/media/icons/documentacao.svg" width="20" alt="Documentação"> | [resumo-projeto.md](/docs/regras/resumo-projeto.md) | **Toda** tarefa que altera o repo: manter o [`resume.md`](/resume.md) em dia |
+| <img src="/media/icons/organizacao.svg" width="20" alt="Organização"> | [AGENTS.md](/AGENTS.md) | **Fonte canônica** das regras de engenharia — cabeçalho, docstrings, camadas, SOLID, testes, documentação e sincronização |
 
 Template de checklist: [`internal/tarefas/_modelo-checklist.md`](/internal/tarefas/_modelo-checklist.md).
 
@@ -137,8 +135,6 @@ flowchart TD
 
 ## Checklist rápido antes de qualquer tarefa
 
-![Checklist](/media/icons/checklist.svg){width=32}
-
 - [ ] Li o hub e identifiquei os ramos necessários
 - [ ] Criei/abri checklist em [`internal/tarefas/`](/docs/regras/checklists-tarefas.md) (copiar o [modelo](/internal/tarefas/_modelo-checklist.md))
 - [ ] Consultei [project-context.md](/docs/project-context.md) se a tarefa toca escopo/metas
@@ -203,7 +199,7 @@ Quando adicionar um novo documento de regras:
 5. Atualize [ativos-visuais.md](/docs/regras/ativos-visuais.md) se houver ícone novo
 6. Se a mudança for estrutural, siga [autoaperfeicoamento.md](/docs/regras/autoaperfeicoamento.md)
 
-![Alerta](/media/icons/alerta.svg){width=28} **Não** publique regras finais só em `internal/` — regras vigentes moram em `docs/`.
+<img src="/media/icons/alerta.svg" width="20" alt="Alerta"> **Não** publique regras finais só em `internal/` — regras vigentes moram em `docs/`.
 
 ---
 

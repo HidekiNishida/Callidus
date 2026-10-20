@@ -1,7 +1,5 @@
 # Hierarquia de agentes, executor compartilhado e consultas sob demanda
 
-![Arquitetura](/media/icons/projeto.svg){width=48}
-
 Voltar ao [Hub](/docs/architecture/README.md) · [Visão geral](/docs/architecture/visao-geral.md) · [Provedores](/docs/architecture/provedores.md)
 
 ## Sumário

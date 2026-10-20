@@ -1,12 +1,10 @@
 # Commits Automáticos
 
-![Commits](/media/icons/commits.svg){width=48}
-
 Voltar ao [Hub](/docs/regras/README.md) · Validações: [validacoes-testes.md](/docs/regras/validacoes-testes.md)
 
 **Regra:** toda mudança que o agente fizer deve ser **commitada automaticamente pelo agente**, com mensagem em **português**, clara e descritiva — e **publicada (`git push`) na branch atual** assim que as validações passarem.
 
-![Alerta](/media/icons/alerta.svg){width=28} O repositório canônico está em `~/Documents/Projetos/Callidus/`. Se a sessão alterar **apenas** o Agent Store (Context), espelhe no repo e commit antes de encerrar. Sem `.git` acessível na árvore editada, registre no checklist e não invente repo ad hoc.
+<img src="/media/icons/alerta.svg" width="20" alt="Alerta"> O repositório canônico está em `~/Documents/Projetos/Callidus/`. Se a sessão alterar **apenas** o Agent Store (Context), espelhe no repo e commit antes de encerrar. Sem `.git` acessível na árvore editada, registre no checklist e não invente repo ad hoc.
 
 ---
 
@@ -102,8 +100,6 @@ Exemplos:
 ---
 
 ## Checklist
-
-![Checklist](/media/icons/checklist.svg){width=32}
 
 - [ ] Validações da mudança passaram
 - [ ] Confirmei se há repositório git

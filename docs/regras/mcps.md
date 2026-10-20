@@ -1,7 +1,5 @@
 # Continuidade de MCP
 
-![MCP](/media/icons/mcp.svg){width=48}
-
 Voltar ao [Hub](/docs/regras/README.md) · Navegação: [navegacao-agentes.md](/docs/regras/navegacao-agentes.md)
 
 **Regra:** se a tarefa depende de um MCP (Model Context Protocol) e ele está ausente, sem autenticação ou quebrado, o agente deve **detectar → obter/autenticar/reparar → só então continuar**. Não improvise contornos que escondam a falha.
@@ -92,7 +90,7 @@ Só execute o trabalho principal depois de uma inspeção que confirme tools uti
 | Tool sem schema | Discovery da tool antes da call | Chutar parâmetros |
 | Dados vazios inesperados | Confirmar filtros/args; não assumir MCP morto | Reescrever a tarefa sem evidência |
 
-![Alerta](/media/icons/alerta.svg){width=28} Browser automation **não** é substituto padrão de MCP ausente, salvo pedido explícito do usuário.
+<img src="/media/icons/alerta.svg" width="20" alt="Alerta"> Browser automation **não** é substituto padrão de MCP ausente, salvo pedido explícito do usuário.
 
 ---
 
@@ -122,8 +120,6 @@ Documente no relatório interno (se houver) o namespace e o resultado — **nunc
 ---
 
 ## Checklist
-
-![Checklist](/media/icons/checklist.svg){width=32}
 
 - [ ] Confirmei que a tarefa realmente depende de MCP
 - [ ] Inspecionei namespace e schema

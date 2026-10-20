@@ -28,8 +28,6 @@ keywords:
   - regressão
 ---
 
-![desenvolvimento](/media/icons/desenvolvimento.svg){width=48}
-
 ## Critérios de ativação
 - Subtarefas de validação e verificação de contratos
 - Criação de novos casos de teste para módulos ou APIs

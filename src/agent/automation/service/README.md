@@ -1,7 +1,5 @@
 # Adaptadores de serviço nativo
 
-![integracoes](/media/icons/integracoes.svg){width=48}
-
 O supervisor das automações precisa rodar **sem a interface aberta**. Cada sistema operacional
 tem seu próprio mecanismo de arranque; estes adaptadores traduzem um contrato único para o
 mecanismo da plataforma.

@@ -1,7 +1,5 @@
 # README por pasta
 
-![Organização](/media/icons/organizacao.svg){width=48}
-
 Voltar ao [Hub](/docs/regras/README.md) · Organização: [organizacao-arquivos.md](/docs/regras/organizacao-arquivos.md)
 
 ## 🧠 Regra (padrão do repositório)

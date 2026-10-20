@@ -1,7 +1,5 @@
 # Pacote `agent` — Runtime do Callidus
 
-![arquitetura](/media/icons/arquitetura.svg){width=48}
-
 O mapa do núcleo: módulos, camadas e por onde começar a ler.
 
 Núcleo do **Callidus**: orquestração explícita, persistência SQLite, modelos locais e ferramentas determinísticas.

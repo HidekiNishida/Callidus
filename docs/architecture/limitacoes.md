@@ -1,7 +1,5 @@
 # Limitações conhecidas (v0.5)
 
-![restricoes](/media/icons/restricoes.svg){width=48}
-
 O que o Callidus ainda não faz — e por quê.
 
 1. **Decomposição LLM** — depende de Ollama reachable; fallback template genérico pode ser grosso em repos grandes.

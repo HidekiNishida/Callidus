@@ -1,7 +1,5 @@
 # Checklist: Remodelagem arquitetural, documentação e manutenibilidade
 
-![tarefas](/media/icons/tarefas.svg){width=48}
-
 | Campo | Valor |
 |-------|-------|
 | Estado | concluída |

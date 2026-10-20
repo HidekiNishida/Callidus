@@ -1,7 +1,5 @@
 # Resumo vivo do projeto (`resume.md`)
 
-![Documentação](/media/icons/documentacao.svg){width=48}
-
 Voltar ao [Hub](/docs/regras/README.md) · Relacionados: [documentacao.md](/docs/regras/documentacao.md) · [verificacao-final.md](/docs/regras/verificacao-final.md)
 
 **Regra:** o arquivo [`/resume.md`](/resume.md) resume o projeto inteiro em texto e é atualizado **a cada tarefa** que altera o repositório.

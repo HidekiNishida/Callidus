@@ -1,7 +1,5 @@
 # Avaliação reproduzível do Callidus
 
-![testes](/media/icons/testes.svg){width=48}
-
 A avaliação reproduzível com critérios objetivos de aceite.
 
 Ferramenta de medição: [`lab/avaliar.py`](/lab/avaliar.py). Executa um conjunto de cenários com o

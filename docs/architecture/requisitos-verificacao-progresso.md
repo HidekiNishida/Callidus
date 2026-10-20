@@ -1,7 +1,5 @@
 # Requisitos, validação do plano, verificação independente e progresso real
 
-![testes](/media/icons/testes.svg){width=48}
-
 Como uma tarefa é verificada, medida e levada a bom término.
 
 Três mecanismos que complementam a decomposição, o contexto e a consolidação descritos em [execucao-autonoma.md](/docs/architecture/execucao-autonoma.md).
