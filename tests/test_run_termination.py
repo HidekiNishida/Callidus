@@ -69,7 +69,10 @@ def test_failed_child_never_completes_the_parent(session, tmp_path):
 
 def test_running_parent_completes_through_valid_transitions(session, tmp_path):
     _, root, _, broken = _tree(session, tmp_path)
+    # Cancelamento previsto: a etapa foi substituída por outra (replanejamento ou correção
+    # do plano). O trabalho dela não é pendência e o pai pode seguir.
     broken.status = TaskStatus.CANCELLED.value
+    broken.metadata_json = {**(broken.metadata_json or {}), "superseded_by_replan": True}
     root.status = TaskStatus.RUNNING.value
     session.flush()
 
@@ -77,6 +80,21 @@ def test_running_parent_completes_through_valid_transitions(session, tmp_path):
 
     assert report["achieved"] is True
     assert TaskService(session).get_task(root.id).status == TaskStatus.COMPLETED.value
+
+
+def test_cancelled_child_without_replacement_leaves_the_parent_incomplete(session, tmp_path):
+    """Etapa cancelada sem previsão é trabalho que não foi feito: o pai não pode concluir como se
+    o plano inteiro tivesse sido cumprido."""
+    _, root, _, broken = _tree(session, tmp_path)
+    broken.status = TaskStatus.CANCELLED.value
+    root.status = TaskStatus.RUNNING.value
+    session.flush()
+
+    report = consolidate_parent(session, root.id)
+
+    assert report["achieved"] is False
+    assert [item["title"] for item in report["pending"]] == ["Rodar testes"]
+    assert TaskService(session).get_task(root.id).status != TaskStatus.COMPLETED.value
 
 
 @pytest.mark.asyncio

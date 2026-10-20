@@ -14,6 +14,25 @@ from agent.tools.registry import ToolContext, build_default_registry
 _SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", "node_modules"}
 _DELIVERABLE = {".html", ".htm", ".css", ".js", ".md", ".tsx", ".jsx", ".vue", ".svg"}
 
+# Tipos de verificação aceitos. O contrato é fechado de propósito: um verificador que não existe
+# só falha na hora de executar, depois de o modelo já ter escrito o trabalho.
+VERIFIER_TYPES = frozenset(
+    {
+        "stages",
+        "pytest",
+        "script",
+        "run_script",
+        "command",
+        "run_command",
+        "file_contains",
+        "file_exists",
+        "syntax",
+        "static_analysis",
+        "ast_check",
+        "acceptance_manual",
+    }
+)
+
 
 @dataclass
 class VerificationResult:
@@ -59,10 +78,12 @@ async def _verify(
     tools = build_default_registry()
 
     if vtype == "stages":
+        # A conferência real acontece no orquestrador, que tem o estado persistido das etapas.
+        # Aqui não há o que aprovar: devolver "aprovado" seria um verde falso.
         return VerificationResult(
             "stages",
-            True,
-            "etapas anteriores concluídas",
+            None,
+            "conferência de etapas precisa do estado das tarefas dependentes",
             {"type": "stages"},
         )
 

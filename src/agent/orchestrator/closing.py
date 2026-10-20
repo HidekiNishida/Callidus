@@ -42,20 +42,36 @@ _PATH = re.compile(r"(?:[\w.-]+/)+[\w.-]+\.[A-Za-z0-9]{1,8}|[\w.-]+\.(?:py|md|js
 
 
 def ensure_closing_stages(plan: DecompositionResult) -> DecompositionResult:
-    """Garante verificação e uma resposta final depois das etapas de implementação."""
+    """Garante verificação e uma resposta final depois das etapas de implementação.
+
+    A verificação vem **antes** da resposta final: um plano que já traz a resposta final mas não
+    traz verificação recebia a verificação depois dela (e dependente dela), ou seja, a conclusão
+    era escrita antes de existir qualquer conferência.
+    """
     subtasks = list(plan.subtasks)
     has_verify = any((item.metadata or {}).get("verification") for item in subtasks)
     has_final = any((item.metadata or {}).get("final_answer") for item in subtasks)
     last = len(subtasks) - 1
     if not has_verify:
-        subtasks.append(
-            SubTaskSpec(
-                title="Verificar etapas",
-                objective="Confirmar que as etapas anteriores terminaram antes da conclusão.",
-                metadata={"verification": {"type": "stages"}},
-                depends_on_indices=[last] if last >= 0 else [],
-            )
+        verify = SubTaskSpec(
+            title="Verificar etapas",
+            objective="Confirmar que as etapas anteriores terminaram antes da conclusão.",
+            metadata={"verification": {"type": "stages"}},
         )
+        if has_final:
+            # A resposta final existe e está no fim: a verificação entra **antes** dela e
+            # depende da última etapa de implementação (nunca da resposta final — senão as
+            # duas viram dependentes uma da outra e o ciclo é cortado).
+            final_index = max(
+                index for index, item in enumerate(subtasks) if (item.metadata or {}).get("final_answer")
+            )
+            previous = final_index - 1
+            verify = verify.model_copy(
+                update={"depends_on_indices": [previous] if previous >= 0 else []}
+            )
+            subtasks.insert(final_index, verify)
+        else:
+            subtasks.append(verify.model_copy(update={"depends_on_indices": [last] if last >= 0 else []}))
         last = len(subtasks) - 1
     if not has_final:
         subtasks.append(
@@ -66,7 +82,7 @@ def ensure_closing_stages(plan: DecompositionResult) -> DecompositionResult:
                 depends_on_indices=[last] if last >= 0 else [],
             )
         )
-    return DecompositionResult(subtasks=subtasks)
+    return DecompositionResult(subtasks=subtasks, warnings=list(plan.warnings))
 
 
 def compose_final_markdown(*, objective: str, stages: list[dict], model_text: str = "") -> str:
@@ -150,3 +166,59 @@ def extract_sources(*chunks: str) -> list[str]:
                 continue
             found.append(match)
     return found[:12]
+
+
+def verification_footer(session, root) -> str:
+    """Fatos verificados do trabalho, em texto determinístico.
+
+    A resposta que o modelo escreve é curta e, por desenho, não cita verificações. Mas o
+    usuário não pode depender do texto do modelo para saber se os testes passaram: uma
+    resposta que afirma sucesso enquanto a suíte reprova é uma conclusão falsa. Este rodapé
+    lista o que foi verificado, sem depender de julgamento do modelo.
+    """
+    from sqlalchemy import select
+
+    from agent.orchestrator.consolidation import collect_evidences
+    from agent.persistence.models import TaskModel
+
+    tasks = list(session.scalars(select(TaskModel)).all())
+    ids = {root.id}
+    changed = True
+    while changed:
+        changed = False
+        for t in tasks:
+            if t.parent_id in ids and t.id not in ids:
+                ids.add(t.id)
+                changed = True
+
+    passed: list[str] = []
+    failed: list[str] = []
+    inconclusive: list[str] = []
+    for task in tasks:
+        if task.id not in ids:
+            continue
+        for ev in collect_evidences(session, task.id):
+            verifier = str(ev.get("verifier") or "verificação")
+            summary = str(ev.get("summary") or "").strip()
+            detail = ev.get("detail") or {}
+            if detail.get("state") == "desatualizado":
+                failed.append(f"`{verifier}`: evidência desatualizada (os arquivos mudaram depois)")
+            elif ev.get("passed") is True:
+                passed.append(f"`{verifier}`: {summary}" if summary else f"`{verifier}`: passou")
+            elif ev.get("passed") is False:
+                failed.append(f"`{verifier}`: {summary}" if summary else f"`{verifier}`: reprovou")
+            else:
+                inconclusive.append(f"`{verifier}`: inconclusivo")
+        result = task.consolidated_result_json or {}
+        tool_out = result.get("result")
+        if isinstance(tool_out, dict) and tool_out.get("success") is False and tool_out.get("exit_code") is not None:
+            lines = [line for line in str(tool_out.get("stdout") or tool_out.get("stderr") or "").splitlines() if line.strip()]
+            tail = lines[-1][:160] if lines else f"código de saída {tool_out.get('exit_code')}"
+            failed.append(f"«{task.title}» reprovou: {tail}")
+    if not passed and not failed and not inconclusive:
+        return ""
+    parts = ["**Verificações executadas**"]
+    parts.extend(f"- passou — {item}" for item in passed)
+    parts.extend(f"- reprovou — {item}" for item in failed)
+    parts.extend(f"- inconclusivo — {item}" for item in inconclusive)
+    return "\n".join(parts)

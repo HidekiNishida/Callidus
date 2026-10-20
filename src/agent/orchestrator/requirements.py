@@ -18,11 +18,17 @@ MANDATORY = "obrigatório"
 APPLICABILITY = {MANDATORY, "não aplicável", "informativo", "bloqueado"}
 
 _ITEM = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+(.+?)\s*$")
+# Um requisito de **mudança** exige verificador (teste, sintaxe, arquivo); um de **resposta**
+# aceita a resposta final verificada. "Rodar os testes e relatar" não é mudança: o entregável
+# é o relatório. Por isso "teste" não é, sozinho, sinal de mudança — só o é quando o pedido
+# cria, corrige ou acrescenta testes.
 _CHANGE = re.compile(
-    r"\b(arquiv|código|codigo|implement|cri[ae]|corrig|bug|teste|refator|fun[cç]|classe|pasta|diret[oó]ri|"
-    r"edit|escrev|script|módulo|modulo|site|p[aá]gina|html|adicion|remov|alter|gere|build|compil)",
+    r"\b(arquiv|código|codigo|implement|cri[ae]|corrig|corrij|bug|refator|fun[cç]|classe|pasta|diret[oó]ri|"
+    r"edit|escrev|script|módulo|modulo|site|p[aá]gina|html|adicion|remov|alter|deix|gere|build|compil|passand)",
     re.IGNORECASE,
 )
+# Trecho negado ("não altere nenhum arquivo") não conta como pedido de mudança: ele restringe.
+_NEGATED_CLAUSE = re.compile(r"\b(?:n[ãa]o|sem|nunca)\b[^.;,]{0,40}", re.IGNORECASE)
 
 
 def _items(text: str | None) -> list[str]:
@@ -31,7 +37,8 @@ def _items(text: str | None) -> list[str]:
 
 def evidence_kind(text: str) -> str:
     """`change` exige verificador (teste, sintaxe, arquivo); `answer` aceita a resposta final verificada."""
-    return "change" if _CHANGE.search(text or "") else "answer"
+    cleaned = _NEGATED_CLAUSE.sub(" ", text or "")
+    return "change" if _CHANGE.search(cleaned) else "answer"
 
 
 def derive_requirements(objective: str, acceptance_criteria: str | None = None) -> list[dict[str, Any]]:
@@ -174,6 +181,59 @@ def _answered(task: TaskModel) -> bool:
     return bool(result.get("final_answer") and str(result.get("markdown") or "").strip())
 
 
+def _verification_rejected(session: Session, task: TaskModel) -> bool:
+    """A etapa **concluiu** e a verificação mais recente reprovou.
+
+    Uma etapa concluída cujo verificador reprovou não pode "cobrir" um requisito como provado:
+    houve uma checagem explícita do trabalho e ela disse que o trabalho não está bom. Uma etapa
+    ainda em Retry (a verificação vai rodar de novo) não conta aqui: isso é "pendente".
+    """
+    if TaskStatus(task.status) != TaskStatus.COMPLETED:
+        return False
+    from agent.orchestrator.consolidation import collect_evidences
+
+    evs = collect_evidences(session, task.id)
+    return bool(evs) and evs[-1].get("passed") is False
+
+
+def _unproven_by_superseded(
+    session: Session,
+    root: TaskModel,
+    reqs: list[dict[str, Any]],
+    req_id: str,
+    live_coverers: list[TaskModel],
+) -> bool:
+    """Uma etapa substituída tinha uma verificação que reprovou e ninguém a refez.
+
+    O trabalho pode até ter sido refeito, mas a verificação que o justificava **não** foi
+    refeita com o mesmo verificador: aceitar a evidência implícita da escrita no lugar da
+    checagem declarada seria declarar provado o que ninguém provou. O estado honesto é
+    "sem comprovação" — e é ele que dispara a etapa de comprovação.
+    """
+    from agent.orchestrator.consolidation import collect_evidences
+
+    for task in _subtree(session, root):
+        if not superseded(task):
+            continue
+        evs = collect_evidences(session, task.id)
+        if not evs or evs[-1].get("passed") is not False:
+            continue
+        covers = effective_covers(session, task, reqs)
+        if not any(c["req"] == req_id for c in covers):
+            continue
+        verifier = str(evs[-1].get("verifier") or "")
+        refez = any(
+            str(ev.get("verifier") or "") == verifier
+            and ev.get("passed") is True
+            and is_current((ev.get("detail") or {}).get("artifacts"))
+            for coverer in live_coverers
+            for ev in collect_evidences(session, coverer.id)
+        )
+        if not refez:
+            return True
+    return False
+
+
 def requirement_status(session: Session, root: TaskModel) -> list[dict[str, Any]]:
     """Estado de cada requisito pelas folhas que o cobrem (canceladas e substituídas não contam; raiz
     sem filhas é a própria folha):
@@ -205,14 +265,25 @@ def requirement_status(session: Session, root: TaskModel) -> list[dict[str, Any]
             c["partial"] for t in coverers for c in covers_by_task[t.id] if c["req"] == req["id"]
         )
         statuses = {TaskStatus(t.status) for t in coverers}
+        rejected = [t for t in coverers if _verification_rejected(session, t)]
         if not coverers:
             entry["status"] = "uncovered"
         elif TaskStatus.FAILED in statuses:
             entry["status"] = "failed"
         elif TaskStatus.BLOCKED in statuses:
             entry["status"] = "blocked"
-        elif statuses != {TaskStatus.COMPLETED} or not all(verification_evidence_ok(session, t) for t in coverers):
-            entry["status"] = "pending"
+        elif rejected:
+            # Houve uma checagem do trabalho e ela reprovou: o requisito não está provado,
+            # mesmo que outra etapa tenha produzido evidência. Sem isso, um replanejamento
+            # que trocou a verificação por uma evidência mais fraca "aprovaria" o requisito.
+            entry["status"] = "failed"
+            entry["rejected_by"] = [str(t.id) for t in rejected]
+        elif _unproven_by_superseded(session, root, reqs, req["id"], coverers):
+            # A etapa substituída tinha uma verificação que reprovou e nenhuma etapa viva
+            # refez **aquela** verificação: o requisito fica sem comprovação — e a etapa de
+            # comprovação entra. Sem isso, um replanejamento trocaria a checagem declarada
+            # por uma evidência mais fraca e o requisito seria dado por provado.
+            entry["status"] = "unverified"
         else:
             evidence = [e for t in coverers for e in _passed_current(session, t.id)]
             if req["evidence"] == "change":
@@ -221,6 +292,21 @@ def requirement_status(session: Session, root: TaskModel) -> list[dict[str, Any]
             else:
                 ok = bool(evidence) or any(_answered(t) for t in coverers)
             entry["evidence_ids"] = [str(e.id) for e in evidence]
-            entry["status"] = "satisfied" if ok else "unverified"
+            # A verificação global é uma **porta**: enquanto ela não rodar, o requisito não está
+            # aceito, mesmo que as etapas individuais tenham evidência. As outras etapas não
+            # seguram o requisito: uma etapa de apoio ainda pendente não invalida a prova.
+            gate_pending = any(
+                (t.metadata_json or {}).get("global_verification_step")
+                and TaskStatus(t.status) != TaskStatus.COMPLETED
+                for t in coverers
+            )
+            if ok and not gate_pending:
+                entry["status"] = "satisfied"
+            elif statuses != {TaskStatus.COMPLETED} or not all(
+                verification_evidence_ok(session, t) for t in coverers
+            ):
+                entry["status"] = "pending"
+            else:
+                entry["status"] = "unverified"
         report.append(entry)
     return report

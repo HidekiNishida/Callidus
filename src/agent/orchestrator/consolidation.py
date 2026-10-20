@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from agent.domain.enums import TaskStatus
 from agent.domain.schemas import TaskStatusUpdate
-from agent.persistence.models import EvidenceModel, TaskModel
+from agent.persistence.models import EvidenceModel, TaskDependencyModel, TaskModel
 from agent.services.task_service import TaskService
 from agent.services.agent_service import AgentNotFoundError, AgentService
 from agent.verification.fingerprint import is_current
@@ -18,7 +18,14 @@ from agent.verification.fingerprint import is_current
 def verification_spec(task: TaskModel) -> dict | None:
     """Verificação declarada ou, para escrita sem declaração, a implícita que já rodou."""
     meta = task.metadata_json or {}
-    return meta.get("verification") or meta.get("implicit_verification")
+    spec = meta.get("verification") or meta.get("implicit_verification")
+    return spec if isinstance(spec, dict) and spec else None
+
+
+def latest_verification_failed(session: Session, task: TaskModel) -> bool:
+    """A verificação mais recente desta etapa reprovou (não é ausência de evidência)."""
+    evs = collect_evidences(session, task.id)
+    return bool(evs) and evs[-1].get("passed") is False
 
 
 def verification_evidence_ok(session: Session, task: TaskModel) -> bool:
@@ -44,6 +51,42 @@ def is_optional(task: TaskModel) -> bool:
     return bool(meta.get("optional") or meta.get("severity") == "optional")
 
 
+def inherits_read_only(session: Session, task: TaskModel | None) -> bool:
+    """A tarefa (ou um de seus ancestrais) é de um pedido que proíbe alterar arquivos.
+
+    A restrição é do pedido, então ela **desce** pela árvore: uma etapa criada para
+    comprovar um requisito de um pedido somente-leitura também não pode escrever.
+    """
+    return inherits_flag(session, task, "read_only")
+
+
+def inherits_flag(session: Session, task: TaskModel | None, flag: str) -> bool:
+    """A tarefa (ou um de seus ancestrais) carrega a marca `flag`."""
+    current = task
+    seen: set[uuid.UUID] = set()
+    while current is not None and current.id not in seen:
+        seen.add(current.id)
+        if (current.metadata_json or {}).get(flag):
+            return True
+        if not current.parent_id:
+            return False
+        current = session.get(TaskModel, current.parent_id)
+    return False
+
+
+# Cancelamentos que **não** deixam trabalho pendente: a etapa foi substituída por um
+# replanejamento, ou o próprio plano foi corrigido (duplicata removida, plano inválido).
+_EXPECTED_CANCEL = {"duplicate", "invalid_plan", "superseded"}
+
+
+def cancelled_expected(task: TaskModel) -> bool:
+    """Cancelamento previsto: outra etapa assume o trabalho, o pai pode seguir."""
+    meta = task.metadata_json or {}
+    if superseded(task):
+        return True
+    return str(meta.get("cancelled_reason") or "") in _EXPECTED_CANCEL
+
+
 def settled(task: TaskModel) -> bool:
     """Filho que não impede o pai de seguir: concluído, cancelado ou falho já substituído/opcional."""
     status = TaskStatus(task.status)
@@ -55,6 +98,39 @@ def settled(task: TaskModel) -> bool:
 def children_of(session: Session, parent_id: uuid.UUID) -> list[TaskModel]:
     stmt = select(TaskModel).where(TaskModel.parent_id == parent_id)
     return list(session.scalars(stmt).all())
+
+
+def dependencies_of(session: Session, task_id: uuid.UUID) -> list[TaskModel]:
+    """Tarefas das quais esta depende, pela aresta `task_dependencies`."""
+    stmt = (
+        select(TaskModel)
+        .join(TaskDependencyModel, TaskDependencyModel.depends_on_task_id == TaskModel.id)
+        .where(TaskDependencyModel.task_id == task_id)
+    )
+    return list(session.scalars(stmt).all())
+
+
+def stages_outcome(session: Session, task: TaskModel) -> tuple[bool | None, str, dict[str, Any]]:
+    """Conferência das etapas anteriores: o verificador `stages` não é mais uma aprovação automática.
+
+    Ele confirma que as etapas das quais a tarefa declara dependência **concluíram com evidência
+    válida**. Sem dependência declarada não há o que confirmar: o resultado é inconclusivo — um
+    "sim" sem conteúdo seria um verde falso.
+    """
+    deps = dependencies_of(session, task.id)
+    if not deps:
+        return None, "a etapa não declara dependência: não há o que conferir", {"type": "stages", "dependencies": []}
+    pending: list[str] = []
+    detail: dict[str, Any] = {"type": "stages", "dependencies": []}
+    for dep in deps:
+        status = TaskStatus(dep.status)
+        ok = status == TaskStatus.COMPLETED and verification_evidence_ok(session, dep)
+        detail["dependencies"].append({"task_id": str(dep.id), "title": dep.title, "status": dep.status, "ok": ok})
+        if not ok:
+            pending.append(f"{dep.title} ({dep.status})")
+    if pending:
+        return False, "etapas anteriores não concluídas: " + ", ".join(pending), detail
+    return True, f"{len(deps)} etapa(s) anterior(es) concluída(s) com evidência", detail
 
 
 _TO_VERIFYING: dict[TaskStatus, list[TaskStatus]] = {
@@ -87,10 +163,20 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
     gaps: list[TaskModel] = []
     failed_critical: list[TaskModel] = []
     failed_optional: list[TaskModel] = []
+    cancelled: list[TaskModel] = []
     for c in kids:
         ev_ok = verification_evidence_ok(session, c)
         if c.status == TaskStatus.COMPLETED.value and not ev_ok:
-            gaps.append(c)
+            # "Sem evidência" reabre a etapa para verificar de novo. "Verificação reprovada"
+            # **não** reabre: quem reprovou foi o código, não a etapa — reescrever a resposta
+            # final não muda a medição, e a etapa de resposta final jamais é reaberta por
+            # isso (a reprovação é reportada no rodapé da resposta).
+            if not latest_verification_failed(session, c) and not (c.metadata_json or {}).get("final_answer"):
+                gaps.append(c)
+        elif c.status == TaskStatus.CANCELLED.value and not cancelled_expected(c):
+            # Etapa cancelada sem previsão: o trabalho dela não foi feito. Ignorar isso
+            # deixaria o pai concluir como se o plano inteiro tivesse sido cumprido.
+            cancelled.append(c)
         elif c.status == TaskStatus.FAILED.value and not superseded(c):
             if is_optional(c):
                 failed_optional.append(c)
@@ -102,10 +188,11 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
                 "title": c.title,
                 "evidence_ok": ev_ok,
                 "optional": is_optional(c),
+                "status": c.status,
                 "result": c.consolidated_result_json or {"status": c.status},
             }
         )
-    achieved = not gaps and not failed_critical
+    achieved = not gaps and not failed_critical and not cancelled
     with_caveats = bool(failed_optional)
     report: dict[str, Any] = {
         "achieved": achieved,
@@ -118,7 +205,7 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
         "evidences": collect_evidences(session, parent_id),
         "pending": [
             {"task_id": str(c.id), "title": c.title, "status": c.status, "reason": pending_reason(c)}
-            for c in [*gaps, *failed_critical]
+            for c in [*gaps, *failed_critical, *cancelled]
         ],
     }
     for child in kids:

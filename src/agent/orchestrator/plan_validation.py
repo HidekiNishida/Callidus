@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from agent.domain.enums import TaskKind, TaskStatus
 from agent.domain.schemas import TaskCreate, TaskDependencyCreate, TaskStatusUpdate
 from agent.orchestrator.decomposition import DecompositionResult
+from agent.orchestrator.consolidation import inherits_flag
 from agent.orchestrator.requirements import (
     MANDATORY,
     effective_covers,
@@ -25,6 +26,7 @@ from agent.orchestrator.requirements import (
 from agent.persistence.models import EventLogModel, TaskDependencyModel, TaskModel
 from agent.services.task_service import TaskService
 from agent.tools.registry import build_default_registry, canonical_tool_id
+from agent.verification.runner import VERIFIER_TYPES
 
 
 class PlanVerdict(StrEnum):
@@ -110,7 +112,7 @@ def sanitize_spec(plan: DecompositionResult) -> tuple[DecompositionResult, list[
     subtasks = [
         spec.model_copy(update={"depends_on_indices": sorted(graph[i])}) for i, spec in enumerate(plan.subtasks)
     ]
-    return DecompositionResult(subtasks=subtasks), issues
+    return DecompositionResult(subtasks=subtasks, warnings=list(plan.warnings)), issues
 
 
 def _reaches(graph: dict[int, set[int]], start: int, target: int) -> bool:
@@ -231,9 +233,47 @@ def validate_children(
             if tool in _READS_PATH and isinstance(path, str) and path and not (Path(project_root) / path).exists():
                 if not _produced_before(session, kid, path):
                     issues.append(Issue("input_missing", PlanVerdict.WARNINGS, f"«{kid.title}» lê {path}, que não existe e nenhuma etapa anterior cria", str(kid.id)))
+            if tool == "edit_file" and isinstance(path, str) and path:
+                # O modelo planeja a edição com o trecho antigo que *acredita* existir. Se ele
+                # não existe no arquivo, a etapa falha de certeza: melhor virar operação do
+                # modelo (que inspeciona e aplica) do que executar uma edição impossível.
+                anchor = (meta.get("tool_args") or {}).get("old_string")
+                if isinstance(anchor, str) and anchor and not _anchor_present(project_root, path, anchor):
+                    issues.append(
+                        Issue(
+                            "edit_anchor_missing",
+                            PlanVerdict.WARNINGS,
+                            f"«{kid.title}» edita {path} com um trecho que não está no arquivo",
+                            str(kid.id),
+                        )
+                    )
         if meta.get("external"):
             blocked.append(str(kid.id))
             issues.append(Issue("external_blocked", PlanVerdict.WARNINGS, f"«{kid.title}» bloqueada por dependência externa: {meta['external']}", str(kid.id)))
+        verification = meta.get("verification")
+        if verification is not None and not isinstance(verification, dict):
+            # Verificação em texto solto (o modelo às vezes manda "verification": "pytest"):
+            # não é um contrato, e executá-la derrubaria a etapa. Vira um aviso para reparo.
+            issues.append(
+                Issue(
+                    "unknown_verification",
+                    PlanVerdict.INCONSISTENT,
+                    f"«{kid.title}» declara verificação fora do formato: {str(verification)[:80]}",
+                    str(kid.id),
+                )
+            )
+        elif isinstance(verification, dict):
+            vtype = str(verification.get("type") or verification.get("verification") or "")
+            if vtype and vtype not in VERIFIER_TYPES:
+                # Verificador inexistente só falharia na execução, depois do trabalho feito.
+                issues.append(
+                    Issue(
+                        "unknown_verification",
+                        PlanVerdict.INCONSISTENT,
+                        f"«{kid.title}» declara verificação de tipo inexistente: {vtype}",
+                        str(kid.id),
+                    )
+                )
 
     for req_id, owners in coverage.items():
         if not owners:
@@ -270,6 +310,20 @@ def validate_children(
         blocked=blocked,
         fingerprint=plan_fingerprint(session, parent.id),
     )
+
+
+def _anchor_present(project_root: str, path: str, anchor: str) -> bool:
+    """O trecho que a edição pretende substituir existe no arquivo?"""
+    try:
+        full = Path(project_root) / path
+    except (TypeError, ValueError):  # pragma: no cover - caminho inválido
+        return True
+    if not full.is_file():
+        return True  # o arquivo ainda não existe: nada a conferir
+    try:
+        return anchor in full.read_text(encoding="utf-8", errors="replace")
+    except OSError:  # pragma: no cover - arquivo ilegível
+        return True
 
 
 def _produced_before(session: Session, task: TaskModel, path: str) -> bool:
@@ -347,17 +401,62 @@ def _subtree_ids(session: Session, root: TaskModel) -> set[uuid.UUID]:
     return ids
 
 
-def repair_plan(session: Session, parent: TaskModel, validation: PlanValidation) -> list[str]:
-    """Correções automáticas seguras; devolve o que foi feito. O que não tem correção segura fica para o
-    bloqueio recuperável."""
-    ts = TaskService(session)
+def repair_steps(session: Session, parent: TaskModel, validation: PlanValidation) -> list[str]:
+    """Correções locais de etapa: a etapa passa a fazer o que é possível fazer.
+
+    São reparos **locais e seguros** — trocam o mecanismo da etapa (ferramenta, verificação,
+    edição) sem mexer na estrutura do plano. Aplicados mesmo quando o plano é executável:
+    uma etapa que edita um trecho inexistente falha de certeza, e consertá-la é melhor do que
+    discovering a falha no meio da execução.
+    """
     fixes: list[str] = []
     kids = {str(k.id): k for k in active_children(session, parent.id)}
     reqs = {r["id"]: r for r in ensure_requirements(session, root_of(session, parent))}
     for issue in validation.issues:
         kid = kids.get(issue.task_id or "")
+        if kid is None:
+            continue
+        if issue.code == "unknown_tool":
+            meta = {k: v for k, v in (kid.metadata_json or {}).items() if k not in {"tool", "tool_args"}}
+            kid.metadata_json = {**meta, "model_operation": True}
+            fixes.append(f"«{kid.title}» passou a operação do modelo (ferramenta inexistente)")
+        elif issue.code == "unknown_verification":
+            # O verificador inventado é removido: mantê-lo só faria a etapa falhar na execução.
+            # Se a etapa não tinha outra ação, ela vira operação do modelo (a etapa não some).
+            meta = {k: v for k, v in (kid.metadata_json or {}).items() if k != "verification"}
+            if not any(meta.get(key) for key in ("tool", "model_operation", "final_answer")):
+                meta["model_operation"] = True
+            kid.metadata_json = meta
+            fixes.append(f"«{kid.title}» perdeu a verificação de tipo inexistente")
+        elif issue.code == "edit_anchor_missing":
+            # A edição com um trecho que não existe falha de certeza. A etapa vira operação do
+            # modelo: ela inspeciona o arquivo e aplica a mudança com o conteúdo correto.
+            meta = {k: v for k, v in (kid.metadata_json or {}).items() if k not in {"tool", "tool_args"}}
+            meta["model_operation"] = True
+            kid.metadata_json = meta
+            fixes.append(f"«{kid.title}» passou a operação do modelo (trecho de edição inexistente)")
+        elif issue.code == "unknown_requirement":
+            covers = [c for c in normalize_covers((kid.metadata_json or {}).get("covers")) or [] if c["req"] in reqs]
+            kid.metadata_json = {**(kid.metadata_json or {}), "covers": covers}
+            fixes.append(f"«{kid.title}» deixou de citar requisito inexistente")
+        elif issue.code == "criteria_unverifiable":
+            kid.metadata_json = {**(kid.metadata_json or {}), "covers": []}
+            fixes.append(f"«{kid.title}» virou etapa de apoio (sem critério verificável)")
+    session.flush()
+    return fixes
+
+
+def repair_plan(session: Session, parent: TaskModel, validation: PlanValidation) -> list[str]:
+    """Correções automáticas seguras; devolve o que foi feito. O que não tem correção segura fica para o
+    bloqueio recuperável."""
+    ts = TaskService(session)
+    fixes: list[str] = repair_steps(session, parent, validation)
+    kids = {str(k.id): k for k in active_children(session, parent.id)}
+    reqs = {r["id"]: r for r in ensure_requirements(session, root_of(session, parent))}
+    for issue in validation.issues:
+        kid = kids.get(issue.task_id or "")
         if issue.code == "duplicate_task" and kid and kid.status != TaskStatus.CANCELLED.value:
-            _cancel(ts, kid, "etapa duplicada no plano")
+            _cancel(ts, kid, "etapa duplicada no plano", "duplicate")
             fixes.append(f"cancelada a duplicada «{kid.title}»")
         elif issue.code == "dependency_cancelled" and kid:
             for dep in session.scalars(select(TaskDependencyModel).where(TaskDependencyModel.task_id == kid.id)).all():
@@ -365,17 +464,6 @@ def repair_plan(session: Session, parent: TaskModel, validation: PlanValidation)
                 if other is None or other.status == TaskStatus.CANCELLED.value or (other.metadata_json or {}).get("invalid_plan"):
                     session.delete(dep)
                     fixes.append(f"removida a dependência de «{kid.title}» em tarefa cancelada")
-        elif issue.code == "unknown_tool" and kid:
-            meta = {k: v for k, v in (kid.metadata_json or {}).items() if k not in {"tool", "tool_args"}}
-            kid.metadata_json = {**meta, "model_operation": True}
-            fixes.append(f"«{kid.title}» passou a operação do modelo (ferramenta inexistente)")
-        elif issue.code == "unknown_requirement" and kid:
-            covers = [c for c in normalize_covers((kid.metadata_json or {}).get("covers")) or [] if c["req"] in reqs]
-            kid.metadata_json = {**(kid.metadata_json or {}), "covers": covers}
-            fixes.append(f"«{kid.title}» deixou de citar requisito inexistente")
-        elif issue.code == "criteria_unverifiable" and kid:
-            kid.metadata_json = {**(kid.metadata_json or {}), "covers": []}
-            fixes.append(f"«{kid.title}» virou etapa de apoio (sem critério verificável)")
     session.flush()
     covered = {c["req"] for k in active_children(session, parent.id) if k.status != TaskStatus.CANCELLED.value for c in effective_covers(session, k)}
     missing = [i for i in validation.issues if i.code in {"requirement_uncovered", "criteria_unverifiable"}]
@@ -393,7 +481,16 @@ def repair_plan(session: Session, parent: TaskModel, validation: PlanValidation)
                     acceptance_criteria=req["criterion"],
                     kind=TaskKind.SUBSYSTEM,
                     parent_id=parent.id,
-                    metadata={"covers": [req_id], "added_by_validation": True},
+                    metadata={
+                        "covers": [req_id],
+                        "added_by_validation": True,
+                        # A etapa criada para um requisito herda as restrições do pedido.
+                        **{
+                            flag: True
+                            for flag in ("read_only", "protect_tests")
+                            if inherits_flag(session, parent, flag)
+                        },
+                    },
                 ),
             )
             if final is not None:
@@ -403,9 +500,12 @@ def repair_plan(session: Session, parent: TaskModel, validation: PlanValidation)
     return fixes
 
 
-def _cancel(ts: TaskService, task: TaskModel, reason: str) -> None:
+def _cancel(ts: TaskService, task: TaskModel, reason: str, kind: str = "plan") -> None:
     status = TaskStatus(task.status)
     if status == TaskStatus.PENDING or status in {TaskStatus.PLANNING, TaskStatus.READY, TaskStatus.RETRY_PENDING, TaskStatus.BLOCKED}:
+        # O motivo fica na tarefa: a consolidação precisa distinguir cancelamento previsto
+        # (outra etapa assume o trabalho) de trabalho que simplesmente não foi feito.
+        task.metadata_json = {**(task.metadata_json or {}), "cancelled_reason": kind, "cancel_detail": reason[:200]}
         ts.update_status(task.id, TaskStatusUpdate(status=TaskStatus.CANCELLED, reason=reason))
 
 
@@ -447,25 +547,33 @@ def validate_and_repair(
     run_id: uuid.UUID | None,
     extra_issues: list[Issue] | None = None,
 ) -> PlanValidation:
-    """Valida; se não puder executar, aplica as correções seguras e valida de novo. Grava o resultado.
+    """Valida; aplica as correções seguras e valida de novo. Grava o resultado.
     Se ainda não puder executar, as etapas do plano são canceladas como `invalid_plan` (ficam no histórico)
     e quem chama bloqueia o pai com o motivo."""
     first = validate_children(
         session, parent, project_root=project_root, run_config=run_config, max_tasks=max_tasks, extra_issues=extra_issues
     )
     result = first
-    if not first.runnable:
-        fixes = [f"{i.message} (dependência removida)" for i in extra_issues or []]
-        fixes += repair_plan(session, parent, first)
+    fixes = [f"{i.message} (dependência removida)" for i in extra_issues or []]
+    # Os reparos locais de etapa valem para qualquer plano: uma etapa que edita um trecho
+    # inexistente ou declares um verificador que não existe falha de certeza na execução.
+    step_fixes = repair_steps(session, parent, first)
+    if step_fixes:
+        fixes += step_fixes
+        result = validate_children(
+            session, parent, project_root=project_root, run_config=run_config, max_tasks=max_tasks
+        )
+    if not result.runnable:
+        fixes += repair_plan(session, parent, result)
         result = validate_children(session, parent, project_root=project_root, run_config=run_config, max_tasks=max_tasks)
-        result.fixes = fixes
+    result.fixes = fixes
     result.initial_verdict = first.verdict.value
     record_validation(session, parent, result, run_id)
     if not result.runnable:
         ts = TaskService(session)
         for kid in active_children(session, parent.id):
             kid.metadata_json = {**(kid.metadata_json or {}), "invalid_plan": True}
-            _cancel(ts, kid, "plano inválido")
+            _cancel(ts, kid, "plano inválido", "invalid_plan")
     return result
 
 

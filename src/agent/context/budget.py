@@ -69,7 +69,10 @@ def assemble_messages(
     if budget <= 0:
         raise ValueError("Orçamento de contexto inválido para o perfil do modelo")
 
-    sorted_components = sorted(components, key=lambda c: (-int(c.required), -c.priority, c.name))
+    sorted_components = sorted(
+        [c for c in components if c.text and c.text.strip()],
+        key=lambda c: (-int(c.required), -c.priority, c.name),
+    )
     selected: list[ContextComponent] = []
     dropped: list[str] = []
     used = 0

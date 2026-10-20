@@ -24,26 +24,34 @@ def build_operation_context(
     global_objective: str = "",
     dependency_results: str = "",
     skills: str = "",
+    requirements: str = "",
     compact: bool = False,
 ) -> BudgetResult:
     """Componentes do prompt da operação. Obrigatórios nunca são cortados: se não couberem, o orçamento
     lança `ContextBudgetError`. A compactação não mexe em `arquivos-alvo`, que precisa ficar idêntico ao
-    disco para `old_string` casar."""
+    disco para `old_string` casar.
+
+    São obrigatórios também o **objetivo global** (o porquê da etapa dentro do pedido) e as
+    **regras do projeto** (as restrições canônicas): são eles que o modelo não pode perder sem
+    fazer a coisa errada. O que é grande e dispensável (skills, contexto técnico, ferramentas) é
+    o que sai quando falta espaço.
+    """
     components = [
         ContextComponent(name="regras-globais", text=global_rules, required=True, priority=100),
         ContextComponent(name="objetivo", text=objective, required=True, priority=99),
-        ContextComponent(name="critérios", text=acceptance, required=True, priority=98),
-        ContextComponent(name="formato-saída", text=output_format, required=True, priority=97),
-        ContextComponent(name="regras-projeto", text=project_rules, required=False, priority=80),
+        ContextComponent(name="requisitos", text=requirements, required=True, priority=98),
+        ContextComponent(name="critérios", text=acceptance, required=True, priority=97),
+        ContextComponent(name="formato-saída", text=output_format, required=True, priority=96),
+        ContextComponent(name="objetivo-global", text=global_objective, required=True, priority=92),
+        ContextComponent(name="regras-projeto", text=project_rules, required=True, priority=90),
         ContextComponent(name="skills", text=skills, required=False, priority=75),
         ContextComponent(name="contexto-técnico", text=technical, required=False, priority=70),
         ContextComponent(name="ferramentas", text=tools_summary, required=False, priority=60),
     ]
     optional = [
-        ("tentativas-anteriores", previous_failures, True, 96),
-        ("contrato", contract, True, 95),
-        ("arquivos-alvo", target_files, True, 94),
-        ("objetivo-global", global_objective, False, 90),
+        ("tentativas-anteriores", previous_failures, True, 95),
+        ("contrato", contract, True, 94),
+        ("arquivos-alvo", target_files, True, 93),
         ("inspeção-anterior", previous_inspection, False, 88),
         ("resultados-dependências", dependency_results, False, 85),
     ]

@@ -13,6 +13,7 @@ from agent.domain.schemas import TaskCreate, TaskDependencyCreate, TaskStatusUpd
 from agent.orchestrator.consolidation import (
     children_of,
     collect_evidences,
+    inherits_flag,
     verification_evidence_ok,
     verification_spec,
 )
@@ -182,6 +183,11 @@ def correct_requirement_gaps(session: Session, root: TaskModel) -> list[uuid.UUI
         return []
     ts = TaskService(session)
     created: list[uuid.UUID] = []
+    inherited = {
+        flag: True
+        for flag in ("read_only", "protect_tests")
+        if inherits_flag(session, root, flag)
+    }
     for req in targets:
         unverified = req["status"] == "unverified"
         objective = req["description"]
@@ -198,7 +204,13 @@ def correct_requirement_gaps(session: Session, root: TaskModel) -> list[uuid.UUI
                 acceptance_criteria=req["criterion"] or req["description"],
                 kind=TaskKind.SUBSYSTEM,
                 parent_id=root.id,
-                metadata={"covers": [req["id"]], "requirement_fix": req["id"]},
+                metadata={
+                    "covers": [req["id"]],
+                    "requirement_fix": req["id"],
+                    # A etapa de comprovação nasce sob a raiz: herda as restrições do pedido
+                    # (comprovar não é alterar; e a régua não muda).
+                    **inherited,
+                },
             ),
         )
         created.append(task.id)

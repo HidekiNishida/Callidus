@@ -43,6 +43,7 @@ class FailureCause(StrEnum):
     DEPENDENCY_FAILED = "dependency_failed"
     ATTEMPTS_EXHAUSTED = "attempts_exhausted"
     STAGNATION = "stagnation"
+    POLICY = "policy"
     LIMIT_REACHED = "limit_reached"
 
 

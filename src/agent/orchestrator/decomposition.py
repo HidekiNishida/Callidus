@@ -15,6 +15,7 @@ from agent.providers.base import LLMProvider, ModelProfile
 from agent.context.budget import ContextComponent, assemble_messages
 from agent.providers.base import ChatCompletionRequest
 from agent.providers.registry import build_provider_by_name
+from agent.orchestrator.plan_contract import normalize_plan_payload
 from agent.services.task_service import DependencyError, TaskService
 from agent.services.agent_service import AgentService
 from agent.guides.discover import capability_line, guide_digest
@@ -35,6 +36,10 @@ class SubTaskSpec(BaseModel):
 
 class DecompositionResult(BaseModel):
     subtasks: list[SubTaskSpec]
+    # Desvios do plano do modelo em relação ao contrato (rótulo de `kind` fora do enum,
+    # dependência inválida). Ficam registrados: o plano é utilizável, mas a diagnóstico
+    # mostra que o modelo não seguiu o formato.
+    warnings: list[str] = Field(default_factory=list)
 
 
 BUILTIN_E2E_PLAN = DecompositionResult(
@@ -123,9 +128,16 @@ async def plan_with_model(
         f"{capability_line(profile.model_id)}\n"
         f"{TOOL_CATALOG}\n"
         "Cada subtarefa de ferramenta usa metadata.tool com um id real e metadata.tool_args. "
-        "Para editar código use edit_file, não reescreva o arquivo inteiro. "
         "Para explorar use list_dir ou glob_files. Para teste Python use run_pytest ou run_script. "
-        "Verificação pode ser metadata.verification com type pytest, script ou command.\n"
+        "Para alterar código prefira uma subtarefa com metadata.model_operation=true (sem "
+        "tool_args): o agente inspeciona o arquivo e aplica a mudança com o conteúdo exato. "
+        "Use edit_file só com o trecho antigo copiado literalmente do arquivo; um trecho "
+        "paraphraseado faz a edição falhar. "
+        "Verificação é metadata.verification e o type só pode ser um destes: "
+        "pytest, script, command, file_contains, file_exists, syntax, static_analysis. "
+        "Nenhum outro type é aceito: um verificador que não existe faz a etapa falhar depois do trabalho. "
+        "Para conferir que um trecho existe use file_contains com path e contains; "
+        "para conferir que um arquivo existe use file_exists.\n"
         'Responda SOMENTE JSON válido: {"subtasks":[{"title":"...","objective":"...",'
         '"kind":"operation","metadata":{"tool":"read_file","tool_args":{"path":"..."}},'
         '"depends_on_indices":[]}]}'
@@ -168,11 +180,16 @@ async def plan_with_model(
     data, err = parse_json_object(content)
     if err or not data:
         return None
+    # O plano do modelo é normalizado antes de ser validado: um rótulo fora do contrato
+    # (`kind: "final_answer"`, índice de dependência inválido) não descarta o plano inteiro.
+    payload, warnings = normalize_plan_payload(data)
+    if not payload.get("subtasks"):
+        return None
     try:
-        plan = DecompositionResult.model_validate(data)
-        return plan if plan.subtasks else None
+        plan = DecompositionResult.model_validate(payload)
     except Exception:
         return None
+    return plan.model_copy(update={"warnings": warnings}) if plan.subtasks else None
 
 
 def _supports_tool_loop(provider) -> bool:
@@ -253,23 +270,41 @@ def page_plan(objective: str) -> DecompositionResult:
 
 
 def align_verification(objective: str, plan: DecompositionResult) -> DecompositionResult:
-    """Pedido de página não herda a verificação de pytest do plano genérico."""
+    """Pedido de página não herda a verificação de pytest do plano genérico.
+
+    Só a verificação **genérica** é trocada: um plano com várias verificações (ou com um passo de
+    testes próprio) mantém as suas — trocar todas apagaria o passo de testes de um pedido que é
+    ao mesmo tempo página e código.
+    """
     if not _is_page_request(objective):
         return plan
+    verifications = [
+        (index, spec)
+        for index, spec in enumerate(plan.subtasks)
+        if isinstance((spec.metadata or {}).get("verification"), dict)
+    ]
+    only_generic = len(verifications) == 1 and verifications[0][1].metadata["verification"].get("type") == "pytest"
     subtasks: list[SubTaskSpec] = []
     changed = False
-    for spec in plan.subtasks:
+    for index, spec in enumerate(plan.subtasks):
         meta = dict(spec.metadata or {})
+        touched = False
         verification = meta.get("verification")
-        if isinstance(verification, dict) and verification.get("type") == "pytest":
+        if (
+            only_generic
+            and isinstance(verification, dict)
+            and verification.get("type") == "pytest"
+        ):
             meta["verification"] = {"type": "file_contains", "path": "index.html", "contains": "<html"}
-            changed = True
+            touched = True
         if meta.get("model_operation") and not meta.get("final_answer"):
             meta["prompt_key"] = "page"
             meta["atomic"] = True
+            touched = True
+        if touched:
             changed = True
-        subtasks.append(spec.model_copy(update={"metadata": meta}) if changed else spec)
-    return DecompositionResult(subtasks=subtasks) if changed else plan
+        subtasks.append(spec.model_copy(update={"metadata": meta}) if touched else spec)
+    return DecompositionResult(subtasks=subtasks, warnings=list(plan.warnings)) if changed else plan
 
 
 def fallback_plan(objective: str) -> tuple[DecompositionResult, str]:
@@ -312,7 +347,8 @@ async def resolve_decomposition_plan(
     provider: LLMProvider | None = None,
     requirements: list[dict[str, Any]] | None = None,
 ) -> tuple[DecompositionResult | None, str]:
-    """Ordem: builtin e2e → modelo do provedor escolhido → template genérico → mock (se permitido)."""
+    """Ordem: builtin e2e (só no demo explícito) → modelo do provedor escolhido → template genérico →
+    mock (se permitido)."""
     if builtin := builtin_plan_for_objective(objective):
         return builtin, "builtin-e2e"
     if direct := direct_answer_plan(objective):
@@ -449,7 +485,19 @@ def apply_decomposition(
         ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.PLANNING))
 
     created_ids: list[uuid.UUID] = []
+    from agent.orchestrator.consolidation import inherits_flag
+
+    inherited = {
+        flag: True
+        for flag in ("read_only", "protect_tests")
+        if inherits_flag(session, parent, flag)
+    }
     for spec in plan.subtasks:
+        metadata = dict(spec.metadata or {})
+        if inherited:
+            # As restrições do pedido descem com a decomposição: uma subetapa de um pedido
+            # sem escrita (ou com a régua protegida) herda a restrição.
+            metadata.update(inherited)
         task = ts.create_task(
             project_id,
             TaskCreate(
@@ -459,7 +507,7 @@ def apply_decomposition(
                 acceptance_criteria=spec.acceptance_criteria,
                 kind=spec.kind,
                 parent_id=parent_id,
-                metadata=spec.metadata,
+                metadata=metadata,
             ),
         )
         created_ids.append(task.id)
@@ -485,8 +533,14 @@ def apply_decomposition(
 
 
 def builtin_plan_for_objective(objective: str) -> DecompositionResult | None:
+    """Plano fixo do demo e2e — só quando o pedido é **explicitamente** o demo.
+
+    O gatilho é a marca "e2e" no pedido. Um nome de arquivo comum (`calc.py`) **não** serve
+    de gatilho: num projeto de verdade, `calc.py` é o arquivo que o usuário quer corrigir, e
+    aplicar um plano que escreve um `calc.py` fixo entregaria um arquivo que ninguém pediu.
+    """
     text = objective.lower()
-    # "calculadora" contém "calc"; só o demo explícito usa o plano do fixture.
-    if "e2e" in text or "calc.py" in text:
-        return BUILTIN_E2E_PLAN
+    if "e2e" in text:
+        # Cópia profunda: o plano é alterado pela validação, e o original é um objeto de módulo.
+        return BUILTIN_E2E_PLAN.model_copy(deep=True)
     return None

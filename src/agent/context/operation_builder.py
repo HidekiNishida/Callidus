@@ -101,6 +101,7 @@ class OperationContextBuilder:
         skills_rendered, matched_skills = self._skills_block(root_path, task, profile)
         previous_failures = self._failures_block(task)
         previous_inspection = self._inspection_block(task)
+        requirements = self._requirements_block(task)
 
         try:
             budget = build_operation_context(
@@ -113,12 +114,13 @@ class OperationContextBuilder:
                 tools_summary=tools_summary,
                 output_format=output_format,
                 previous_failures=previous_failures,
-            previous_inspection=previous_inspection,
+                previous_inspection=previous_inspection,
                 contract=contract,
                 target_files=target_files,
                 global_objective=global_objective,
                 dependency_results=dependency_results,
                 skills=skills_rendered,
+                requirements=requirements,
                 compact=compact,
             )
         except ContextBudgetError as exc:
@@ -161,6 +163,46 @@ class OperationContextBuilder:
         if images and budget.messages:
             budget.messages[-1].images = images
         return budget, snap
+
+    def _requirements_block(self, task: TaskModel) -> str:
+        """Requisitos obrigatórios que esta etapa responde, com o critério de cada um.
+
+        Sem este bloco o modelo executava a etapa sem saber o que tinha de provar: o critério de
+        aceite canônico não chegava ao prompt, e a etapa podia "concluir" sem atender ao requisito
+        que a validação depois apontava como não comprovado.
+        """
+        from agent.orchestrator.requirements import (
+            MANDATORY,
+            effective_covers,
+            ensure_requirements,
+            root_of,
+        )
+
+        try:
+            root = root_of(self._session, task)
+            reqs = ensure_requirements(self._session, root)
+        except Exception:  # pragma: no cover - contrato ausente não impede a execução
+            return ""
+        if not reqs:
+            return ""
+        covers = {c["req"]: c for c in effective_covers(self._session, task, reqs)}
+        lines: list[str] = []
+        for req in reqs:
+            cover = covers.get(req["id"])
+            if cover is None or req["applicability"] != MANDATORY:
+                continue
+            part = f" (parte: {cover['part']})" if cover.get("part") else ""
+            lines.append(f"- {req['id']}: {req['description']}{part}")
+            criterion = str(req.get("criterion") or "").strip()
+            if criterion:
+                lines.append(f"  critério de aceite: {criterion}")
+        if not lines:
+            return ""
+        return (
+            "Requisitos obrigatórios que esta etapa tem de atender (todos):\n"
+            + "\n".join(lines)
+            + "\nA etapa só vale se o requisito for cumprido e comprovado."
+        )
 
     def _skills_block(
         self,

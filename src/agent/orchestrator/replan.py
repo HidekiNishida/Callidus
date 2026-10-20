@@ -118,6 +118,10 @@ def replan_parent(session: Session, parent: TaskModel) -> dict | None:
         if kid.id == stopped.id or children_of(session, kid.id):
             continue
         if kid.status in _CANCEL:
+            # A etapa cancelada foi **substituída** pelo replanejamento: o marcação importa,
+            # senão a consolidação entende "trabalho não feito" e bloqueia o pai, mesmo
+            # com o plano novo já concluído.
+            kid.metadata_json = {**(kid.metadata_json or {}), "superseded_by_replan": True}
             tasks.update_status(
                 kid.id,
                 TaskStatusUpdate(status=TaskStatus.CANCELLED, reason="plano revisado"),

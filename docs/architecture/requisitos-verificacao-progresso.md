@@ -17,6 +17,12 @@ Três mecanismos que complementam a decomposição, o contexto e a consolidaçã
 
 **Origem.** Ao iniciar o run, `ensure_requirements` lê o contrato da raiz. Se estiver vazio, deriva do texto de forma determinística: cada item enumerado do objetivo e cada linha dos critérios de aceite vira um requisito; sem itens, o objetivo inteiro é `R1`. Requisitos definidos por `PUT /tasks/{id}/contract` (campo `acceptance.requirements`) têm precedência.
 
+**Mudança ou resposta.** `evidence_kind` decide se o requisito exige verificador (`change`) ou
+aceita a resposta final (`answer`). A distinção é do **pedido**, não dopalavra: "execute a suíte
+de testes e diga o resultado" entrega um relatório (é `answer`), mesmo falando de testes; "crie
+testes para a função soma" entrega código (é `change`). Trechos negados ("não altere nenhum
+arquivo") são descartados antes da classificação: eles **restringem**, não pedem mudança.
+
 **Cobertura.** Cada tarefa pode declarar `covers: ["R1", {"req": "R2", "partial": true, "part": "API"}]`. Sem declaração, herda a do pai; a raiz cobre todos. O prompt de decomposição lista os requisitos da etapa (`requirements_block`) e pede `covers` em cada subtarefa.
 
 **Estado** (`requirement_status`), calculado pelas folhas que cobrem o requisito (canceladas e substituídas por replanejamento não contam):
@@ -24,13 +30,26 @@ Três mecanismos que complementam a decomposição, o contexto e a consolidaçã
 | Estado | Quando |
 |--------|--------|
 | `uncovered` | Nenhuma folha responsável |
-| `failed` / `blocked` | Uma folha responsável parou |
+| `failed` / `blocked` | Uma folha responsável parou — ou ela **concluiu e o verificador reprovou** (`failed`) |
 | `pending` | Alguma folha ainda não concluiu com evidência válida |
-| `unverified` | Todas concluíram, mas falta evidência proporcional (mudança sem verificador aprovado e atual) |
+| `unverified` | Todas concluíram, mas falta evidência proporcional (mudança sem verificador aprovado e atual) — **ou** a etapa substituída pelo replanejamento tinha uma verificação que reprovou e ninguém a refez |
 | `satisfied` | Evidência proporcional válida |
 | aplicabilidade | Requisito não obrigatório devolve `não_aplicável`, `informativo` ou `bloqueado` |
 
 Uma tarefa concluída não basta: requisito de mudança só é atendido com evidência de verificador, nunca pela resposta do modelo.
+
+**Evidência vence cobertura.** O estado não é "todas as folhas concluíram": é **há evidência
+proporcional válida**. Uma etapa de apoio ainda pendente não segura o requisito que outra etapa
+já provou. Em sentido contrário, três regras impedem a conclus��o prematura:
+
+1. Uma folha que **concluiu** e cujo verificador mais recente reprovou deixa o requisito como
+   `failed` — houve uma checagem explícita do trabalho e ela disse que o trabalho não está bom.
+2. A etapa `Verificação global` é uma **porta**: enquanto ela não roda, o requisito fica
+   `pending`, mesmo com evidência nas etapas individuais.
+3. Se o replanejamento substituiu uma etapa cuja verificação **reprovou** e nenhuma etapa viva
+   refez **aquele** verificador, o requisito volta a `unverified` — trocar a checagem declarada
+   por uma evidência mais fraca (a conferência implícita da escrita) não prova o que a
+   checagem anterior não aprovou.
 
 **Cobertura implícita × declarada.** Se nenhuma irmã declara `covers`, toda etapa herda os requisitos do pai (cobertura implícita). Se alguma declara, a etapa sem declaração é apoio e não cobre nada, para que uma etapa genérica não mascare um requisito esquecido. No replanejamento, os requisitos da etapa parada e das irmãs não feitas passam para "Seguir com o plano corrigido".
 
@@ -48,6 +67,8 @@ Uma tarefa concluída não basta: requisito de mudança só é atendido com evid
 | Dependência inexistente, de outro projeto, em tarefa cancelada, para si mesma ou circular | inconsistente |
 | Etapa idêntica a outra (título, objetivo, ferramenta e argumentos) | inconsistente |
 | Ferramenta inexistente | inconsistente |
+| Verificação de tipo inexistente (ou fora do formato de objeto) | inconsistente |
+| Edição cujo trecho antigo não está no arquivo | ressalva (a etapa vira operação do modelo) |
 | Ferramenta que depende de aprovação, navegador desligado, `metadata.external` | ressalva, etapa listada em `blocked` |
 | Requisito que só depende de etapas bloqueadas | ressalva |
 | Entrada (`read_file`/`edit_file`) inexistente que nenhuma dependência produz | ressalva |
@@ -68,6 +89,33 @@ O resultado é o pior entre os achados: `válido`, `válido com ressalvas`, `inc
 - etapa sem critério verificável vira apoio;
 - requisito sem responsável ganha a etapa `Atender Rn` (`subsystem`, `covers: [Rn]`), da qual a resposta final passa a depender.
 
+**Correções locais valem para qualquer plano** (`repair_steps`). Estas três são aplicadas mesmo
+quando o plano já é executável, porque a etapa falharia de certeza na execução:
+
+| Correção | Por quê |
+|----------|---------|
+| Ferramenta inexistente → operação do modelo | a ferramenta não existe |
+| Verificação de tipo inexistente → removida (a etapa vira operação do modelo se não tiver outra ação) | um verificador que não existe só falha depois do trabalho feito |
+| Edição com trecho antigo ausente no arquivo → operação do modelo | o modelo planeja a edição com o trecho que *acredita* existir; se não existe, a edição falha de certeza — melhor a etapa inspecionar e aplicar |
+
+### O plano do modelo é tolerante, não descartável
+
+`src/agent/orchestrator/plan_contract.py`. Um modelo pequeno rotula as etapas do jeito que
+entende: `kind: "final_answer"` para a resposta final, `depends_on_indices` com índice inválido,
+`metadata.verification` como texto solto. Descartar o plano inteiro por causa de um rótulo é
+**perder o trabalho do modelo** — e a validação do plano, que sabe reparar, existe para isso.
+
+O plano é **normalizado** antes de ser validado: `kind` desconhecido vira `operation` (com
+aviso), `final_answer` ganha os metadados canônicos (`final_answer`, `model_operation`), índice
+de dependência inválido é descartado, `covers` é normalizado. Nenhum campo isolado invalida o
+plano. Os desvios ficam em `DecompositionResult.warnings`.
+
+O sintoma que motivou a mudança (medido em 20/10/2026, `gpt-oss:20b`): o modelo devolvia um
+plano **válido** com `kind: "final_answer"` — o `DecompositionResult.model_validate` rejeitava,
+`plan_with_model` devolvia `None` e **todo o plano era trocado pelo template genérico**
+("Inspecionar código / Aplicar alterações / Verificar / Resposta final"). A especificidade do
+objetivo, a cobertura de requisitos e as dependências que o modelo tinha acertado sumiam.
+
 Se ainda não puder executar, nada do plano roda: as etapas são canceladas com `invalid_plan` (ficam no histórico) e o pai vai a `BLOCKED` com `last_failure.cause = invalid_plan`. A categoria é `change_strategy`, ou `external_unavailable` se tudo está bloqueado, ou `operational_limit` se o orçamento estoura. Ação `plan_invalid`. Desbloqueado (`BLOCKED → PLANNING`), o pai é decomposto de novo.
 
 **Versões e revalidação.** `metadata_json.plan_validation` do pai guarda o resultado atual: veredito, achados, cobertura, bloqueadas, correções, veredito inicial, `version` e `fingerprint`. Cada versão gera um evento `plan.validated` com o plano completo. Antes de executar uma etapa, o runner compara a impressão do plano do pai (etapas, cobertura, ferramenta, verificação, dependências) e, se mudou (replanejamento, dependência nova), valida de novo (`plan_revalidated`).
@@ -81,7 +129,25 @@ Quem executa não aprova o próprio resultado. A resposta do modelo ("pronto, co
 | Estrutura e arquivo | `file_contains` (lê o arquivo inteiro, como gravado) |
 | Sintaxe | `syntax` (Python via `ast`, JSON); a escrita implícita do modelo usa `file_contains` com `syntax: true` |
 | Testes unitários, integração, regressão | `pytest`, `script`, `command` |
+| Encadeamento de etapas | `stages` — confere que as etapas das quais a tarefa depende concluíram com evidência válida |
 | Aceite global | etapa `Verificação global` (`metadata.global_verification` da raiz) e aceite por requisito |
+
+**`stages` não é aprovação automática.** Ele precisa do estado persistido das etapas
+dependentes, por isso roda no orquestrador (`consolidation.stages_outcome`), não no verificador
+de arquivo: sem dependência declarada o resultado é **inconclusivo** (nunca "passou"), e uma
+dependência que parou reprova. A decomposição adaptativa usa `stages` na etapa de conferência
+porque acontece antes de o agente saber o que o projeto tem: um `pytest` sobre uma pasta de
+testes que não existe reprovaria a etapa por um motivo que não é do trabalho.
+
+**Rodar a suíte e ver reprovar é resultado, não ferramenta quebrada.** `run_pytest` que termina
+com código de saída diferente de zero e saída de texto é a suíte **reprovando** — a ferramenta
+funcionou. A etapa registra o que a suíte disse e segue para a verificação, que é quem julga o
+código. Só é falha de ferramenta quando o comando nem chegou a rodar (executável ausente,
+timeout, caminho bloqueado).
+
+**A evidência envelhece.** `file_exists` e `syntax` também recebem impressão digital dos arquivos
+que avaliaram (`artifact_paths`): sem isso, a evidência continuaria válida depois de o arquivo
+sumir ou mudar.
 
 **Evidência persistida** (`evidence`, sem tabela nova; extras em `detail_json`):
 

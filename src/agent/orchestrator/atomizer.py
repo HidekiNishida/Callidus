@@ -93,6 +93,11 @@ def adaptive_decompose_operation(
     Entradas: objetivo da etapa, metadados, especialidade líder e profundidade (com o limite).
     Saída: `DecompositionResult` com as subtarefas — ou uma única etapa atômica quando a
     profundidade máxima foi atingida (a decomposição recursiva para ali).
+
+    A verificação das subetapas é `stages` (a etapa anterior concluiu com evidência) e não
+    `pytest`: a decomposição acontece antes de o agente saber o que o projeto tem, e um
+    verificador que pressupõe uma pasta de testes que não existe reprovaria a etapa por um
+    motivo que não é do trabalho.
     """
     lower = objective.lower()
     meta = metadata or {}
@@ -119,7 +124,7 @@ def adaptive_decompose_operation(
                 SubTaskSpec(
                     title="Reproduzir e diagnosticar causa raiz",
                     objective=f"Reproduzir e isolar a causa fundamental de: {objective[:140]}",
-                    metadata={"tool": "pytest_run", "tool_args": {"path": "tests"}, "atomic": True, "lead_specialty": "debugging_root_cause"},
+                    metadata={"tool": "run_pytest", "tool_args": {"path": "."}, "atomic": True, "lead_specialty": "debugging_root_cause"},
                 ),
                 SubTaskSpec(
                     title="Aplicar correção cirúrgica",
@@ -130,7 +135,7 @@ def adaptive_decompose_operation(
                 SubTaskSpec(
                     title="Verificar não-regressão",
                     objective="Executar testes automatizados para validar que o defeito foi corrigido e não há regressão",
-                    metadata={"verification": {"type": "pytest", "path": "tests"}, "atomic": True, "lead_specialty": "testing_quality_assurance"},
+                    metadata={"verification": {"type": "stages"}, "atomic": True, "lead_specialty": "testing_quality_assurance"},
                     depends_on_indices=[1],
                 ),
             ]
@@ -157,7 +162,7 @@ def adaptive_decompose_operation(
                 SubTaskSpec(
                     title="Validar paridade de comportamento",
                     objective="Confirmar que todos os testes existentes passam sem alteração funcional",
-                    metadata={"verification": {"type": "pytest", "path": "tests"}, "atomic": True, "lead_specialty": "testing_quality_assurance"},
+                    metadata={"verification": {"type": "stages"}, "atomic": True, "lead_specialty": "testing_quality_assurance"},
                     depends_on_indices=[1],
                 ),
             ]
@@ -184,7 +189,7 @@ def adaptive_decompose_operation(
                 SubTaskSpec(
                     title="Validar integridade da documentação",
                     objective="Conferir que os arquivos e referências criados estão consistentes",
-                    metadata={"verification": {"type": "file_contains", "path": "README.md", "contains": "#"}, "atomic": True, "lead_specialty": "technical_writing"},
+                    metadata={"verification": {"type": "stages"}, "atomic": True, "lead_specialty": "technical_writing"},
                     depends_on_indices=[1],
                 ),
             ]
@@ -207,7 +212,7 @@ def adaptive_decompose_operation(
             SubTaskSpec(
                 title="Verificar alteração",
                 objective="Rodar verificação determinística",
-                metadata={"verification": {"type": "pytest", "path": "."}, "atomic": True},
+                metadata={"verification": {"type": "stages"}, "atomic": True},
                 depends_on_indices=[1],
             ),
         ]

@@ -21,6 +21,12 @@ def artifact_paths(spec: dict[str, Any], tool_args: dict[str, Any] | None = None
         return [spec.get("path") or "."]
     if vtype in {"command", "run_command"}:
         return [spec.get("cwd") or "."]
+    # Verificadores que leem um arquivo específico também dependem do estado desse arquivo:
+    # sem a impressão, a evidência continuaria válida depois de o arquivo sumir ou mudar.
+    if vtype in {"file_exists", "syntax"}:
+        return [spec.get("path") or ""]
+    if vtype in {"static_analysis", "ast_check"}:
+        return [spec.get("path") or "."]
     return []
 
 
