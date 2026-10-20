@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |-------|-------|
-| Estado | em andamento |
+| Estado | concluída |
 | Criado em | 2026-10-20 |
 | Atualizado em | 2026-10-20 |
 | Agente / tarefa | Remodelagem arquitetural completa (orquestrador, API, documentação, regras) |
@@ -16,8 +16,9 @@ assunto, padronizar cabeçalho e docstrings de todo o código e deixar a documen
 
 ## Próxima ação
 
-Aguardar o fim da padronização de cabeçalhos/docstrings em `src/`; depois, auditoria final
-(links, imports, drift, suíte) e commits em português.
+Nenhuma. Commits: `f0ade1c` (execução × ciclo), `6313849` (API por assunto),
+`0a37195` (regras e documentação), `4adfec8` (cabeçalhos e docstrings), `61e6aa4` e
+`ecebbfd` (índices).
 
 ## Etapas
 
@@ -28,8 +29,8 @@ Aguardar o fim da padronização de cabeçalhos/docstrings em `src/`; depois, au
 - [x] Etapa C3 — remover código inalcançável e regras de escrita duplicadas
 - [x] Etapa D — padronizar cabeçalhos e docstrings (src, tests, scripts, web)
 - [x] Etapa E — testes: novo `tests/test_execution_package.py` (14 casos) e suíte completa
-- [ ] Etapa F — auditoria final: links, imports, drift de código, suíte, smoke da API
-- [ ] Commits em português, sem as alterações preexistentes do usuário
+- [x] Etapa F — auditoria final: links, imports, drift de código, suíte, smoke da API
+- [x] Commits em português, sem as alterações preexistentes do usuário
 
 ## Bloqueios
 
