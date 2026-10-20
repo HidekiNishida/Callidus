@@ -60,20 +60,56 @@ class AttemptService:
             )
         return row
 
-    def count_attempts(self, task_id: uuid.UUID) -> int:
-        stmt = select(OperationAttemptModel).where(OperationAttemptModel.task_id == task_id)
+    def count_attempts(self, task_id: uuid.UUID, kind: AttemptKind = AttemptKind.MODEL) -> int:
+        """Quantas tentativas a tarefa consumiu.
+
+        Conta as tentativas de operação: cada resposta final do modelo é uma tentativa. As
+        iterações internas do ciclo de ferramentas (o modelo inspecionando antes de responder)
+        são chamadas de modelo, mas não tentativas — contá-las esgotaria o orçamento da tarefa
+        sem que a estratégia tivesse sido testada de novo.
+        """
+        stmt = select(OperationAttemptModel).where(
+            OperationAttemptModel.task_id == task_id,
+            OperationAttemptModel.kind == kind.value,
+        )
+        rows = list(self._session.scalars(stmt).all())
+        if kind == AttemptKind.MODEL:
+            return sum(1 for row in rows if not (row.request_json or {}).get("iteration_fp"))
+        return len(rows)
+
+    def count_model_calls(self, task_id: uuid.UUID) -> int:
+        """Chamadas ao modelo da tarefa, incluindo as iterações do ciclo de ferramentas."""
+        stmt = select(OperationAttemptModel).where(
+            OperationAttemptModel.task_id == task_id,
+            OperationAttemptModel.kind == AttemptKind.MODEL.value,
+        )
+        return len(list(self._session.scalars(stmt).all()))
+
+    def count_tool_calls(self, task_id: uuid.UUID) -> int:
+        stmt = select(OperationAttemptModel).where(
+            OperationAttemptModel.task_id == task_id,
+            OperationAttemptModel.kind == AttemptKind.TOOL.value,
+        )
         return len(list(self._session.scalars(stmt).all()))
 
     def attempts_exhausted(self, task_id: uuid.UUID) -> bool:
         return self.count_attempts(task_id) >= self._max_attempts
 
-    def repeated_output_detected(self, task_id: uuid.UUID, output_fingerprint: str, window: int = 3) -> bool:
+    def repeated_output_detected(
+        self,
+        task_id: uuid.UUID,
+        output_fingerprint: str,
+        window: int = 3,
+        kind: AttemptKind | None = None,
+    ) -> bool:
         stmt = (
             select(OperationAttemptModel)
             .where(OperationAttemptModel.task_id == task_id)
             .order_by(OperationAttemptModel.created_at.desc())
             .limit(window)
         )
+        if kind is not None:
+            stmt = stmt.where(OperationAttemptModel.kind == kind.value)
         rows = list(self._session.scalars(stmt).all())
         if len(rows) < window:
             return False

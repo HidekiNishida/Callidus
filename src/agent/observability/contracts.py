@@ -63,6 +63,7 @@ EVENT_SPECS: dict[str, EventSpec] = {
         _spec("tool.output", ("call_id", "text"), persist=False, description="saída parcial"),
         _spec("tool.completed", ("call_id", "tool"), description="ferramenta concluída"),
         _spec("tool.failed", ("call_id", "tool", "error"), description="ferramenta falhou"),
+        _spec("model.tool_call", ("tool",), description="o modelo pediu uma ferramenta durante a operação"),
         _spec("command.started", ("call_id", "command"), description="comando iniciado"),
         _spec("command.output", ("call_id", "stream", "text"), persist=False, description="saída parcial"),
         _spec("command.completed", ("call_id", "exit_code"), description="comando terminou com código 0"),

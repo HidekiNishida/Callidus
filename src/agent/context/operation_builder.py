@@ -88,9 +88,11 @@ class OperationContextBuilder:
             "Não entregue um esboço de um parágrafo. Responda só JSON."
             if page
             else (
-                'Criar arquivo: {"path":"...","content":"..."}. '
-                'Editar: {"path":"...","old_string":"...","new_string":"..."}. '
-                "Responda só JSON."
+                "Inspecione o projeto com as ferramentas e faça a alteração com write_file ou edit_file. "
+                f"Você pode pedir no máximo {self._inspection_budget()} leituras; depois disso, faça a alteração. "
+                'Se preferir responder em JSON: criar {"path":"...","content":"..."}, '
+                'editar {"path":"...","old_string":"...","new_string":"..."}. '
+                "Responda só JSON, sem explicação."
                 if (task.metadata_json or {}).get("model_operation")
                 else "JSON estruturado quando solicitado."
             )
@@ -98,6 +100,7 @@ class OperationContextBuilder:
         rules = GLOBAL_RULES if not page else f"{GLOBAL_RULES} O arquivo pedido é o produto completo."
         skills_rendered, matched_skills = self._skills_block(root_path, task, profile)
         previous_failures = self._failures_block(task)
+        previous_inspection = self._inspection_block(task)
 
         try:
             budget = build_operation_context(
@@ -110,6 +113,7 @@ class OperationContextBuilder:
                 tools_summary=tools_summary,
                 output_format=output_format,
                 previous_failures=previous_failures,
+            previous_inspection=previous_inspection,
                 contract=contract,
                 target_files=target_files,
                 global_objective=global_objective,
@@ -188,6 +192,29 @@ class OperationContextBuilder:
             return max(1, int(get_settings().skills_max_per_operation))
         except Exception:  # pragma: no cover - configuração ausente não impede a execução
             return 2
+
+    def _inspection_budget(self) -> int:
+        """Quantas leituras o modelo pode fazer antes de responder (o mesmo limite do ciclo)."""
+        try:
+            from agent.config import get_settings
+
+            return max(1, int(get_settings().max_tool_iterations))
+        except Exception:  # pragma: no cover - configuração ausente não impede a execução
+            return 6
+
+    def _inspection_block(self, task: TaskModel) -> str:
+        """O que a tentativa anterior já leu: evita reler os mesmos arquivos do zero."""
+        items = (task.metadata_json or {}).get("inspection") or []
+        if not items:
+            return ""
+        lines = ["Você já inspecionou estes arquivos nesta etapa (use o conteúdo abaixo em vez de ler de novo):"]
+        for item in items[:6]:
+            path = item.get("path")
+            if not path:
+                continue
+            content = str(item.get("content") or "").strip()
+            lines.append(f"- {path}: {content[:600]}" if content else f"- {path}")
+        return "\n".join(lines)
 
     def _failures_block(self, task: TaskModel) -> str:
         """Falhas anteriores + orientação de recuperação do ciclo diagnóstico → correção."""

@@ -16,6 +16,7 @@ from agent.context.budget import ContextComponent, assemble_messages
 from agent.providers.base import ChatCompletionRequest
 from agent.providers.registry import build_provider_by_name
 from agent.services.task_service import DependencyError, TaskService
+from agent.services.agent_service import AgentService
 from agent.guides.discover import capability_line, guide_digest
 from agent.i18n.locale import detect_language, language_instruction
 from agent.tools.builtins import TOOL_CATALOG
@@ -96,7 +97,15 @@ async def plan_with_model(
     language: str = "pt",
     browser_mode: str = "off",
     requirements: list[dict[str, Any]] | None = None,
+    project_root: str = "",
 ) -> DecompositionResult | None:
+    """Plano do modelo.
+
+    O modelo recebe as ferramentas de **inspeção**: um modelo que trabalha com ferramentas
+    (o `gpt-oss:20b`) devolve resposta vazia quando o pedido chega sem elas, e o plano caía no
+    template genérico — que perde a especificidade do objetivo. Aqui ele pode ler o projeto
+    antes de responder com o JSON do plano.
+    """
     browser_line = (
         "O navegador está ligado. Use browser para pesquisa, checagem, demonstração ou teste. "
         "action: search, navigate, snapshot, click, type, press, scroll ou close."
@@ -125,12 +134,38 @@ async def plan_with_model(
         profile,
         [ContextComponent(name="decomposição", text=prompt, required=True, priority=100)],
     )
-    from agent.providers.observed import observed_chat
+    from agent.orchestrator.tool_loop import INSPECTION_TOOLS, run_tool_loop
+    from agent.tools.registry import ToolContext, build_default_registry
 
-    resp = await observed_chat(
-        provider, ChatCompletionRequest(messages=budget.messages, profile=profile), purpose="plan"
-    )
-    data, err = parse_json_object(resp.content)
+    content = ""
+    if getattr(provider, "capabilities", None) and _supports_tool_loop(provider):
+        outcome = await run_tool_loop(
+            provider=provider,
+            messages=budget.messages,
+            profile=profile,
+            registry=build_default_registry(),
+            ctx=ToolContext(project_root=project_root or "."),
+            tool_ids=INSPECTION_TOOLS,
+            final_tools=INSPECTION_TOOLS,
+            final_tools_after=(),
+            final_instruction=(
+                "Você já inspecionou o que era preciso. Responda agora com o JSON do plano "
+                "no formato pedido."
+            ),
+            final_instruction_after=(
+                "Agora responda apenas com o JSON do plano. Não peça mais ferramentas."
+            ),
+            purpose="plan",
+        )
+        content = outcome.content or ""
+    else:
+        from agent.providers.observed import observed_chat
+
+        resp = await observed_chat(
+            provider, ChatCompletionRequest(messages=budget.messages, profile=profile), purpose="plan"
+        )
+        content = resp.content or ""
+    data, err = parse_json_object(content)
     if err or not data:
         return None
     try:
@@ -138,6 +173,17 @@ async def plan_with_model(
         return plan if plan.subtasks else None
     except Exception:
         return None
+
+
+def _supports_tool_loop(provider) -> bool:
+    """O provedor sabe manter a conversa de ferramentas? (mesma regra do orquestrador.)"""
+    capabilities = getattr(provider, "capabilities", None)
+    if not callable(capabilities):
+        return False
+    try:
+        return bool(capabilities().tool_loop)
+    except Exception:  # pragma: no cover - provedor de teste sem capacidades
+        return False
 
 
 def requirements_block(requirements: list[dict[str, Any]] | None) -> str:
@@ -227,9 +273,16 @@ def align_verification(objective: str, plan: DecompositionResult) -> Decompositi
 
 
 def fallback_plan(objective: str) -> tuple[DecompositionResult, str]:
+    """Plano genérico, mas **com o objetivo concreto**: a etapa que aplica a alteração recebe o
+    pedido do pai, senão o modelo recebe "implemente a mudança pedida" e não sabe o que fazer."""
     if _is_page_request(objective):
         return page_plan(objective), "page-template"
-    return GENERIC_TEMPLATE.model_copy(deep=True), "generic-template"
+    plan = GENERIC_TEMPLATE.model_copy(deep=True)
+    order = " ".join((objective or "").strip().split())
+    for spec in plan.subtasks:
+        if spec.title == "Aplicar alterações" and order:
+            spec.objective = f"Implementar a mudança pedida no objetivo pai: {order}"
+    return plan, "generic-template"
 
 
 def direct_answer_plan(objective: str) -> DecompositionResult | None:
@@ -269,6 +322,7 @@ async def resolve_decomposition_plan(
 
     provider_name = str(run_config.get("provider") or settings.default_provider)
     profile = profile_from_run_config(run_config, settings, provider=provider)
+    model_plan_error = ""
     if provider_name != "mock":
         model = provider
         if model is None:
@@ -285,14 +339,20 @@ async def resolve_decomposition_plan(
                     language=language,
                     browser_mode=str(run_config.get("browser_mode") or "off"),
                     requirements=requirements,
+                    project_root=project_root,
                 )
                 if plan:
                     return ensure_closing_stages(align_verification(objective, plan)), provider_name
-            except Exception:
-                pass
+                model_plan_error = "o modelo não devolveu um plano"
+            except Exception as exc:
+                # A falha do plano do modelo é informação, não ruído: fica na origem do plano
+                # para o diagnóstico mostrar por que o template genérico foi usado.
+                model_plan_error = f"{type(exc).__name__}: {exc}"
 
     if run_config.get("use_generic_template", settings.use_generic_decomposition_template):
         plan, source = fallback_plan(objective)
+        if model_plan_error:
+            source = f"{source} (plano do modelo indisponível: {model_plan_error[:160]})"
         return ensure_closing_stages(align_verification(objective, plan)), source
 
     if run_config.get("provider") == "mock" or settings.allow_mock_fallback:
@@ -403,6 +463,9 @@ def apply_decomposition(
             ),
         )
         created_ids.append(task.id)
+        # Cada subtarefa ganha um agente lógico: é ele que guarda as descobertas e que
+        # responde a consultas quando o pai precisa de detalhe.
+        AgentService(session).ensure_agent(task.id)
 
     for idx, spec in enumerate(plan.subtasks):
         for dep_idx in spec.depends_on_indices:

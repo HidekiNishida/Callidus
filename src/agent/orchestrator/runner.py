@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from agent.config import Settings
+from agent.domain.agent_enums import ExecutionStatus
 from agent.domain.enums import AttemptKind, MemoryKind, RunStatus, TaskKind, TaskStatus
 from agent.domain.failures import (
     Failure,
@@ -67,6 +68,7 @@ from agent.orchestrator.stagnation import (
     strategy_signature,
 )
 from agent.orchestrator.requirements import effective_covers, ensure_requirements, root_of
+from agent.orchestrator.tool_loop import ToolLoopOutcome, run_tool_loop
 from agent.orchestrator.usage import accumulate_usage
 from agent.context.budget import ContextBudgetError
 from agent.context.operation_builder import OperationContextBuilder
@@ -84,6 +86,7 @@ from agent.providers.base import LLMProvider, ModelProfile, ProviderConfigError,
 from agent.providers.mock import MockProvider
 from agent.providers.observed import observed_chat
 from agent.providers.registry import build_provider_by_name
+from agent.services.agent_service import AgentService
 from agent.services.attempt_service import AttemptService
 from agent.services.project_service import ProjectService
 from agent.services.task_service import TaskService
@@ -139,6 +142,31 @@ def _profile_from_config(run_config: dict, settings: Settings, provider: LLMProv
 
 
 _ENVIRONMENT = {FailureCategory.CONFIGURATION, FailureCategory.EXTERNAL_UNAVAILABLE}
+
+
+def _supports_tool_loop(provider) -> bool:
+    """O provedor sabe manter a conversa de ferramentas? Provedor sem o recurso fica no
+    protocolo JSON de uma tacada (o modelo recebe as ferramentas só quando o transporte
+    sabe devolver o resultado delas)."""
+    capabilities = getattr(provider, "capabilities", None)
+    if not callable(capabilities):
+        return False
+    try:
+        return bool(capabilities().tool_loop)
+    except Exception:  # pragma: no cover - provedor de teste sem capacidades
+        return False
+
+
+def _compact_inspection(inspections: list[dict[str, Any]], max_items: int = 6, max_chars: int = 900) -> list[dict]:
+    """Inspeção da tentativa, enxuta: o que foi lido e um trecho do conteúdo."""
+    out: list[dict] = []
+    for item in inspections[-max_items:]:
+        path = item.get("path")
+        if not path:
+            continue
+        content = str(item.get("content") or "")[:max_chars]
+        out.append({"path": path, "content": content})
+    return out
 
 
 def evidence_state(passed: bool | None, blocked: bool = False) -> str:
@@ -753,6 +781,42 @@ class RunOrchestrator:
             ),
         )
 
+    def _sync_agent_execution(self, task: TaskModel, run_id: uuid.UUID | None = None) -> None:
+        """Alinha o estado do agente lógico com o estado da tarefa.
+
+        Tarefa e execução são conceitos diferentes: a tarefa guarda o resultado, a
+        execução guarda o que ocupa memória de inferência. Esta função apenas reflete
+        a realidade — nunca inventa progresso nem apaga resultado. Falhas aqui não
+        podem derrubar a execução do run.
+        """
+        try:
+            # Savepoint: se a sincronização falhar, só ela é desfeita — o trabalho
+            # da etapa (status da tarefa, resultado) permanece.
+            with self._session.begin_nested():
+                agents = AgentService(self._session, self._settings)
+                agent = agents.agent_for_task(task.id)
+                if agent is None:
+                    agent = agents.ensure_agent(task.id)
+                status = TaskStatus(task.status)
+                execution = agents.current_execution(agent.id)
+                live = {
+                    ExecutionStatus.RUNNING,
+                    ExecutionStatus.RESUMING,
+                    ExecutionStatus.WAITING_FOR_CHILD,
+                    ExecutionStatus.PENDING,
+                }
+                if status == TaskStatus.RUNNING:
+                    if execution is None or ExecutionStatus(execution.status) not in live:
+                        agents.start_execution(agent.id, task_id=task.id, run_id=run_id)
+                elif status == TaskStatus.COMPLETED:
+                    if execution is not None and ExecutionStatus(execution.status) in live:
+                        agents.complete_execution(agent.id)
+                elif status == TaskStatus.FAILED:
+                    if execution is not None and ExecutionStatus(execution.status) in live:
+                        agents.fail_execution(agent.id, "tarefa falhou")
+        except Exception:  # noqa: BLE001 — a sincronização é observabilidade, não requisito
+            pass
+
     async def _step_body(self, run_id: uuid.UUID) -> dict[str, Any]:
         run = self._session.get(ExecutionRunModel, run_id)
         if run is None:
@@ -992,6 +1056,7 @@ class RunOrchestrator:
 
         if status == TaskStatus.RUNNING:
             result = await self._execute_task(run, project, task, config, work_root)
+            self._sync_agent_execution(task, run_id)
             return result
 
         if status == TaskStatus.VERIFYING:
@@ -1238,14 +1303,92 @@ class RunOrchestrator:
                 noted = self._remember_failure(task, failure)
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=failure.detail))
                 return {"action": "blocked_loop", "task_id": str(task.id), "failure": noted}
-            try:
-                resp = await observed_chat(
-                    provider,
-                    ChatCompletionRequest(messages=budget.messages, profile=profile),
-                    purpose="operation",
-                    stream=stream_allowed,
+            tool_log: list[dict[str, Any]] = []
+            inspections: list[dict[str, Any]] = []
+            used_tokens = 0
+
+            async def _chat_model(provider_obj, request, *, purpose: str, stream: bool):
+                """Chamada ao modelo dentro do ciclo: registra a evidência de cada iteração.
+
+                A iteração final (a que traz a resposta) é registrada depois, com a classificação
+                do resultado; aqui ficam as iterações intermediárias, em que o modelo pediu
+                ferramentas.
+                """
+                nonlocal used_tokens
+                resp = await observed_chat(provider_obj, request, purpose=purpose, stream=stream)
+                used_tokens += int(getattr(resp, "completion_tokens_estimate", None) or 0)
+                calls = list(getattr(resp, "tool_calls", None) or [])
+                if not calls:
+                    return resp
+                iteration_fp = AttemptService.fingerprint(
+                    "\n".join(m.content for m in request.messages) + f"|iteração:{len(tool_log)}"
                 )
-                content = resp.content or ""
+                self._attempts.record(
+                    run_id=run.id,
+                    task_id=task.id,
+                    kind=AttemptKind.MODEL,
+                    provider=provider_obj.name,
+                    request={**attempt_request, "iteration_fp": iteration_fp},
+                    response={
+                        "content_preview": (resp.content or "")[:500],
+                        "tool_calls": [{"tool": item.name, "args": item.arguments} for item in calls],
+                        "reasoning_chars": len(getattr(resp, "reasoning", None) or ""),
+                    },
+                    success=True,
+                    project_id=project.id,
+                )
+                return resp
+
+            async def _on_tool_call(entry: dict[str, Any], result: dict[str, Any]) -> None:
+                tool_log.append(entry)
+                inspections.append(
+                    {
+                        "tool": entry.get("tool"),
+                        "path": (entry.get("args") or {}).get("path"),
+                        "content": entry.get("content") or "",
+                    }
+                )
+                self._attempts.record(
+                    run_id=run.id,
+                    task_id=task.id,
+                    kind=AttemptKind.TOOL,
+                    provider=str(entry.get("tool")),
+                    request=entry.get("args") or {},
+                    response={"success": entry.get("success"), "summary": entry.get("summary")},
+                    success=bool(entry.get("success")),
+                    project_id=project.id,
+                    failure=classify_tool_result(result),
+                )
+                emit(
+                    "model.tool_call",
+                    {"tool": entry.get("tool"), "success": entry.get("success"), "summary": entry.get("summary")},
+                    task_id=task.id,
+                )
+
+            try:
+                if _supports_tool_loop(provider):
+                    outcome = await run_tool_loop(
+                        provider=provider,
+                        messages=budget.messages,
+                        profile=profile,
+                        registry=self._tools,
+                        ctx=ctx,
+                        approved=approved,
+                        max_iterations=self._settings.max_tool_iterations,
+                        max_tool_calls=self._settings.max_tool_calls,
+                        stream=stream_allowed,
+                        chat=_chat_model,
+                        on_tool_call=_on_tool_call,
+                    )
+                else:
+                    resp = await _chat_model(
+                        provider,
+                        ChatCompletionRequest(messages=budget.messages, profile=profile),
+                        purpose="operation",
+                        stream=stream_allowed,
+                    )
+                    outcome = ToolLoopOutcome(content=resp.content or "", iterations=1, stop_reason="final")
+                content = outcome.content or ""
             except ProviderError as exc:
                 self._note_thought(run, task, f"A inferência falhou: {exc}.")
                 failure = classify_provider_error(str(exc))
@@ -1271,6 +1414,64 @@ class RunOrchestrator:
                 }
             excerpt = " ".join(content.split())[:280]
             self._apply_provider_usage(task, provider)
+            if inspections:
+                # O que esta tentativa inspecionou fica na tarefa: a próxima tentativa continua
+                # dali em vez de reler os mesmos arquivos do zero.
+                meta = dict(task.metadata_json or {})
+                meta["inspection"] = _compact_inspection(inspections)
+                task.metadata_json = meta
+            if tool_log:
+                self._note_thought(
+                    run,
+                    task,
+                    "Inspecionei com as ferramentas: " + ", ".join(f"{item['tool']}" for item in tool_log[:6]),
+                    phase="tool",
+                )
+            if outcome.applied:
+                # O modelo aplicou a alteração chamando a ferramenta: mesmo caminho de escrita e
+                # de verificação do protocolo JSON, com a evidência no mesmo lugar.
+                tool_name = outcome.applied_tool or "write_file"
+                payload = dict(outcome.applied_args or {})
+                out = dict(outcome.applied_result or {})
+                path = payload.get("path")
+                task.consolidated_result_json = {
+                    "model_operation": True,
+                    "tool": tool_name,
+                    "write": out,
+                    "context_snapshot_id": str(snap.id),
+                }
+                if out.get("success") and isinstance(path, str):
+                    KnowledgeGraphService(self._session).touch_file(project.id, root_path, path)
+                if out.get("success"):
+                    self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                    written = str(
+                        payload.get("new_string") if tool_name == "edit_file" else payload.get("content") or ""
+                    )
+                    implicit = (
+                        {
+                            "type": "file_contains",
+                            "path": path,
+                            "contains": written[:200],
+                            "implicit": True,
+                            "syntax": True,
+                        }
+                        if written.strip() and isinstance(path, str)
+                        else None
+                    )
+                    done = await self._finalize_verification(
+                        run, project, task, root_path, implicit_spec=implicit
+                    )
+                    if excerpt:
+                        done["thought"] = excerpt
+                    return done
+                noted = self._remember_failure(task, classify_tool_result(out))
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
+                return {
+                    "action": "model_operation_failed",
+                    "task_id": str(task.id),
+                    "thought": excerpt,
+                    "failure": noted,
+                }
             data, err = parse_json_object(content)
             missing = ["path"] if data is not None and "path" not in data else None
             # O orçamento efetivo de saída: o que o provedor pode gerar nesta chamada.
@@ -1283,7 +1484,8 @@ class RunOrchestrator:
                 err,
                 missing,
                 budget=output_budget,
-                used_tokens=getattr(resp, "completion_tokens_estimate", None),
+                used_tokens=used_tokens or None,
+                reasoning=outcome.reasoning,
             )
             if failure is not None and failure.cause == FailureCause.TRUNCATED_OUTPUT:
                 self._note_thought(
@@ -1293,13 +1495,27 @@ class RunOrchestrator:
                     f"{'nada' if not content.strip() else 'uma resposta incompleta'}; "
                     "vou ampliar a resposta e tentar de novo.",
                 )
+            if failure is not None and failure.cause == FailureCause.EMPTY_OUTPUT:
+                self._note_thought(
+                    run,
+                    task,
+                    "O modelo raciocinou e não devolveu a alteração pedida; "
+                    "vou pedir de novo, com a instrução de responder direto.",
+                )
             self._attempts.record(
                 run_id=run.id,
                 task_id=task.id,
                 kind=AttemptKind.MODEL,
                 provider=provider.name,
                 request=attempt_request,
-                response={"content_preview": content[:500]},
+                response={
+                    "content_preview": content[:500],
+                    "tool_calls": [str(item.get("tool")) for item in tool_log],
+                    "reasoning_chars": len(outcome.reasoning or ""),
+                    # O raciocínio explica a resposta vazia: é a evidência do que o modelo
+                    # pretendia fazer (pedir ferramenta, aplicar a mudança, …).
+                    "reasoning_preview": (outcome.reasoning or "")[-600:],
+                },
                 success=failure is None,
                 project_id=project.id,
                 failure=failure,
@@ -1361,8 +1577,8 @@ class RunOrchestrator:
             where = f" em {target}" if isinstance(target, str) and target else ""
             self._note_thought(run, task, f"Usando {tool_id}{where}.", phase="tool")
             out = await self._tools.execute(tool_id, ctx, args, approved=approved)
-            fp = AttemptService.fingerprint(out)
-            if self._attempts.repeated_output_detected(task.id, fp):
+            fp = AttemptService.fingerprint({"tool": tool_id, "result": out})
+            if self._attempts.repeated_output_detected(task.id, fp, kind=AttemptKind.TOOL):
                 noted = self._remember_failure(
                     task,
                     Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.REPEATED_OUTPUT, "loop detectado"),
@@ -1379,7 +1595,7 @@ class RunOrchestrator:
                 kind=AttemptKind.TOOL,
                 provider=tool_id,
                 request=args,
-                response=out,
+                response={"tool": tool_id, "result": out},
                 success=failure is None,
                 project_id=project.id,
                 failure=failure,
@@ -1392,6 +1608,33 @@ class RunOrchestrator:
             if failure is None:
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
                 return await self._finalize_verification(run, project, task, root_path)
+            if failure.cause == FailureCause.TOOL_INPUT and self._attempts.repeated_output_detected(
+                task.id, fp, window=2, kind=AttemptKind.TOOL
+            ):
+                # Erro de entrada é determinístico: repetir a mesma chamada não muda nada.
+                # A etapa para para o replanejamento adaptar o plano (outro arquivo, outra
+                # ferramenta) em vez de insistir em chamada idêntica.
+                noted = self._remember_failure(
+                    task,
+                    Failure(
+                        FailureCategory.CHANGE_STRATEGY,
+                        FailureCause.TOOL_INPUT,
+                        f"a mesma chamada de ferramenta falhou de novo: {failure.detail}",
+                    ),
+                )
+                self._tasks.update_status(
+                    task.id,
+                    TaskStatusUpdate(
+                        status=TaskStatus.BLOCKED,
+                        reason=f"a mesma chamada de ferramenta falhou de novo: {failure.detail}"[:300],
+                    ),
+                )
+                return {
+                    "action": "tool_executed",
+                    "task_id": str(task.id),
+                    "success": False,
+                    "failure": noted,
+                }
             noted = self._remember_failure(task, failure)
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
             return {"action": "tool_executed", "task_id": str(task.id), "success": False, "failure": noted}
@@ -1629,7 +1872,7 @@ class RunOrchestrator:
 
         if vresult.passed is False:
             fp = AttemptService.fingerprint({"passed": False, "summary": vresult.summary})
-            if self._attempts.repeated_output_detected(task.id, fp, window=2):
+            if self._attempts.repeated_output_detected(task.id, fp, window=2, kind=AttemptKind.VERIFICATION):
                 noted = self._remember_failure(
                     task,
                     Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.REPEATED_OUTPUT, vresult.summary),

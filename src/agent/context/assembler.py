@@ -18,6 +18,7 @@ def build_operation_context(
     tools_summary: str,
     output_format: str,
     previous_failures: str = "",
+    previous_inspection: str = "",
     contract: str = "",
     target_files: str = "",
     global_objective: str = "",
@@ -43,6 +44,7 @@ def build_operation_context(
         ("contrato", contract, True, 95),
         ("arquivos-alvo", target_files, True, 94),
         ("objetivo-global", global_objective, False, 90),
+        ("inspeção-anterior", previous_inspection, False, 88),
         ("resultados-dependências", dependency_results, False, 85),
     ]
     for name, text, required, priority in optional:

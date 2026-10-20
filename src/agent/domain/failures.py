@@ -22,6 +22,7 @@ class FailureCause(StrEnum):
 
     CONTEXT_BUDGET = "context_budget"
     INVALID_OUTPUT = "invalid_output"
+    EMPTY_OUTPUT = "empty_output"
     TRUNCATED_OUTPUT = "truncated_output"
     TIMEOUT = "timeout"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
@@ -88,6 +89,10 @@ _DISABLED = ("navegador desligado", "memória indisponível")
 
 _RETRY_HINTS: dict[FailureCause, str] = {
     FailureCause.INVALID_OUTPUT: "Responda apenas o objeto JSON pedido, sem texto, explicação ou cerca de código.",
+    FailureCause.EMPTY_OUTPUT: (
+        "A última resposta veio vazia. Não descreva o que você faria: devolva o objeto JSON pedido "
+        "(path e content, ou path e old_string/new_string)."
+    ),
     FailureCause.TRUNCATED_OUTPUT: (
         "A resposta foi cortada pelo limite de saída. Prefira editar um trecho curto "
         "(old_string/new_string) em vez de reescrever o arquivo inteiro."
@@ -175,12 +180,17 @@ def classify_model_output(
     *,
     budget: int | None = None,
     used_tokens: int | None = None,
+    reasoning: str | None = None,
 ) -> Failure | None:
     """Resposta do modelo que deveria ser JSON → falha, distinguindo corte de saída de JSON malformado.
 
     `budget`/`used_tokens` revelam o corte mesmo quando o texto chegou vazio (o modelo gastou
     todo o orçamento de saída pensando e não devolveu nada): nesse caso a saída foi truncada,
     não inválida — repetir o mesmo pedido não resolve, ampliar o orçamento resolve.
+
+    `reasoning` (canal de raciocínio do modelo) separa o outro caso de resposta vazia: o modelo
+    raciocinou e não devolveu nada. Repetir o mesmo pedido também não resolve — o modelo precisa
+    responder de forma direta.
     """
     if not parse_error and not missing:
         return None
@@ -190,6 +200,13 @@ def classify_model_output(
         if exhausted and not content.strip():
             detail = f"resposta vazia: o modelo usou todo o orçamento de {budget} tokens"
         return Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.TRUNCATED_OUTPUT, detail)
+    if not content.strip() and (reasoning or "").strip():
+        thought = " ".join(reasoning.split())
+        return Failure(
+            FailureCategory.CHANGE_STRATEGY,
+            FailureCause.EMPTY_OUTPUT,
+            f"resposta vazia: o modelo raciocinou ({len(thought)} caracteres) e não devolveu conteúdo",
+        )
     detail = parse_error or f"faltam campos: {', '.join(missing or [])}"
     return Failure(FailureCategory.RECOVERABLE, FailureCause.INVALID_OUTPUT, detail)
 
