@@ -488,6 +488,51 @@ export async function refreshTasks() {
   if (state.selectedTaskId && !state.tasks.some((task) => task.id === state.selectedTaskId)) {
     state.selectedTaskId = state.tasks[0]?.id || null;
   }
+  await hydrateFeedsFromHistory();
+}
+
+/**
+ * Reaplica eventos persistidos de `/observe` no feed do chat para mensagens já executadas.
+ *
+ * @param {string} runId Id da execução.
+ * @param {string} rootId Tarefa raiz (mensagem) que recebe o feed.
+ * @returns {Promise<void>}
+ * Observações: deduplicação fica a cargo de `pushActivity` (`eventId`); não altera o stream ao vivo.
+ */
+async function replayFeedFromRun(runId, rootId) {
+  const snapshot = await api(`/runs/${runId}/observe`).catch(() => ({}));
+  const events = snapshot?.events || [];
+  if (!events.length) return;
+  const previousRoot = state.currentRootId;
+  state.currentRootId = rootId;
+  for (const envelope of events) pushActivity(envelope);
+  state.currentRootId = previousRoot;
+}
+
+/**
+ * Preenche feeds vazios a partir da última run conhecida de cada mensagem raiz.
+ *
+ * @returns {Promise<void>}
+ */
+export async function hydrateFeedsFromHistory() {
+  const workspace = workspaceId();
+  if (!workspace) return;
+  const runs = await api(`/projects/${workspace}/runs`).catch(() => []);
+  const latestByRoot = new Map();
+  for (const run of runs) {
+    const rootId = run.root_task_id;
+    if (!rootId) continue;
+    const prev = latestByRoot.get(rootId);
+    if (!prev || String(run.created_at || "") > String(prev.created_at || "")) {
+      latestByRoot.set(rootId, run);
+    }
+  }
+  for (const root of roots()) {
+    if ((state.feeds[root.id] || []).length) continue;
+    const run = latestByRoot.get(root.id);
+    if (!run) continue;
+    await replayFeedFromRun(run.id, root.id);
+  }
 }
 
 /**
@@ -777,10 +822,8 @@ export async function connectStream(runId) {
   const reducer = createState(snapshot || {});
   const replayRoot = snapshot?.run?.root_task_id;
   if (replayRoot) {
-    const previousRoot = state.currentRootId;
-    state.currentRootId = replayRoot;
-    for (const envelope of snapshot.events || []) pushActivity(envelope);
-    state.currentRootId = previousRoot || replayRoot;
+    await replayFeedFromRun(runId, replayRoot);
+    state.currentRootId = state.currentRootId || replayRoot;
   }
   state.liveState.data = reducer;
   state.liveState.version += 1;

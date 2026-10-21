@@ -272,6 +272,21 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Subpasta: [.cursor/hooks/](/.cursor/hooks/)
 - Subpasta: [.cursor/rules/](/.cursor/rules/)
 - Arquivo: [hooks.json](/.cursor/hooks.json)
+- Arquivo: [CALLIDUS_AUDITORIA.md](/.cursor/CALLIDUS_AUDITORIA.md)
+- Arquivo: [CALLIDUS_DESCOBERTAS.md](/.cursor/CALLIDUS_DESCOBERTAS.md)
+- Arquivo: [CALLIDUS_CHECKPOINT.md](/.cursor/CALLIDUS_CHECKPOINT.md)
+
+### `.cursor/CALLIDUS_AUDITORIA.md`
+
+**Propósito:** escopo, inventário de telas e critérios da auditoria frontend/backend.
+
+### `.cursor/CALLIDUS_DESCOBERTAS.md`
+
+**Propósito:** evidências, causas e decisões técnicas da auditoria.
+
+### `.cursor/CALLIDUS_CHECKPOINT.md`
+
+**Propósito:** checkpoint da auditoria integral — progresso, evidências de testes e pendências E2E/Ollama.
 
 ## `.cursor/hooks/`
 
@@ -539,6 +554,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [backup-data.sh](/scripts/backup-data.sh)
 - Arquivo: [fix-python314-editable.py](/scripts/fix-python314-editable.py)
 - Arquivo: [resume.py](/scripts/resume.py)
+- Arquivo: [audit_ollama_smoke.sh](/scripts/audit_ollama_smoke.sh)
+
+### `scripts/audit_ollama_smoke.sh`
+
+**Propósito:** smoke E2E via API — conversa, tarefa e run com `meu_ollama` e `gpt-oss:20b` (modelo na config da run, sem alterar `providers.yaml`).
 
 ### `scripts/README.md`
 
@@ -2919,7 +2939,15 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `tests/web/work-explained.test.mjs`
 
-**Propósito:** verificar que `describeActivity` mostra o texto de `work.explained`, ignora evento sem texto e que `splitFeed` deixa a narrativa fora da resposta do modelo e das ferramentas.
+**Propósito:** verificar que `describeActivity` mostra o texto de `work.explained`, ignora evento sem texto e que `integrateNarrative` acopla a narração ao item operacional seguinte dentro do feed (sem lista separada no topo).
+
+### `tests/web/narrative-replay.test.mjs`
+
+**Propósito:** regressão com fixture real de `/observe` — todo texto de `work.explained` aparece acoplado às linhas do feed, sem entradas narrativas soltas.
+
+### `tests/web/fixtures/observe-with-narration.json`
+
+**Propósito:** snapshot persistido de uma run com eventos `work.explained` (entrada do teste `narrative-replay.test.mjs`).
 
 ### `tests/test_capability_exposure.py`
 
@@ -2948,12 +2976,22 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ## `tests/web/`
 
-**Propósito:** Testes Playwright da interface de observabilidade.
+**Propósito:** Testes Node da interface (redutor ao vivo, feed, scroll, replay SSE).
 
+- Subpasta: [fixtures/](/tests/web/fixtures/)
 - Arquivo: [observe-core.test.mjs](/tests/web/observe-core.test.mjs)
 - Arquivo: [observe-stream.test.mjs](/tests/web/observe-stream.test.mjs)
+- Arquivo: [narrative-replay.test.mjs](/tests/web/narrative-replay.test.mjs)
+- Arquivo: [work-explained.test.mjs](/tests/web/work-explained.test.mjs)
+- Arquivo: [chat-scroll.test.mjs](/tests/web/chat-scroll.test.mjs)
 - Arquivo: [replay.mjs](/tests/web/replay.mjs)
 - Arquivo: [tools-report.test.mjs](/tests/web/tools-report.test.mjs)
+
+## `tests/web/fixtures/`
+
+**Propósito:** Snapshots JSON para testes offline do feed e da observabilidade.
+
+- Arquivo: [observe-with-narration.json](/tests/web/fixtures/observe-with-narration.json)
 
 ### `tests/test_automation_chat_execution.py`
 
@@ -4797,7 +4835,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `selectProject`
 - `selectConversation`
 - `deleteConversation`
-- `refreshTasks`
+- `refreshTasks()` — Recarrega tarefas da conversa ou projeto e chama `hydrateFeedsFromHistory()` para repor feeds a partir de `/observe`.
+- `hydrateFeedsFromHistory()` — Para cada mensagem raiz sem feed em memória, reaplica eventos da run mais recente (`replayFeedFromRun`).
+- `replayFeedFromRun(runId, rootId)` — Rejoga eventos de `/observe` no feed da mensagem raiz (dedupe por `eventId` em `pushActivity`).
 - `refreshRun`
 - `runConfig`
 - `sendMessage`
@@ -4859,7 +4899,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `plural`
 - `toolArgsSummary`
 - `describeActivity`
-- `splitFeed(activity)` — Separa a narrativa da bolha das operações do modelo e das ferramentas. Entrada: entradas do feed; saída: `{narrative, operations}`.
+- `integrateNarrative(activity)` — Acopla entradas narrativas (`work.explained`, pensamento) ao item operacional seguinte; narração residual vai para a última operação ou vira linha `narrative` dentro de `activity-items`. Entrada: feed descrito; saída: linhas com campo opcional `narrations`.
+- `splitFeed(activity)` — Classifica entradas em narrativas vs operações (legado/testes). Saída: `{narrative, operations}`.
 - `summarizeActivity`
 - `diffLines`
 

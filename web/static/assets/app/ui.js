@@ -536,10 +536,45 @@ export function toolArgsSummary(tool, args) {
 export const NARRATIVE_KINDS = new Set(["activity", "decision", "result", "alert", "error", "thought"]);
 
 /**
- * Separa a narrativa do feed das operações (modelo, ferramenta, comando, arquivo).
+ * Acopla explicações (`work.explained`, pensamento) ao item operacional seguinte.
  *
- * @param {Array<object>} activity Entradas já descritas.
- * @returns {{narrative: Array<object>, operations: Array<object>}} Os dois grupos, na ordem original.
+ * A narração chega no stream antes da ferramenta ou do modelo que ela descreve.
+ * Mantém a ordem temporal dentro de `activity-items`, sem uma lista separada no topo.
+ *
+ * @param {Array<object>} activity Entradas já descritas, na ordem recebida.
+ * @returns {Array<object>} Linhas do feed; cada operação pode carregar `narrations`.
+ */
+export function integrateNarrative(activity) {
+  const rows = [];
+  let pending = [];
+  for (const item of activity || []) {
+    if (!item) continue;
+    if (NARRATIVE_KINDS.has(item.kind)) {
+      pending.push(item);
+      continue;
+    }
+    rows.push({ ...item, narrations: pending.length ? pending : [] });
+    pending = [];
+  }
+  if (pending.length && rows.length) {
+    const last = rows[rows.length - 1];
+    last.narrations = [...(last.narrations || []), ...pending];
+  } else if (pending.length) {
+    for (const note of pending) {
+      rows.push({
+        ...note,
+        kind: "narrative",
+        icon: note.icon || "spark",
+        narrations: [],
+        narrativeOnly: true,
+      });
+    }
+  }
+  return rows;
+}
+
+/**
+ * @deprecated Prefer `integrateNarrative`. Mantido para testes de classificação de tipos.
  */
 export function splitFeed(activity) {
   const narrative = [];

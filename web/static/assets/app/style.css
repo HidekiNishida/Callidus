@@ -676,21 +676,22 @@ pre,
 .status-pill.status-PLANNING,
 .status-pill.status-VERIFYING { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 
-.narrative {
-  list-style: none;
-  margin: 10px 0 0;
-  padding: 0;
+.activity-narrations {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  padding: 0 12px 6px 36px;
 }
-.narrative li {
-  font-size: 13.5px;
+.activity-narration {
+  margin: 0;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--text);
 }
-.narrative-alert,
-.narrative-error { color: var(--danger, var(--text)); }
+.activity-narration.narration-alert,
+.activity-narration.narration-error { color: var(--danger, var(--text)); }
+.activity-row.activity-narrative .activity-toggle { cursor: default; }
+.activity-row.activity-narrative .activity-chevron { visibility: hidden; }
 
 .thoughts {
   list-style: none;

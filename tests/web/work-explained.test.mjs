@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { describeActivity, splitFeed } from "../../web/static/assets/app/ui.js";
+import { describeActivity, integrateNarrative, splitFeed } from "../../web/static/assets/app/ui.js";
 
 test("work.explained vira uma linha com o texto real do evento", () => {
   const entry = describeActivity({
@@ -26,7 +26,7 @@ test("work.explained sem texto não entra no feed", () => {
   assert.equal(describeActivity({ type: "work.explained", data: { category: "result", text: "" } }), null);
 });
 
-test("a narrativa fica fora da resposta do modelo e das ferramentas", () => {
+test("integrateNarrative acopla explicação ao item operacional seguinte", () => {
   const explained = describeActivity({
     type: "work.explained",
     data: { category: "alert", text: "A ferramenta falhou. Vou corrigir os argumentos.", phase: "recover" },
@@ -39,8 +39,25 @@ test("a narrativa fica fora da resposta do modelo e das ferramentas", () => {
     type: "tool.started",
     data: { call_id: "c1", tool: "read_file", args: { path: "a.py" } },
   });
-  const parts = splitFeed([explained, model, tool]);
-  assert.deepEqual(parts.narrative.map((item) => item.kind), ["alert"]);
-  assert.deepEqual(parts.operations.map((item) => item.kind), ["model", "tool"]);
-  assert.equal(parts.narrative[0].title, "A ferramenta falhou. Vou corrigir os argumentos.");
+  const rows = integrateNarrative([explained, model, tool]);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[0].narrations.map((item) => item.kind), ["alert"]);
+  assert.equal(rows[0].narrations[0].title, "A ferramenta falhou. Vou corrigir os argumentos.");
+  assert.equal(rows[0].kind, "model");
+  assert.equal(rows[1].kind, "tool");
+  assert.deepEqual(rows[1].narrations || [], []);
+});
+
+test("splitFeed ainda classifica tipos narrativos vs operacionais", () => {
+  const explained = describeActivity({
+    type: "work.explained",
+    data: { category: "decision", text: "Próximo passo.", phase: "plan" },
+  });
+  const tool = describeActivity({
+    type: "tool.started",
+    data: { call_id: "c2", tool: "grep", args: { pattern: "x" } },
+  });
+  const parts = splitFeed([explained, tool]);
+  assert.deepEqual(parts.narrative.map((item) => item.kind), ["decision"]);
+  assert.deepEqual(parts.operations.map((item) => item.kind), ["tool"]);
 });

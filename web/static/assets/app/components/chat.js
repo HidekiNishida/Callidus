@@ -26,7 +26,7 @@ import {
   BUSY_STATUSES,
   summarizeActivity,
   diffLines,
-  splitFeed,
+  integrateNarrative,
 } from "../ui.js";
 import { filesList, currentTask } from "../live-state.js";
 import { createScrollFollow } from "../chat-scroll.js";
@@ -46,13 +46,11 @@ export const ChatView = {
         const pause = (root.metadata_json || {}).pause || null;
         const isLast = roots().length > 0 && root.id === roots()[roots().length - 1].id;
         const feed = state.feeds[root.id] || [];
-        const parts = splitFeed(feed);
         return {
           id: root.id,
           title: root.display_title || root.title,
           pause,
-          activity: parts.operations,
-          narrative: parts.narrative,
+          activity: integrateNarrative(feed),
           summary: summarizeActivity(feed),
           objective: String(root.objective || "").split("\n\nAnexos do usuário:")[0],
           attachments: meta.attachments || [],
@@ -104,7 +102,7 @@ export const ChatView = {
     Vue.watch(
       () =>
         messages.value
-          .map((message) => `${message.stages.length}:${message.activity.length}:${message.narrative.length}`)
+          .map((message) => `${message.stages.length}:${message.activity.length}`)
           .join(","),
       () => {
         // A decisão é tomada antes do DOM mudar: o feed é seguido enquanto a
@@ -359,10 +357,6 @@ export const ChatView = {
               <span class="status-pill" :class="'status-' + message.status">{{ message.statusText }}</span>
             </div>
 
-            <ol class="narrative" v-if="message.narrative.length">
-              <li v-for="entry in message.narrative" :key="entry.id" :class="'narrative-' + entry.kind">{{ entry.title }}</li>
-            </ol>
-
             <div class="activity" v-if="message.activity.length">
               <div class="activity-head">
                 <span class="activity-head-title">
@@ -391,21 +385,42 @@ export const ChatView = {
                   class="activity-row"
                   :class="['activity-' + entry.kind, 'state-' + entry.status]"
                 >
-                  <button type="button" class="activity-toggle" @click="toggleEntry(entry)">
+                  <div
+                    class="activity-narrations"
+                    v-if="entry.narrations && entry.narrations.length"
+                  >
+                    <p
+                      v-for="note in entry.narrations"
+                      :key="note.id"
+                      class="activity-narration"
+                      :class="'narration-' + note.kind"
+                    >{{ note.title }}</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="activity-toggle"
+                    :disabled="entry.narrativeOnly"
+                    @click="toggleEntry(entry)"
+                  >
                     <span class="activity-ico" v-html="icon(entry.icon, 13)"></span>
                     <span class="activity-body">
                       <span class="activity-title">{{ entry.title }}</span>
-                      <span class="activity-detail" v-if="entry.detail && !isOpen(entry)">{{ entry.detail }}</span>
+                      <span class="activity-detail" v-if="entry.detail && !isOpen(entry) && !entry.narrativeOnly">{{ entry.detail }}</span>
                     </span>
-                    <span class="activity-state">
+                    <span class="activity-state" v-if="!entry.narrativeOnly">
                       <span class="spinner" v-if="entry.status === 'running'"></span>
                       <span class="activity-ms" v-else-if="entry.duration != null">{{ entry.duration }} ms</span>
                     </span>
-                    <span class="activity-chevron" :class="{ open: isOpen(entry) }" v-html="icon('down', 13)"></span>
+                    <span
+                      class="activity-chevron"
+                      v-if="!entry.narrativeOnly"
+                      :class="{ open: isOpen(entry) }"
+                      v-html="icon('down', 13)"
+                    ></span>
                   </button>
 
                   <Transition name="expand">
-                    <div class="activity-details" v-if="isOpen(entry)">
+                    <div class="activity-details" v-if="isOpen(entry) && !entry.narrativeOnly">
                       <p class="activity-explanation" v-if="entry.explanation">{{ entry.explanation }}</p>
                       <p class="activity-stats muted small" v-if="entry.stats">{{ entry.stats }}</p>
                       <pre class="activity-output" v-if="entry.output">{{ entry.output }}</pre>
@@ -440,7 +455,7 @@ export const ChatView = {
             </div>
 
             <div class="answer" v-if="message.reply" v-html="message.reply"></div>
-            <p class="muted thinking" v-else-if="message.busy && !message.narrative.length">
+            <p class="muted thinking" v-else-if="message.busy && !message.activity.length">
               <span class="spinner"></span> Trabalhando…
             </p>
           </div>
