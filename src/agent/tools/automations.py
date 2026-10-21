@@ -28,6 +28,7 @@ import inspect
 from typing import Any
 
 from agent.automation.chat_service import AutomationChatError, AutomationChatService
+from agent.tools.contracts import ToolFamily
 from agent.tools.registry import ToolContext, ToolRegistry, ToolSpec
 
 # Texto que o modelo recebe junto das ferramentas: o que existe e o que cada uma faz.
@@ -109,7 +110,7 @@ async def _call(ctx: ToolContext, func, *args, **kwargs) -> dict[str, Any]:
             result = await result
     except AutomationChatError as exc:
         return _fail(exc)
-    except Exception as exc:  # noqa: BLE001 — a falha precisa chegar ao modelo
+    except Exception as exc:
         return {"success": False, "error": f"{type(exc).__name__}: {exc}"}
     return _with_content(result)
 
@@ -522,7 +523,7 @@ async def _supervisor_status(ctx: ToolContext, args: dict[str, Any]) -> dict[str
         status = service.runtime_status()
     except AutomationChatError as exc:
         return _fail(exc)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {"success": False, "error": f"{type(exc).__name__}: {exc}"}
     result: dict[str, Any] = {
         "success": True,
@@ -532,7 +533,7 @@ async def _supervisor_status(ctx: ToolContext, args: dict[str, Any]) -> dict[str
     if bool(args.get("diagnose")):
         try:
             report = service.diagnose()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             report = {"error": str(exc)}
         result["diagnostics"] = _render_diagnostics(report)
     result["message"] = (
@@ -929,6 +930,9 @@ def register_all(registry: ToolRegistry) -> None:
         "automation_supervisor_status": _supervisor_status,
     }
     for spec in specs:
+        # As ferramentas de automação formam uma família própria: elas podem ser
+        # desligadas em conjunto sem afetar as ferramentas de arquivo ou de sistema.
+        spec.family = ToolFamily.AUTOMATION.value
         registry.register(spec, handlers[spec.id])
 
 

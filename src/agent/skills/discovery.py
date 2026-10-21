@@ -19,6 +19,20 @@ from agent.skills.models import SkillSpec
 logger = logging.getLogger(__name__)
 
 
+def installed_skills_dir() -> Path:
+    """Pasta onde o agente guarda as skills que criou ou importou.
+
+    Returns:
+        O caminho `data/skills` derivado da configuração do processo.
+    """
+    from agent.config import get_settings
+
+    try:
+        return Path(get_settings().data_dir).expanduser() / "skills"
+    except Exception:  # pragma: no cover - configuração ausente não impede o registro
+        return Path("data") / "skills"
+
+
 class SkillRegistry:
     """Registro e catálogo central de Skills do Agente.
 
@@ -66,6 +80,9 @@ class SkillRegistry:
     def _catalog_dirs(self) -> list[Path]:
         """Diretórios de catálogo, do mais específico (projeto) ao mais genérico (repositório).
 
+        A ordem é: skills do projeto, skills instaladas pelo agente e catálogo do
+        repositório. Cada diretório sobrescreve o anterior pelo identificador da skill.
+
         Returns:
             A lista de diretórios de skills a carregar, nessa ordem.
         """
@@ -74,6 +91,9 @@ class SkillRegistry:
             project_skills = self.project_root / "skills"
             if project_skills.is_dir():
                 dirs.append(project_skills)
+        installed = installed_skills_dir()
+        if installed.is_dir() and installed not in dirs:
+            dirs.append(installed)
         generic = catalog_dir(self.project_root)
         if generic is not None and generic not in dirs:
             dirs.append(generic)

@@ -6,10 +6,19 @@ Ferramentas determinísticas que o agente executa no filesystem/projeto autoriza
 
 | Arquivo | Exporta | Propósito |
 |---------|---------|-----------|
-| [`registry.py`](registry.py) | `ToolRegistry`, `ToolSpec`, `ToolContext`, `build_default_registry`, `canonical_tool_id`, `current_call_id` | **Registro central** — specs, handlers, aliases, execução com eventos |
+| [`registry.py`](registry.py) | `ToolRegistry`, `ToolSpec`, `ToolContext`, `build_default_registry`, `canonical_tool_id`, `current_call_id` | **Registro central** — specs, handlers, aliases, validação, política, prazo e eventos |
+| [`arguments.py`](arguments.py) | `validate_arguments` | Conferência de tipo e de campo obrigatório antes do handler |
+| [`contracts.py`](contracts.py) | `ToolRisk`, `ExecutionMode`, `ToolFamily` | Vocabulário de risco, modo e família |
+| [`policy.py`](policy.py) | `PermissionPolicy`, `redact` | Permissão por ferramenta, família e sessão; redação de segredo |
+| [`catalog.py`](catalog.py) | `exposed_tools`, `capability_summary` | O que entra no prompt desta etapa |
+| [`availability.py`](availability.py) | `check_tool` | Pré-requisitos (binário, módulo, sessão gráfica) |
+| [`system_tools.py`](system_tools.py) | `register_all` | Processos, aplicativos, tarefas longas, rede, hash e arquivo compactado |
+| [`desktop_tools.py`](desktop_tools.py) | `register_all` | Tela, janelas, acessibilidade, mouse e teclado |
+| [`devtools.py`](devtools.py) | `register_all` | Descoberta de projeto, Git e verificações |
+| [`skill_tools.py`](skill_tools.py) | `register_all` | Ciclo de vida das skills |
 | [`builtins.py`](builtins.py) | 17 handlers (`_read_file`, `_write_file`, `_edit_file`, `_search_grep`, `_run_command`, `_run_pytest`, `_run_script`, `_list_dir`, `_glob_files`, `_delete_file`, `_make_dir`, `_move_file`, `_git_status`, `_git_diff`, `_remember`, `_system_info`, `_browser`) | **Implementações reais** — filesystem, comandos, git, testes, navegador, memória |
 | [`automations.py`](automations.py) | `register_all`, `AUTOMATION_TOOL_CATALOG`, `render_result` | **Tarefas agendadas pelo chat** — 13 ferramentas que chamam os serviços de automação |
-| [`browser.py`](browser.py) | `browser_call`, `search_web` | Navegador (Playwright CDP) — navigate, snapshot, click, type, press, scroll, search, close |
+| [`browser.py`](browser.py) | `browser_call`, `search_web`, `_act` | Navegador (Playwright, opcional) — navigate, snapshot, click, type, fill, press, scroll, screenshot, aria, console, network, search |
 | [`diffing.py`](diffing.py) | `unified_diff_text` | Diff unificado (added/removed lines) para `file.changed/created` events |
 
 ## 🛠️ ToolContext (Contexto de Execução)
@@ -27,6 +36,9 @@ class ToolContext:
     project_id: str | None     # Projeto da conversa (escopo das automações)
     conversation_id: str | None
     settings: Any = None       # Configurações do processo
+    policy: PermissionPolicy | None = None
+    cancel_event: asyncio.Event | None = None
+    scratch: dict              # registro da sessão, para tool_catalog e tool_help
 ```
 
 ## 🛠️ 17 Ferramentas Builtins

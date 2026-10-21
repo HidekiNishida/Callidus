@@ -28,6 +28,10 @@ Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) 
 | `GET` | `/providers/ollama/models` | Lista modelos Ollama |
 | `GET` | `/providers/llamacpp/models` | Lista modelos llama.cpp |
 | `GET` | `/tools` | Lista ferramentas registradas (specs) |
+| `GET` | `/tools/availability` | Pré-requisitos presentes e ausentes |
+| `GET` | `/tools/families` | Famílias habilitadas e piso de risco |
+| `GET` | `/system/diagnose` | Sistema, sessão, permissões e dependências |
+| `GET` | `/skills` | Skills instaladas, versão e estado |
 | `GET/POST` | `/mcp/servers`, `/mcp/discover`, `/mcp/call` | MCP stdio |
 | `POST` | `/projects` | Cria projeto |
 | `GET` | `/projects`, `/projects/{id}` | Lista/obtém projeto |

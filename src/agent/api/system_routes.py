@@ -3,7 +3,7 @@ Arquivo: src/agent/api/system_routes.py
 Nome: system_routes.py
 Propósito: expor saúde, provedores, ferramentas, MCP e preferências da interface.
 Responsabilidade: camada de apresentação/transport — rotas de diagnóstico e configuração do processo.
-Componentes: health, list_providers, provider_models, provider_health, list_tools, rotas de MCP, ui_defaults.
+Componentes: health, list_providers, provider_models, provider_health, list_tools, tools_availability, tools_families, system_diagnose, list_skills, rotas de MCP, ui_defaults.
 Dependências: agent.providers.*, agent.mcp.manager, agent.tools.registry, agent.config.Settings.
 Observações: nenhuma credencial é exposta — só a origem declarada da chave.
 """
@@ -182,6 +182,81 @@ def list_tools() -> dict:
     reg = build_default_registry()
     return {
         "tools": [s.model_dump() for s in reg.list_specs()],
+    }
+
+
+@router.get("/tools/availability")
+def tools_availability() -> dict:
+    """Situação de disponibilidade de cada ferramenta: o que falta para ela rodar.
+
+    Returns:
+        Uma lista com a ferramenta, a família, a disponibilidade e as dicas.
+    """
+    reg = build_default_registry()
+    report = reg.availability_report()
+    return {
+        "count": len(report),
+        "available": sum(1 for item in report if item["available"]),
+        "missing": [item for item in report if not item["available"]],
+        "tools": report,
+    }
+
+
+@router.get("/tools/families")
+def tools_families(settings: Settings = Depends(read_settings)) -> dict:
+    """Famílias de ferramentas habilitadas e como a política está configurada.
+
+    Returns:
+        As famílias habilitadas, as desligadas e o piso de risco automático.
+    """
+    from agent.tools.catalog import enabled_families
+    from agent.tools.policy import ALLOW, DENY, tool_policy
+
+    policy = tool_policy(settings)
+    enabled = enabled_families(settings)
+    return {
+        "enabled_families": sorted(enabled) if enabled is not None else ["todas"],
+        "disabled_families": sorted(policy.disabled_families),
+        "max_auto_risk": policy.max_auto_risk.value,
+        "always_allowed": sorted(name for name, rule in policy.tool_rules.items() if rule == ALLOW),
+        "never_allowed": sorted(name for name, rule in policy.tool_rules.items() if rule == DENY),
+    }
+
+
+@router.get("/system/diagnose")
+def system_diagnose() -> dict:
+    """Diagnostica o ambiente: sistema, sessão gráfica, permissões e dependências.
+
+    Returns:
+        O diagnóstico completo, com as verificações que falharam.
+    """
+    from agent.system.platform_info import describe_system, diagnose_permissions, platform_summary
+    from agent.tools.availability import environment_report
+
+    return {
+        "system": describe_system(),
+        "permissions": diagnose_permissions(),
+        "summary": platform_summary(),
+        "environment": environment_report(),
+    }
+
+
+@router.get("/skills")
+def list_skills() -> dict:
+    """Skills instaladas, com versão, estado e origem.
+
+    Returns:
+        A lista de skills instaladas e o caminho do repositório de skills.
+    """
+    from agent.skills.authoring import SkillStore
+    from agent.skills.discovery import installed_skills_dir
+
+    store = SkillStore(installed_skills_dir())
+    skills = store.list_installed()
+    return {
+        "root": str(store.root),
+        "count": len(skills),
+        "skills": [item.as_dict() for item in skills],
     }
 
 

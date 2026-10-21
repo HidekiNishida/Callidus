@@ -25,6 +25,7 @@ from agent.observability import emit
 from agent.observability.batching import DeltaBatcher
 from agent.observability.sanitize import is_sensitive_path
 from agent.security.paths import PathSecurityError, resolve_under_root
+from agent.tools.contracts import ToolFamily, ToolRisk
 from agent.tools.diffing import unified_diff_text
 from agent.tools.registry import ToolContext, ToolRegistry, ToolSpec, current_call_id
 
@@ -128,7 +129,6 @@ async def _system_info(ctx: ToolContext, args: dict) -> dict:
     """
     import getpass
     import platform
-
     from datetime import datetime
 
     home = str(Path.home())
@@ -162,6 +162,18 @@ async def _browser(ctx: ToolContext, args: dict) -> dict:
     action = str(args.get("action") or "snapshot").lower()
     if mode == "off":
         return {"success": False, "error": "navegador desligado no compositor"}
+    if action == "screenshot":
+        raw_path = str(args.get("path") or "").strip()
+        if raw_path:
+            try:
+                full = resolve_under_root(ctx.project_root, raw_path)
+            except PathSecurityError as exc:
+                return {"success": False, "error": str(exc)}
+        else:
+            folder = Path(ctx.project_root) / ".callidus" / "screenshots"
+            folder.mkdir(parents=True, exist_ok=True)
+            full = folder / f"page-{uuid.uuid4().hex[:10]}.png"
+        args = {**args, "path": str(full)}
     if action == "search":
         from agent.tools.browser import search_web
 
@@ -884,23 +896,44 @@ def register_all(registry: ToolRegistry) -> None:
             description="Grava arquivo dentro do projeto",
             input_schema={"path": "str", "content": "str"},
             requires_approval=False,
+            family=ToolFamily.FILE.value,
+            risk=ToolRisk.WRITE.value,
         ),
         ToolSpec(id="search_grep", description="Busca regex em arquivos", input_schema={"pattern": "str"}),
         ToolSpec(
             id="run_command",
             description="Executa comando (lista argv)",
-            input_schema={"command": "list[str]"},
+            input_schema={"command": "str|list[str]"},
             requires_approval=True,
             timeout_seconds=120,
+            family=ToolFamily.COMMAND.value,
+            risk=ToolRisk.EXECUTE.value,
+            permissions=["process.spawn"],
+            side_effects=True,
         ),
-        ToolSpec(id="git_diff", description="Diff git resumido", input_schema={"staged": "bool?"}),
-        ToolSpec(id="run_pytest", description="Executa pytest em path", input_schema={"path": "str?"}),
+        ToolSpec(
+            id="git_diff",
+            description="Diff git resumido",
+            input_schema={"staged": "bool?"},
+            family=ToolFamily.ENGINEERING.value,
+        ),
+        ToolSpec(
+            id="run_pytest",
+            description="Executa pytest em path",
+            input_schema={"path": "str?"},
+            family=ToolFamily.ENGINEERING.value,
+            risk=ToolRisk.EXECUTE.value,
+        ),
         ToolSpec(
             id="run_script",
             description="Executa um arquivo Python local",
             input_schema={"path": "str"},
             requires_approval=True,
             timeout_seconds=90,
+            family=ToolFamily.COMMAND.value,
+            risk=ToolRisk.EXECUTE.value,
+            permissions=["process.spawn"],
+            side_effects=True,
         ),
         ToolSpec(id="list_dir", description="Lista arquivos do projeto", input_schema={"path": "str?"}),
         ToolSpec(id="glob_files", description="Encontra arquivos por glob", input_schema={"pattern": "str"}),
@@ -908,12 +941,17 @@ def register_all(registry: ToolRegistry) -> None:
             id="edit_file",
             description="Substitui um trecho único do arquivo",
             input_schema={"path": "str", "old_string": "str", "new_string": "str"},
+            family=ToolFamily.FILE.value,
+            risk=ToolRisk.WRITE.value,
         ),
         ToolSpec(
             id="delete_file",
             description="Apaga um arquivo do projeto",
             input_schema={"path": "str"},
             requires_approval=True,
+            family=ToolFamily.FILE.value,
+            risk=ToolRisk.WRITE.value,
+            side_effects=True,
         ),
         ToolSpec(id="make_dir", description="Cria um diretório", input_schema={"path": "str"}),
         ToolSpec(
@@ -921,22 +959,43 @@ def register_all(registry: ToolRegistry) -> None:
             description="Move ou renomeia um arquivo",
             input_schema={"from": "str", "to": "str"},
             requires_approval=True,
+            family=ToolFamily.FILE.value,
+            risk=ToolRisk.WRITE.value,
+            side_effects=True,
         ),
-        ToolSpec(id="git_status", description="git status --short", input_schema={}),
+        ToolSpec(
+            id="git_status",
+            description="git status --short",
+            input_schema={},
+            family=ToolFamily.ENGINEERING.value,
+        ),
         ToolSpec(
             id="remember",
             description="Grava uma memória do projeto ou da conversa",
             input_schema={"content": "str", "title": "str?", "scope": "project|conversation"},
+            family=ToolFamily.MEMORY.value,
         ),
         ToolSpec(
             id="system_info",
             description="Informa sistema, usuário e pasta pessoal",
             input_schema={},
+            family=ToolFamily.SYSTEM.value,
         ),
         ToolSpec(
             id="browser",
             description="Pesquisa e age no navegador quando ele está ligado",
-            input_schema={"action": "str", "url": "str?", "text": "str?", "selector": "str?", "query": "str?"},
+            input_schema={
+                "action": "str?",
+                "url": "str?",
+                "text": "str?",
+                "selector": "str?",
+                "query": "str?",
+                "key": "str?",
+                "path": "str?",
+                "delta": "int?",
+            },
+            family=ToolFamily.BROWSER.value,
+            risk=ToolRisk.EXECUTE.value,
         ),
     ]
     handlers = {

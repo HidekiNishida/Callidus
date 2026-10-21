@@ -137,6 +137,18 @@ class Settings(BaseSettings):
     automation_tick_seconds: float = 5.0
     # Teto de execuções de automação por tique (protege contra rajada de disparos).
     automation_max_executions_per_tick: int = 20
+    # Ferramentas: famílias habilitadas e piso de risco que roda sem aprovação humana.
+    # A lista de famílias habilitadas é o interruptor master das capacidades do agente
+    # (sistema, desktop, engenharia, skills, navegador); deixar vazia significa "todas".
+    tool_enabled_families: list[str] = []
+    tool_disabled_families: list[str] = []
+    # Nível de risco máximo que o agente executa sem pedir aprovação: `read`, `write`,
+    # `execute`, `configure` ou `privileged`.
+    tool_max_auto_risk: str = "write"
+    # Ferramentas sempre liberadas, sem aprovação, mesmo acima do piso de risco.
+    tool_always_allowed: list[str] = []
+    # Ferramentas sempre bloqueadas, qualquer que seja o pedido.
+    tool_never_allowed: list[str] = []
 
     def resolved_database_url(self) -> str:
         """URL do banco SQLite em uso, respeitando o isolamento dos testes.

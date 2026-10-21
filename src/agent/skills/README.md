@@ -9,5 +9,6 @@ Competências reutilizáveis injetadas sob demanda no contexto da operação.
 | [`catalog/loader.py`](./catalog/loader.py) | Lê o catálogo `skills/*.md` (fonte de verdade) e converte em `SkillSpec` |
 | [`discovery.py`](./discovery.py) | `SkillRegistry`: junta built-ins, catálogo do repositório e skills do projeto |
 | [`selector.py`](./selector.py) | `SkillSelector`: escolhe as skills relevantes dentro do orçamento de contexto |
+| [`authoring/`](./authoring/) | Ciclo de vida: criar, validar, testar, instalar, ativar, versionar e propor melhoria |
 
 Voltar ao [README do Callidus](/src/agent/README.md) · Catálogo editável: [`/skills/`](/skills/README.md)

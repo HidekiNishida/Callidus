@@ -9,6 +9,7 @@
  * da execução. As ações do store avisam o usuário por `toast` em vez de lançar erros.
  */
 import { api } from "./api.js";
+import { formatToolsReport } from "./tools-report.js";
 import { describeActivity } from "./ui.js";
 import { applyEvent, applyLive, createState, markConnection, markResync } from "./live-state.js";
 import { createStream } from "./live-stream.js";
@@ -73,6 +74,7 @@ export const state = reactive({
   metricsText: "",
   graphText: "",
   toolsText: "",
+  toolsReport: null,
   mcpText: "",
 
   automations: [],
@@ -931,13 +933,19 @@ export async function loadGraph(query = "") {
 }
 
 /**
- * Carrega a lista de ferramentas disponíveis no servidor.
+ * Carrega ferramentas, disponibilidade, diagnóstico e skills instaladas.
  *
  * @returns {Promise<void>}
  */
 export async function loadTools() {
-  const tools = await api("/tools").catch(() => null);
-  state.toolsText = JSON.stringify(tools, null, 2);
+  const [tools, availability, diagnosis, skills] = await Promise.all([
+    api("/tools").catch(() => null),
+    api("/tools/availability").catch(() => null),
+    api("/system/diagnose").catch(() => null),
+    api("/skills").catch(() => null),
+  ]);
+  state.toolsReport = { tools, availability, diagnosis, skills };
+  state.toolsText = formatToolsReport(state.toolsReport);
 }
 
 /**

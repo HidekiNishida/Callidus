@@ -54,6 +54,7 @@ from agent.persistence.models import (
 )
 from agent.services.attempt_service import AttemptService
 from agent.services.project_service import ProjectService
+from agent.tools.policy import PermissionPolicy, tool_policy
 from agent.tools.registry import ToolContext, canonical_tool_id
 from agent.verification.fingerprint import snapshot as artifact_snapshot
 from agent.verification.runner import VerificationResult, run_verification
@@ -275,6 +276,10 @@ class TaskExecutor:
             project_id=str(project.id) if project is not None else None,
             conversation_id=str(task.conversation_id) if task.conversation_id else None,
             settings=self._settings,
+            # A política decide o que roda sem aprovação; o registro permite ao modelo
+            # pedir o catálogo e o detalhe de uma ferramenta sob demanda.
+            policy=tool_policy(self._settings),
+            scratch={"registry": self._tools},
         )
         approved = bool(config.get("approve_risky_tools") or meta.get("approved"))
 

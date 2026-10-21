@@ -15,7 +15,7 @@ Núcleo do **Callidus**: orquestração explícita, persistência SQLite, modelo
 | [`services/`](services/README.md) | [README.md](services/README.md) | **Regras de negócio** — 18 services: Project, Conversation, Task, Run, Contract, Attempt, Metrics, AutonomousWorker, Scheduler, AgentScheduler, Agent, Query, Executor compartilhado, Attachments, Branches, Cascade, FsBrowse, Inbox |
 | [`orchestrator/`](orchestrator/README.md) | [README.md](orchestrator/README.md) | **Ciclo de execução** — runner (step, run_until_idle), planner, strategy (abordagem profissional), decomposition, atomizer, plan_validation, consolidation, global_verify, requirements, progress, stagnation, replan, closing, usage, resume |
 | [`orchestrator/execution/`](orchestrator/execution/README.md) | [README.md](orchestrator/execution/README.md) | **Execução de uma tarefa** — executor (despacho, verificação, evidência), model_operation (contexto, ferramentas, escrita), runtime, providers, guards, writes, journal, workspace |
-| [`tools/`](tools/README.md) | [README.md](tools/README.md) | **Ferramentas** — registry central, 17 builtins (arquivos, comandos, git, testes, browser, memória), browser (Playwright), diffing, aliases |
+| [`tools/`](tools/README.md) | [README.md](tools/README.md) | **Ferramentas** — registry central, builtins, sistema, desktop, engenharia, skills, política e validação de argumentos |
 | [`providers/`](providers/README.md) | [README.md](providers/README.md) | **Provedores de inferência** — Ollama, llama.cpp, OpenRouter, OpenAI-compatível, Anthropic, Gemini, mock + interface `LLMProvider`, registro declarativo e `observed_chat` (streaming real) |
 | [`context/`](context/README.md) | [README.md](context/README.md) | **Contexto do modelo** — orçamento de tokens (`ContextBudgetError`), montagem de componentes, compactação, builder por operação |
 | [`verification/`](verification/README.md) | [README.md](verification/README.md) | **Verificação independente** — runner (pytest, script, command, file_contains, syntax, file_exists, static_analysis), recovery (diagnóstico → correção → re-verificação), fingerprint (hash artefatos) |
@@ -28,7 +28,10 @@ Núcleo do **Callidus**: orquestração explícita, persistência SQLite, modelo
 | [`vision/`](vision/README.md) | [README.md](vision/README.md) | **Referências de imagem** — para contexto futuro (base64/data URI) |
 | [`util/`](util/README.md) | [README.md](util/README.md) | **Utilitários** — `parse_json_object` (extração tolerante de JSON do modelo) |
 | [`i18n/`](i18n/README.md) | [README.md](i18n/README.md) | **Internacionalização** — `detect_language(text)` → `pt`/`en`/`es` + `language_instruction(locale)` |
-| [`skills/`](skills/README.md) | [README.md](skills/README.md) | **Skills sob demanda** — contrato (`SkillSpec`), catálogo em Markdown, `SkillRegistry`, `SkillSelector` (seleção e injeção no prompt) |
+| [`skills/`](skills/README.md) | [README.md](skills/README.md) | **Skills sob demanda** — contrato (`SkillSpec`), catálogo, seleção e autoria (criar, validar, versionar, ativar) |
+| [`system/`](system/README.md) | [README.md](system/README.md) | **Adaptadores de sistema** — processos, aplicativos e diagnóstico por macOS, Windows e Linux |
+| [`desktop/`](desktop/README.md) | [README.md](desktop/README.md) | **Desktop** — tela, janelas, entrada e árvore de acessibilidade |
+| [`engineering/`](engineering/README.md) | [README.md](engineering/README.md) | **Engenharia** — descoberta de projeto, Git e verificações |
 
 ## 📁 Arquivos na Raiz do `agent/`
 

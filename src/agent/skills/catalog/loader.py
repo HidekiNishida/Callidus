@@ -254,7 +254,13 @@ def parse_skill_markdown(text: str, *, source_path: str | Path | None = None) ->
 
 
 def load_catalog(directory: str | Path | None = None, *, strict: bool = True) -> list[SkillSpec]:
-    """Carrega todas as Skills `.md` de um diretório de catálogo.
+    """Carrega todas as Skills de um diretório de catálogo.
+
+    Duas formas coexistem no mesmo catálogo:
+
+    1. **Markdown solto** (`skills/*.md`) — a forma histórica do Callidus;
+    2. **Pasta de skill** (`skills/<nome>/SKILL.md`) — a forma autoral, com
+       `scripts/`, `references/`, `assets/`, `tests/` e `manifest.json`.
 
     Entradas: diretório do catálogo e `strict` (quando `True`, Skills inválidas são
     descartadas e logadas). Saída: lista de `SkillSpec` lidos do catálogo.
@@ -277,7 +283,7 @@ def load_catalog(directory: str | Path | None = None, *, strict: bool = True) ->
         return []
 
     skills: list[SkillSpec] = []
-    for file_path in sorted(base.glob("**/*.md")):
+    for file_path in sorted(base.glob("*.md")):
         if file_path.name.lower() == "readme.md":
             continue
         try:
@@ -290,4 +296,87 @@ def load_catalog(directory: str | Path | None = None, *, strict: bool = True) ->
             logger.warning("Skill %s ignorada: %s", file_path.name, errors)
             continue
         skills.append(skill)
+    for skill in _load_skill_folders(base, strict=strict):
+        skills.append(skill)
     return skills
+
+
+def _load_skill_folders(base: Path, *, strict: bool) -> list[SkillSpec]:
+    """Carrega as skills no formato de pasta (`<nome>/SKILL.md`).
+
+    Args:
+        base: diretório do catálogo.
+        strict: quando `True`, skills com contrato inválido são descartadas.
+
+    Returns:
+        A lista de skills carregadas das pastas.
+    """
+    from agent.skills.authoring.layout import MANIFEST_FILE, SKILL_FILE
+
+    found: list[SkillSpec] = []
+    for folder in sorted(item for item in base.iterdir() if item.is_dir()):
+        skill_file = folder / SKILL_FILE
+        if not skill_file.is_file():
+            continue
+        try:
+            skill = parse_skill_markdown(skill_file.read_text(encoding="utf-8"), source_path=skill_file)
+        except Exception as exc:  # pragma: no cover - skill quebrada não derruba o agente
+            logger.warning("Skill inválida em %s: %s", skill_file, exc)
+            continue
+        manifest = _read_manifest(folder / MANIFEST_FILE)
+        # O nome da pasta é o identificador canônico da skill; o frontmatter traz o nome
+        # de exibição e a versão.
+        skill.id = folder.name
+        skill.scripts = _list_files(folder, "scripts")
+        skill.references = _list_files(folder, "references")
+        skill.assets = _list_files(folder, "assets")
+        skill.state = str(manifest.get("state") or "draft")
+        skill.origin = str(manifest.get("origin") or "catalog")
+        if manifest.get("version"):
+            skill.version = str(manifest["version"])
+        if manifest.get("requires_tools") and not skill.required_tools:
+            skill.required_tools = [str(item) for item in manifest["requires_tools"]]
+        skill.metadata["manifest"] = manifest
+        skill.metadata["skill_root"] = str(folder)
+        errors = skill.validate()
+        if errors and strict:
+            logger.warning("Skill %s ignorada: %s", folder.name, errors)
+            continue
+        found.append(skill)
+    return found
+
+
+def _read_manifest(path: Path) -> dict[str, object]:
+    """Lê o `manifest.json` de uma skill, tolerando arquivo ausente ou quebrado.
+
+    Args:
+        path: caminho do manifesto.
+
+    Returns:
+        O dicionário lido, ou um dicionário vazio.
+    """
+    import json
+
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _list_files(root: Path, folder: str) -> list[str]:
+    """Lista os arquivos de uma subpasta opcional de uma skill.
+
+    Args:
+        root: pasta da skill.
+        folder: nome da subpasta.
+
+    Returns:
+        A lista de caminhos relativos dos arquivos.
+    """
+    base = root / folder
+    if not base.is_dir():
+        return []
+    return [str(path.relative_to(root)) for path in sorted(base.rglob("*")) if path.is_file()]

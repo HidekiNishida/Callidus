@@ -17,14 +17,26 @@ from agent.orchestrator.strategy import looks_like_test_file
 WRITE_TOOLS = ("write_file", "edit_file", "move_file")
 
 
-def operation_tools_for(meta: dict) -> tuple[str, ...]:
+def operation_tools_for(
+    meta: dict,
+    *,
+    registry: Any = None,
+    settings: Any = None,
+    objective: str = "",
+) -> tuple[str, ...]:
     """Ferramentas da etapa: sem `write_file`/`edit_file` quando o pedido é somente leitura.
 
     "Não altere nenhum arquivo do projeto" vira **permissão**, não apenas instrução: o modelo
     recebe as ferramentas de leitura e o caminho que escreve no disco recusa a alteração.
 
+    Quando há registro e objetivo, as famílias extras (sistema, desktop, engenharia, skills)
+    entram no conjunto — a exposição vem do pedido e da configuração, nunca do modelo.
+
     Args:
         meta: metadados da etapa (`read_only` indica pedido somente leitura).
+        registry: registro de ferramentas, quando disponível.
+        settings: configuração do processo, para filtrar as famílias liberadas.
+        objective: objetivo da etapa, usado para reconhecer as famílias pedidas.
 
     Returns:
         Os identificadores de ferramenta liberados para a etapa.
@@ -32,8 +44,14 @@ def operation_tools_for(meta: dict) -> tuple[str, ...]:
     from agent.orchestrator.tool_loop import INSPECTION_TOOLS, OPERATION_TOOLS
 
     if (meta or {}).get("read_only"):
-        return INSPECTION_TOOLS
-    return OPERATION_TOOLS
+        base = INSPECTION_TOOLS
+    else:
+        base = OPERATION_TOOLS
+    if registry is None:
+        return base
+    from agent.tools.catalog import exposed_tools
+
+    return exposed_tools(registry, objective=objective, base=base, settings=settings)
 
 
 def write_refusal_reason(meta: dict, tool_name: str, path: str | None) -> str | None:

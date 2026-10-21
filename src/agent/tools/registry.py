@@ -4,20 +4,26 @@ Nome: registry.py
 Propósito: manter o registro central das ferramentas do agente e executá-las com contrato uniforme.
 Responsabilidade: camada de aplicação — catálogo de ferramentas, aliases e despacho das chamadas.
 Componentes: ToolSpec, ToolContext, ToolRegistry, canonical_tool_id, current_call_id, build_default_registry, TOOL_ALIASES.
-Dependências: agent.observability, pydantic.
+Dependências: agent.observability, agent.tools.availability, agent.tools.contracts, agent.tools.policy, pydantic.
 Observações: ferramentas que exigem aprovação recusam a execução quando ela não foi concedida.
 """
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
-from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from dataclasses import dataclass, field
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from agent.observability import emit
+from agent.tools.arguments import validate_arguments
+from agent.tools.availability import check_tool
+from agent.tools.contracts import ExecutionMode, ToolFamily, ToolRisk
+from agent.tools.policy import PermissionPolicy, redact
 
 
 class ToolSpec(BaseModel):
@@ -29,6 +35,16 @@ class ToolSpec(BaseModel):
         input_schema: schema JSON dos argumentos aceitos.
         requires_approval: quando `True`, a execução exige aprovação explícita.
         timeout_seconds: tempo limite sugerido para a execução.
+        hard_timeout_seconds: tempo limite **imposto** pelo registro; `None` desliga o corte.
+        family: família funcional da ferramenta (unidade habilitada/desabilitada em conjunto).
+        risk: nível de risco declarado, do mais seguro ao mais perigoso.
+        permissions: permissões exigidas, em texto livre (`fs.write`, `process.spawn`, ...).
+        platforms: sistemas operacionais suportados; lista vazia significa "todos".
+        requires: pré-requisitos verificáveis (`binary:git`, `module:playwright`, `os:macos`).
+        execution: modo de execução (foreground, background, interactive, non_interactive).
+        side_effects: quando `True`, a ferramenta altera o ambiente fora do workspace.
+        output_schema: schema do resultado devolvido.
+        verify: como o resultado pode ser conferido de forma independente.
     """
 
     id: str
@@ -36,6 +52,16 @@ class ToolSpec(BaseModel):
     input_schema: dict[str, Any] = Field(default_factory=dict)
     requires_approval: bool = False
     timeout_seconds: float = 60.0
+    hard_timeout_seconds: float | None = None
+    family: str = ToolFamily.FILE.value
+    risk: str = ToolRisk.READ.value
+    permissions: list[str] = Field(default_factory=list)
+    platforms: list[str] = Field(default_factory=list)
+    requires: list[str] = Field(default_factory=list)
+    execution: str = ExecutionMode.FOREGROUND.value
+    side_effects: bool = False
+    output_schema: dict[str, Any] = Field(default_factory=dict)
+    verify: str = ""
 
 
 @dataclass
@@ -53,6 +79,8 @@ class ToolContext:
         project_id: projeto da conversa, para as ferramentas que pertencem a um projeto.
         conversation_id: conversa em curso, para as ferramentas que pertencem a uma conversa.
         settings: configurações do processo, para as ferramentas que dependem delas.
+        policy: política de permissões da sessão, quando houver.
+        cancel_event: evento de cancelamento cooperativo, para tarefas longas.
     """
 
     project_root: str
@@ -68,6 +96,18 @@ class ToolContext:
     project_id: str | None = None
     conversation_id: str | None = None
     settings: Any = None
+    # Política de permissões da sessão: o registro consulta antes de executar.
+    policy: PermissionPolicy | None = None
+    # Cancelamento cooperativo: as ferramentas longas consultam `cancelled` durante o trabalho.
+    cancel_event: asyncio.Event | None = None
+    # Estado livre para ferramentas que precisam compartilhar memória entre chamadas.
+    scratch: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def cancelled(self) -> bool:
+        """Indica se o cancelamento cooperativo foi pedido para esta execução."""
+        return bool(self.cancel_event is not None and self.cancel_event.is_set())
+
 
 
 ToolHandler = Callable[[ToolContext, dict[str, Any]], Awaitable[dict[str, Any]]]
@@ -125,6 +165,10 @@ def canonical_tool_id(tool_id: str) -> str:
 class ToolRegistry:
     """Catálogo de ferramentas do agente: specs, handlers e execução uniformizada.
 
+    A execução passa sempre pelas mesmas quatro etapas — disponibilidade, política,
+    prazo e cancelamento — antes de chegar ao handler. Nenhuma ferramenta é executada
+    por fora deste caminho.
+
     Atributos:
         _specs: especificações registradas, indexadas pelo identificador.
         _handlers: handlers registrados, indexados pelo identificador.
@@ -169,6 +213,111 @@ class ToolRegistry:
         """
         return list(self._specs.values())
 
+    def ids(self) -> list[str]:
+        """Identificadores de todas as ferramentas registradas.
+
+        Returns:
+            A lista de identificadores, em ordem alfabética.
+        """
+        return sorted(self._specs)
+
+    def specs_of_family(self, family: str) -> list[ToolSpec]:
+        """Ferramentas de uma família.
+
+        Args:
+            family: identificador da família (`file`, `system`, `desktop`, ...).
+
+        Returns:
+            As specs da família, em ordem alfabética.
+        """
+        return [spec for spec in self._specs.values() if spec.family == family]
+
+    def compact_catalog(self, families: list[str] | None = None) -> str:
+        """Catálogo compacto: o texto que cabe no prompt sem estourar o contexto.
+
+        O catálogo completo fica fora do prompt; o modelo recebe o identificador, a
+        descrição em uma linha e os argumentos principais. O detalhe vem sob demanda,
+        pela ferramenta `tool_help`.
+
+        Args:
+            families: famílias a incluir; `None` inclui todas.
+
+        Returns:
+            O catálogo em texto, pronto para o prompt.
+        """
+        wanted = set(families) if families else None
+        rows: list[str] = []
+        for tool_id in self.ids():
+            spec = self._specs[tool_id]
+            if wanted is not None and spec.family not in wanted:
+                continue
+            args = ", ".join(sorted(spec.input_schema))
+            row = f"- {tool_id}: {spec.description}"
+            if args:
+                row += f" (args: {args})"
+            if spec.requires_approval:
+                row += " [aprovação]"
+            rows.append(row)
+        if not rows:
+            return "Nenhuma ferramenta disponível."
+        return "\n".join(rows)
+
+    def describe(self, tool_id: str) -> dict[str, Any]:
+        """Detalhe completo de uma ferramenta, para carregar sob demanda.
+
+        Args:
+            tool_id: identificador (alias aceito).
+
+        Returns:
+            Um dicionário com o contrato da ferramenta e o resultado da verificação
+            de pré-requisitos.
+        """
+        resolved = canonical_tool_id(tool_id)
+        if resolved not in self._specs:
+            return {"success": False, "error": f"ferramenta desconhecida: {tool_id}"}
+        spec = self._specs[resolved]
+        availability = check_tool(spec)
+        return {
+            "success": True,
+            "tool": resolved,
+            "description": spec.description,
+            "input_schema": spec.input_schema,
+            "output_schema": spec.output_schema,
+            "risk": spec.risk,
+            "family": spec.family,
+            "execution": spec.execution,
+            "side_effects": spec.side_effects,
+            "permissions": spec.permissions,
+            "requires_approval": spec.requires_approval,
+            "platforms": spec.platforms or ["todas"],
+            "requires": spec.requires,
+            "verify": spec.verify,
+            "available": availability.available,
+            "missing": availability.missing,
+            "hints": availability.hints,
+        }
+
+    def availability_report(self) -> list[dict[str, Any]]:
+        """Situação de disponibilidade de todas as ferramentas registradas.
+
+        Returns:
+            Uma lista com o identificador, a família e o que falta para cada ferramenta.
+        """
+        report: list[dict[str, Any]] = []
+        for tool_id in self.ids():
+            spec = self._specs[tool_id]
+            availability = check_tool(spec)
+            report.append(
+                {
+                    "tool": tool_id,
+                    "family": spec.family,
+                    "available": availability.available,
+                    "missing": availability.missing,
+                    "hints": availability.hints,
+                }
+            )
+        return report
+
     async def execute(
         self,
         tool_id: str,
@@ -178,6 +327,10 @@ class ToolRegistry:
         approved: bool = False,
     ) -> dict[str, Any]:
         """Executa uma ferramenta e emite os eventos de início e de desfecho.
+
+        A ordem é fixa: alias → argumentos → disponibilidade → política → aprovação →
+        cancelamento → prazo → handler. Cada recusa devolve um dicionário com `success`
+        falso e um `error` estável, para que o agente consiga reagir sem interpretar texto livre.
 
         Args:
             tool_id: nome pedido pelo modelo; aliases são resolvidos.
@@ -200,7 +353,79 @@ class ToolRegistry:
             )
             return {"success": False, "error": f"ferramenta desconhecida: {tool_id}", "known": known}
         spec = self.get_spec(tool_id)
-        if spec.requires_approval and not approved:
+        argument_error = validate_arguments(spec.input_schema, args)
+        if argument_error:
+            emit(
+                "tool.failed",
+                {
+                    "call_id": uuid.uuid4().hex[:12],
+                    "tool": tool_id,
+                    "error": argument_error,
+                    "executed": False,
+                    "code": "invalid_arguments",
+                },
+            )
+            return {
+                "success": False,
+                "error": argument_error,
+                "code": "invalid_arguments",
+                "tool": tool_id,
+            }
+
+        availability = check_tool(spec)
+        if not availability.available:
+            emit(
+                "tool.failed",
+                {
+                    "call_id": uuid.uuid4().hex[:12],
+                    "tool": tool_id,
+                    "error": "requisitos ausentes",
+                    "executed": False,
+                    "missing": availability.missing,
+                },
+            )
+            return {
+                "success": False,
+                "error": "requisitos ausentes",
+                "tool": tool_id,
+                "missing": availability.missing,
+                "hints": availability.hints,
+            }
+
+        policy = ctx.policy
+        if policy is not None:
+            risk = ToolRisk(spec.risk) if spec.risk in {item.value for item in ToolRisk} else ToolRisk.READ
+            decision = policy.decide(tool_id, risk=risk, family=spec.family, approved=approved)
+            if not decision.allowed:
+                emit(
+                    "tool.failed",
+                    {
+                        "call_id": uuid.uuid4().hex[:12],
+                        "tool": tool_id,
+                        "error": decision.reason,
+                        "executed": False,
+                    },
+                )
+                return {"success": False, "error": "bloqueado pela política", "tool": tool_id, "reason": decision.reason}
+            if (spec.requires_approval or decision.requires_approval) and not approved:
+                emit(
+                    "tool.failed",
+                    {
+                        "call_id": uuid.uuid4().hex[:12],
+                        "tool": tool_id,
+                        "error": "approval_required",
+                        "executed": False,
+                        "reason": decision.reason,
+                    },
+                )
+                return {
+                    "success": False,
+                    "error": "approval_required",
+                    "tool": tool_id,
+                    "reason": decision.reason,
+                    "risk": spec.risk,
+                }
+        elif spec.requires_approval and not approved:
             emit(
                 "tool.failed",
                 {"call_id": uuid.uuid4().hex[:12], "tool": tool_id, "error": "approval_required", "executed": False},
@@ -210,13 +435,57 @@ class ToolRegistry:
                 "error": "approval_required",
                 "tool": tool_id,
             }
+        if ctx.cancelled:
+            emit(
+                "tool.failed",
+                {"call_id": uuid.uuid4().hex[:12], "tool": tool_id, "error": "cancelado", "executed": False},
+            )
+            return {"success": False, "error": "cancelado", "tool": tool_id}
+
         handler = self._handlers[tool_id]
         call_id = uuid.uuid4().hex[:12]
         token = _CALL_ID.set(call_id)
         started = time.monotonic()
-        emit("tool.started", {"call_id": call_id, "tool": tool_id, "args": _args_preview(args)}, commit=True)
+        emit(
+            "tool.started",
+            {
+                "call_id": call_id,
+                "tool": tool_id,
+                "args": _args_preview(redact(args)),
+                "risk": spec.risk,
+                "family": spec.family,
+            },
+            commit=True,
+        )
         try:
-            result = await handler(ctx, args)
+            if spec.hard_timeout_seconds:
+                result = await asyncio.wait_for(
+                    handler(ctx, args), timeout=spec.hard_timeout_seconds
+                )
+            else:
+                result = await handler(ctx, args)
+        except asyncio.TimeoutError:
+            emit(
+                "tool.failed",
+                {
+                    "call_id": call_id,
+                    "tool": tool_id,
+                    "error": "tempo limite excedido",
+                    "duration_ms": _ms(started),
+                },
+            )
+            return {
+                "success": False,
+                "error": "tempo limite excedido",
+                "tool": tool_id,
+                "timeout_seconds": spec.hard_timeout_seconds,
+            }
+        except asyncio.CancelledError:
+            emit(
+                "tool.failed",
+                {"call_id": call_id, "tool": tool_id, "error": "cancelado", "duration_ms": _ms(started)},
+            )
+            raise
         except Exception as exc:
             emit(
                 "tool.failed",
@@ -225,7 +494,10 @@ class ToolRegistry:
             raise
         finally:
             _CALL_ID.reset(token)
-        if result.get("success"):
+        result = redact(result) if isinstance(result, dict) else result
+        if isinstance(result, dict):
+            result.setdefault("tool", tool_id)
+        if isinstance(result, dict) and result.get("success"):
             emit("tool.completed", {"call_id": call_id, "tool": tool_id, "duration_ms": _ms(started), "summary": _summary(result)})
         else:
             emit(
@@ -233,12 +505,13 @@ class ToolRegistry:
                 {
                     "call_id": call_id,
                     "tool": tool_id,
-                    "error": str(result.get("error") or "falhou"),
+                    "error": str((result or {}).get("error") or "falhou"),
                     "duration_ms": _ms(started),
-                    "summary": _summary(result),
+                    "summary": _summary(result or {}),
                 },
             )
         return result
+
 
 
 _CALL_ID: ContextVar[str | None] = ContextVar("tool_call_id", default=None)
@@ -290,13 +563,116 @@ def build_default_registry() -> ToolRegistry:
     """Monta o registro com todas as ferramentas embutidas.
 
     Returns:
-        O registro pronto para uso, com as ferramentas de `agent.tools.builtins` e
-        `agent.tools.automations` cadastradas.
+        O registro pronto para uso, com as ferramentas de `agent.tools.builtins`,
+        `agent.tools.automations`, `agent.tools.system_tools`, `agent.tools.desktop_tools`,
+        `agent.tools.devtools` e `agent.tools.skill_tools` cadastradas.
     """
     from agent.tools import automations as automation_tools
     from agent.tools import builtins as built
+    from agent.tools import desktop_tools as desktop
+    from agent.tools import devtools as engineering
+    from agent.tools import skill_tools as skills
+    from agent.tools import system_tools as system
 
     reg = ToolRegistry()
     built.register_all(reg)
     automation_tools.register_all(reg)
+    system.register_all(reg)
+    desktop.register_all(reg)
+    engineering.register_all(reg)
+    skills.register_all(reg)
+    reg.register(
+        ToolSpec(
+            id="tool_catalog",
+            description="Lista as ferramentas disponíveis; passe family para filtrar",
+            input_schema={"family": "str?"},
+            family=ToolFamily.FILE.value,
+            risk=ToolRisk.READ.value,
+            execution=ExecutionMode.NON_INTERACTIVE.value,
+            verify="confira o campo 'count'",
+        ),
+        _tool_catalog,
+    )
+    reg.register(
+        ToolSpec(
+            id="tool_help",
+            description="Detalha uma ferramenta: argumentos, permissões, riscos e pré-requisitos",
+            input_schema={"tool": "str"},
+            family=ToolFamily.FILE.value,
+            risk=ToolRisk.READ.value,
+            execution=ExecutionMode.NON_INTERACTIVE.value,
+            verify="confira o campo 'available'",
+        ),
+        _tool_help,
+    )
     return reg
+
+
+_default_registry: ToolRegistry | None = None
+
+
+def get_default_registry() -> ToolRegistry:
+    """Registro padrão do processo, montado uma vez.
+
+    Returns:
+        O registro com todas as ferramentas embutidas.
+    """
+    global _default_registry
+    if _default_registry is None:
+        _default_registry = build_default_registry()
+    return _default_registry
+
+
+async def _tool_catalog(ctx: ToolContext, args: dict) -> dict:
+    """Entrega o catálogo compacto das ferramentas registradas.
+
+    O modelo recebe aqui a lista sob demanda, em vez de carregá-la em cada prompt.
+
+    Args:
+        ctx: contexto da ferramenta, com o registro em `ctx.scratch["registry"]`.
+        args: argumentos da chamada (`family` opcional).
+
+    Returns:
+        Um dicionário com as ferramentas e o resumo em texto.
+    """
+    registry = ctx.scratch.get("registry")
+    if not isinstance(registry, ToolRegistry):
+        return {"success": False, "error": "registro de ferramentas indisponível neste contexto"}
+    family = args.get("family")
+    families = [str(family)] if family else None
+    specs = registry.specs_of_family(str(family)) if family else registry.list_specs()
+    return {
+        "success": True,
+        "count": len(specs),
+        "tools": [
+            {
+                "id": spec.id,
+                "description": spec.description,
+                "args": sorted(spec.input_schema),
+                "risk": spec.risk,
+                "family": spec.family,
+                "requires_approval": spec.requires_approval,
+            }
+            for spec in sorted(specs, key=lambda item: item.id)
+        ],
+        "catalog": registry.compact_catalog(families),
+    }
+
+
+async def _tool_help(ctx: ToolContext, args: dict) -> dict:
+    """Detalha uma ferramenta sob demanda.
+
+    Args:
+        ctx: contexto da ferramenta, com o registro em `ctx.scratch["registry"]`.
+        args: argumentos da chamada (`tool`).
+
+    Returns:
+        Um dicionário com o contrato completo da ferramenta.
+    """
+    registry = ctx.scratch.get("registry")
+    if not isinstance(registry, ToolRegistry):
+        return {"success": False, "error": "registro de ferramentas indisponível neste contexto"}
+    tool_id = str(args.get("tool") or args.get("name") or "")
+    if not tool_id:
+        return {"success": False, "error": "informe o identificador da ferramenta"}
+    return registry.describe(tool_id)

@@ -44,6 +44,9 @@ flowchart TB
   SKILL --> CTX
 ```
 
+Sistema, desktop e engenharia entram por `tools/`, com adaptadores em `system/` e `desktop/`.
+O mapa dessas famílias está em [automacao-sistema.md](/docs/architecture/automacao-sistema.md).
+
 O **`orchestrator/` decide *quando*** uma etapa roda (ciclo, planejamento, estagnação, pausa);
 o **`orchestrator/execution/` decide *como*** ela roda (despacho da etapa, operação de modelo,
 escrita, verificação). A separação existe porque a execução de uma tarefa é um problema

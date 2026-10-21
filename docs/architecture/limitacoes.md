@@ -40,6 +40,12 @@ Voltar: [architecture/README.md](/docs/architecture/README.md)
 14. **Diagnóstico de provedor** — `GET /providers/{nome}/health` e `POST /providers/{nome}/test`
     respondem sempre com `ok: true/false` e o motivo; nunca estouram erro 500. A lista de modelos
     (`GET /providers/{nome}/models`) devolve 503 quando o servidor não responde.
+18. **Automação de desktop** — os adaptadores de macOS, Windows e Linux estão no código.
+    Nesta máquina (macOS) a geometria da tela foi lida; a captura parou em Screen Recording
+    e a árvore de acessibilidade parou no erro `-10000` do System Events, com a instrução
+    de permissão. Windows e Linux não foram executados. Wayland não recebe as mesmas
+    capacidades do X11. Detalhes: [automacao-sistema.md](/docs/architecture/automacao-sistema.md).
+
 15. **Remoção em cascata** — a remoção de projeto e de conversa segue o grafo de chaves estrangeiras
     do modelo (`src/agent/services/cascade.py`); se alguma linha pendurada escapar, a API responde
     409 com o motivo em vez de 500.

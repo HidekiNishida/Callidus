@@ -135,7 +135,7 @@ class ModelOperation:
                 }
             )
 
-        builder = OperationContextBuilder(session)
+        builder = OperationContextBuilder(session, settings)
         build = dict(project_id=project.id, root_path=root_path, task=task, profile=profile, run_id=run.id)
         try:
             budget, snap = builder.build_for_task(**build)
@@ -260,7 +260,12 @@ class ModelOperation:
                     stream=stream_allowed,
                     chat=_chat_model,
                     on_tool_call=_on_tool_call,
-                    tool_ids=operation_tools_for(meta),
+                    tool_ids=operation_tools_for(
+                        meta,
+                        registry=tools,
+                        settings=settings,
+                        objective=task.objective or "",
+                    ),
                     payload_ok=payload_is_usable,
                     tool_guard=lambda name, args: write_refusal_reason(meta, name, args.get("path")),
                     deliverable_hint=(

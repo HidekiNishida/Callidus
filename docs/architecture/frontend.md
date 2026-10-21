@@ -169,7 +169,7 @@ qualquer SVG em `media/`.
 | **Topbar** | Título da conversa, abas (Conversa · Acompanhamento · Provedores), controles do run, tema, painel de detalhes |
 | **Sidebar** | Conversas e projetos, busca, novo projeto, saúde da API |
 | **Conversa** | Bolhas do usuário e do agente, etapas, anexos, composer com provedor/modelo |
-| **Inspetor** | Plano (árvore com filtros) e abas: detalhe, tentativas, testes, diff, contexto, métricas, grafo, ferramentas, linha do tempo |
+| **Inspetor** | Plano (árvore com filtros) e abas: detalhe, tentativas, testes, diff, contexto, métricas, grafo, ferramentas (diagnóstico, dependências ausentes e skills), linha do tempo |
 | **Acompanhamento** | Estado da run em tempo real (mesmo redutor testado) |
 | **Statusbar** | Estado do run, provedor/modelo em uso, versão |
 

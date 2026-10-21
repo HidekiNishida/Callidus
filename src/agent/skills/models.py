@@ -52,6 +52,11 @@ class SkillSpec:
         examples: exemplos de uso.
         keywords: palavras que ajudam o matching.
         applies_to_kinds: tipos de tarefa aos quais a skill se aplica.
+        scripts: scripts opcionais que acompanham a skill.
+        references: documentos de referência opcionais.
+        assets: recursos opcionais.
+        state: estado no ciclo de vida (`draft`, `validated`, `approved`, `disabled`).
+        origin: procedência da skill (`builtin`, `catalog`, `agent`, `import`).
         metadata: metadados livres.
     """
 
@@ -68,6 +73,11 @@ class SkillSpec:
     examples: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
     applies_to_kinds: list[str] = field(default_factory=list)
+    scripts: list[str] = field(default_factory=list)
+    references: list[str] = field(default_factory=list)
+    assets: list[str] = field(default_factory=list)
+    state: str = "draft"
+    origin: str = "catalog"
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def validate(self) -> list[str]:

@@ -3,12 +3,13 @@ Arquivo: src/agent/tools/browser.py
 Nome: browser.py
 Propósito: fornecer a navegação do agente, invisível por padrão e com janela quando pedido.
 Responsabilidade: camada de infraestrutura — sessão de navegador em thread e pesquisa web por HTTP.
-Componentes: guard_url, parse_search_html, search_web, BrowserSession, browser_call.
+Componentes: guard_url, parse_search_html, search_web, BrowserSession, browser_call, _act, _watch_page.
 Dependências: httpx, playwright (opcional), agent.brand.
 Observações: o Playwright é opcional; sem ele, a pesquisa em texto continua funcionando.
 """
 from __future__ import annotations
 
+import os
 import queue
 import re
 import threading
@@ -17,9 +18,10 @@ from urllib.parse import quote_plus
 import httpx
 
 from agent.brand import USER_AGENT
+from agent.tools.policy import redact_text
 
 _ALLOWED = ("http://", "https://")
-_LINK = re.compile(r'<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', re.I)
+_LINK = re.compile(r'<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', re.IGNORECASE)
 _TAG = re.compile(r"<[^>]+>")
 
 
@@ -124,6 +126,8 @@ class BrowserSession:
         browser = None
         page = None
         headed_now: bool | None = None
+        console_log: list[dict] = []
+        network_log: list[dict] = []
         while True:
             action, args, headed, box = self._queue.get()
             try:
@@ -132,6 +136,8 @@ class BrowserSession:
                         browser.close()
                     browser = None
                     page = None
+                    console_log.clear()
+                    network_log.clear()
                     box.put({"success": True, "closed": True})
                     continue
                 if action == "search":
@@ -146,8 +152,9 @@ class BrowserSession:
                         playwright = sync_playwright().start()
                     browser = _launch(playwright, headed)
                     page = browser.new_page()
+                    _watch_page(page, console_log, network_log)
                     headed_now = headed
-                box.put(_act(page, action, args, headed=headed))
+                box.put(_act(page, action, args, headed=headed, console_log=console_log, network_log=network_log))
             except ModuleNotFoundError:
                 box.put(
                     {
@@ -176,7 +183,48 @@ def _launch(playwright, headed: bool):
         return playwright.chromium.launch(**options)
 
 
-def _act(page, action: str, args: dict, *, headed: bool) -> dict:
+def _watch_page(page, console_log: list[dict], network_log: list[dict]) -> None:
+    """Registra erros de console e respostas HTTP da página, sem guardar cabeçalhos.
+
+    Args:
+        page: página do Playwright.
+        console_log: lista preenchida com as mensagens, limitada a 40.
+        network_log: lista preenchida com método, URL e status, limitada a 40.
+    """
+    console_log.clear()
+    network_log.clear()
+
+    def on_console(message) -> None:
+        """Guarda uma mensagem de console já redigida."""
+        if len(console_log) >= 40:
+            return
+        console_log.append({"type": getattr(message, "type", ""), "text": redact_text(getattr(message, "text", "") or "")[:400]})
+
+    def on_error(error) -> None:
+        """Guarda um erro de página já redigido."""
+        if len(console_log) >= 40:
+            return
+        console_log.append({"type": "pageerror", "text": redact_text(str(error))[:400]})
+
+    def on_response(response) -> None:
+        """Guarda método, URL e status, sem cabeçalhos nem corpo."""
+        if len(network_log) >= 40:
+            return
+        request = getattr(response, "request", None)
+        network_log.append(
+            {
+                "method": getattr(request, "method", ""),
+                "url": redact_text(getattr(response, "url", "") or "")[:300],
+                "status": getattr(response, "status", None),
+            }
+        )
+
+    page.on("console", on_console)
+    page.on("pageerror", on_error)
+    page.on("response", on_response)
+
+
+def _act(page, action: str, args: dict, *, headed: bool, console_log: list[dict] | None = None, network_log: list[dict] | None = None) -> dict:
     """Executa uma ação sobre a página aberta.
 
     Args:
@@ -184,6 +232,8 @@ def _act(page, action: str, args: dict, *, headed: bool) -> dict:
         action: ação a executar.
         args: argumentos da ação.
         headed: quando `True`, a resposta indica o modo visível.
+        console_log: mensagens de console já coletadas nesta página.
+        network_log: respostas HTTP já coletadas, sem cabeçalhos.
 
     Returns:
         O resultado da ação, com o modo usado; em falha, a mensagem de erro.
@@ -219,6 +269,41 @@ def _act(page, action: str, args: dict, *, headed: bool) -> dict:
     if action == "scroll":
         page.mouse.wheel(0, int(args.get("delta") or 600))
         return {"success": True, "mode": mode}
+    if action == "fill":
+        selector = str(args.get("selector") or "")
+        value = str(args.get("text") or args.get("value") or "")
+        if not selector:
+            return {"success": False, "error": "informe selector"}
+        page.locator(selector).first.fill(value, timeout=8000)
+        secret = any(token in selector.lower() for token in ("password", "senha", "passwd"))
+        return {
+            "success": True,
+            "selector": selector,
+            "filled": "[REDACTED]" if secret else len(value),
+            "mode": mode,
+        }
+    if action == "screenshot":
+        path = str(args.get("path") or "")
+        if not path:
+            return {"success": False, "error": "informe path"}
+        page.screenshot(path=path, full_page=bool(args.get("full_page")))
+        return {"success": True, "path": path, "bytes": os.path.getsize(path), "url": page.url, "mode": mode}
+    if action in {"aria", "accessibility"}:
+        text = ""
+        try:
+            text = page.locator("body").aria_snapshot()
+        except Exception:
+            text = ""
+        if not text and hasattr(page, "accessibility"):
+            try:
+                text = str(page.accessibility.snapshot())
+            except Exception as exc:
+                return {"success": False, "error": str(exc)[:300], "mode": mode}
+        return {"success": True, "aria": str(text)[:4000], "url": page.url, "title": page.title(), "mode": mode}
+    if action == "console":
+        return {"success": True, "messages": list(console_log or []), "url": page.url, "mode": mode}
+    if action == "network":
+        return {"success": True, "requests": list(network_log or []), "url": page.url, "mode": mode}
     return {"success": False, "error": f"ação desconhecida: {action}"}
 
 

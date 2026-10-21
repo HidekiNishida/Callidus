@@ -13,6 +13,7 @@ import base64
 import json
 import re
 import uuid
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -67,14 +68,16 @@ class OperationContextBuilder:
         _kg: serviço do grafo de conhecimento, consultado para trechos técnicos.
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, settings: Any = None) -> None:
         """Cria o construtor de contexto ligado a uma sessão.
 
         Args:
             session: sessão SQLAlchemy usada nas consultas e na gravação do snapshot.
+            settings: configurações do processo, usadas para filtrar as capacidades expostas.
         """
         self._session = session
         self._kg = KnowledgeGraphService(session)
+        self._settings_obj = settings
 
     def build_for_task(
         self,
@@ -102,6 +105,9 @@ class OperationContextBuilder:
             technical = f"{technical}\n\n{attached}".strip()
         acceptance = task.acceptance_criteria or "Atender o objetivo sem violar requisitos canônicos."
         tools_summary = TOOL_CATALOG
+        capability = self._capability_summary(root_path, task)
+        if capability:
+            tools_summary = f"{tools_summary}\n{capability}"
         page = (task.metadata_json or {}).get("prompt_key") == "page"
         read_only = bool((task.metadata_json or {}).get("read_only"))
         if read_only:
@@ -232,6 +238,39 @@ class OperationContextBuilder:
             + "\n".join(lines)
             + "\nA etapa só vale se o requisito for cumprido e comprovado."
         )
+
+    def _capability_summary(self, root_path: str, task: TaskModel) -> str:
+        """Resumo das capacidades extras expostas nesta etapa.
+
+        O prompt carrega uma linha por família — o detalhe de cada ferramenta vem sob
+        demanda, por `tool_catalog` e `tool_help`.
+
+        Args:
+            root_path: pasta de trabalho da etapa.
+            task: tarefa em foco.
+
+        Returns:
+            O resumo em texto; string vazia quando nenhuma família extra se aplica.
+        """
+        from agent.tools.catalog import capability_summary, exposed_tools
+        from agent.tools.registry import get_default_registry
+
+        registry = get_default_registry()
+        tool_ids = exposed_tools(
+            registry,
+            objective=task.objective or "",
+            base=(),
+            settings=self._settings(),
+        )
+        return capability_summary(registry, tool_ids)
+
+    def _settings(self) -> Any:
+        """Configuração do processo, quando disponível.
+
+        Returns:
+            As configurações, ou `None` quando o construtor não as recebeu.
+        """
+        return self._settings_obj
 
     def _skills_block(
         self,

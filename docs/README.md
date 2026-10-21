@@ -35,6 +35,7 @@ desça até o detalhe. Quem procura uma funcionalidade em código deve usar os
 | [architecture/execucao-autonoma.md](/docs/architecture/execucao-autonoma.md) | Worker autônomo e escalonador | Ao mexer no laço em background |
 | [architecture/provedores.md](/docs/architecture/provedores.md) | Ollama, llama.cpp, OpenRouter, OpenAI-compatível, Anthropic, Gemini, mock | Ao adicionar ou trocar provedor |
 | [architecture/ferramentas.md](/docs/architecture/ferramentas.md) | Registro, execução e permissões das ferramentas | Ao criar ou ajustar uma ferramenta |
+| [architecture/automacao-sistema.md](/docs/architecture/automacao-sistema.md) | Sistema, desktop, engenharia, navegador e skills autorais | Ao automatizar o computador ou criar uma skill |
 | [architecture/ciclo-ferramentas.md](/docs/architecture/ciclo-ferramentas.md) | Inspeção com ferramentas antes da resposta | Ao mexer no protocolo da operação |
 | [architecture/context-builder.md](/docs/architecture/context-builder.md) | Montagem e orçamento de contexto | Ao mexer no prompt ou no orçamento |
 | [architecture/mcp.md](/docs/architecture/mcp.md) | MCP stdio | Ao integrar um servidor MCP |

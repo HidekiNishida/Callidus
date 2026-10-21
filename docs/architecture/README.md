@@ -14,6 +14,7 @@ Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 | [provedores.md](/docs/architecture/provedores.md) | **Provedores** — Ollama, llama.cpp, OpenRouter, OpenAI-compatível, Anthropic, Gemini, mock |
 | [execucao-remota.md](/docs/architecture/execucao-remota.md) | **Computador remoto** — projeto em servidor Linux/macOS/Windows por SSH |
 | [ferramentas.md](/docs/architecture/ferramentas.md) | Tools |
+| [automacao-sistema.md](/docs/architecture/automacao-sistema.md) | **Sistema, desktop, engenharia e skills** — adaptadores, política, matriz de plataforma |
 | [ciclo-ferramentas.md](/docs/architecture/ciclo-ferramentas.md) | **Ciclo de ferramentas da operação** — inspeção com ferramentas antes de responder |
 | [mcp.md](/docs/architecture/mcp.md) | MCP stdio |
 | [frontend.md](/docs/architecture/frontend.md) | UI |

@@ -345,7 +345,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `docs/architecture/README.md`
 
-**Propósito:** Índice da pasta `architecture/` (14 documentos técnicos).
+**Propósito:** Índice da pasta `architecture/` (documentos técnicos do runtime).
+
+### `docs/architecture/automacao-sistema.md`
+
+**Propósito:** Automação de sistema, desktop, engenharia e skills: política de risco, matriz de plataforma e como testar.
 
 ### `docs/architecture/context-builder.md`
 
@@ -655,6 +659,41 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [__init__.py](/src/agent/__init__.py)
 - Arquivo: [config.py](/src/agent/config.py)
 
+- Subpasta: [src/agent/desktop/](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/desktop/)
+- Subpasta: [src/agent/engineering/](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/engineering/)
+- Subpasta: [src/agent/system/](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/system/)
+## `src/agent/system/`
+
+**Propósito:** Automação do sistema operacional: adaptadores por plataforma, inventário de processos, aplicativos e diagnóstico do ambiente.
+
+- Subpasta: [src/agent/system/](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/system/)
+- Arquivo: [__init__.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/system/__init__.py)
+- Arquivo: [adapters.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/system/adapters.py)
+- Arquivo: [apps.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/system/apps.py)
+- Arquivo: [platform_info.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/system/platform_info.py)
+- Arquivo: [processes.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/system/processes.py)
+- Arquivo: [README.md](/src/agent/system/README.md)
+## `src/agent/engineering/`
+
+**Propósito:** Caixa de ferramentas de engenharia de software: descoberta de projeto, leitura do Git e execução de verificações de qualidade.
+
+- Subpasta: [src/agent/engineering/](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/engineering/)
+- Arquivo: [__init__.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/engineering/__init__.py)
+- Arquivo: [discovery.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/engineering/discovery.py)
+- Arquivo: [git.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/engineering/git.py)
+- Arquivo: [quality.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/engineering/quality.py)
+- Arquivo: [README.md](/src/agent/engineering/README.md)
+## `src/agent/desktop/`
+
+**Propósito:** Automação de desktop do agente: tela, entrada (mouse e teclado) e janelas, com um adaptador por sistema operacional.
+
+- Subpasta: [src/agent/desktop/](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/desktop/)
+- Arquivo: [__init__.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/desktop/__init__.py)
+- Arquivo: [capabilities.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/desktop/capabilities.py)
+- Arquivo: [input.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/desktop/input.py)
+- Arquivo: [windows.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/desktop/windows.py)
+- Arquivo: [accessibility.py](/src/agent/desktop/accessibility.py)
+- Arquivo: [README.md](/src/agent/desktop/README.md)
 ## `src/agent/api/`
 
 **Propósito:** Rotas FastAPI (REST e SSE) e dependências da aplicação.
@@ -813,6 +852,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `health() -> dict` — health check + versão.
 - `list_events(project_id: uuid.UUID, session: Session=Depends(db_session)) -> list[EventRead]` — timeline de eventos.
 - `list_tools() -> dict` — specs das ferramentas registradas.
+- `tools_availability() -> dict` — Pré-requisitos presentes e ausentes de cada ferramenta registrada.
+- `tools_families(settings: Settings=Depends(read_settings)) -> dict` — Famílias habilitadas, desligadas e o piso de risco automático.
+- `system_diagnose() -> dict` — Diagnóstico do sistema, da sessão gráfica, das permissões e das dependências.
+- `list_skills() -> dict` — Skills instaladas, com versão, estado e pasta.
 - `llamacpp_models(settings: Settings=Depends(read_settings)) -> dict` — lista modelos llama.cpp.
 - `mcp_call(body: dict, settings: Settings=Depends(read_settings)) -> dict` — chama ferramenta MCP.
 - `mcp_discover(settings: Settings=Depends(read_settings)) -> dict` — descobre ferramentas nos servidores MCP.
@@ -991,7 +1034,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `OperationContextBuilder._inspection_block(self, task) → str` — O que a tentativa anterior já leu: evita reler os mesmos arquivos do zero.
 
 - `OperationContextBuilder` — Classe que monta, para uma tarefa, os blocos de contexto consumidos pelo modelo (objetivo global, regras, memória, contrato, arquivos, guias, skills, falhas), respeitando o orçamento de tokens e persistindo um `ContextSnapshotModel` do resultado.
-- `OperationContextBuilder.__init__(session: Session) -> None` — Inicializa o construtor guardando a sessão SQLAlchemy e instanciando o `KnowledgeGraphService` usado para recuperar trechos técnicos do grafo de conhecimento.
+- `OperationContextBuilder.__init__(session: Session, settings: Any=None) -> None` — Inicializa o construtor guardando a sessão SQLAlchemy, as configurações e o `KnowledgeGraphService`.
+- `OperationContextBuilder._settings() -> Any` — Configuração do processo usada para expor famílias de ferramentas.
+- `OperationContextBuilder._capability_summary(root_path: str, task: TaskModel) -> str` — Resumo compacto das famílias extras que entram no prompt desta etapa.
 - `OperationContextBuilder._ancestor_attachments(task: TaskModel) -> list[dict]` — Percorre a cadeia de tarefas-pai (com proteção contra ciclos) e concatena os `attachments` declarados em `metadata_json`. Retorna a lista de referências de anexos (imagens/textos) da tarefa e de seus ancestrais.
 - `OperationContextBuilder._attachment_snippet(root_path: str, task: TaskModel) -> str` — Monta o bloco textual dos anexos do pedido: lista até 8 anexos e, para os do tipo `text`, o preview de até 2000 caracteres lido via `resolve_under_root` (ignora anexos ilegíveis). Retorna string vazia quando não há anexos.
 - `OperationContextBuilder._contract_block(task: TaskModel) -> tuple[str, list[str]]` — Lê o contrato da tarefa no `ContractService` e devolve o corpo formatado (entradas, saídas, invariantes e aceite, truncados a 600 caracteres cada) e a lista de arquivos referenciados no contrato.
@@ -1734,7 +1779,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Decide o que a etapa pode fazer com as ferramentas e com a resposta do modelo (permissões de escrita e usabilidade do payload). **Quando/onde:** antes de toda escrita e antes de aceitar o JSON do modelo.
 
-- `operation_tools_for(meta) -> tuple[str, ...]` — Ferramentas liberadas para a etapa: sem escrita quando o pedido é somente leitura.
+- `operation_tools_for(meta: dict, *, registry: Any=None, settings: Any=None, objective: str='') -> tuple[str, ...]` — Ferramentas liberadas para a etapa: núcleo sem escrita quando o pedido é somente leitura, mais as famílias extras pedidas pelo objetivo.
 - `write_refusal_reason(meta, tool_name, path) -> str | None` — Motivo da recusa da escrita (somente leitura ou régua de testes protegida) ou `None` quando a escrita é permitida.
 - `payload_is_usable(content) -> bool` — Indica se a resposta do modelo já é o JSON que a etapa espera (criar ou editar).
 - `evidence_state(passed, blocked=False) -> str` — Traduz o resultado da verificação no estado gravado na evidência: `aprovado`, `reprovado`, `inconclusivo` ou `bloqueado`. Entrada: resultado e flag de bloqueio; saída: string de estado.
@@ -2279,6 +2324,17 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [models.py](/src/agent/skills/models.py)
 - Arquivo: [selector.py](/src/agent/skills/selector.py)
 
+- Subpasta: [src/agent/skills/authoring/](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/skills/authoring/)
+## `src/agent/skills/authoring/`
+
+**Propósito:** Autoração de skills pelo próprio agente: layout, validação, instalação, versionamento e histórico.
+
+- Subpasta: [src/agent/skills/authoring/](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/skills/authoring/)
+- Arquivo: [__init__.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/skills/authoring/__init__.py)
+- Arquivo: [layout.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/skills/authoring/layout.py)
+- Arquivo: [service.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/skills/authoring/service.py)
+- Arquivo: [store.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/skills/authoring/store.py)
+- Arquivo: [validator.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/skills/authoring/validator.py)
 ## `src/agent/skills/catalog/`
 
 **Propósito:** Leitura do catálogo de Skills em Markdown (fonte de verdade).
@@ -2302,6 +2358,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `load_catalog(directory: str | Path | None=None, *, strict: bool=True) -> list[SkillSpec]` — Lê todos os `.md` do diretório de catálogo (ignorando `README.md`), converte cada um e descarta — com log — os inválidos quando `strict` é verdadeiro. Retorna a lista de `SkillSpec`; arquivo corrompido nunca derruba a execução.
 - `parse_frontmatter(text: str) -> tuple[dict[str, object], str]` — Separa o front matter YAML-like do corpo do Markdown, aceitando escalares, listas inline (`chave: [a, b]`) e listas em bloco (`chave:` seguido de linhas `- item`). Retorna o dicionário de metadados e o corpo restante.
 - `parse_skill_markdown(text: str, *, source_path: str | Path | None=None) -> SkillSpec` — Converte um Markdown de Skill em `SkillSpec` completo: id (do front matter ou do nome do arquivo), nome, descrição (do front matter, da seção "Descrição" ou do primeiro parágrafo) e as listas de critérios, proibições, ferramentas, procedimentos, validação, riscos, exemplos, keywords e `applies_to_kinds`. Retorna sempre uma instância, mesmo com campos vazios.
+- `_read_manifest(path: Path) -> dict[str, object]` — Lê o `manifest.json` de uma skill em pasta, ou dicionário vazio quando o arquivo falta ou é ilegível.
+- `_list_files(root: Path, folder: str) -> list[str]` — Lista os arquivos de uma subpasta opcional da skill (`scripts`, `references`, `assets`, `tests`).
+- `_load_skill_folders(base: Path, *, strict: bool) -> list[SkillSpec]` — Carrega skills no formato de pasta (`SKILL.md` + manifesto), sem executar scripts.
 
 ### `src/agent/skills/README.md`
 
@@ -2332,6 +2391,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `SkillRegistry.reload() -> None` — recarrega catálogo; valida e separa skills inválidas.
 - `SkillRegistry.source_of(skill_id: str) -> str | None` — Informa a origem da Skill carregada (`builtin`, caminho do catálogo ou "runtime"). Retorna `None` se o id não estiver registrado.
 - `get_skill_registry(project_root: str | Path | None=None) -> SkillRegistry` — instância singleton.
+- `installed_skills_dir() -> Path` — Pasta das skills instaladas pelo agente (`data/skills`).
 - `reset_skill_registry() -> None` — Descarta o singleton do registro, forçando o recarregamento na próxima chamada a `get_skill_registry`. Usado em testes e ao trocar de projeto em runtime.
 
 ### `src/agent/skills/models.py`
@@ -2379,7 +2439,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `BrowserSession.__init__() -> None` — cria a fila de ações e sobe a thread daemon que mantém o navegador vivo entre chamadas. Entrada: nenhuma; saída: `None`.
 - `BrowserSession._loop() -> None` — laço infinito da thread: consome ações da fila, reabre o Chromium quando o modo (headless/visível) muda e devolve o resultado na fila de resposta da chamada. Entrada: item `(action, args, headed, box)` da fila; saída: `None` (o resultado vai para a fila da chamada). Quando o `BrowserSession` está ativo.
 - `BrowserSession.call(action: str, args: dict, *, headed: bool, timeout: float=45) -> dict` — enfileira uma ação e espera o resultado da thread, devolvendo erro de tempo esgotado se ela não responder. Entrada: ação, argumentos, modo visível/headless e limite de espera; saída: dicionário de resultado ou `{"success": False, "error": "navegador demorou demais"}`.
-- `_act(page, action: str, args: dict, *, headed: bool) -> dict` — executa uma ação do Playwright na página (`navigate`, `snapshot`, `click`, `type`, `press`, `scroll`) e devolve `{success, ...}` com o modo usado. Entrada: página, ação e argumentos; saída: dicionário de resultado ou erro de ação desconhecida.
+- `_watch_page(page, console_log: list[dict], network_log: list[dict]) -> None` — Registra console e respostas HTTP da página, sem cabeçalhos e com segredos redigidos.
+- `_act(page, action: str, args: dict, *, headed: bool, console_log: list[dict] | None=None, network_log: list[dict] | None=None) -> dict` — executa uma ação do Playwright (`navigate`, `snapshot`, `click`, `type`, `fill`, `press`, `scroll`, `screenshot`, `aria`, `console`, `network`) e devolve o resultado. Campo de senha não devolve o valor.
 - `_launch(playwright, headed: bool)` — abre o Chromium, preferindo o canal `chrome` e caindo para o Chromium embutido quando o primeiro falha. Entrada: contexto do Playwright e flag de janela visível; saída: objeto `Browser`.
 - `browser_call(action: str, args: dict, *, headed: bool) -> dict` — actions: `navigate`, `click`, `fill`, `screenshot`, `evaluate`, `select`, `hover`, `wait`, `close`.
 - `guard_url(url: str) -> str` — valida URL (https, não localhost/private).
@@ -2445,7 +2506,145 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `build_default_registry() -> ToolRegistry` — carrega todos builtins + browser se Playwright.
 - `canonical_tool_id(tool_id: str) -> str` — resolve alias → canônico.
 - `current_call_id() -> str | None` — devolve o id da chamada de ferramenta em andamento, guardado num `ContextVar`. Entrada: nenhuma; saída: id hex ou `None`. Quando comandos e eventos de arquivo se ligam à chamada que os disparou.
+- `ToolContext.cancelled() -> bool` — Indica se o cancelamento cooperativo foi pedido para esta execução.
+- `ToolRegistry.ids() -> list[str]` — Identificadores registrados, em ordem alfabética.
+- `ToolRegistry.specs_of_family(family: str) -> list[ToolSpec]` — Ferramentas de uma família.
+- `ToolRegistry.compact_catalog(families: list[str] | None=None) -> str` — Catálogo de uma linha por ferramenta, para o prompt.
+- `ToolRegistry.describe(tool_id: str) -> dict[str, Any]` — Contrato completo e pré-requisitos de uma ferramenta, sob demanda.
+- `ToolRegistry.availability_report() -> list[dict[str, Any]]` — O que falta para cada ferramenta registrada.
+- `get_default_registry() -> ToolRegistry` — Registro padrão do processo, montado uma vez.
+- `_tool_catalog(ctx: ToolContext, args: dict) -> dict` — Lista as ferramentas registradas quando o modelo pede o catálogo.
+- `_tool_help(ctx: ToolContext, args: dict) -> dict` — Detalha uma ferramenta quando o modelo pede ajuda.
 
+### `src/agent/tools/arguments.py`
+
+**Propósito:** validar os argumentos de uma ferramenta contra o esquema declarado, antes da execução.
+
+- `validate_arguments(schema: dict[str, Any] | None, args: dict[str, Any] | None) -> str | None` — Confere presença e tipo; devolve a mensagem do erro ou `None`.
+- `_validate_shorthand(schema: dict[str, str], args: dict[str, Any]) -> str | None` — Valida o atalho `nome: tipo` (`str?`, `str|list[str]`).
+- `_validate_json_schema(schema: dict[str, Any], args: dict[str, Any]) -> str | None` — Valida o JSON Schema usado pelas automações.
+- `_matches_union(body: str, value: Any) -> bool` — Indica se o valor casa com algum tipo unido por `|`.
+- `_matches_atom(atom: str, value: Any) -> bool` — Indica se o valor casa com um tipo ou um literal.
+- `_matches_json_property(prop: dict[str, Any], value: Any) -> bool` — Indica se o valor casa com uma propriedade de JSON Schema.
+
+### `src/agent/tools/availability.py`
+
+**Propósito:** verificar se os pré-requisitos de uma ferramenta existem no ambiente atual.. camada de infraestrutura — sondagem de binários, módulos, sistema e ambiente.
+
+- `Requirement` — Um pré-requisito verificável de uma ferramenta.
+- `Requirement.parse(spec: str) -> Requirement` — Interpreta a forma textual do requisito.
+- `Availability` — Resultado da verificação de pré-requisitos de uma ferramenta.
+- `_current_os() -> str` — Nome canônico do sistema operacional atual.
+- `_has_gui_session() -> bool` — Indica se há sessão gráfica ativa no ambiente atual.
+- `check_requirement(requirement: Requirement) -> tuple[bool, str, str]` — Verifica um pré-requisito.
+- `check_requirements(requirements: list[str]) -> Availability` — Verifica uma lista de requisitos.
+- `check_tool(spec: Any) -> Availability` — Verifica os requisitos declarados por uma ferramenta.
+- `environment_report() -> dict[str, Any]` — Descreve o ambiente de execução para o diagnóstico.
+### `src/agent/tools/catalog.py`
+
+**Propósito:** decidir quais ferramentas o modelo recebe em cada etapa, sem estourar o contexto.. camada de aplicação — exposição de capacidades por objetivo e configuração.
+
+- `enabled_families(settings: Any=None) -> set[str] | None` — Famílias de ferramentas liberadas pela configuração.
+- `families_for_objective(objective: str) -> set[str]` — Famílias extras sugeridas pelo texto do pedido.
+- `exposed_tools(registry: ToolRegistry, *, objective: str='', base: Iterable[str]=(), settings: Any=None) -> tuple[str, ...]` — Ferramentas oferecidas ao modelo em uma etapa.
+- `capability_summary(registry: ToolRegistry, tool_ids: Iterable[str]) -> str` — Resumo compacto das capacidades expostas, para o prompt.
+### `src/agent/tools/contracts.py`
+
+**Propósito:** definir os contratos estáveis da camada de ferramentas (risco, permissões, execução).. camada de infraestrutura — vocabulário compartilhado entre registro, política e adaptadores.
+
+- `ToolRisk(str, Enum)` — Nível de risco de uma ferramenta, do mais seguro ao mais perigoso.
+- `ExecutionMode(str, Enum)` — Como a ferramenta roda, do ponto de vista do agente.
+- `ToolFamily(str, Enum)` — Família funcional da ferramenta — a unidade habilitada e desabilitada em conjunto.
+- `risk_at_least(risk: str | ToolRisk, minimum: str | ToolRisk) -> bool` — Indica se um nível de risco atinge um piso.
+- `risk_above(risk: str | ToolRisk, ceiling: str | ToolRisk) -> bool` — Indica se um nível de risco ultrapassa um teto.
+### `src/agent/tools/desktop_tools.py`
+
+**Propósito:** expor ao agente a automação de desktop: tela, entrada, janelas e screenshots.. camada de apresentação — handlers das ferramentas de interface gráfica.
+
+- `_screen(ctx: ToolContext, args: dict) -> dict` — Informa a geometria da tela e as limitações da sessão.
+- `_screenshot(ctx: ToolContext, args: dict) -> dict` — Captura a tela inteira ou uma região.
+- `_click(ctx: ToolContext, args: dict) -> dict` — Clica em um ponto da tela.
+- `_drag(ctx: ToolContext, args: dict) -> dict` — Arrasta o ponteiro de um ponto a outro.
+- `_type(ctx: ToolContext, args: dict) -> dict` — Digita um texto na janela em foco.
+- `_key(ctx: ToolContext, args: dict) -> dict` — Pressiona uma tecla ou um atalho.
+- `_scroll(ctx: ToolContext, args: dict) -> dict` — Rola a tela.
+- `_windows(ctx: ToolContext, args: dict) -> dict` — Lista as janelas visíveis da sessão gráfica.
+- `_elements(ctx: ToolContext, args: dict) -> dict` — Lista os elementos da janela pela árvore de acessibilidade.
+- `_wait(ctx: ToolContext, args: dict) -> dict` — Espera uma janela pelo título ou um elemento pelo nome.
+- `_click_element(ctx: ToolContext, args: dict) -> dict` — Clica em um elemento localizado pelo nome, relendo a geometria na hora.
+- `register_all(registry: ToolRegistry) -> None` — Registra as ferramentas de automação de desktop.
+### `src/agent/tools/devtools.py`
+
+**Propósito:** expor ao agente a descoberta de projetos, o Git e a execução de verificações de qualidade.. camada de apresentação — handlers das ferramentas de engenharia de software.
+
+- `_project_info(ctx: ToolContext, args: dict) -> dict` — Descreve o projeto: linguagem, manifestos, gerenciadores e instruções.
+- `_project_commands(ctx: ToolContext, args: dict) -> dict` — Deriva os comandos de instalação, build, lint, teste e execução.
+- `_read_manifest(ctx: ToolContext, args: dict) -> dict` — Lê um manifesto de projeto (package.json, pyproject.toml, Cargo.toml).
+- `_git_branch(ctx: ToolContext, args: dict) -> dict` — Branches do repositório Git, com a atual em destaque.
+- `_git_log(ctx: ToolContext, args: dict) -> dict` — Histórico recente de commits.
+- `_run_check(ctx: ToolContext, args: dict) -> dict` — Executa uma verificação de qualidade (lint, teste ou build) e resume o resultado.
+- `register_all(registry: ToolRegistry) -> None` — Registra as ferramentas de engenharia de software.
+### `src/agent/tools/policy.py`
+
+**Propósito:** decidir se uma ferramenta pode rodar, com que risco e se precisa de aprovação humana.. camada de infraestrutura — política de permissões por ferramenta, família e sessão.
+
+- `PolicyDecision` — Veredito da política sobre uma chamada de ferramenta.
+- `PermissionPolicy` — Política de permissões do agente: o que é liberado, o que exige aprovação, o que é proibido.
+- `PermissionPolicy.disable_family(family: str) -> None` — Desliga uma família de ferramentas nesta sessão.
+- `PermissionPolicy.enable_family(family: str) -> None` — Religa uma família de ferramentas nesta sessão.
+- `PermissionPolicy.grant(tool_id: str) -> None` — Concede aprovação pontual para uma ferramenta nesta sessão.
+- `PermissionPolicy.decide(tool_id: str, *, risk: ToolRisk=ToolRisk.READ, family: str='', approved: bool=False) -> PolicyDecision` — Decide se a chamada pode rodar e se exige aprovação.
+- `PermissionPolicy.from_config(config: dict[str, Any] | None) -> PermissionPolicy` — Constrói a política a partir de um dicionário de configuração.
+- `PermissionPolicy.to_config() -> dict[str, Any]` — Serializa a política para configuração.
+- `redact_text(text: str) -> str` — Remove segredos de um texto livre.
+- `redact(value: Any) -> Any` — Remove segredos de uma estrutura de dados qualquer, preservando a forma.
+- `is_secret_env(name: str) -> bool` — Indica se uma variável de ambiente provavelmente guarda um segredo.
+- `tool_policy(settings: Any=None) -> PermissionPolicy` — Monta a política de permissões a partir da configuração do processo.
+### `src/agent/tools/skill_tools.py`
+
+**Propósito:** expor ao agente o ciclo de vida das skills: criar, validar, testar, instalar e ativar.. camada de apresentação — handlers das ferramentas de autoria e gestão de skills.
+
+- `_service() -> SkillAuthoringService` — Serviço de autoria, recriado quando a pasta de skills mudou.
+- `_skill_list(ctx: ToolContext, args: dict) -> dict` — Lista as skills conhecidas: instaladas, do projeto e do catálogo.
+- `_skill_search(ctx: ToolContext, args: dict) -> dict` — Pesquisa skills por nome, descrição ou palavra-chave.
+- `_skill_create(ctx: ToolContext, args: dict) -> dict` — Cria uma skill em estado de rascunho a partir de um pedido.
+- `_skill_validate(ctx: ToolContext, args: dict) -> dict` — Valida o contrato de uma skill instalada.
+- `_skill_test(ctx: ToolContext, args: dict) -> dict` — Executa os testes de uma skill em ambiente isolado.
+- `_skill_install(ctx: ToolContext, args: dict) -> dict` — Instala uma skill a partir de uma pasta externa, sem executar o conteúdo.
+- `_skill_activate(ctx: ToolContext, args: dict) -> dict` — Ativa uma skill validada.
+- `_skill_deactivate(ctx: ToolContext, args: dict) -> dict` — Desativa uma skill sem apagar o conteúdo.
+- `_skill_update(ctx: ToolContext, args: dict) -> dict` — Atualiza uma skill a partir de uma nova versão, preservando o histórico.
+- `_skill_history(ctx: ToolContext, args: dict) -> dict` — Mostra o histórico de alterações de uma skill.
+- `_skill_propose(ctx: ToolContext, args: dict) -> dict` — Registra uma proposta de melhoria de skill, com a evidência que a motivou.
+- `_skill_resolve_proposal(ctx: ToolContext, args: dict) -> dict` — Aceita ou rejeita uma proposta de melhoria.
+- `_strings(value: Any) -> list[str]` — Normaliza um argumento de lista de textos.
+- `register_all(registry: ToolRegistry) -> None` — Registra as ferramentas de ciclo de vida de skills.
+### `src/agent/tools/system_tools.py`
+
+**Propósito:** expor ao agente o gerenciamento de processos, aplicativos e diagnóstico do sistema.. camada de apresentação — handlers das ferramentas de sistema e de rede.
+
+- `_root(ctx: ToolContext) -> Path` — Raiz absoluta do projeto autorizada no contexto.
+- `_resolve(ctx: ToolContext, raw: str) -> tuple[Path | None, dict | None]` — Resolve um caminho dentro da raiz do projeto, devolvendo o erro em vez de levantá-lo.
+- `_diagnose(ctx: ToolContext, args: dict) -> dict` — Diagnostica o ambiente: sistema, sessão, permissões e dependências.
+- `_list_processes(ctx: ToolContext, args: dict) -> dict` — Lista os processos em execução.
+- `_process_info(ctx: ToolContext, args: dict) -> dict` — Inspeciona um processo pelo identificador.
+- `_kill_process(ctx: ToolContext, args: dict) -> dict` — Encerra um processo autorizado.
+- `_list_apps(ctx: ToolContext, args: dict) -> dict` — Lista os aplicativos instalados.
+- `_launch_app(ctx: ToolContext, args: dict) -> dict` — Abre um aplicativo, com argumentos, diretório de trabalho e ambiente controlados.
+- `_open_path(ctx: ToolContext, args: dict) -> dict` — Abre um arquivo, pasta ou URL com o manipulador padrão do sistema.
+- `_task_start(ctx: ToolContext, args: dict) -> dict` — Inicia uma tarefa longa em segundo plano e devolve o identificador.
+- `_task_status(ctx: ToolContext, args: dict) -> dict` — Consulta o estado e a saída parcial de uma tarefa em segundo plano.
+- `_task_cancel(ctx: ToolContext, args: dict) -> dict` — Cancela uma tarefa em segundo plano.
+- `_list_env(ctx: ToolContext, args: dict) -> dict` — Lista as variáveis de ambiente, ocultando os valores sensíveis.
+- `_system_resources(ctx: ToolContext, args: dict) -> dict` — Informa uso de disco, memória e carga da CPU.
+- `_list_ports(ctx: ToolContext, args: dict) -> dict` — Lista as conexões de rede ativas do sistema.
+- `_check_dependencies(ctx: ToolContext, args: dict) -> dict` — Verifica se as dependências pedidas estão disponíveis.
+- `_download(ctx: ToolContext, args: dict) -> dict` — Baixa um arquivo para a pasta do projeto, com verificação de tamanho e destino.
+- `_file_hash(ctx: ToolContext, args: dict) -> dict` — Calcula o resumo de um arquivo (sha256 por padrão).
+- `_archive(ctx: ToolContext, args: dict) -> dict` — Compacta uma pasta ou um arquivo em `.zip` ou `.tar.gz`.
+- `_extract_archive(ctx: ToolContext, args: dict) -> dict` — Extrai um arquivo compactado dentro da pasta do projeto.
+- `_http_request(ctx: ToolContext, args: dict) -> dict` — Faz uma requisição HTTP para diagnóstico ou integração.
+- `register_all(registry: ToolRegistry) -> None` — Registra as ferramentas de sistema, processos, aplicativos e rede.
 ## `src/agent/util/`
 
 **Propósito:** Utilitários compartilhados (extração tolerante de JSON).
@@ -2622,6 +2821,43 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [test_sufficient_context.py](/tests/test_sufficient_context.py)
 - Arquivo: [test_tools.py](/tests/test_tools.py)
 
+### `tests/test_browser_actions.py`
+
+**Propósito:** verificar as ações de página (preencher, capturar, ária, console e rede) com uma página falsa.
+
+### `tests/test_desktop_accessibility.py`
+
+**Propósito:** verificar a leitura da árvore de acessibilidade e a recusa de clique sem nome ou sem geometria.
+
+### `tests/test_tool_arguments.py`
+
+**Propósito:** verificar a validação de argumentos no registro, antes de o handler rodar.
+
+### `tests/web/tools-report.test.mjs`
+
+**Propósito:** verificar o resumo da aba Ferramentas a partir de respostas sintéticas da API.
+
+### `tests/test_capability_exposure.py`
+
+**Propósito:** verificar a exposição de capacidades: quais ferramentas o modelo recebe e como o prompt as resume.. camada de testes — comportamento do catálogo de ferramentas e do resumo de capacidades.
+### `tests/test_desktop_automation.py`
+
+**Propósito:** verificar a automação de desktop: adaptadores por plataforma, tela, entrada e janelas.. camada de testes — comportamento observável da camada de desktop no sistema atual.
+### `tests/test_engineering_tools.py`
+
+**Propósito:** verificar a caixa de ferramentas de engenharia: descoberta de projeto, Git e verificações.. camada de testes — comportamento da descoberta, do Git e do resumo de resultados.
+### `tests/test_real_workflow_integration.py`
+
+**Propósito:** demonstrar, com execução real, os fluxos de abrir aplicativo, manter software e usar skill.. camada de testes — integração do agente com o sistema, o projeto e o ciclo de vida das skills.
+### `tests/test_skills_authoring.py`
+
+**Propósito:** verificar o ciclo de vida das skills autorais: criação, validação, teste, ativação, versão e rollback.. camada de testes — comportamento do repositório de skills e do serviço de autoria.
+### `tests/test_system_automation.py`
+
+**Propósito:** verificar a automação do sistema: processos, tarefas em segundo plano, arquivos e rede.. camada de testes — comportamento real dos adaptadores de sistema sobre processos descartáveis.
+### `tests/test_tool_contracts.py`
+
+**Propósito:** verificar o contrato unificado das ferramentas: risco, permissões, disponibilidade, prazo e cancelamento.. camada de testes — comportamento do registro, da política e da sondagem de requisitos.
 ## `tests/fixtures/`
 
 **Propósito:** Fixtures de teste (projeto de exemplo para o fluxo E2E).
@@ -2633,6 +2869,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [observe-core.test.mjs](/tests/web/observe-core.test.mjs)
 - Arquivo: [observe-stream.test.mjs](/tests/web/observe-stream.test.mjs)
 - Arquivo: [replay.mjs](/tests/web/replay.mjs)
+- Arquivo: [tools-report.test.mjs](/tests/web/tools-report.test.mjs)
 
 ### `tests/test_automation_chat_execution.py`
 
@@ -4444,6 +4681,12 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `moveFolderTo`
 - `renameConversation`
 
+### `web/static/assets/app/tools-report.js`
+
+**Propósito:** resumir ferramentas, dependências ausentes, diagnóstico e skills para a aba Ferramentas.
+
+- `formatToolsReport(report)` — Monta o texto da aba a partir das respostas de `/tools`, `/tools/availability`, `/system/diagnose` e `/skills`.
+
 ### `web/static/assets/app/store.js`
 
 **Propósito:** store — módulo do projeto.
@@ -5294,3 +5537,249 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Recurso visual da marca..
 
+### `lab/demo_app.py`
+
+**Propósito:** aplicativo de demonstração que o Callidus abre, acompanha e inspeciona em teste real.. camada de laboratório — processo descartável que escreve um sinal de vida e serve HTTP local.
+
+- `_Handler(BaseHTTPRequestHandler)` — Responde a uma rota de estado, para que a verificação do resultado seja real.
+- `_Handler.do_GET() -> None` — Devolve o estado do aplicativo em JSON.
+- `_Handler.log_message(fmt: str, *args) -> None` — Silencia o log de acesso: o aplicativo é silencioso por padrão.
+- `_write_heartbeat(out: Path, payload: dict) -> None` — Grava o sinal de vida do aplicativo.
+- `main(argv: list[str] | None=None) -> int` — Executa o aplicativo de demonstração.
+### `src/agent/desktop/__init__.py`
+
+**Propósito:** expor a automação de desktop (tela, entrada, janelas e acessibilidade) com uma interface única.. camada de infraestrutura — ponto de entrada estável para o agente.
+
+### `src/agent/desktop/README.md`
+
+**Propósito:** Índice da automação de desktop: tela, janelas, entrada e árvore de acessibilidade.
+
+### `src/agent/desktop/accessibility.py`
+
+**Propósito:** consultar a árvore de acessibilidade e agir sobre um elemento pelo nome, relendo a geometria na hora.
+
+- `parse_accessibility_text(text: str) -> dict[str, Any]` — Interpreta o texto estável dos adaptadores (janela e elementos).
+- `match_elements(elements: list[dict[str, Any]], name: str) -> list[dict[str, Any]]` — Filtra elementos cujo nome contém o texto pedido.
+- `element_center(element: dict[str, Any]) -> tuple[int, int] | None` — Centro do retângulo, ou `None` quando a área é vazia.
+- `list_elements(app: str | None=None, *, limit: int=40) -> dict[str, Any]` — Lista os elementos da janela em foco pela API nativa da plataforma.
+- `wait_for(*, title: str='', name: str='', timeout: float=8.0, interval: float=0.4) -> dict[str, Any]` — Espera uma janela ou um elemento, com tempo limitado.
+- `click_named(name: str, *, app: str | None=None, button: str='left') -> dict[str, Any]` — Clica no centro de um elemento localizado pelo nome.
+- `_bounds(parts: list[str]) -> dict[str, int] | None` — Converte quatro números textuais em um retângulo.
+- `_clean_app(app: str | None) -> str | None | dict[str, Any]` — Normaliza o nome do aplicativo ou devolve erro de formato.
+- `_run(command: list[str], timeout: float) -> subprocess.CompletedProcess` — Executa o comando nativo da plataforma.
+- `_from_command(command: list[str], *, timeout: float) -> dict[str, Any]` — Roda o adaptador e interpreta a saída, com dica de permissão.
+- `_macos_script(app: str | None, limit: int) -> list[str]` — AppleScript que lista os elementos da primeira janela.
+- `_windows_script(app: str | None, limit: int) -> str` — PowerShell que lista os filhos da janela em foco via UI Automation.
+- `_linux_elements(app: str | None, limit: int) -> dict[str, Any]` — Lista elementos via AT-SPI quando `pyatspi` está instalado.
+### `src/agent/desktop/capabilities.py`
+
+**Propósito:** descrever a tela do computador e capturar screenshots de tela inteira ou de região.. camada de infraestrutura — geometria da tela e captura de imagem por plataforma.
+
+- `_run(command: list[str], timeout: float=30) -> subprocess.CompletedProcess` — Executa um comando do sistema capturing a saída.
+- `_macos_screen() -> dict[str, Any]` — Geometria da tela no macOS, lida do desktop do Finder.
+- `_windows_screen() -> dict[str, Any]` — Geometria da tela no Windows, lida das telas do Windows Forms.
+- `_linux_screen() -> dict[str, Any]` — Geometria da tela no Linux, lida do `xrandr` (X11) ou dos portals (Wayland).
+- `screen_info() -> dict[str, Any]` — Informa a geometria da tela e o que é possível fazer com ela.
+- `_capture_target(path: str | None) -> str` — Resolve o caminho de destino da captura.
+- `capture_screenshot(path: str | None=None, region: dict[str, int] | None=None) -> dict[str, Any]` — Captura a tela inteira ou uma região permitida.
+### `src/agent/desktop/input.py`
+
+**Propósito:** injetar eventos de mouse e teclado na sessão gráfica do usuário.. camada de infraestrutura — cliques, digitação, teclas e rolagem por plataforma.
+
+- `_run(command: list[str], timeout: float=20) -> subprocess.CompletedProcess` — Executa um comando do sistema capturing a saída.
+- `_check_point(x: int, y: int) -> dict[str, Any] | None` — Confere se um ponto está dentro da tela conhecida.
+- `_macos_click(x: int, y: int, *, double: bool=False, button: str='left') -> dict[str, Any]` — Clica por coordenadas no macOS, via AppleScript do System Events.
+- `_windows_click(x: int, y: int, *, double: bool=False, button: str='left') -> dict[str, Any]` — Clica por coordenadas no Windows, via `user32` do PowerShell.
+- `_linux_click(x: int, y: int, *, double: bool=False, button: str='right') -> dict[str, Any]` — Clica por coordenadas no Linux, via `xdotool`.
+- `click(x: int, y: int, *, double: bool=False, button: str='left') -> dict[str, Any]` — Clica em um ponto da tela.
+- `drag(x1: int, y1: int, x2: int, y2: int) -> dict[str, Any]` — Arrasta o ponteiro de um ponto a outro.
+- `press_key(key: str, *, repeat: int=1) -> dict[str, Any]` — Pressiona uma tecla ou um atalho de teclado.
+- `_windows_keys(name: str) -> str` — Converte um nome de tecla para a notação do SendKeys.
+- `type_text(text: str, *, interval: float=0.01) -> dict[str, Any]` — Digita um texto na janela em foco.
+- `_ps_quote(value: str) -> str` — Cita um texto para uso dentro de um comando PowerShell.
+- `scroll(amount: int, *, horizontal: bool=False) -> dict[str, Any]` — Rola a tela.
+### `src/agent/desktop/windows.py`
+
+**Propósito:** listar janelas ativas, títulos e aplicativos donos das janelas.. camada de infraestrutura — inventário de janelas por plataforma.
+
+- `WindowInfo` — Uma janela visível da sessão gráfica.
+- `WindowInfo.as_dict() -> dict[str, Any]` — Representação serializável da janela.
+- `_run(command: list[str], timeout: float=25) -> subprocess.CompletedProcess` — Executa um comando do sistema capturing a saída.
+- `_macos_windows() -> tuple[list[WindowInfo], str | None]` — Janelas do macOS, lidas do System Events.
+- `_windows_windows() -> tuple[list[WindowInfo], str | None]` — Janelas do Windows, lidas dos processos com título de janela.
+- `_linux_windows() -> tuple[list[WindowInfo], str | None]` — Janelas do Linux, lidas do `wmctrl` (X11) ou do Wayland, quando disponível.
+- `list_windows(match: str | None=None, limit: int=50) -> dict[str, Any]` — Lista as janelas visíveis da sessão gráfica.
+### `src/agent/engineering/__init__.py`
+
+**Propósito:** expor a caixa de ferramentas de engenharia de software do agente.. camada de infraestrutura — ponto de entrada estável para o agente.
+
+### `src/agent/engineering/README.md`
+
+**Propósito:** Índice da descoberta de projeto, da leitura do Git e das verificações de qualidade.
+### `src/agent/engineering/discovery.py`
+
+**Propósito:** identificar a linguagem, as ferramentas e os comandos de um projeto real.. camada de infraestrutura — leitura de manifests e derivação dos comandos de build, lint e teste.
+
+- `ProjectInfo` — O que a descoberta encontrou sobre um projeto.
+- `ProjectInfo.as_dict() -> dict[str, Any]` — Representação serializável da descoberta.
+- `_safe_read_json(path: Path) -> dict[str, Any]` — Lê um JSON sem quebrar a descoberta quando o arquivo está malformado.
+- `_safe_read_toml(path: Path) -> dict[str, Any]` — Lê um TOML sem quebrar a descoberta quando o arquivo está malformado.
+- `manifest_keys(name: str) -> tuple[str, str]` — Linguagem e gerenciador associados a um manifest.
+- `read_manifest(path: str | Path) -> dict[str, Any]` — Lê um manifest de projeto e devolve seus campos de alto nível.
+- `detect_project(root: str | Path) -> ProjectInfo` — Analisa um diretório e descreve o projeto encontrado.
+- `_count_packages(base: Path) -> int` — Conta os pacotes de um monorepo.
+- `_node_runner(base: Path) -> str` — Descobre o gerenciador de pacotes JavaScript do projeto.
+- `discover_commands(root: str | Path) -> dict[str, Any]` — Deriva os comandos de build, lint, teste e execução do projeto.
+### `src/agent/engineering/git.py`
+
+**Propósito:** inspecionar o repositório Git: estado, branch, histórico e diferenças.. camada de infraestrutura — leitura do repositório sem alterar o trabalho do usuário.
+
+- `_run(root: str | Path, args: list[str]) -> subprocess.CompletedProcess` — Executa um comando Git na pasta do projeto.
+- `is_repository(root: str | Path) -> bool` — Indica se a pasta é um repositório Git.
+- `git_status(root: str | Path) -> dict[str, Any]` — Estado do repositório: arquivos modificados, staged e não rastreados.
+- `git_branch(root: str | Path) -> dict[str, Any]` — Branches do repositório, com a branch atual em destaque.
+- `git_log(root: str | Path, limit: int=20, path: str | None=None) -> dict[str, Any]` — Histórico recente de commits.
+- `git_diff(root: str | Path, *, staged: bool=False, path: str | None=None, stat: bool=True) -> dict[str, Any]` — Diferenças do repositório.
+### `src/agent/engineering/quality.py`
+
+**Propósito:** executar verificações de qualidade (lint, teste, build) e resumir o resultado.. camada de infraestrutura — execução de comandos de projeto e leitura do resultado.
+
+- `parse_pytest_summary(output: str) -> dict[str, Any]` — Lê o resumo do pytest na saída do comando.
+- `parse_generic_errors(output: str) -> dict[str, Any]` — Conta sinais de erro em uma saída de compilação ou teste.
+- `summarize_test_output(output: str, exit_code: int) -> dict[str, Any]` — Resume o resultado de uma execução de testes.
+- `run_check(command: Sequence[str], *, cwd: str | Path | None=None, timeout: float=300.0, env: dict[str, str] | None=None) -> dict[str, Any]` — Executa um comando de qualidade e devolve o resultado interpretado.
+### `src/agent/skills/authoring/__init__.py`
+
+**Propósito:** expor a infraestrutura de autoria, ciclo de vida e versionamento de skills.. camada de aplicação — fachada pública do pacote `agent.skills.authoring`.
+### `src/agent/skills/authoring/layout.py`
+
+**Propósito:** definir a estrutura de pasta, o `SKILL.md` e o `manifest.json` de uma skill autoral.. camada de aplicação — contrato de formato das skills criadas pelo agente.
+
+- `now_iso() -> str` — Instante atual em ISO 8601, com fuso horário.
+- `SkillLayout` — As pastas e os arquivos que compõem uma skill.
+- `SkillLayout.of(root: str | Path) -> SkillLayout` — Monta o layout a partir da pasta da skill.
+- `SkillLayout.ensure() -> SkillLayout` — Cria a pasta da skill e as subpastas opcionais.
+- `SkillLayout.as_dict() -> dict[str, Any]` — Representação serializável do layout.
+- `skill_dir(root: str | Path, name: str) -> Path` — Caminho da pasta de uma skill dentro de um repositório de skills.
+- `render_skill_md(name: str, description: str, *, version: str='1.0.0', activation: list[str] | None=None, prohibited: list[str] | None=None, tools: list[str] | None=None, procedures: list[str] | None=None, validation: list[str] | None=None, risks: list[str] | None=None, prerequisites: list[str] | None=None, error_handling: list[str] | None=None) -> str` — Gera o `SKILL.md` de uma skill nova.
+- `default_manifest(name: str, *, version: str='1.0.0', description: str='', origin: str='agent', state: str='draft', permissions: list[str] | None=None, requires_tools: list[str] | None=None, requires_binaries: list[str] | None=None) -> dict[str, Any]` — Manifesto inicial de uma skill.
+- `render_manifest(manifest: dict[str, Any]) -> str` — Serializa o manifesto de uma skill.
+### `src/agent/skills/authoring/service.py`
+
+**Propósito:** criar skills a partir de pedidos, propor melhorias e testar skills antes de usá-las.. camada de aplicação — fluxo de autoria, do rascunho à skill aprovada.
+
+- `Proposal` — Uma proposta de melhoria de skill, vinda de uma execução real.
+- `Proposal.as_dict() -> dict[str, Any]` — Representação serializável da proposta.
+- `SkillAuthoringService` — Fluxo de autoria de skills sobre um repositório de skills.
+- `SkillAuthoringService.__init__(store: SkillStore) -> None` — Cria o serviço.
+- `SkillAuthoringService.create_draft(name: str, description: str, *, activation: list[str] | None=None, prohibited: list[str] | None=None, tools: list[str] | None=None, procedures: list[str] | None=None, validation: list[str] | None=None, risks: list[str] | None=None, prerequisites: list[str] | None=None, requires_binaries: list[str] | None=None, version: str='1.0.0') -> dict[str, Any]` — Cria uma skill em estado de rascunho.
+- `SkillAuthoringService.validate(name: str) -> dict[str, Any]` — Valida uma skill e avança o estado quando ela passa.
+- `SkillAuthoringService.test(name: str, *, timeout: float=120.0) -> dict[str, Any]` — Executa os testes da skill, quando ela tem pasta `tests`.
+- `SkillAuthoringService.propose(skill: str, title: str, rationale: str, *, changes: str='', evidence: list[str] | None=None) -> dict[str, Any]` — Registra uma proposta de melhoria vinda de uma execução.
+- `SkillAuthoringService.list_proposals(*, skill: str | None=None) -> list[dict[str, Any]]` — Lista as propostas registradas.
+- `SkillAuthoringService.resolve_proposal(proposal_id: str, *, accept: bool, note: str='') -> dict[str, Any]` — Aceita ou rejeita uma proposta.
+### `src/agent/skills/authoring/store.py`
+
+**Propósito:** instalar, ativar, atualizar, versionar e reverter skills criadas pelo agente.. camada de aplicação — ciclo de vida das skills no disco, com histórico e proveniência.
+
+- `hash_tree(root: str | Path) -> str` — Calcula o resumo do conteúdo de uma pasta.
+- `copy_tree(source: str | Path, target: str | Path) -> None` — Copia uma pasta ignorando artefatos de build.
+- `declared_name(source: str | Path) -> str` — Nome declarado pela skill na origem, quando existe e é válido.
+- `InstalledSkill` — Uma skill instalada no repositório de skills.
+- `InstalledSkill.as_dict() -> dict[str, Any]` — Representação serializável da skill instalada.
+- `SkillStore` — Repositório de skills do agente, com ciclo de vida e histórico.
+- `SkillStore.__init__(root: str | Path) -> None` — Cria o repositório.
+- `SkillStore.path_of(name: str) -> Path` — Caminho da pasta de uma skill.
+- `SkillStore.read_manifest(name: str) -> dict[str, Any]` — Lê o manifesto de uma skill instalada.
+- `SkillStore.list_installed() -> list[InstalledSkill]` — Lista as skills instaladas.
+- `SkillStore.get(name: str) -> InstalledSkill | None` — Skill instalada pelo nome.
+- `SkillStore.search(query: str, *, limit: int=20) -> list[InstalledSkill]` — Pesquisa skills por nome ou descrição.
+- `SkillStore.validate(name: str) -> ValidationResult` — Valida uma skill instalada.
+- `SkillStore._write_manifest(name: str, manifest: dict[str, Any]) -> None` — Grava o manifesto de uma skill.
+- `SkillStore.install(source: str | Path, *, name: str | None=None, origin: str='import', state: str='draft', force: bool=False) -> dict[str, Any]` — Instala uma skill a partir de uma pasta externa.
+- `SkillStore._collect(root: Path, folder: str) -> list[str]` — Lista os arquivos de uma subpasta da skill.
+- `SkillStore.set_state(name: str, state: str, *, note: str='') -> dict[str, Any]` — Muda o estado de uma skill no ciclo de vida.
+- `SkillStore.activate(name: str) -> dict[str, Any]` — Ativa uma skill validada.
+- `SkillStore.deactivate(name: str, *, note: str='') -> dict[str, Any]` — Desativa uma skill, sem apagar o conteúdo.
+- `SkillStore.update(name: str, source: str | Path, *, version: str | None=None) -> dict[str, Any]` — Atualiza uma skill instalada a partir de uma nova versão.
+- `SkillStore.rollback(name: str, *, version: str | None=None) -> dict[str, Any]` — Restaura uma versão anterior de uma skill.
+- `SkillStore.history(name: str) -> dict[str, Any]` — Histórico de alterações de uma skill.
+- `SkillStore.remove(name: str, *, confirm: bool=False) -> dict[str, Any]` — Remove uma skill do repositório.
+### `src/agent/skills/authoring/validator.py`
+
+**Propósito:** validar a integridade de uma skill autoral antes de ela ser ativada.. camada de aplicação — checagem de nome, metadados, arquivos referenciados e dependências.
+
+- `ValidationResult` — Veredito da validação de uma skill.
+- `ValidationResult.as_dict() -> dict[str, Any]` — Representação serializável do veredito.
+- `validate_name(name: str) -> str | None` — Valida o nome de uma skill.
+- `validate_skill(root: str | Path) -> ValidationResult` — Valida uma pasta de skill.
+- `_referenced_files(text: str, manifest: dict[str, Any]) -> list[str]` — Coleta os arquivos referenciados no `SKILL.md` e no manifesto.
+- `_listed_files(layout: SkillLayout, manifest: dict[str, Any]) -> list[str]` — Coleta os arquivos declarados no manifesto.
+- `dependency_report(manifest: dict[str, Any]) -> dict[str, Any]` — Relata as dependências de uma skill e o que está ausente.
+### `src/agent/system/__init__.py`
+
+**Propósito:** expor a camada de automação do sistema (processos, aplicativos, diagnóstico).. camada de infraestrutura — ponto de entrada estável para o resto do agente.
+
+### `src/agent/system/README.md`
+
+**Propósito:** Índice dos adaptadores de sistema: processos, aplicativos e diagnóstico por plataforma.
+### `src/agent/system/adapters.py`
+
+**Propósito:** isolar as diferenças de sistema operacional na automação do sistema.. camada de infraestrutura — comandos nativos por plataforma e detecção do SO.
+
+- `current_os() -> str` — Sistema operacional canônico do ambiente atual.
+- `SystemAdapter` — Comandos e capacidades de automação de uma plataforma.
+- `SystemAdapter.supports(binary: str) -> bool` — Indica se um executável usado por este adaptador está disponível.
+- `SystemAdapter.missing_tools() -> list[str]` — Executáveis necessários e ausentes.
+- `MacAdapter(SystemAdapter)` — Adaptador de macOS: `ps`, `open`, `osascript` e `screencapture`.
+- `WindowsAdapter(SystemAdapter)` — Adaptador de Windows: PowerShell para processos e janelas, UIAutomation opcional.
+- `LinuxAdapter(SystemAdapter)` — Adaptador de Linux: `ps`, `xdg-open` e ferramentas de sessão (X11/Wayland).
+- `get_adapter(os_name: str | None=None) -> SystemAdapter` — Adaptador da plataforma.
+- `session_kind() -> str` — Natureza da sessão gráfica do ambiente atual.
+### `src/agent/system/apps.py`
+
+**Propósito:** descobrir aplicativos instalados e abrir aplicativos, arquivos, pastas e URLs.. camada de infraestrutura — catálogo de aplicativos e abertura de recursos do sistema.
+
+- `AppInfo` — Um aplicativo discovered no sistema.
+- `AppInfo.as_dict() -> dict[str, Any]` — Representação serializável do aplicativo.
+- `_macos_apps() -> list[AppInfo]` — Descobre aplicativos do macOS lendo o `Info.plist` de cada bundle.
+- `_linux_apps() -> list[AppInfo]` — Descobre aplicativos do Linux pelos arquivos `.desktop`.
+- `_windows_apps() -> list[AppInfo]` — Descobre aplicativos do Windows pelos atalhos do menu Iniciar.
+- `list_apps(match: str | None=None, limit: int=100) -> list[AppInfo]` — Descobre os aplicativos instalados no sistema.
+- `find_app(name: str) -> AppInfo | None` — Procura um aplicativo pelo nome, exato ou parcial.
+- `_resolve_executable(name: str) -> str | None` — Localiza o executável de um aplicativo pelo `PATH`.
+- `launch_app(name: str, *, args: Sequence[str] | None=None, cwd: str | None=None, env: dict[str, str] | None=None, background: bool=False, manager: ProcessManager | None=None) -> dict[str, Any]` — Abre um aplicativo pelo nome, caminho ou executável disponível.
+- `open_path(path: str, *, manager: ProcessManager | None=None) -> dict[str, Any]` — Abre um arquivo, pasta ou URL com o manipulador padrão do sistema.
+### `src/agent/system/platform_info.py`
+
+**Propósito:** descrever o ambiente de execução e diagnosticar bloqueios do sistema operacional.. camada de infraestrutura — sistema, sessão gráfica, permissões e limitações.
+
+- `describe_system() -> dict[str, Any]` — Descreve o computador onde o agente roda.
+- `_macos_permissions() -> list[dict[str, Any]]` — Verifica as permissões do TCC no macOS.
+- `_windows_permissions() -> list[dict[str, Any]]` — Verifica as condições de sessão e privilégio no Windows.
+- `_linux_permissions() -> list[dict[str, Any]]` — Verifica as condições de sessão no Linux.
+- `diagnose_permissions() -> dict[str, Any]` — Diagnostica as permissões que a automação de interface pode exigir.
+- `platform_summary() -> str` — Resumo textual do ambiente, para o agente decidir o modo de automação.
+### `src/agent/system/processes.py`
+
+**Propósito:** listar, inspecionar, encerrar e acompanhar processos autorizados do sistema.. camada de infraestrutura — inventário de processos e tarefas longas em segundo plano.
+
+- `ProcessInfo` — Um processo do sistema, visto pelo agente.
+- `ProcessInfo.as_dict() -> dict[str, Any]` — Representação serializável do processo.
+- `_parse_elapsed(raw: str) -> int | None` — Converte a idade de processo do `ps` para segundos.
+- `_parse_ps_output(text: str) -> list[ProcessInfo]` — Interpreta a saída do comando de listagem de processos.
+- `list_processes(match: str | None=None, limit: int=50) -> list[ProcessInfo]` — Lista os processos do sistema.
+- `process_info(pid: int) -> ProcessInfo | None` — Inspeciona um processo pelo identificador.
+- `terminate_process(pid: int, *, force: bool=False, timeout: float=5.0) -> dict[str, Any]` — Encerra um processo autorizado.
+- `ProcessHandle` — Tarefa longa em segundo plano, com saída parcial e cancelamento.
+- `ProcessHandle.as_dict() -> dict[str, Any]` — Representação serializável da tarefa.
+- `ProcessManager` — Rastreia tarefas longas em segundo plano.
+- `ProcessManager.__init__(log_dir: str | None=None) -> None` — Cria o gerenciador.
+- `ProcessManager.start(command: Sequence[str], *, cwd: str | None=None, env: dict[str, str] | None=None) -> ProcessHandle` — Inicia um processo em segundo plano e devolve o identificador da tarefa.
+- `ProcessManager.get(handle_id: str) -> ProcessHandle | None` — Tarefa pelo identificador, com o estado atualizado.
+- `ProcessManager.list() -> list[ProcessHandle]` — Todas as tarefas rastreadas, com o estado atualizado.
+- `ProcessManager.output(handle_id: str, *, tail_bytes: int=8000) -> dict[str, Any]` — Saída parcial de uma tarefa em segundo plano.
+- `ProcessManager.cancel(handle_id: str, *, force: bool=False) -> dict[str, Any]` — Cancela uma tarefa em segundo plano.
+- `ProcessManager.reap() -> int` — Fecha os descritores e remove as tarefas já terminadas.
+- `_tail(path: str, limit: int) -> str` — Lê a cauda de um arquivo de log.
+- `format_command(command: Sequence[str]) -> str` — Formata um comando para exibição.

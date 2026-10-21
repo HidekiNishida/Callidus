@@ -50,4 +50,9 @@ Anexos do chat (texto longo, imagem, documento) vão para `.callidus/anexos/<tar
 
 Paths validados em `src/agent/security/paths.py` — traversal bloqueado.
 
-API: `GET /tools` lista contratos.
+API: `GET /tools` lista contratos. `GET /tools/availability` diz o que falta.
+`GET /tools/families` mostra a política. `GET /system/diagnose` descreve o ambiente.
+`GET /skills` lista as skills instaladas.
+
+Famílias de sistema, desktop, engenharia e autoria de skills, com a matriz do que foi
+implementado e do que foi testado em cada sistema: [automacao-sistema.md](/docs/architecture/automacao-sistema.md).

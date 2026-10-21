@@ -227,6 +227,7 @@ export const DetailsPanel = {
 
       <div class="tab-panel" v-else-if="state.detailsTab === 'tools'">
         <button type="button" class="btn-ghost small" @click="loadTools()">Atualizar</button>
+        <p class="muted small">Disponibilidade, dependências ausentes, diagnóstico do ambiente e skills instaladas.</p>
         <pre class="code">{{ state.toolsText }}</pre>
       </div>
 
