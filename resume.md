@@ -2947,7 +2947,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `tests/web/feed-narration.test.mjs`
 
-**Propósito:** verificar que a narração nasce recolhida, aparece uma vez na seção expansível, reutiliza a tipografia de “resposta em tempo real”, não duplica atualização nem replay e não mistura tarefas.
+**Propósito:** verificar que a narração nasce recolhida, aparece uma vez na seção expansível, reutiliza a tipografia de “resposta em tempo real”, não duplica atualização nem replay, não mistura tarefas e segue a preferência de abrir ou fechar todos os itens.
 
 ### `tests/web/fixtures/observe-with-narration.json`
 
@@ -4824,6 +4824,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `descendantIds`
 - `setTheme`
 - `setDensity`
+- `setFeedOpen(mode)` — Grava se os itens do feed nascem abertos ou fechados. Entrada: `"aberto"` ou `"fechado"`. Saída: o estado e o `localStorage` são atualizados.
 - `watchViewport`
 - `openView`
 - `bootstrap`
@@ -4905,9 +4906,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `describeActivity`
 - `integrateNarrative(activity)` — Acopla a narração ao item operacional seguinte, dentro da seção expansível. O par imediato `agent.thought` + `work.explained` com o mesmo texto fica só na explicação; narração sem operação seguinte vira linha expansível com o texto em `narrations`. Entrada: feed descrito; saída: linhas com `narrations`.
 - `mergeActivity(feed, entry)` — Atualiza a entrada do mesmo `eventId` ou da mesma chamada; a saída de comando acumula no comando em andamento. Entrada: feed da mensagem e entrada descrita. Saída: o feed é alterado no lugar.
-- `activityStartsOpen(entry)` — O item nasce aberto só quando traz diff de arquivo. Entrada: entrada do feed. Saída: `true` quando a seção expansível começa visível.
-- `activityIsOpen(entry, openIds, closedIds)` — Diz se a seção do item está aberta, com a escolha do usuário acima do padrão. Entrada: entrada e os conjuntos de ids abertos e fechados. Saída: `true` quando a narração e o detalhe estão visíveis.
-- `toggleActivity(entry, openIds, closedIds)` — Abre ou fecha a seção sem alterar a narração guardada. Entrada: entrada e os conjuntos de ids. Saída: os conjuntos são atualizados.
+- `activityStartsOpen(entry, mode)` — O item nasce aberto quando a preferência é `"aberto"` e fechado quando é `"fechado"`, inclusive o que tem diff. Entrada: entrada e modo. Saída: `true` quando a seção começa visível.
+- `activityIsOpen(entry, openIds, closedIds, mode)` — Diz se a seção do item está aberta. O clique do usuário vence a preferência. Entrada: entrada, conjuntos de ids e modo. Saída: `true` quando a narração e o detalhe estão visíveis.
+- `toggleActivity(entry, openIds, closedIds, mode)` — Abre ou fecha um item sem alterar a narração guardada nem a preferência dos demais. Entrada: entrada, conjuntos de ids e modo. Saída: os conjuntos são atualizados.
 - `thoughtsOutsideNarration(thoughts, narrationTitles)` — Tira da faixa de pensamentos o texto que já é narração do item. Entrada: pensamentos ao vivo e os títulos já acoplados. Saída: pensamentos que não repetem a narração.
 - `splitFeed(activity)` — Classifica entradas em narrativas vs operações (legado/testes). Saída: `{narrative, operations}`.
 - `summarizeActivity`

@@ -14,6 +14,7 @@ import {
   cancelRun,
   resumeRun,
   cancelQueued,
+  setFeedOpen,
 } from "../store.js";
 import {
   icon,
@@ -176,17 +177,25 @@ export const ChatView = {
       return task ? task.title : null;
     });
 
-    // Entradas abertas e fechadas pelo usuário (o que tem diff abre sozinho).
+    // A preferência abre ou fecha todos. O clique num item vale só para ele.
     const openIds = Vue.reactive(new Set());
     const closedIds = Vue.reactive(new Set());
     const collapsedTurns = Vue.reactive(new Set());
 
+    Vue.watch(
+      () => state.feedOpen,
+      () => {
+        openIds.clear();
+        closedIds.clear();
+      },
+    );
+
     function isOpen(entry) {
-      return activityIsOpen(entry, openIds, closedIds);
+      return activityIsOpen(entry, openIds, closedIds, state.feedOpen);
     }
 
     function toggleEntry(entry) {
-      toggleActivity(entry, openIds, closedIds);
+      toggleActivity(entry, openIds, closedIds, state.feedOpen);
     }
 
     function isTurnCollapsed(message) {
@@ -309,6 +318,7 @@ export const ChatView = {
       toggleEntry,
       isTurnCollapsed,
       toggleTurn,
+      setFeedOpen,
       diffLines,
       providerOptions,
       models,
@@ -378,6 +388,10 @@ export const ChatView = {
                   <span class="tag" v-if="message.summary.comandos">{{ message.summary.comandos }} comando(s)</span>
                   <span class="tag" v-if="message.summary.testes">{{ message.summary.testes }} teste(s)</span>
                 </span>
+                <div class="activity-openness" role="group" aria-label="Abertura dos itens">
+                  <button type="button" :class="{ active: state.feedOpen === 'aberto' }" @click="setFeedOpen('aberto')">Abertos</button>
+                  <button type="button" :class="{ active: state.feedOpen === 'fechado' }" @click="setFeedOpen('fechado')">Fechados</button>
+                </div>
                 <button
                   type="button"
                   class="activity-collapse"

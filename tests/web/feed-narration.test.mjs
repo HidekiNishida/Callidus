@@ -3,7 +3,7 @@
  * Nome: feed-narration.test.mjs
  * Propósito: a narração fica uma vez, dentro do item expansível, com a tipografia da resposta ao vivo.
  * Responsabilidade: teste do frontend — feed, expansão e markup do chat.
- * Componentes: integrateNarrative, mergeActivity, activityIsOpen, toggleActivity, thoughtsOutsideNarration.
+ * Componentes: integrateNarrative, mergeActivity, activityIsOpen, activityStartsOpen, toggleActivity, thoughtsOutsideNarration.
  * Dependências: node:test, node:fs, fixture `fixtures/observe-with-narration.json`.
  * Observações: não abre navegador; o markup é o contrato da seção expansível.
  */
@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   activityIsOpen,
+  activityStartsOpen,
   describeActivity,
   integrateNarrative,
   mergeActivity,
@@ -156,6 +157,27 @@ test("atualizar e repetir o mesmo evento não copia a narração", () => {
   mergeActivity(feed, host);
   const rows = integrateNarrative(feed);
   assert.deepEqual(narrationTitles(rows), ["Vou investigar o teste.", "Outra decisão."]);
+});
+
+test("a preferência abre ou fecha todos os itens", () => {
+  const plain = { id: "plain" };
+  const diff = { id: "diff", diff: { text: "+ linha" } };
+  const openIds = new Set();
+  const closedIds = new Set();
+  assert.equal(activityStartsOpen(plain, "fechado"), false);
+  assert.equal(activityStartsOpen(diff, "fechado"), false);
+  assert.equal(activityStartsOpen(plain, "aberto"), true);
+  assert.equal(activityStartsOpen(diff, "aberto"), true);
+  assert.equal(activityIsOpen(diff, openIds, closedIds, "aberto"), true);
+  toggleActivity(diff, openIds, closedIds, "aberto");
+  assert.equal(activityIsOpen(diff, openIds, closedIds, "aberto"), false);
+  assert.equal(activityIsOpen(plain, openIds, closedIds, "aberto"), true);
+  const chat = fs.readFileSync(chatPath, "utf8");
+  const settings = fs.readFileSync(path.join(root, "web/static/assets/app/components/settings.js"), "utf8");
+  assert.match(chat, /setFeedOpen\('aberto'\)/);
+  assert.match(chat, /setFeedOpen\('fechado'\)/);
+  assert.match(settings, /setFeedOpen\('aberto'\)/);
+  assert.match(settings, /setFeedOpen\('fechado'\)/);
 });
 
 test("abrir e fechar o item não duplica a narração", () => {

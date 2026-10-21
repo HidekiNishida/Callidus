@@ -1684,8 +1684,31 @@ pre,
 .activity-head-title { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .activity-counts { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 
-.activity-collapse {
+.activity-openness {
   margin-left: auto;
+  display: inline-flex;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.activity-openness button {
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+
+.activity-openness button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.activity-collapse {
+  margin-left: 4px;
   border: 0;
   background: none;
   color: var(--accent);

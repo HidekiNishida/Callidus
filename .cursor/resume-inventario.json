@@ -2563,6 +2563,7 @@
   "sym:web/static/assets/app/store.js::sendMessage()",
   "sym:web/static/assets/app/store.js::setAutoMode(value)",
   "sym:web/static/assets/app/store.js::setDensity(density)",
+  "sym:web/static/assets/app/store.js::setFeedOpen(mode)",
   "sym:web/static/assets/app/store.js::setProviderSecret(name, secret)",
   "sym:web/static/assets/app/store.js::setTheme(theme)",
   "sym:web/static/assets/app/store.js::startRun()",
@@ -2575,8 +2576,8 @@
   "sym:web/static/assets/app/store.js::watchViewport()",
   "sym:web/static/assets/app/store.js::workspaceId()",
   "sym:web/static/assets/app/tools-report.js::formatToolsReport(report)",
-  "sym:web/static/assets/app/ui.js::activityIsOpen(entry, openIds, closedIds)",
-  "sym:web/static/assets/app/ui.js::activityStartsOpen(entry)",
+  "sym:web/static/assets/app/ui.js::activityIsOpen(entry, openIds, closedIds, mode = \"fechado\")",
+  "sym:web/static/assets/app/ui.js::activityStartsOpen(entry, mode = \"fechado\")",
   "sym:web/static/assets/app/ui.js::ago(iso)",
   "sym:web/static/assets/app/ui.js::describeActivity(event)",
   "sym:web/static/assets/app/ui.js::diffLines(text)",
@@ -2600,7 +2601,7 @@
   "sym:web/static/assets/app/ui.js::summarizeActivity(entries)",
   "sym:web/static/assets/app/ui.js::thoughtsOutsideNarration(thoughts, narrationTitles)",
   "sym:web/static/assets/app/ui.js::titleOf(task)",
-  "sym:web/static/assets/app/ui.js::toggleActivity(entry, openIds, closedIds)",
+  "sym:web/static/assets/app/ui.js::toggleActivity(entry, openIds, closedIds, mode = \"fechado\")",
   "sym:web/static/assets/app/ui.js::toolArgsSummary(tool, args)",
   "sym:web/static/assets/app/ui.js::toolOf(task)"
  ]

@@ -11,6 +11,7 @@ import {
   state,
   setTheme,
   setDensity,
+  setFeedOpen,
   loadProviders,
   renameProject,
   moveProject,
@@ -142,6 +143,7 @@ export const SettingsView = {
       models,
       setTheme,
       setDensity,
+      setFeedOpen,
       renameProject,
       moveProject,
       deleteProject,
@@ -197,7 +199,14 @@ export const SettingsView = {
               <button type="button" :class="{ active: state.density === 'compacta' }" @click="setDensity('compacta')">Compacta</button>
             </div>
           </label>
-          <p class="muted small">O tema e a densidade ficam guardados neste navegador.</p>
+          <label class="field">
+            <span>Itens do feed</span>
+            <div class="segmented" role="group" aria-label="Abertura dos itens">
+              <button type="button" :class="{ active: state.feedOpen === 'aberto' }" @click="setFeedOpen('aberto')">Abertos</button>
+              <button type="button" :class="{ active: state.feedOpen === 'fechado' }" @click="setFeedOpen('fechado')">Fechados</button>
+            </div>
+          </label>
+          <p class="muted small">O tema, a densidade e a abertura do feed ficam guardados neste navegador.</p>
         </div>
       </div>
 

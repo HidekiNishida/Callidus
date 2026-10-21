@@ -21,6 +21,7 @@ export const state = reactive({
   view: "chat",
   theme: localStorage.getItem("callidus-theme") || "dark",
   density: localStorage.getItem("callidus-density") || "confortavel",
+  feedOpen: localStorage.getItem("callidus-feed-open") === "aberto" ? "aberto" : "fechado",
   ready: false,
   railOpen: false,
   paletteOpen: false,
@@ -179,6 +180,19 @@ export function setDensity(density) {
   state.density = density;
   localStorage.setItem("callidus-density", density);
   document.documentElement.dataset.density = density;
+}
+
+/**
+ * Define se os itens do feed nascem abertos ou fechados.
+ *
+ * @param {string} mode `"aberto"` ou `"fechado"`.
+ * @returns {void}
+ * Observações: a escolha fica em `localStorage` e vale para todas as mensagens.
+ */
+export function setFeedOpen(mode) {
+  const next = mode === "aberto" ? "aberto" : "fechado";
+  state.feedOpen = next;
+  localStorage.setItem("callidus-feed-open", next);
 }
 
 /**

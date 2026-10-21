@@ -627,13 +627,18 @@ export function mergeActivity(feed, entry) {
 }
 
 /**
- * O item nasce fechado. Diff de arquivo abre porque o trecho alterado é o conteúdo.
+ * O item nasce como a preferência do feed manda.
+ *
+ * `"aberto"` mostra a seção de todos os itens. `"fechado"` deixa todos recolhidos.
+ * Uma linha só narrativa não abre: ela não tem seção expansível.
  *
  * @param {object} entry Entrada do feed.
- * @returns {boolean} `true` quando o conteúdo expansível começa visível.
+ * @param {string} [mode] `"aberto"` ou `"fechado"`.
+ * @returns {boolean} `true` quando a seção expansível começa visível.
  */
-export function activityStartsOpen(entry) {
-  return Boolean(entry?.diff);
+export function activityStartsOpen(entry, mode = "fechado") {
+  if (entry?.narrativeOnly) return false;
+  return mode === "aberto";
 }
 
 /**
@@ -642,13 +647,14 @@ export function activityStartsOpen(entry) {
  * @param {object} entry Entrada do feed.
  * @param {Set<string>} openIds Ids que o usuário abriu.
  * @param {Set<string>} closedIds Ids que o usuário fechou.
+ * @param {string} [mode] `"aberto"` ou `"fechado"`.
  * @returns {boolean} `true` quando a seção expansível está visível.
  */
-export function activityIsOpen(entry, openIds, closedIds) {
+export function activityIsOpen(entry, openIds, closedIds, mode = "fechado") {
   if (!entry) return false;
   if (closedIds?.has(entry.id)) return false;
   if (openIds?.has(entry.id)) return true;
-  return activityStartsOpen(entry);
+  return activityStartsOpen(entry, mode);
 }
 
 /**
@@ -657,11 +663,12 @@ export function activityIsOpen(entry, openIds, closedIds) {
  * @param {object} entry Entrada do feed.
  * @param {Set<string>} openIds Ids que o usuário abriu.
  * @param {Set<string>} closedIds Ids que o usuário fechou.
+ * @param {string} [mode] `"aberto"` ou `"fechado"`.
  * @returns {void}
  */
-export function toggleActivity(entry, openIds, closedIds) {
+export function toggleActivity(entry, openIds, closedIds, mode = "fechado") {
   if (!entry) return;
-  if (activityIsOpen(entry, openIds, closedIds)) {
+  if (activityIsOpen(entry, openIds, closedIds, mode)) {
     closedIds.add(entry.id);
     openIds.delete(entry.id);
   } else {
