@@ -59,13 +59,15 @@ from agent.orchestrator.plan_validation import (
 )
 from agent.observability import emit, get_bus, observe, set_task
 from agent.orchestrator.progress import made_progress, progress_state
+from agent.orchestrator.approach import approach_of, approach_signature
 from agent.orchestrator.replan import replan_decision, replan_under
 from agent.orchestrator.stagnation import (
+    LIMIT_LABELS,
     diagnose,
     limit_reached,
     limits_for,
     next_action_for_limit,
-    repeated_failures,
+    problem_attempts,
 )
 from agent.orchestrator.requirements import effective_covers, ensure_requirements, root_of
 from agent.orchestrator.execution import (
@@ -90,6 +92,7 @@ from agent.services.attempt_service import AttemptService
 from agent.services.project_service import ProjectService
 from agent.services.task_service import TaskService
 from agent.tools.registry import build_default_registry
+from agent.verification.fingerprint import workspace_state
 
 
 def _select_provider(settings: Settings, run_config: dict) -> LLMProvider:
@@ -425,10 +428,23 @@ class RunOrchestrator:
         return out
 
     def _check_stagnation(self, run_id: uuid.UUID, out: dict[str, Any]) -> dict[str, Any] | None:
-        """Resposta à ausência de progresso de uma etapa: o mesmo erro (assinatura normalizada) com a mesma
-        estratégia `attempts_per_strategy` vezes interrompe a repetição; grava o estado anterior, o
-        diagnóstico (tipo, causa provável, ação) e a próxima ação; segue só se houver estratégia
-        justificável (replanejar o pai com o diagnóstico), senão pausa o run com diagnóstico recuperável."""
+        """Resposta à ausência de progresso de uma etapa: o mesmo problema, no mesmo objetivo, repetido
+        `attempts_per_strategy` vezes sem mudança material interrompe a repetição.
+
+        A contagem vive na **raiz** do objetivo, não na etapa: o replanejamento cria etapas
+        novas, e a contagem precisa sobreviver a isso — era exatamente aí que o contador
+        recomeçava e a cadeia "falhou → replanejou → falhou igual" podia continuar.
+
+        Uma tentativa só continua a contagem quando nada mudou de material: a mesma operação,
+        a mesma abordagem declarada e o mesmo estado do disco. Mudou qualquer um deles, é uma
+        tentativa legítima (a causa foi corrigida, a abordagem mudou, o projeto avançou) e a
+        contagem recomeça.
+
+        Quando a estagnação é confirmada, grava o diagnóstico (tipo, causa provável, hipótese,
+        o que será diferente, critério de sucesso e de fracasso) e a próxima ação; segue só se
+        houver estratégia justificável (replanejar o pai com o diagnóstico), senão pausa o run
+        com diagnóstico recuperável.
+        """
         raw = out.get("task_id")
         if not out.get("failure") or not isinstance(raw, str):
             return None
@@ -436,12 +452,27 @@ class RunOrchestrator:
         if task is None or TaskStatus(task.status) != TaskStatus.RETRY_PENDING:
             return None
         run = self._session.get(ExecutionRunModel, run_id)
-        cap = limits_for(self._settings, self._run_config(run))["attempts_per_strategy"]
-        failures = list((task.metadata_json or {}).get("failures") or [])
-        count = repeated_failures(failures)
-        if not cap or count < cap:
+        if run is None:
             return None
-        last = failures[-1]
+        cap = limits_for(self._settings, self._run_config(run))["attempts_per_strategy"]
+        cap_problem = limits_for(self._settings, self._run_config(run))["attempts_per_problem"]
+        failures = list((task.metadata_json or {}).get("failures") or [])
+        last = failures[-1] if failures else dict(out["failure"])
+        if not last.get("signature"):
+            return None
+        root = self._tasks.get_task(run.root_task_id)
+        project = self._session.get(ProjectModel, run.project_id)
+        work_root = self._work_root(project, root) if project is not None else "."
+        count, total, problem = problem_attempts(
+            root,
+            last,
+            workspace=workspace_state(work_root),
+            approach=approach_signature(task),
+        )
+        repeated = bool(cap) and count >= cap
+        exhausted = bool(cap_problem) and total >= cap_problem
+        if not (repeated or exhausted):
+            return None
         diag = diagnose(last, count)
         # Corte de saída: o plano serve, faltou orçamento. Ampliar e seguir — sem replanejar e
         # sem pausar, para o run seguir sozinho.
@@ -473,28 +504,49 @@ class RunOrchestrator:
                 "output_budget": budget,
                 "failure": last,
             }
+        approach = approach_of(task)
         record = {
             "previous_status": task.status,
             "signature": last.get("signature"),
             "strategy": last.get("strategy"),
             "count": count,
+            "total": total,
+            "repeated": repeated,
+            "exhausted": exhausted,
             **diag,
+            "problem": approach.get("problem") or last.get("detail"),
+            "hypothesis": approach.get("hypothesis") or diag["probable_cause"],
+            "next_change": approach.get("next_change") or "",
+            "success_criterion": approach.get("success_criterion") or "",
+            "failure_criterion": approach.get("failure_criterion") or "",
+            "attempts": int(approach.get("attempts") or count),
+            "changed": bool(problem.get("changed")),
             "at": datetime.now(timezone.utc).isoformat(),
         }
         category = FailureCategory.CHANGE_STRATEGY if diag["automatic"] else FailureCategory.CONFIGURATION
         reason = f"estagnação ({diag['kind']}): {diag['probable_cause']}"
+        if exhausted and not repeated:
+            reason = f"problema sem solução após {total} tentativas: {diag['probable_cause']}"
         noted = self._remember_failure(task, Failure(category, FailureCause.STAGNATION, reason))
         self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=reason[:300]))
         parent = self._session.get(TaskModel, task.parent_id) if task.parent_id else None
         decision = None
-        if diag["automatic"] and parent is not None:
+        # O problema esgotou o orçamento: outra abordagem não resolve, e o run precisa parar.
+        if diag["automatic"] and parent is not None and not exhausted:
             kids = children_of(self._session, parent.id)
             done = sum(1 for k in kids if k.status == TaskStatus.COMPLETED.value)
             decision = replan_decision(parent.metadata_json or {}, task, done)
         if decision is not None and decision.replan:
             record["next_action"] = f"replanejar «{parent.title}» para {diag['action']}"
         else:
-            record["next_action"] = f"{diag['action']}; depois retomar (POST /runs/{run_id}/resume)"
+            if exhausted:
+                record["next_action"] = (
+                    f"o problema já consumiu {total} tentativas, com abordagens diferentes; "
+                    "revisar a causa ou aumentar `limits.attempts_per_problem`, depois retomar "
+                    f"(POST /runs/{run_id}/resume)"
+                )
+            else:
+                record["next_action"] = f"{diag['action']}; depois retomar (POST /runs/{run_id}/resume)"
             if decision is not None:
                 record["replan_refused"] = decision.reason
         task.metadata_json = {**(task.metadata_json or {}), "stagnation": record}
@@ -512,11 +564,12 @@ class RunOrchestrator:
             self._note_thought(run, task, f"«{task.title}» repete o mesmo erro. Vou {diag['action']}.")
             return {"action": "stagnation_replan", **result}
         root = self._tasks.get_task(run.root_task_id)
+        limit_key = "attempts_per_problem" if exhausted else "attempts_per_strategy"
         hit = {
-            "limit": "attempts_per_strategy",
-            "label": "tentativas com a mesma estratégia",
-            "value": count,
-            "max": cap,
+            "limit": limit_key,
+            "label": LIMIT_LABELS[limit_key],
+            "value": total if limit_key == "attempts_per_problem" else count,
+            "max": cap_problem if limit_key == "attempts_per_problem" else cap,
             "task": task.title,
         }
         return {**self._pause_run(run, root, hit, record["next_action"], diagnosis=record), **result}
@@ -817,7 +870,12 @@ class RunOrchestrator:
         provider = _select_provider(self._settings, config)
 
         root = self._tasks.get_task(run.root_task_id)
-        hit = limit_reached(self._session, run, limits_for(self._settings, config))
+        hit = limit_reached(
+            self._session,
+            run,
+            limits_for(self._settings, config),
+            allowance=self._settings.resume_limit_allowance,
+        )
         if hit:
             return self._pause_run(run, root, hit, next_action_for_limit(run.id, hit))
         work_root = self._work_root(project, root)

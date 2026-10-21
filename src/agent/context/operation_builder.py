@@ -21,6 +21,7 @@ from agent.context.budget import BudgetResult, ContextBudgetError
 from agent.domain.failures import describe_failures
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.knowledge.indexer import grep_symbols_in_objective
+from agent.orchestrator.approach import render_approach
 from agent.persistence.models import ContextSnapshotModel, MemoryRecordModel, TaskDependencyModel, TaskModel
 from agent.services.contract_service import ContractService
 from agent.providers.base import ModelProfile
@@ -292,15 +293,19 @@ class OperationContextBuilder:
         return "\n".join(lines)
 
     def _failures_block(self, task: TaskModel) -> str:
-        """Falhas anteriores + orientação de recuperação do ciclo diagnóstico → correção."""
+        """Falhas anteriores + a memória de abordagem + a orientação de recuperação.
+
+        A memória de abordagem vem junto porque é ela que diz **o que precisa ser diferente**
+        agora: sem ela, o modelo recebe a lista do que já falhou e repete a mesma operação.
+        """
         meta = task.metadata_json or {}
         base = describe_failures(meta.get("failures") or [])
+        approach = render_approach(task)
         guidance = str(meta.get("recovery_guidance") or "")
-        if not guidance:
-            return base
-        if base:
-            return f"{base}\n\n## Orientação de recuperação\n{guidance}"
-        return f"## Orientação de recuperação\n{guidance}"
+        blocks = [block for block in (base, approach) if block]
+        if guidance:
+            blocks.append(f"## Orientação de recuperação\n{guidance}")
+        return "\n\n".join(blocks)
 
     def _memory_block(self, project_id: uuid.UUID, task: TaskModel) -> tuple[str, str]:
         """Monta o bloco de memória (canônica e contextual) que entra no prompt da operação."""

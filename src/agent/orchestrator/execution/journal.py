@@ -4,7 +4,8 @@ Nome: journal.py
 Propósito: registrar no banco o que a execução está fazendo e o que ela já falhou.
 Responsabilidade: camada de aplicação — diário de execução (pensamento e histórico de falhas).
 Componentes: note_thought, remember_failure.
-Dependências: agent.persistence.models (EventLogModel), agent.orchestrator.stagnation (assinatura da falha).
+Dependências: agent.persistence.models (EventLogModel), agent.orchestrator.stagnation (assinatura da falha),
+agent.orchestrator.approach (memória de abordagem).
 Observações: o histórico de falhas é a entrada da estagnação e do replanejamento — a memória da etapa vive aqui.
 """
 
@@ -14,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from agent.domain.failures import Failure
+from agent.orchestrator.approach import record_attempt
 from agent.orchestrator.stagnation import error_signature, strategy_signature
 from agent.persistence.models import EventLogModel, ExecutionRunModel, TaskModel
 
@@ -50,6 +52,10 @@ def note_thought(
 def remember_failure(task: TaskModel, failure: Failure) -> dict[str, Any]:
     """Guarda a falha na tarefa: a próxima tentativa e a política de replanejamento leem daqui.
 
+    Além do histórico, a etapa ganha a **memória de abordagem**: o que foi tentado, a hipótese
+    da falha e o que precisa ser diferente na próxima tentativa. É essa memória que alimenta o
+    prompt da etapa seguinte e que o replanejamento usa para escolher uma abordagem distinta.
+
     Args:
         task: etapa que falhou.
         failure: falha estruturada, com categoria e causa.
@@ -64,6 +70,7 @@ def remember_failure(task: TaskModel, failure: Failure) -> dict[str, Any]:
     meta["failures"] = history
     meta["last_failure"] = noted
     task.metadata_json = meta
+    record_attempt(task, noted)
     return noted
 
 

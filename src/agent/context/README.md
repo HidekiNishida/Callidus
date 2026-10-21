@@ -34,6 +34,12 @@ optional = [
 ]
 ```
 
+O bloco `tentativas-anteriores` carrega **duas** coisas: o resumo das falhas anteriores
+(`describe_failures`) e a **memória de abordagem** (`render_approach`, de
+[`agent/orchestrator/approach.py`](../orchestrator/approach.py)) — o que travou, a hipótese, o que
+foi tentado, o que será diferente agora e os critérios de sucesso e de fracasso. Sem essa segunda
+parte, o modelo recebe a lista do que já falhou e repete a mesma operação.
+
 ### Skills no prompt
 
 O bloco `skills` (prioridade 75) traz as competências selecionadas sob demanda

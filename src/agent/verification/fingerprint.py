@@ -3,13 +3,14 @@ Arquivo: src/agent/verification/fingerprint.py
 Nome: fingerprint.py
 Propósito: calcular a impressão digital dos arquivos de que uma verificação depende.
 Responsabilidade: camada de aplicação — detecção de artefato obsoleto pela mudança do disco.
-Componentes: artifact_paths, fingerprint, snapshot, is_current.
-Dependências: hashlib, pathlib.
+Componentes: artifact_paths, fingerprint, snapshot, is_current, workspace_state.
+Dependências: hashlib, os, pathlib.
 Observações: a impressão é barata o bastante para rodar a cada passo; arquivo ausente entra como ausente.
 """
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 from typing import Any
 
@@ -84,6 +85,51 @@ def fingerprint(root: str, paths: list[str]) -> str:
                 digest.update(f"{name}:{stat.st_size}:{stat.st_mtime_ns}".encode())
             except OSError:
                 digest.update(b"<ilegivel>")
+    return digest.hexdigest()
+
+
+def workspace_state(root: str) -> str:
+    """Impressão do estado do disco da raiz do projeto, para saber se algo mudou entre tentativas.
+
+    Diferente de `fingerprint`, que percorre um conjunto de caminhos de que a verificação depende,
+    esta cobre a raiz inteira: a pergunta é outra — "o trabalho no disco mudou desde a última
+    tentativa?". A caminhada poda as pastas de cache e dependências na hora de descer, para não
+    pagar o custo de varrer o ambiente virtual inteiro.
+
+    Args:
+        root: raiz do projeto.
+
+    Returns:
+        A impressão hexadecimal do estado do disco; cadeia vazia quando a raiz não existe.
+    """
+    base = Path(root).resolve()
+    if not base.is_dir():
+        return ""
+    digest = hashlib.sha256()
+    stack = [base]
+    while stack:
+        current = stack.pop()
+        try:
+            entries = sorted(os.scandir(current), key=lambda item: item.name)
+        except OSError:
+            continue
+        for entry in entries:
+            name = entry.name
+            if entry.is_dir(follow_symlinks=False):
+                if name in _SKIP_DIRS or name.startswith("."):
+                    continue
+                stack.append(Path(entry.path))
+                continue
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            if name.endswith(_SKIP_SUFFIXES):
+                continue
+            try:
+                stat = entry.stat()
+            except OSError:
+                continue
+            rel = os.path.relpath(entry.path, base)
+            digest.update(f"{rel}:{stat.st_size}:{stat.st_mtime_ns}".encode())
     return digest.hexdigest()
 
 

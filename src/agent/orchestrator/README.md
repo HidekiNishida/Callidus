@@ -19,7 +19,8 @@
 | [`global_verify.py`](global_verify.py) | `evaluate_global_acceptance`, `reopen_verification_gaps`, `correct_requirement_gaps`, `ensure_global_verification_task` | **Aceite global por requisito**: run só completa se todo requisito obrigatório `satisfied` |
 | [`requirements.py`](requirements.py) | `ensure_requirements`, `effective_covers`, `root_of`, `requirement_status` | Requisitos rastreáveis (derive do contrato/objetivo + cobertura declarada `covers`) |
 | [`progress.py`](progress.py) | `progress_state`, `made_progress` | **Progresso real** (não atividade): mais tarefas verificadas ou menos pendências sem perder verificadas |
-| [`stagnation.py`](stagnation.py) | `diagnose`, `limit_reached`, `error_signature`, `strategy_signature`, `repeated_failures` | Diagnóstico de estagnação (assinatura normalizada da falha + estratégia) |
+| [`stagnation.py`](stagnation.py) | `diagnose`, `limit_reached`, `error_signature`, `strategy_signature`, `problem_attempts`, `problem_key` | **Estagnação e limites**: assinatura normalizada da falha, assinatura da abordagem, contador do problema por objetivo e limites do run |
+| [`approach.py`](approach.py) | `record_attempt`, `declare_change`, `approach_of`, `approach_signature`, `render_approach`, `alternatives_for` | **Memória de abordagem**: o que foi tentado, a hipótese da falha e o que será diferente na próxima tentativa |
 | [`replan.py`](replan.py) | `replan_under`, `replan_decision` | Replanejamento dirigido por diagnóstico de estagnação |
 | [`closing.py`](closing.py) | `compose_final_markdown`, `compose_incomplete_markdown`, `ensure_closing_stages` | Resposta final (markdown + fontes) ou mensagem de "não concluído" |
 | [`usage.py`](usage.py) | `accumulate_usage`, `remember_usage` | Acúmulo de tokens (prompt + completion) por tarefa |
@@ -154,10 +155,20 @@ bloqueada com diagnóstico, nunca reprovada em silêncio.
 
 ## 🔄 Estagnação, Limites, Pausa e Retomada
 
+Detalhes e raciocínio: [estrategia-resolucao.md](../../../docs/architecture/estrategia-resolucao.md)
+
 ### Estagnação (`_check_stagnation`)
-- Mesmo `signature` (categoria, causa, texto normalizado) + mesma `strategy` (tool/args/verification/mode) → conta repetição
-- Atinge `attempts_per_strategy` (padrão 3) → `diagnose` (kind: contexto/planejamento/implementação/ferramenta/config/dependência/verificação)
-- Se `automatic=true` + política de replan aceita → `stagnation_replan` (replaneja pai)
+- A contagem vive na **raiz do objetivo** (`problem_ledger`), não na etapa: o replanejamento cria
+  etapas novas e a contagem precisa sobreviver a isso
+- **Dois contadores**: `count` (mesma abordagem, mesmo erro) e `total` (o problema, com qualquer
+  abordagem — nunca recomeça)
+- Uma tentativa só continua a contagem quando **nada mudou de material**: a mesma operação
+  (`strategy`), a mesma abordagem (`approach`) e o mesmo estado do disco (`workspace`)
+- Atinge `attempts_per_strategy` (3) ou `attempts_per_problem` (6) → `diagnose` (kind: contexto/
+  planejamento/implementação/ferramenta/provedor/configuração/dependência/verificação) com hipótese,
+  o que será diferente e os critérios de sucesso e de fracasso
+- Se `automatic=true` + política de replan aceita + **alternativa de abordagem disponível** →
+  `stagnation_replan` (replaneja o pai com a abordagem declarada)
 - Senão → `_pause_run` com diagnóstico
 
 ### Limites Operacionais (configuráveis por run em `config.limits`)
@@ -165,6 +176,7 @@ bloqueada com diagnóstico, nunca reprovada em silêncio.
 | Chave | Settings | Padrão | Ação ao Atingir |
 |-------|----------|--------|-----------------|
 | `attempts_per_strategy` | `max_attempts_per_strategy` | 3 | Estagnação → diagnóstico + replan/pausa |
+| `attempts_per_problem` | `max_attempts_per_problem` | 6 | Problema esgotou o orçamento → pausa |
 | `steps_without_progress` | `max_steps_without_progress` | 60 | Pausa (progresso = `made_progress`) |
 | `seconds` | `max_run_seconds` | 14400 | Pausa |
 | `model_calls` | `max_model_calls_per_run` | 400 | Pausa |
@@ -172,13 +184,19 @@ bloqueada com diagnóstico, nunca reprovada em silêncio.
 | `tokens` | `max_tokens_per_run` | 5M | Pausa |
 | `replans` | `max_replans_per_run` | 80 | Pausa |
 
+Política **aninhada**, não multiplicada: o teto do problema é o externo, o teto por abordagem é o
+interno, e o run inteiro tem os limites de recurso.
+
 ### Pausa (`_pause_run`)
 - Run → `PAUSED` (nenhuma task muda de estado)
 - Root `metadata.pause`: limite, valor, max, motivo, próxima ação, progresso, pendências, requisitos, diagnóstico
 - Evento `run.paused` + mensagem "Não concluído" com "Próxima ação"
 
 ### Retomada (`POST /runs/{id}/resume`)
-- Run → `ACTIVE`, pausa → `metadata.pauses`, **contadores reiniciam**
+- Run → `ACTIVE`, pausa → `metadata.pauses`
+- O consumo de chamadas, tokens e tempo é **cumulativo**: retomar não devolve o que já foi gasto.
+  A retomada concede **cota nova** (`resume_limit_allowance`, 1 unidade do limite base por retomada)
+- Os passos sem progresso contam no **trecho** atual — detectar travamento precisa de um trecho novo
 - `retry_blocked=true` → tasks `BLOCKED` → `PLANNING`
 - Evidências desatualizadas reabertas no aceite global
 

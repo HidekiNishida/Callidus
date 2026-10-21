@@ -26,6 +26,7 @@ from agent.orchestrator.consolidation import (
     verification_evidence_ok,
     verification_spec,
 )
+from agent.orchestrator.execution.journal import remember_failure
 from agent.orchestrator.requirements import MANDATORY, load_requirements, requirement_status
 from agent.persistence.models import EvidenceModel, TaskModel
 from agent.services.task_service import TaskService
@@ -196,10 +197,10 @@ def reopen_verification_gaps(session: Session, root_id: uuid.UUID) -> list[uuid.
         failure = _gap_failure(session, t)
         if failure.cause == FailureCause.STALE_EVIDENCE:
             invalidate_latest(session, t.id, failure.detail)
-        meta = dict(t.metadata_json or {})
-        meta["last_failure"] = failure.as_dict()
-        meta["failures"] = [*(meta.get("failures") or []), failure.as_dict()][-5:]
-        t.metadata_json = meta
+        # A falha é registrada pelo diário: assim ela ganha assinatura e estratégia, e passa a
+        # contar para a detecção de repetição. Escrever direto no `metadata_json` deixava a
+        # entrada sem assinatura, e a repetição passava despercebida.
+        noted = remember_failure(t, failure)
         ts.update_status(t.id, TaskStatusUpdate(status=TaskStatus.VERIFYING, reason=failure.detail))
         if failure.cause != FailureCause.STALE_EVIDENCE:
             ts.update_status(

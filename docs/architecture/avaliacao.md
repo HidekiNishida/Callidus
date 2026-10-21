@@ -26,11 +26,33 @@ Saída: `lab/out/avaliacao-<label>.json` (resumo + cenário a cenário) e um res
 | `--provider` | `meu_ollama` | provedor configurado em `data/providers.yaml` |
 | `--max-steps` | `40` | orçamento de passos por cenário |
 | `--only` | — | roda só os cenários cujo nome casa |
+| `--fault` | — | injeta uma falha determinística no provedor para medir a resposta do sistema à repetição improdutiva |
 
 O provedor e o modelo vêm da **configuração**, não do código: o cenário monta o run com
 `provider`/`model_id` e o Callidus resolve pelo catálogo de provedores. Nenhum serviço externo é
 usado; se o Ollama não estiver disponível, a avaliação real não pode ser feita (e isso precisa
 ser dito, não estimada).
+
+### Falha injetada (`--fault`)
+
+A avaliação com o modelo real mede o **caminho feliz**. Para medir a resposta do sistema à
+repetição improdutiva, o `--fault` troca o provedor por um que reproduz uma falha observada em
+produção, de forma determinística:
+
+| Modo | Falha reproduzida | O que mede |
+|------|-------------------|------------|
+| `invalido` | o modelo devolve prosa em vez da entrega | a detecção de repetição e o replanejamento |
+| `vazio` | o modelo raciocina e não entrega | o corte de saída e a ampliação de orçamento |
+| `http400` | o provedor recusa o pedido (HTTP 400) | a diferença entre falha transitória e permanente |
+| `transitorio` | a conexão cai **uma** vez e depois passa | a repetição legítima |
+
+O provedor falso é **uma instância só** para o run inteiro — é o que permite que a falha
+transitória falhe uma vez e deixe o agente passar. A métrica que interessa aqui não é o aceite do
+cenário (que naturalmente reprova), e sim **quantas chamadas o sistema gastou antes de parar** e
+**o que ele registrou como diagnóstico**.
+
+Além do resumo de sempre, cada cenário passa a reportar `estagnacoes`, `replanejamentos`,
+`pausas` e o `problem_ledger` da raiz (a contagem por problema).
 
 ## 🧪 Cenários e critérios de aceite
 
@@ -91,6 +113,73 @@ chamadas diferentes. Os números acima são de execuções reais, uma por config
 avaliação de novo produz variação. O que se mantém estável entre execuções é a **direção**:
 o plano do modelo passa a ser usado, a execução reprovada é reportada, o pedido de somente
 leitura é respeitado.
+
+## 🎯 Estratégia de resolução — medição de 20/10/2026
+
+Medição da estratégia de resolução ([estrategia-resolucao.md](/docs/architecture/estrategia-resolucao.md)):
+mesmos cinco cenários, mesmo modelo (`gpt-oss:20b` via Ollama local), três rodadas de cada lado
+(15 cenários por lado). O "antes" é o commit `0e20b76`, rodado num *worktree* isolado com o mesmo
+roteiro de avaliação; o "depois" é a árvore atual.
+
+### Com o modelo real (15 cenários por lado)
+
+| Métrica | Antes | Depois | Δ |
+|---------|-------|--------|---|
+| Cenários com aceite integral | 14 / 15 | **15 / 15** | +1 |
+| Conclusões prematuras | 0 | 0 | — |
+| Requisitos obrigatórios comprovados | 17 / 18 | 17 / 18 | — |
+| Tarefas criadas | 117 | **107** | −9 % |
+| Chamadas ao modelo | 76 | **50** | **−34 %** |
+| Falhas de modelo | 6 | **2** | **−67 %** |
+| Replanejamentos | 5 | **3** | −40 % |
+| Tokens de completion | 39 640 | **36 439** | −8 % |
+| Tempo total | 2 734 s | 3 015 s | +10 % |
+
+Por rodada (aceite / chamadas ao modelo): **antes** 5/20, 4/39, 5/17 — **depois** 5/24, 5/16, 5/10.
+
+O que a leitura honesta mostra:
+
+- **A taxa de aceite não regrediu** e ficou mais estável: o "depois" passou nos 15 cenários; o
+  "antes" perdeu um (`verificacao_reprova`, cujo run não terminou dentro do orçamento de passos).
+  Com 15 cenários, a diferença de **um** cenário é compatível com a variabilidade do modelo — o que
+  se pode afirmar é a **ausência de regressão**, não uma vitória estatística.
+- **A chamada ao modelo caiu 34 %**, e o pior caso por rodada caiu de 39 para 24. A dispersão
+  menor é o sinal mais forte: o "antes" tinha rodadas que gastavam o dobro.
+- **O tempo total subiu 10 %**, puxado por uma rodada mais lenta. É o custo de manter a memória de
+  abordagem no prompt (bloco de hipótese, tentativas e critérios) e de investigar antes de repetir.
+- **O cenário anti-conclusão-falsa** (`verificacao_reprova`) passou em 3/3 depois (2/3 antes), e as
+  chamadas ao modelo caíram de 10/8/3 para 0/0/0: o run chega à verificação e reporta sem precisar
+  do modelo.
+
+### Com falha injetada (determinístico, cenário `funcional`, 80 passos)
+
+| Falha injetada | Chamadas antes → depois | Estagnações antes → depois | Replanejamentos antes → depois | Tarefas antes → depois |
+|-----------------|-------------------------|-----------------------------|-------------------------------|------------------------|
+| `invalido` (devolve prosa) | 12 → **6** | 4 → 3 | 3 → 2 | 15 → 13 |
+| `vazio` (resposta vazia) | 12 → **6** | 4 → 3 | 3 → 2 | 15 → 13 |
+| `http400` (pedido recusado) | 12 → **3** | 4 → **1** | 3 → **0** | 15 → **5** |
+| `transitorio` (cai uma vez) | 3 → 3 | 1 → 1 | 0 → 0 | 5 → 5 |
+
+Aqui a medição é determinística, e a direção é inequívoca: **metade das chamadas na falha de
+formato, e um quarto na recusa permanente** — a falha que antes consumia três replanejamentos
+inteiros e 12 chamadas idênticas. O caso transitório é idêntico nos dois lados: ele não deve ser
+tratado como repetição improdutiva, e não é.
+
+Em nenhum dos casos, antes ou depois, o run **declarou sucesso sem cumprir o objetivo**: a
+aceitação foi `false` nos dois lados e nenhum arquivo foi criado à revelia. A melhoria é no
+**custo da falha**, não no critério de conclusão — que é exatamente onde o risco estava.
+
+### Limitações desta medição
+
+- Três rodadas por lado é pouco para um modelo estocástico: as diferenças de **aceite** e de
+  **tempo** estão dentro do ruído; as de **chamadas ao modelo** são mais robustas (50 contra 76,
+  com pior caso menor), mas continuam sendo uma amostra.
+- Os cenários da avaliação cobrem tarefas curtas. Não medem uma sessão longa de produção, que é
+  onde a repetição improdutiva custava caro.
+- A falha injetada é determinística por construção: ela mede a **resposta do sistema**, não a
+  qualidade do modelo diante de uma falha real.
+- Nenhuma medição de tokens do provedor foi feita (o Callidus estima tokens de contexto; o Ollama
+  não expõe o consumo aqui).
 
 ## 🧪 Testes determinísticos
 

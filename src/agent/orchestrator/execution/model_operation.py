@@ -281,7 +281,7 @@ class ModelOperation:
             content = outcome.content or ""
         except ProviderError as exc:
             self._executor.note_thought(run, task, f"A inferência falhou: {exc}.")
-            failure = classify_provider_error(str(exc))
+            failure = classify_provider_error(str(exc), exc)
             attempts.record(
                 run_id=run.id,
                 task_id=task.id,

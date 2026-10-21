@@ -207,6 +207,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [modelo-dados.md](/docs/architecture/modelo-dados.md)
 - Arquivo: [requisitos-verificacao-progresso.md](/docs/architecture/requisitos-verificacao-progresso.md)
 - Arquivo: [skills-estrategia.md](/docs/architecture/skills-estrategia.md)
+- Arquivo: [estrategia-resolucao.md](/docs/architecture/estrategia-resolucao.md)
 - Arquivo: [ux-ui.md](/docs/architecture/ux-ui.md)
 - Arquivo: [visao-geral.md](/docs/architecture/visao-geral.md)
 
@@ -261,6 +262,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `docs/architecture/requisitos-verificacao-progresso.md`
 
 **Propósito:** Requisitos rastreáveis, validação de plano, verificação independente, progresso real, estagnação, limites, pausa/retomada.
+
+### `docs/architecture/estrategia-resolucao.md`
+
+**Propósito:** explicar como o Callidus reconhece estagnação, escolhe uma abordagem diferente, aplica limites coerentes e registra o que aprendeu. **Quando/onde:** leitura de referência para quem quiser entender ou investigar a decisão do agente diante de uma falha.
 
 ### `docs/architecture/skills-estrategia.md`
 
@@ -920,7 +925,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `FailureCause(StrEnum)` — : INVALID_PLAN, REPEATED_PROMPT, REPEATED_OUTPUT, STAGNATION, ATTEMPTS_EXHAUSTED, CONTEXT_BUDGET, MAX_TASKS, MAX_DEPTH, APPROVAL_REQUIRED, EXECUTABLE_MISSING, INVALID_CONFIG, PROVIDER_DOWN, NETWORK_ERROR, TOOL_UNAVAILABLE, DEPENDENCY_FAILED, DEPENDENCY_CANCELLED.
 - `classify_context_error(message: str) -> Failure` — Classifica um `ContextBudgetError` em falha de categoria `CONFIGURATION` com causa `CONTEXT_BUDGET`; devolve `None` quando o erro não é de contexto.
 - `classify_model_output(content: str, parse_error: str | None, missing: list[str] | None=None) -> Failure | None` — Classifica a saída inválida do modelo (JSON ilegível, prompt truncado, saída repetida) na categoria e causa correspondentes.
-- `classify_provider_error(message: str) -> Failure` — Classifica erro de provider (timeout, rede, modelo inexistente) em falha de causa `PROVIDER_DOWN`, `NETWORK_ERROR` ou `INVALID_CONFIG`.
+- `classify_provider_error(message: str, exc: BaseException | None = None) -> Failure` — Classifica erro de provedor separando o transitório do permanente: tempo esgotado, conexão recusada, limite de uso (429) e erro de servidor (5xx) admitem repetição; pedido recusado (4xx) exige reformular; credencial inválida (401/403) exige ação de fora. O tipo da exceção manda quando existe; o texto é o reserva.
+- `_http_status(low: str) -> int | None` — Extrai o código HTTP de uma mensagem de erro do provedor. Entrada: mensagem em minúsculas; saída: o código encontrado ou `None`.
 - `classify_tool_result(out: dict[str, Any]) -> Failure | None` — Classifica o retorno de uma ferramenta (sucesso, approval_required, executável ausente, timeout) em falha categorizada.
 - `classify_verification(passed: bool | None, summary: str, output: str='') -> Failure | None` — Classifica a reprovação de uma verificação (falha de teste, artefato ausente, erro de sintaxe) quando o verificador reprova de fato.
 - `describe_failures(history: list[dict[str, Any]], *, limit: int=3, detail_chars: int=400) -> str` — Monta o resumo textual das últimas falhas (limite padrão de 3) para o contexto da próxima tentativa, com causa, detalhe truncado e o "O que fazer diferente" derivado de `retry_hint`. Retorna string vazia quando o histórico não tem falhas válidas.
@@ -1264,6 +1270,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [README.md](/src/agent/orchestrator/README.md)
 - Arquivo: [__init__.py](/src/agent/orchestrator/__init__.py)
 - Subpasta: [src/agent/orchestrator/execution/](/src/agent/orchestrator/execution/)
+- Arquivo: [approach.py](/src/agent/orchestrator/approach.py)
 - Arquivo: [atomizer.py](/src/agent/orchestrator/atomizer.py)
 - Arquivo: [closing.py](/src/agent/orchestrator/closing.py)
 - Arquivo: [consolidation.py](/src/agent/orchestrator/consolidation.py)
@@ -1288,6 +1295,20 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `src/agent/orchestrator/__init__.py`
 
 **Propósito:** Re-exporta módulos públicos.
+
+### `src/agent/orchestrator/approach.py`
+
+**Propósito:** guarda a memória operacional da etapa — o que foi tentado, a hipótese da falha e o que será diferente na próxima tentativa. **Quando/onde:** usado pelo diário de falhas (a cada falha registrada) e pelo construtor de contexto (a etapa seguinte recebe o bloco de abordagem no prompt).
+
+- `_now() -> str` — Instante atual em ISO-8601 (UTC), para marcar quando a abordagem foi registrada. Entrada: nenhuma; saída: a marca de tempo.
+- `alternatives_for(cause: str) -> list[str]` — Alternativas concretas para uma causa de falha, da mais próxima à mais radical (dividir, reduzir, pedir ajuda). Entrada: causa; saída: lista de alternativas (vazia quando a causa não tem alternativa conhecida).
+- `approach_of(task: Any) -> dict[str, Any]` — Memória de abordagem registrada na etapa. Entrada: etapa; saída: dicionário de abordagem (vazio quando a etapa ainda não falhou).
+- `approach_signature(task: Any) -> str` — Impressão da abordagem vigente: a causa e a mudança em vigor. Não inclui o detalhe do erro, que muda a cada tentativa sem que a abordagem mude. Entrada: etapa; saída: string hexadecimal (vazia sem abordagem).
+- `criteria_for(cause: str) -> tuple[str, str]` — Critério de sucesso e de fracasso da próxima tentativa. Entrada: causa; saída: par (sucesso, fracasso).
+- `declare_change(task: Any, description: str) -> dict[str, Any]` — Registra que a etapa vai passar a fazer outra coisa, tornando a mudança auditável. Entrada: etapa e descrição; saída: a memória depois do registro.
+- `hypothesis_for(cause: str, detail: str='') -> str` — Hipótese declarada para a falha, derivada da causa de forma determinística. Entrada: causa e detalhe; saída: a hipótese em texto.
+- `record_attempt(task: Any, failure: dict[str, Any], *, alternatives: list[str] | None=None) -> dict[str, Any]` — Registra a tentativa que falhou e prepara a próxima abordagem: o que travou, a hipótese, o que foi tentado, o que será diferente e os critérios de sucesso e de fracasso. Entrada: etapa e falha; saída: a memória depois do registro.
+- `render_approach(task: Any) -> str` — Bloco de abordagem para o prompt da etapa: o que travou, a hipótese, o que já foi tentado, o que precisa ser diferente e os critérios. Entrada: etapa; saída: texto (vazio quando a etapa ainda não falhou).
 
 ### `src/agent/orchestrator/atomizer.py`
 
@@ -1623,15 +1644,20 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_digest(data: Any) -> str` — Calcula o hash estável (sha1, 16 caracteres) de qualquer estrutura serializável, usado para comparar assinaturas. Entrada: dado qualquer; saída: string hexadecimal.
 - `_naive(value: datetime | None) -> datetime | None` — Normaliza um datetime para UTC sem timezone (ou devolve `None`). Entrada: datetime possivelmente nulo; saída: datetime naive ou `None`.
 - `diagnose(failure: dict[str, Any], count: int) -> dict[str, Any]` — kind, probable_cause, action, automatic.
+- `effective_cap(limits: dict[str, int], key: str, resumes: int, allowance: int=1) -> int` — Cota efetiva de um limite, dada a quantidade de retomadas do run: cada retomada concede uma unidade do limite base, mas o consumo já feito continua contando. Entrada: limites, retomadas, Allowance; saída: cota efetiva (0 quando o limite está desligado).
 - `error_signature(failure: dict[str, Any]) -> str` — categoria+causa+texto normalizado (sem números/ids/hashes).
-- `limit_reached(session: Session, run: ExecutionRunModel, limits: dict[str, int]) -> dict[str, Any] | None` — verifica limites operacionais.
+- `limit_reached(session: Session, run: ExecutionRunModel, limits: dict[str, int], *, allowance: int=1) -> dict[str, Any] | None` — verifica limites operacionais.
 - `limits_for(settings: Settings, config: dict[str, Any]) -> dict[str, int]` — merge settings + config.limits.
 - `next_action_for_limit(run_id: uuid.UUID, hit: dict[str, Any]) -> str` — próxima ação baseada no limite.
 - `normalize_error(text: str) -> str` — Normaliza o texto de erro removendo o que muda entre tentativas idênticas (uuids, hex, números, aspas e espaços). Entrada: texto do erro; saída: string normalizada de até 300 caracteres.
+- `objective_signature(task: Any) -> str` — Impressão do objetivo da etapa, sem as variações de escrita do mesmo pedido. Entrada: etapa; saída: string hexadecimal (vazia sem objetivo).
+- `problem_attempts(root: Any, failure: dict[str, Any], *, workspace: str | None=None, change: bool=False, approach: str='') -> tuple[int, int, dict[str, Any]]` — Conta as tentativas do mesmo problema no objetivo inteiro, morando na raiz (sobrevive ao replanejamento e à retomada). Devolve o trio (tentativas da mesma abordagem, tentativas totais do problema, registro). Uma tentativa só continua a contagem de loop quando nada mudou de material: a mesma operação, a mesma abordagem e o mesmo estado do disco.
+- `problem_key(objective: str, signature: str) -> str` — Identidade do problema: o mesmo erro, no mesmo objetivo. É a chave que amarra as tentativas entre si mesmo quando o replanejamento cria etapas novas.
 - `repeated_failures(failures: list[dict[str, Any]]) -> int` — conta falhas com mesma signature+strategy.
+- `resume_count(session: Session, run: ExecutionRunModel) -> int` — Quantas vezes o run foi retomado. Entrada: sessão e run; saída: contagem dos eventos `run.resumed`.
 - `segment_start(session: Session, run: ExecutionRunModel) -> datetime` — Devolve o início do trecho atual do run: o último evento `run.resumed` ou a criação do run, para que retomar não zere o trabalho feito. Entrada: sessão e run; saída: datetime naive.
-- `strategy_signature(task: Any) -> str` — tool/args/verification/mode/strategy/objetivo.
-- `usage_since(session: Session, run: ExecutionRunModel) -> dict[str, int]` — Mede o consumo do trecho atual do run: passos sem progresso, segundos, chamadas ao modelo, chamadas a ferramentas, tokens estimados e replanejamentos. Entrada: sessão e run; saída: dicionário de contadores.
+- `strategy_signature(task: Any) -> str` — tool/args/verification/mode/strategy. Não inclui o objetivo: reescrever o mesmo objetivo não é outra abordagem, e incluí-lo fazia cada replanejamento parecer uma novidade e zerar o contador.
+- `usage_since(session: Session, run: ExecutionRunModel) -> dict[str, int]` — Mede o consumo do run: passos sem progresso (no trecho atual), segundos, chamadas ao modelo, chamadas a ferramentas, tokens estimados e replanejamentos. Entrada: sessão e run; saída: dicionário de contadores.
 
 ### `src/agent/orchestrator/strategy.py`
 
@@ -2073,6 +2099,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `RunService.resume_run(run_id: uuid.UUID, *, retry_blocked: bool=False) -> ExecutionRunModel` — Retoma uma execução pausada (PAUSED → ACTIVE); com `retry_blocked`, move tarefas BLOCKED de volta para PLANNING e zera os contadores de limites.
 - `RunService.start_run(project_id: uuid.UUID, data: ExecutionRunCreate) -> ExecutionRunModel` — Símbolo do módulo — ver a descrição do arquivo.
 
+- `RunService._usage(run: ExecutionRunModel) -> dict[str, int]` — Consumo acumulado do run, para a auditoria da retomada: a retomada concede cota nova, mas o que já foi gasto continua contando. Entrada: run; saída: consumo por indicador.
 ### `src/agent/services/scheduler.py`
 
 **Propósito:** Serviço de agendamento cron que dispara execuções automáticas. **Quando/onde:** usado pelo servidor da API quando há `ScheduledRunModel` habilitados.
@@ -2325,6 +2352,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `is_current(artifacts: dict[str, Any] | None) -> bool` — compara fingerprint atual com salvo.
 - `snapshot(root: str, spec: dict[str, Any], tool_args: dict[str, Any] | None=None) -> dict[str, Any] | None` — `{fingerprint, paths, mtimes}`.
 
+- `workspace_state(root: str) -> str` — Impressão do estado do disco da raiz inteira (nome, tamanho e mtime de cada arquivo, podando caches e dependências ao descer). É o sinal objetivo de "algo mudou desde a última tentativa": a detecção de repetição do orquestrador usa essa impressão para distinguir uma tentativa legítima de uma repetição improdutiva. Entrada: raiz do projeto; saída: impressão hexadecimal (vazia quando a raiz não existe).
 ### `src/agent/verification/recovery.py`
 
 **Propósito:** Concentra a taxonomia do diagnóstico de uma verificação reprovada, permitindo o ciclo diagnóstico → correção → re-verificação sem repetir o prompt nem mascarar o sintoma. **Quando/onde:** Usado pelo orquestrador após uma verificação reprovada, para classificar a causa, decidir a ação e montar a orientação da próxima tentativa.
@@ -2453,6 +2481,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [test_skills_evaluation.py](/tests/test_skills_evaluation.py)
 - Arquivo: [test_skills_observability.py](/tests/test_skills_observability.py)
 - Arquivo: [test_skills_system.py](/tests/test_skills_system.py)
+- Arquivo: [test_resolution_strategy.py](/tests/test_resolution_strategy.py)
 - Arquivo: [test_stagnation_limits.py](/tests/test_stagnation_limits.py)
 - Arquivo: [test_state_machine.py](/tests/test_state_machine.py)
 - Arquivo: [test_strategy_and_decomposition.py](/tests/test_strategy_and_decomposition.py)
@@ -2694,6 +2723,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `tests/test_skills_system.py`
 
 **Propósito:** Testes do sistema de Skills (descoberta, validação, seleção sob demanda).
+
+### `tests/test_resolution_strategy.py`
+
+**Propósito:** verificar a estratégia de resolução — repetição improdutiva, repetição legítima, mudança de abordagem, falha transitória, retomada, falha de subtarefa, falsa conclusão, evidência nova e coerência dos limites. **Quando/onde:** testes determinísticos da memória de abordagem e do contador de problema, sem dependência de modelo.
 
 ### `tests/test_stagnation_limits.py`
 

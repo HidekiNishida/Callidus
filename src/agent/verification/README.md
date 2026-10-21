@@ -121,6 +121,14 @@ def snapshot(root: str, spec: dict, tool_args: dict) -> dict:
 
 **Na retomada**: `reopen_verification_gaps` compara fingerprint salvo vs atual → se mudou, evidência vira `desatualizada` e tarefa reabre para verificar de novo.
 
+### `workspace_state(root)` — o disco mudou?
+
+Impressão do estado da raiz inteira (nome, tamanho, mtime de cada arquivo, pulando caches e
+dependências na hora de descer). É o sinal **objetivo** de "algo mudou desde a última tentativa":
+a detecção de repetição do orquestrador usa essa impressão para distinguir uma tentativa legítima
+(a causa foi corrigida no disco) de uma repetição improdutiva (nada mudou). Ver
+[estrategia-resolucao.md](../../../docs/architecture/estrategia-resolucao.md).
+
 ## 🧪 Estados de Evidência (`detail_json.state`)
 
 | Estado | `passed` | Efeito na Task |

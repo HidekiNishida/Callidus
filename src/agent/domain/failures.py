@@ -9,6 +9,7 @@ Observações: a categoria define a política (repetir, mudar a estratégia, blo
 """
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import Any
@@ -34,6 +35,9 @@ class FailureCause(StrEnum):
     TRUNCATED_OUTPUT = "truncated_output"
     TIMEOUT = "timeout"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
+    PROVIDER_REJECTED = "provider_rejected"
+    PROVIDER_RATE_LIMIT = "provider_rate_limit"
+    PROVIDER_CREDENTIALS = "provider_credentials"
     PROVIDER_ERROR = "provider_error"
     TOOL_ERROR = "tool_error"
     TOOL_INPUT = "tool_input"
@@ -134,6 +138,12 @@ _RETRY_HINTS: dict[FailureCause, str] = {
     FailureCause.TOOL_ERROR: "A execução falhou; corrija a causa indicada antes de repetir.",
     FailureCause.VERIFICATION_FAILED: "A verificação reprovou a mudança; corrija o que a saída da verificação aponta.",
     FailureCause.PROVIDER_ERROR: "A chamada anterior ao modelo falhou; responda de forma direta e curta.",
+    FailureCause.PROVIDER_REJECTED: (
+        "O provedor recusou o pedido (o pedido está errado, não a rede). Reduza o contexto e "
+        "reenvie em formato menor; repetir a mesma requisição devolve a mesma recusa."
+    ),
+    FailureCause.PROVIDER_RATE_LIMIT: "O provedor limitou o uso; aguarde um pouco e repita a chamada.",
+    FailureCause.PROVIDER_CREDENTIALS: "A credencial do provedor está ausente ou inválida; isso exige ação de fora.",
 }
 
 
@@ -182,14 +192,88 @@ def classify_tool_result(out: dict[str, Any]) -> Failure | None:
     return Failure(FailureCategory.RECOVERABLE, FailureCause.TOOL_ERROR, detail)
 
 
-def classify_provider_error(message: str) -> Failure:
-    """Mensagem de `ProviderError` → falha. Servidor fora do ar é configuração/ambiente, não estratégia."""
+def classify_provider_error(message: str, exc: BaseException | None = None) -> Failure:
+    """Mensagem de `ProviderError` → falha, separando o que é transitório do que é permanente.
+
+    A distinção importa porque ela decide a política: uma falha transitória justifica repetir a
+    mesma chamada (com a cota que o run impõe); uma falha permanente — o provedor recusou o
+    pedido, a credencial está errada — não se resolve repetindo a mesma requisição. Tratar as
+    duas igual fazia o sistema repetir um pedido recusado três vezes por etapa e, depois de cada
+    replanejamento, mais três.
+
+    Quando o erro traz o **tipo** (as exceções do provedor são tipadas), ele manda: é mais
+    confiável do que a leitura do texto. O texto é o reserva, para mensagens sem tipo.
+
+    Args:
+        message: mensagem do erro.
+        exc: exceção original, quando disponível.
+
+    Returns:
+        A falha categorizada correspondente.
+    """
+    from agent.providers.base import (
+        ProviderAuthError,
+        ProviderConfigError,
+        ProviderConnectionError,
+        ProviderError,
+        ProviderNotSupportedError,
+        ProviderRateLimitError,
+        ProviderResponseError,
+        ProviderTimeoutError,
+    )
+
+    if isinstance(exc, ProviderTimeoutError):
+        return Failure(FailureCategory.OPERATIONAL_LIMIT, FailureCause.TIMEOUT, message)
+    if isinstance(exc, ProviderAuthError):
+        return Failure(FailureCategory.CONFIGURATION, FailureCause.PROVIDER_CREDENTIALS, message)
+    if isinstance(exc, ProviderRateLimitError):
+        return Failure(FailureCategory.RECOVERABLE, FailureCause.PROVIDER_RATE_LIMIT, message)
+    if isinstance(exc, ProviderConnectionError):
+        return Failure(FailureCategory.EXTERNAL_UNAVAILABLE, FailureCause.PROVIDER_UNAVAILABLE, message)
+    if isinstance(exc, ProviderNotSupportedError):
+        return Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.PROVIDER_REJECTED, message)
+    if isinstance(exc, ProviderConfigError):
+        return Failure(FailureCategory.CONFIGURATION, FailureCause.PROVIDER_CREDENTIALS, message)
+    if isinstance(exc, ProviderResponseError):
+        return Failure(FailureCategory.RECOVERABLE, FailureCause.PROVIDER_ERROR, message)
+
     low = message.lower()
     if "tempo esgotado" in low or "timeout" in low or "timed out" in low:
         return Failure(FailureCategory.OPERATIONAL_LIMIT, FailureCause.TIMEOUT, message)
-    if "indisponível" in low or "connect" in low or "refused" in low:
+    if "autentica" in low or "credencial" in low or "api key" in low:
+        return Failure(FailureCategory.CONFIGURATION, FailureCause.PROVIDER_CREDENTIALS, message)
+    if "limite de uso" in low or "429" in low or "rate limit" in low:
+        return Failure(FailureCategory.RECOVERABLE, FailureCause.PROVIDER_RATE_LIMIT, message)
+    if "indispon" in low or "connect" in low or "refused" in low or "dns" in low:
         return Failure(FailureCategory.EXTERNAL_UNAVAILABLE, FailureCause.PROVIDER_UNAVAILABLE, message)
+    status = _http_status(low)
+    if status is not None:
+        if status in (401, 403):
+            return Failure(FailureCategory.CONFIGURATION, FailureCause.PROVIDER_CREDENTIALS, message)
+        if status == 429:
+            return Failure(FailureCategory.RECOVERABLE, FailureCause.PROVIDER_RATE_LIMIT, message)
+        if 400 <= status < 500:
+            # O provedor recusou o pedido: o pedido está errado. Repetir a mesma requisição
+            # devolve a mesma recusa.
+            return Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.PROVIDER_REJECTED, message)
+        if status >= 500:
+            return Failure(FailureCategory.RECOVERABLE, FailureCause.PROVIDER_ERROR, message)
+    if isinstance(exc, ProviderError):
+        return Failure(FailureCategory.RECOVERABLE, FailureCause.PROVIDER_ERROR, message)
     return Failure(FailureCategory.RECOVERABLE, FailureCause.PROVIDER_ERROR, message)
+
+
+def _http_status(low: str) -> int | None:
+    """Extrai o código HTTP de uma mensagem de erro do provedor.
+
+    Args:
+        low: mensagem já em minúsculas.
+
+    Returns:
+        O código HTTP encontrado, ou `None` quando a mensagem não traz código.
+    """
+    match = re.search(r"http\s*(\d{3})", low)
+    return int(match.group(1)) if match else None
 
 
 def looks_truncated(content: str) -> bool:

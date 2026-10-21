@@ -742,14 +742,33 @@ class TaskExecutor:
             spec=spec,
         )
         recoveries = int((task.metadata_json or {}).get("verification_recoveries") or 0)
+        signature = recovery_signature(diagnosis, detail)
+        previous = str((task.metadata_json or {}).get("verification_recovery_signature") or "")
         plan = plan_recovery(
             diagnosis,
             attempt_count=recoveries,
             max_recoveries=self._settings.verification_max_recoveries,
         )
-        plan["signature"] = recovery_signature(diagnosis, detail)
+        plan["signature"] = signature
         plan["recoveries"] = recoveries
-        task.metadata_json = {**(task.metadata_json or {}), "verification_recoveries": recoveries + 1}
+        if previous and previous == signature and plan.get("retry"):
+            # A **mesma causa** de reprovação voltou. Um contador cru deixaria a recuperação
+            # consumir o orçamento de novo como se fosse um problema diferente; a assinatura
+            # diz que é o mesmo problema, e o passo para o diagnóstico.
+            plan = {
+                **plan,
+                "action": "block",
+                "retry": False,
+                "guidance": (
+                    "a mesma causa de reprovação voltou; trocar a abordagem da etapa, "
+                    "em vez de repetir a mesma recuperação"
+                ),
+            }
+        task.metadata_json = {
+            **(task.metadata_json or {}),
+            "verification_recoveries": recoveries + 1,
+            "verification_recovery_signature": signature,
+        }
         emit(
             "verification.recovery_planned",
             {"cause": plan.get("cause"), "action": plan.get("action"), "retry": plan.get("retry", False)},

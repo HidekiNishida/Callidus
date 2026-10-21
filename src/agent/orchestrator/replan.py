@@ -6,6 +6,10 @@ Responsabilidade: camada de aplicação.
 Componentes: ReplanDecision, replan_decision, replan_under, replan_parent.
 Dependências: agent.domain.enums, agent.domain.failures, agent.domain.schemas, agent.observability, agent.orchestrator.consolidation, agent.orchestrator.decomposition….
 Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
+
+O replanejamento aqui **não** é uma nova tentativa com o contador zerado: ele escolhe a próxima
+abordagem da lista de alternativas da falha e a leva junto, declarada, para a etapa nova. Sem
+abordagem nova sobrando, o replanejamento é recusado e a etapa precisa de ação de fora.
 """
 
 from __future__ import annotations
@@ -19,11 +23,16 @@ from agent.domain.enums import TaskKind, TaskStatus
 from agent.domain.failures import Failure, FailureCategory
 from agent.domain.schemas import TaskStatusUpdate
 from agent.observability import emit
+from agent.orchestrator.approach import approach_of
 from agent.orchestrator.consolidation import children_of, pending_reason, superseded
-from agent.orchestrator.decomposition import DecompositionResult, SubTaskSpec, apply_decomposition
-from agent.persistence.models import TaskModel
+from agent.orchestrator.decomposition import (
+    DecompositionResult,
+    SubTaskSpec,
+    apply_decomposition,
+)
 from agent.orchestrator.requirements import effective_covers, normalize_covers
 from agent.orchestrator.stagnation import normalize_error
+from agent.persistence.models import TaskModel
 from agent.services.task_service import TaskService
 
 REPLAN_BUDGET = 3
@@ -45,6 +54,7 @@ class ReplanDecision:
         replan: indica se um plano novo deve ser feito.
         reason: justificativa da decisão, gravada na tarefa pai.
     """
+
     replan: bool
     reason: str = ""
 
@@ -56,10 +66,15 @@ def replan_decision(parent_meta: dict, stopped: TaskModel, completed: int) -> Re
     - O orçamento `REPLAN_BUDGET` é da linhagem inteira (o nó replanejado herda a contagem).
     - Sem etapa nova concluída desde o último replanejamento e com o mesmo motivo (comparado normalizado:
       números, ids e aspas não contam), o plano novo não ajudou.
+    - Sem alternativa de abordagem sobrando, replanejar de novo seria repetir a mesma operação com
+      o contador zerado: é recusado, e a etapa precisa de ação de fora.
     """
     failure = Failure.from_dict((stopped.metadata_json or {}).get("last_failure"))
     if failure is not None and failure.category in _NEEDS_OUTSIDE_ACTION:
         return ReplanDecision(False, f"precisa de ação externa ({failure.category.value}): {failure.detail[:200]}")
+    approach = approach_of(stopped)
+    if approach.get("exhausted"):
+        return ReplanDecision(False, "não há outra abordagem disponível para esta falha")
     if int(parent_meta.get("replan_count") or 0) >= REPLAN_BUDGET:
         return ReplanDecision(False, f"limite de {REPLAN_BUDGET} replanejamentos atingido")
     history = parent_meta.get("replan_history") or []
@@ -69,7 +84,6 @@ def replan_decision(parent_meta: dict, stopped: TaskModel, completed: int) -> Re
         if completed <= int(last.get("completed") or 0) and same:
             return ReplanDecision(False, "o replanejamento anterior não trouxe progresso")
     return ReplanDecision(True)
-
 
 def replan_under(session: Session, root_id: uuid.UUID) -> dict | None:
     """Se algum filho parou, revisa o pai (conforme a política) e deixa o plano novo seguir."""
@@ -159,12 +173,39 @@ def replan_parent(session: Session, parent: TaskModel) -> dict | None:
         tasks.update_status(stopped.id, TaskStatusUpdate(status=TaskStatus.CANCELLED, reason="substituída pelo replanejamento"))
 
     count = int(meta.get("replan_count") or 0) + 1
-    objective = (
-        f"Replanejar o que falta de «{parent.title}». "
-        f"Já concluído: {', '.join(done) or 'nada'}. Não refazer isso. "
-        f"Parou em «{stopped.title}»: {reason[:240]}. Use outra abordagem para essa parte. "
-        f"Objetivo original: {parent.objective[:500]}"
-    )
+    approach = approach_of(stopped)
+    change = str(approach.get("next_change") or "").strip()
+    hypothesis = str(approach.get("hypothesis") or "").strip()
+    success = str(approach.get("success_criterion") or "").strip()
+    failure_criterion = str(approach.get("failure_criterion") or "").strip()
+    tried = approach.get("tried") or []
+    lines = [
+        f"Replanejar o que falta de «{parent.title}». ",
+        f"Já concluído: {', '.join(done) or 'nada'}. Não refazer isso. ",
+        f"Parou em «{stopped.title}»: {reason[:240]}.",
+    ]
+    if hypothesis:
+        lines.append(f"Hipótese da falha: {hypothesis[:240]}.")
+    if tried:
+        last = tried[-1]
+        lines.append(f"O que foi tentado: {last.get('what') or ''!s} → {str(last.get('result') or '')[:200]}.")
+    if change:
+        # A abordagem nova vai escrita no pedido: o modelo recebe a alternativa concreta, não
+        # a instrução genérica de "use outra abordagem".
+        lines.append(f"Agora é preciso fazer diferente: {change}.")
+    else:
+        lines.append("Use outra abordagem para essa parte.")
+    if success:
+        lines.append(f"Sucesso: {success}.")
+    if failure_criterion:
+        lines.append(f"Se acontecer isto, a hipótese também está errada: {failure_criterion}.")
+    lines.append(f"Objetivo original: {parent.objective[:500]}")
+    objective = " ".join(lines)
+    carried_approach = {
+        **approach,
+        "current_change": change,
+        "changed_at": approach.get("changed_at"),
+    }
     plan = DecompositionResult(
         subtasks=[
             SubTaskSpec(
@@ -185,6 +226,9 @@ def replan_parent(session: Session, parent: TaskModel) -> dict | None:
                 metadata={
                     "replan": True,
                     "replan_count": count,
+                    # A etapa nova nasce com a abordagem declarada: o contador de repetição
+                    # reconhece a mudança material e a memória viaja com o trabalho.
+                    "approach": carried_approach,
                     **({"covers": carried} if carried is not None else {}),
                 },
                 depends_on_indices=[0],

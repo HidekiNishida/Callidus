@@ -96,14 +96,22 @@ class Settings(BaseSettings):
     # ciclo diagnóstico → correção → re-verificação antes de a tarefa ser bloqueada.
     verification_max_recoveries: int = 2
     # Limites operacionais do run (0 desliga; `config.limits` sobrescreve por run). Atingido um deles, o run
-    # pausa com diagnóstico e pode ser retomado; os contadores recomeçam na retomada.
+    # pausa com diagnóstico e pode ser retomado. O consumo é cumulativo: a retomada não devolve o que
+    # já foi gasto, ela concede `resume_limit_allowance` unidade(s) extra do limite base.
     max_attempts_per_strategy: int = 3
+    # Teto do mesmo problema, com qualquer abordagem. É o limite externo da política de
+    # tentativas: mesmo que cada repetição use uma abordagem diferente, o problema não pode
+    # consumir o run inteiro. Relatório para a run pausar com diagnóstico.
+    max_attempts_per_problem: int = 6
     max_steps_without_progress: int = 60
     max_run_seconds: int = 14400
     max_model_calls_per_run: int = 400
     max_tool_calls_per_run: int = 600
     max_tokens_per_run: int = 5_000_000
     max_replans_per_run: int = 80
+    # Unidades do limite base que cada retomada da run concede. A cota cresce a cada retomada,
+    # mas o consumo já feito continua contando — a retomada destrava, não zera.
+    resume_limit_allowance: int = 1
     # Observabilidade: o texto de cada campo de evento é truncado neste limite (a resposta final do modelo
     # usa o limite maior); fragmentos são agrupados por intervalo/tamanho; a fila de cada assinante SSE
     # que estoura vira um pedido de ressincronização. Cada conexão SSE dura no máximo `stream_max_seconds`

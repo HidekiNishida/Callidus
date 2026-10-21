@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import shutil
 import sys
 import time
@@ -31,12 +32,15 @@ from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate
 from agent.orchestrator.global_verify import requirements_report
 from agent.orchestrator.runner import RunOrchestrator
 from agent.persistence.database import build_session_factory, init_db
-from agent.persistence.models import EvidenceModel, OperationAttemptModel, TaskModel
+from agent.persistence.models import EventLogModel, EvidenceModel, OperationAttemptModel, TaskModel
 from agent.services.project_service import ProjectService
 from agent.services.run_service import RunService
 from agent.services.task_service import TaskService
 
 OUT = Path(__file__).resolve().parent / "out"
+# Pasta de trabalho dos cenários. `AVALIACAO_WORKDIR` permite rodar duas avaliações em
+# paralelo (antes e depois) sem que uma apague o banco e a pasta da outra.
+WORK = Path(os.environ.get("AVALIACAO_WORKDIR", "/tmp/callidus-avaliacao"))
 
 
 # ────────────────────────────────────────────────────────────────────── cenários
@@ -164,13 +168,69 @@ SCENARIOS = [
 # ────────────────────────────────────────────────────────────────────── execução
 
 
-async def run_scenario(scenario_fn, *, model_id: str, provider: str, max_steps: int) -> dict:
+class _Failing:
+    """Provedor que reproduz uma falha observada em produção, de forma determinística.
+
+    Atributos:
+        mode: qual falha reproduzir.
+        calls: quantas chamadas já respondeu.
+    """
+
+    name = "fault"
+    last_usage = None
+
+    def __init__(self, mode: str) -> None:
+        """Guarda o modo de falha e zera o contador de chamadas."""
+        self.mode = mode
+        self.calls = 0
+
+    async def chat(self, request):
+        """Devolve a falha programada ou a entrega válida, conforme o modo.
+
+        Args:
+            request: pedido do orquestrador (ignorado).
+
+        Returns:
+            A resposta falsa.
+
+        Raises:
+            ProviderError: nos modos `http400` e `transitorio` (na primeira chamada).
+        """
+        from agent.providers.base import ProviderError
+
+        self.calls += 1
+        if self.mode == "http400":
+            raise ProviderError("openrouter: requisição recusada (HTTP 400).")
+        if self.mode == "transitorio" and self.calls == 1:
+            raise ProviderError("ollama indisponível: connection refused")
+        if self.mode == "vazio":
+            content = ""
+        elif self.mode == "invalido":
+            content = "Vou escrever o arquivo agora, com o conteúdo pedido."
+        else:
+            content = '{"path":"app.py","content":"def dobro(x):\\n    return x * 2\\n"}'
+
+        class _R:
+            """Resposta falsa com o conteúdo programado."""
+
+        _R.content = content
+        return _R()
+
+
+async def run_scenario(
+    scenario_fn,
+    *,
+    model_id: str,
+    provider: str,
+    max_steps: int,
+    fault: str = "",
+) -> dict:
     label = scenario_fn.__name__.replace("_cenario_", "")
-    ws = Path("/tmp/callidus-avaliacao") / label
+    ws = WORK / label
     if ws.exists():
         shutil.rmtree(ws)
     ws.mkdir(parents=True)
-    db = Path("/tmp/callidus-avaliacao") / f"{label}.db"
+    db = WORK / f"{label}.db"
     if db.exists():
         db.unlink()
 
@@ -205,6 +265,11 @@ async def run_scenario(scenario_fn, *, model_id: str, provider: str, max_steps: 
     )
     session.commit()
 
+    if fault:
+        import agent.orchestrator.runner as runner_module
+
+        runner_module._select_provider = lambda _s, _c: _Failing(fault)
+
     started = time.monotonic()
     orchestrator = RunOrchestrator(session, settings)
     actions: list[str] = []
@@ -226,6 +291,8 @@ async def run_scenario(scenario_fn, *, model_id: str, provider: str, max_steps: 
     attempts = list(session.scalars(select(OperationAttemptModel)).all())
     evidences = list(session.scalars(select(EvidenceModel)).all())
     reqs = requirements_report(session, root)
+    events = list(session.scalars(select(EventLogModel)).all())
+    event_types = [e.event_type for e in events]
 
     prompt_tokens = 0
     completion_tokens = 0
@@ -263,6 +330,13 @@ async def run_scenario(scenario_fn, *, model_id: str, provider: str, max_steps: 
         "model_calls": sum(1 for a in attempts if a.kind == "model"),
         "tool_calls": sum(1 for a in attempts if a.kind == "tool"),
         "falhas_modelo": sum(1 for a in attempts if a.kind == "model" and not a.success),
+        "estagnacoes": event_types.count("run.stagnation"),
+        "replanejamentos": event_types.count("task.replanned"),
+        "pausas": event_types.count("run.paused"),
+        "problemas": {
+            key: {"count": value.get("count"), "total": value.get("total")}
+            for key, value in ((root.metadata_json or {}).get("problem_ledger") or {}).items()
+        },
         "evidencias": len(evidences),
         "evidencias_aprovadas": sum(1 for e in evidences if e.passed is True),
         "evidencias_reprovadas": sum(1 for e in evidences if e.passed is False),
@@ -304,6 +378,14 @@ async def main() -> None:
     parser.add_argument("--provider", default="meu_ollama")
     parser.add_argument("--max-steps", type=int, default=40)
     parser.add_argument("--only", default="")
+    parser.add_argument(
+        "--fault",
+        default="",
+        help=(
+            "injeta uma falha determinística no provedor (`vazio`, `http400`, `invalido`, "
+            "`transitorio`) para medir a resposta do sistema à repetição improdutiva"
+        ),
+    )
     args = parser.parse_args()
 
     OUT.mkdir(parents=True, exist_ok=True)
@@ -317,18 +399,21 @@ async def main() -> None:
             model_id=args.model,
             provider=args.provider,
             max_steps=args.max_steps,
+            fault=args.fault,
         )
         reports.append(report)
         print(
             f"   run={report['run_status']} aceite={report['aceite_ok']} "
             f"tarefas={report['tarefas']} reqs={report['requisitos_comprovados']}/{report['requisitos']} "
-            f"model_calls={report['model_calls']} {report['segundos']}s",
+            f"model_calls={report['model_calls']} estagn={report['estagnacoes']} "
+            f"replan={report['replanejamentos']} {report['segundos']}s",
             flush=True,
         )
 
     summary = {
         "label": args.label,
         "modelo": args.model,
+        "falha_injetada": args.fault,
         "cenarios": len(reports),
         "aceite_total": sum(1 for r in reports if r["aceite_ok"]),
         "runs_completos": sum(1 for r in reports if r["run_status"] == "completed"),
@@ -339,6 +424,9 @@ async def main() -> None:
         "tarefas": sum(r["tarefas"] for r in reports),
         "model_calls": sum(r["model_calls"] for r in reports),
         "falhas_modelo": sum(r["falhas_modelo"] for r in reports),
+        "estagnacoes": sum(r["estagnacoes"] for r in reports),
+        "replanejamentos": sum(r["replanejamentos"] for r in reports),
+        "pausas": sum(r["pausas"] for r in reports),
         "tokens_completion": sum(r["tokens_completion"] for r in reports),
         "segundos": round(sum(r["segundos"] for r in reports), 1),
     }

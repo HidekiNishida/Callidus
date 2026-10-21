@@ -173,11 +173,33 @@ class RunService:
                 run_id=run.id,
                 task_id=run.root_task_id,
                 event_type="run.resumed",
-                payload_json={"pause": pause, "retried": retried},
+                payload_json={
+                    "pause": pause,
+                    "retried": retried,
+                    # O consumo acumulado viaja com a retomada: ela concede cota nova, mas
+                    # o que já foi gasto continua contando, e a auditoria mostra por quê.
+                    "usage": self._usage(run),
+                },
             )
         )
         self._session.flush()
         return run
+
+    def _usage(self, run: ExecutionRunModel) -> dict[str, int]:
+        """Consumo acumulado do run até este ponto.
+
+        Args:
+            run: run consultado.
+
+        Returns:
+            O consumo por indicador, ou um dicionário vazio quando o cálculo falha.
+        """
+        try:
+            from agent.orchestrator.stagnation import usage_since
+
+            return usage_since(self._session, run)
+        except Exception:  # noqa: BLE001 — a auditoria não pode impedir a retomada
+            return {}
 
     def _under(self, task: TaskModel, root_id: uuid.UUID) -> bool:
         """Indica se uma tarefa está na subárvore de outra.

@@ -78,11 +78,16 @@ stateDiagram-v2
 
 | Categoria | Causas Principais |
 |-----------|-------------------|
-| `CHANGE_STRATEGY` | `INVALID_PLAN`, `REPEATED_PROMPT`, `REPEATED_OUTPUT`, `STAGNATION` |
+| `CHANGE_STRATEGY` | `INVALID_PLAN`, `REPEATED_PROMPT`, `REPEATED_OUTPUT`, `STAGNATION`, `PROVIDER_REJECTED` |
 | `OPERATIONAL_LIMIT` | `ATTEMPTS_EXHAUSTED`, `CONTEXT_BUDGET`, `MAX_TASKS`, `MAX_DEPTH` |
-| `CONFIGURATION` | `APPROVAL_REQUIRED`, `EXECUTABLE_MISSING`, `INVALID_CONFIG` |
-| `EXTERNAL_UNAVAILABLE` | `PROVIDER_DOWN`, `NETWORK_ERROR`, `TOOL_UNAVAILABLE` |
+| `CONFIGURATION` | `APPROVAL_REQUIRED`, `EXECUTABLE_MISSING`, `INVALID_CONFIG`, `PROVIDER_CREDENTIALS` |
+| `EXTERNAL_UNAVAILABLE` | `PROVIDER_DOWN`, `NETWORK_ERROR`, `TOOL_UNAVAILABLE`, `PROVIDER_UNAVAILABLE` |
 | `BLOCKED_DEPENDENCY` | `DEPENDENCY_FAILED`, `DEPENDENCY_CANCELLED` |
+
+**Falhas de provedor** (`classify_provider_error`) separam o transitório do permanente: `TIMEOUT`
+(tempo esgotado), `PROVIDER_UNAVAILABLE` (conexão recusada), `PROVIDER_RATE_LIMIT` (429) e
+`PROVIDER_ERROR` (5xx) admitem repetição; `PROVIDER_REJECTED` (4xx — o pedido está errado, repetir
+devolve a mesma recusa) exige reformular; `PROVIDER_CREDENTIALS` (401/403) exige ação de fora.
 
 **`Failure`** carrega: `category`, `cause`, `detail` + `as_dict()` → serializado em `OperationAttemptModel.failure_json` e `TaskModel.metadata_json.failures`.
 
