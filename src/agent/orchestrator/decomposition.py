@@ -129,6 +129,7 @@ async def plan_with_model(
     browser_mode: str = "off",
     requirements: list[dict[str, Any]] | None = None,
     project_root: str = "",
+    operational_frame: str = "",
 ) -> DecompositionResult | None:
     """Plano do modelo.
 
@@ -143,8 +144,9 @@ async def plan_with_model(
         if browser_mode in {"headless", "visible"}
         else "O navegador está desligado. Não use a ferramenta browser."
     )
+    frame = f"{operational_frame.strip()}\n" if operational_frame.strip() else ""
     prompt = (
-        f"{language_instruction(language)}\n{browser_line}\n"
+        f"{language_instruction(language)}\n{frame}{browser_line}\n"
         f"Objetivo: {objective}\n\nContexto do projeto:\n{context_snippet}\n\n"
         f"{requirements_block(requirements)}"
         "Decomponha TODAS as etapas, do entendimento do pedido até a verificação e a conclusão.\n"
@@ -451,6 +453,7 @@ async def resolve_decomposition_plan(
                     browser_mode=str(run_config.get("browser_mode") or "off"),
                     requirements=requirements,
                     project_root=project_root,
+                    operational_frame=str(run_config.get("language_frame") or ""),
                 )
                 if plan:
                     return ensure_closing_stages(align_verification(objective, plan)), provider_name

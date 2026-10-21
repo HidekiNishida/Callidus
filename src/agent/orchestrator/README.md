@@ -21,6 +21,7 @@
 | [`quality_contract.py`](quality_contract.py) | `build_quality_contract`, `inherit_quality`, `attach_quality_contract` | **Contrato de qualidade**: pedido explícito, piso inferido, premissas, exclusões e herança para a filha |
 | [`disposition.py`](disposition.py) | `decide_disposition`, `investigation_plan` | **Disposição**: executar, investigar, decompor ou replanejar no lugar do atomizador |
 | [`narration.py`](narration.py) | `explain_quality`, `explanation_event` | **Feed**: frase determinística do que foi decidido, com redação de segredo |
+| [`language_strategy.py`](language_strategy.py) | `build_language_contract`, `render_operational_for_prompt`, `switch_language` | **Idioma**: pedido original, inglês operacional quando a tarefa é técnica, interface no idioma do usuário |
 | [`progress.py`](progress.py) | `progress_state`, `made_progress` | **Progresso real** (não atividade): mais tarefas verificadas ou menos pendências sem perder verificadas |
 | [`stagnation.py`](stagnation.py) | `diagnose`, `limit_reached`, `error_signature`, `strategy_signature`, `problem_attempts`, `problem_key` | **Estagnação e limites**: assinatura normalizada da falha, assinatura da abordagem, contador do problema por objetivo e limites do run |
 | [`approach.py`](approach.py) | `record_attempt`, `declare_change`, `approach_of`, `approach_signature`, `render_approach`, `alternatives_for` | **Memória de abordagem**: o que foi tentado, a hipótese da falha e o que será diferente na próxima tentativa |

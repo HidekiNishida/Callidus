@@ -108,7 +108,21 @@ def remember_failure(task: TaskModel, failure: Failure) -> dict[str, Any]:
     meta["last_failure"] = noted
     task.metadata_json = meta
     record_attempt(task, noted)
+    _switch_operational_language(task, str(noted.get("cause") or ""))
     return noted
+
+
+def _switch_operational_language(task: TaskModel, cause: str) -> None:
+    """Se a saída inválida veio do inglês operacional, a próxima tentativa usa o pedido original."""
+    try:
+        from agent.orchestrator.language_strategy import switch_language
+
+        updated = switch_language(task.metadata_json, cause)
+        if updated is None:
+            return
+        task.metadata_json = {**(task.metadata_json or {}), "language": updated}
+    except Exception:
+        return
 
 
 def failure_timestamp() -> str:

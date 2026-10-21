@@ -149,6 +149,11 @@ class Settings(BaseSettings):
     tool_always_allowed: list[str] = []
     # Ferramentas sempre bloqueadas, qualquer que seja o pedido.
     tool_never_allowed: list[str] = []
+    # Estratégia linguística: `auto`, `native` ou `english_operational`.
+    # `auto` usa inglês operacional só em pedido técnico que não está em inglês.
+    # O idioma visível continua o do pedido, salvo `presentation_language` explícito.
+    language_mode: str = "auto"
+    presentation_language: str = "auto"
 
     def resolved_database_url(self) -> str:
         """URL do banco SQLite em uso, respeitando o isolamento dos testes.

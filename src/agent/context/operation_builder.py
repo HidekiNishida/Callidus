@@ -245,6 +245,14 @@ class OperationContextBuilder:
             quality = ""
         if quality:
             body = f"{body}\n\n{quality}".strip()
+        try:
+            from agent.orchestrator.language_strategy import render_operational_for_prompt
+
+            language = render_operational_for_prompt(task.metadata_json)
+        except Exception:
+            language = ""
+        if language:
+            body = f"{body}\n\n{language}".strip()
         return body
 
     def _capability_summary(self, root_path: str, task: TaskModel) -> str:

@@ -397,19 +397,26 @@ class RunOrchestrator:
 
         meta = parent.metadata_json or {}
         strategy = ProfessionalStrategy.from_dict(meta.get("professional_strategy"))
-        if strategy is None:
+        parent_language = meta.get("language") if isinstance(meta.get("language"), dict) else None
+        if strategy is None and parent_language is None:
             return
         for child in children_of(self._session, parent.id):
             child_meta = dict(child.metadata_json or {})
-            child_meta.setdefault("lead_specialty", strategy.lead_specialty)
+            if strategy is not None:
+                child_meta.setdefault("lead_specialty", strategy.lead_specialty)
             for flag in ("read_only", "protect_tests"):
-                if strategy.metadata.get(flag):
+                if strategy is not None and strategy.metadata.get(flag):
                     # Restrições do pedido viram permissão, não só instrução, e descem com a
                     # decomposição.
                     child_meta.setdefault(flag, True)
-            if strategy.needs_atomization and not child_meta.get("tool") and not child_meta.get("verification"):
+            if (
+                strategy is not None
+                and strategy.needs_atomization
+                and not child_meta.get("tool")
+                and not child_meta.get("verification")
+            ):
                 child_meta.setdefault("atomize", True)
-            if strategy.extracted_requirements:
+            if strategy is not None and strategy.extracted_requirements:
                 child_meta.setdefault("strategy_requirements", strategy.extracted_requirements[:5])
             parent_quality = meta.get("quality_contract")
             if isinstance(parent_quality, dict) and "quality_contract" not in child_meta:
@@ -418,6 +425,12 @@ class RunOrchestrator:
                 inherited = inherit_quality(parent_quality, child.objective)
                 if inherited:
                     child_meta["quality_contract"] = inherited
+            if parent_language is not None and "language" not in child_meta:
+                from agent.orchestrator.language_strategy import inherit_language
+
+                inherited_language = inherit_language(parent_language)
+                if inherited_language:
+                    child_meta["language"] = inherited_language
             child.metadata_json = child_meta
 
     def _run_as_leaf(self, run: ExecutionRunModel, task: TaskModel, *, note: str) -> dict[str, Any]:
@@ -808,6 +821,35 @@ class RunOrchestrator:
         except Exception:
             return
 
+    def _record_language(self, run: ExecutionRunModel, task: TaskModel) -> None:
+        """Grava o contrato linguístico da raiz e, se couber, explica a escolha no feed.
+
+        A falha desta camada deixa o pedido original intacto. Não há chamada ao modelo.
+        """
+        try:
+            from agent.orchestrator.language_strategy import build_language_contract, explain_language
+
+            config = self._run_config(run)
+            mode = str(config.get("language_mode") or self._settings.language_mode or "auto")
+            presentation = str(config.get("presentation_language") or self._settings.presentation_language or "auto")
+            profile = config.get("language_profile") if isinstance(config.get("language_profile"), dict) else None
+            contract = build_language_contract(
+                task.objective or "",
+                mode=mode,
+                presentation=presentation,
+                profile=profile,
+            )
+            task.metadata_json = {
+                **(task.metadata_json or {}),
+                "language": contract,
+                "locale": contract["presentation_language"],
+            }
+            text = explain_language(contract)
+            if text:
+                self._note_thought(run, task, text, phase="language", category="decision")
+        except Exception:
+            return
+
     def _explain(self, task: TaskModel, *, category: str, text: str, phase: str) -> None:
         """Publica uma explicação determinística. Se o evento falhar, a etapa segue."""
         try:
@@ -1011,10 +1053,19 @@ class RunOrchestrator:
 
         config = self._run_config(run)
         root_for_locale = self._tasks.get_task(run.root_task_id)
-        locale = (root_for_locale.metadata_json or {}).get("locale") or detect_language(
-            root_for_locale.objective or ""
-        )
+        stored_language = (root_for_locale.metadata_json or {}).get("language")
+        if isinstance(stored_language, dict) and stored_language.get("presentation_language"):
+            locale = str(stored_language["presentation_language"])
+        else:
+            locale = (root_for_locale.metadata_json or {}).get("locale") or detect_language(
+                root_for_locale.objective or ""
+            )
         config = {**config, "locale": locale}
+        from agent.orchestrator.language_strategy import render_operational_for_prompt
+
+        frame = render_operational_for_prompt(root_for_locale.metadata_json)
+        if frame:
+            config = {**config, "language_frame": frame}
         provider = _select_provider(self._settings, config)
 
         root = self._tasks.get_task(run.root_task_id)
@@ -1103,6 +1154,7 @@ class RunOrchestrator:
                 if strat.metadata.get("protect_tests"):
                     task.metadata_json = {**task.metadata_json, "protect_tests": True}
                 self._record_quality(run, task, strat)
+                self._record_language(run, task)
                 emit("strategy.formulated", strat.as_dict(), task_id=task.id, commit=True)
             return {"action": "started_planning", "task_id": str(task.id)}
 

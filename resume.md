@@ -403,6 +403,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Requisitos rastreáveis, validação de plano, verificação independente, progresso real, estagnação, limites, pausa/retomada.
 
+### `docs/architecture/estrategia-linguistica.md`
+
+**Propósito:** separar idioma do pedido, idioma operacional e idioma da interface, com modos `native`, `english_operational` e `auto`.
+
 ### `docs/architecture/estrategia-resolucao.md`
 
 **Propósito:** explicar como o Callidus reconhece estagnação, escolhe uma abordagem diferente, aplica limites coerentes e registra o que aprendeu. **Quando/onde:** leitura de referência para quem quiser entender ou investigar a decisão do agente diante de uma falha.
@@ -1592,6 +1596,25 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `decide_disposition(*, objective: str, metadata: dict[str, Any] | None, depth: int, max_depth: int, attempt_count: int, strategy: dict[str, Any] | None=None) -> Disposition` — Escolhe o modo da etapa pela ordem fixa: passo fechado, profundidade de proteção, falha repetida, falta de contexto, várias partes ou objetivo único. Entrada: objetivo, metadados, profundidade, tentativas e estratégia; saída: `Disposition`.
 - `investigation_plan(objective: str, *, read_only: bool=False) -> DecompositionResult` — Plano curto que lista o diretório antes de agir e só verifica quando o pedido muda arquivo. Entrada: objetivo e flag de leitura; saída: `DecompositionResult`.
 
+### `src/agent/orchestrator/language_strategy.py`
+
+**Propósito:** escolher o idioma operacional sem traduzir por modelo e sem perder o pedido original. **Quando/onde:** no primeiro passo da raiz; o quadro entra no prompt de decomposição e da operação; a filha herda o contrato.
+
+- `_sentences(text: str) -> list[str]` — Parte o pedido em frases. Entrada: texto; saída: lista de frases.
+- `apply_operational_text(original: str, translated: str | None) -> tuple[str, str]` — Aceita o texto operacional só se literal, número e restrição continuam presentes. Entrada: pedido e candidato; saída: texto mantido e motivo do fallback.
+- `build_language_contract(objective: str, *, mode: str='auto', presentation: str='auto', profile: dict[str, Any] | None=None) -> dict[str, Any]` — Monta o contrato com idiomas de entrada, operação e apresentação. Entrada: pedido, modo, apresentação e perfil; saída: contrato compacto.
+- `compare_strategies(objective: str) -> dict[str, str]` — Aplica os três modos ao mesmo pedido. Entrada: pedido; saída: estratégia aplicada por modo. Não mede qualidade.
+- `explain_language(contract: dict[str, Any] | None) -> str` — Frase do feed no idioma de apresentação quando a operação usa inglês. Entrada: contrato; saída: frase ou vazia.
+- `extract_ambiguities(text: str) -> list[str]` — Frases com alternativa ou incerteza, sem resolvê-las. Entrada: pedido; saída: frases.
+- `extract_constraints(text: str) -> list[str]` — Frases de restrição copiadas do pedido. Entrada: pedido; saída: frases.
+- `extract_literals(text: str) -> list[str]` — Caminhos, crases, URLs e identificadores. Entrada: pedido; saída: literais.
+- `extract_numbers(text: str) -> list[str]` — Números na grafia original. Entrada: pedido; saída: números.
+- `fidelity_gaps(original: str, operational: str) -> list[str]` — Lista o que a representação perdeu. Entrada: pedido e candidato; saída: lacunas.
+- `inherit_language(contract: dict[str, Any] | None) -> dict[str, Any] | None` — Recorte do contrato para a filha, sem traduzir de novo. Entrada: contrato do pai; saída: recorte ou `None`.
+- `render_operational_for_prompt(metadata: dict[str, Any] | None) -> str` — Quadro em inglês para o modelo, com restrições e literais intactos. Entrada: metadados; saída: texto ou vazio.
+- `select_applied(mode: str, *, input_language: str, objective: str, profile: dict[str, Any] | None=None) -> str` — Escolhe `native` ou `english_operational`. Entrada: modo, idioma, pedido e perfil; saída: estratégia aplicada.
+- `switch_language(metadata: dict[str, Any] | None, cause: str) -> dict[str, Any] | None` — Depois de saída inválida, volta ao idioma original uma vez. Entrada: metadados e causa; saída: contrato novo ou `None`.
+
 ### `src/agent/orchestrator/narration.py`
 
 **Propósito:** monta a frase do feed a partir do contrato e da decisão, sem chamar o modelo. **Quando/onde:** o orquestrador publica `work.explained` no início da raiz e ao definir ou aplicar um plano.
@@ -1729,6 +1752,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `RunOrchestrator._propagate_strategy(parent: TaskModel, plan: Any) -> None` — Repassa aos filhos a especialidade líder, o gatilho `atomize` (quando a estratégia é complexa), os requisitos da estratégia e o recorte do contrato de qualidade. Entrada: pai e plano; saída: `None` (metadados dos filhos atualizados).
 - `RunOrchestrator._record_action(run_id: uuid.UUID, out: dict[str, Any]) -> None` — Registra o evento `orchestrator.action` com a saída do passo e emite `run.progress` quando o estado de progresso muda. Entrada: id do run e dicionário de saída; saída: `None`.
 - `RunOrchestrator._record_quality(run: ExecutionRunModel, task: TaskModel, strategy: Any) -> None` — Grava o contrato de qualidade da raiz no aceite e no metadado e publica o resumo no feed. Uma falha aqui não impede o planejamento. Entrada: run, tarefa e estratégia; saída: `None`.
+- `RunOrchestrator._record_language(run: ExecutionRunModel, task: TaskModel) -> None` — Grava o contrato linguístico da raiz e publica a frase no idioma de apresentação quando a operação usa inglês. Não chama o modelo. Entrada: run e tarefa; saída: `None`.
 - `RunOrchestrator._recursion_guard(run: ExecutionRunModel, task: TaskModel) -> str | None` — Protege contra recursão: bloqueia quando a etapa repete título/objetivo de um ancestral, excede `max_tree_depth` ou o run atinge `max_tasks_per_run`. Entrada: run e tarefa; saída: motivo do bloqueio ou `None`.
 - `RunOrchestrator._remember_failure(task: TaskModel, failure: Failure) -> dict[str, Any]` — Guarda a falha na tarefa (histórico `failures` e `last_failure`) com a assinatura do erro e da estratégia, para a próxima tentativa e o replanejamento lerem. Entrada: tarefa e `Failure`; saída: dicionário da falha registrada.
 - `RunOrchestrator._revalidate_plan(run: ExecutionRunModel, task: TaskModel, config: dict[str, Any], work_root: str) -> dict[str, Any] | None` — Antes de executar a etapa, compara o fingerprint do plano do pai com o da última validação e revalida se mudou (replanejamento, dependência ou cobertura). Entrada: run, tarefa, configuração e raiz de trabalho; saída: dicionário de revalidação/bloqueio ou `None`.
@@ -1855,6 +1879,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `note_thought(session, run, task, text, *, phase='thinking', category=None) -> None` — Registra `agent.thought` e, em seguida, publica `work.explained`. A falha da publicação não desfaz o registro.
 - `_publish_explanation(task: TaskModel | None, text: str, *, phase: str, category: str | None) -> None` — Emite `work.explained` com a categoria da fase quando o chamador não informa outra. Se o evento falhar, a execução segue.
 - `remember_failure(task, failure) -> dict[str, Any]` — Guarda a falha na tarefa com assinatura e estratégia (usadas para detectar estagnação).
+- `_switch_operational_language(task: TaskModel, cause: str) -> None` — Se a saída inválida veio do inglês operacional, a próxima tentativa usa o pedido original. Não alterna de volta.
 - `failure_timestamp() -> str` — Instante atual em ISO-8601 (UTC) para registros de diagnóstico.
 
 ### `src/agent/orchestrator/execution/workspace.py`
@@ -2879,6 +2904,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `tests/test_tool_arguments.py`
 
 **Propósito:** verificar a validação de argumentos no registro, antes de o handler rodar.
+
+### `tests/test_language_strategy.py`
+
+**Propósito:** verificar a escolha entre idioma original e inglês operacional, a fidelidade de literais e restrições, a herança do contrato e a troca única depois de saída inválida.
 
 ### `tests/test_quality_disposition.py`
 

@@ -46,6 +46,7 @@ desça até o detalhe. Quem procura uma funcionalidade em código deve usar os
 | [architecture/ux-ui.md](/docs/architecture/ux-ui.md) | Análise de UX e layout | Ao redesenhar telas |
 | [architecture/skills-estrategia.md](/docs/architecture/skills-estrategia.md) | Skills, estratégia profissional e decomposição recursiva | Ao mexer em skills ou decomposição |
 | [architecture/orquestracao-qualidade.md](/docs/architecture/orquestracao-qualidade.md) | Contrato de qualidade, decomposição seletiva e feed | Ao mexer em planejamento ou no feed |
+| [architecture/estrategia-linguistica.md](/docs/architecture/estrategia-linguistica.md) | Idioma do pedido, operação em inglês e idioma da interface | Ao mexer no prompt ou na língua da resposta |
 | [architecture/avaliacao.md](/docs/architecture/avaliacao.md) | Avaliação reproduzível com critérios objetivos | Ao medir uma mudança de comportamento |
 | [architecture/limitacoes.md](/docs/architecture/limitacoes.md) | Lacunas conhecidas | Antes de prometer algo que ainda não existe |
 | [architecture/diagnostico-evolucao.md](/docs/architecture/diagnostico-evolucao.md) | Diagnóstico e plano de evolução | Ao planejar a próxima versão |
