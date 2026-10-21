@@ -3,8 +3,8 @@
  * Nome: ui.js
  * Propósito: ícones, markdown leve e formatadores compartilhados pelos componentes.
  * Responsabilidade: frontend/apresentação — funções puras de formatação e tradução de eventos.
- * Componentes: ICONS, icon(), escapeHtml(), renderMarkdown(), describeActivity(), summarizeActivity(),
- *   diffLines(), helpers de rótulo e tempo.
+ * Componentes: ICONS, icon(), escapeHtml(), renderMarkdown(), describeActivity(), integrateNarrative(),
+ *   mergeActivity(), summarizeActivity(), diffLines(), helpers de rótulo e tempo.
  * Dependências: nenhuma (módulo puro, sem DOM e sem API).
  * Observações: o HTML do markdown é escapado antes de qualquer marcação — o conteúdo do modelo
  * nunca vira HTML cru.
@@ -535,14 +535,24 @@ export function toolArgsSummary(tool, args) {
 /** Tipos que explicam o trabalho. A resposta do modelo e as ferramentas ficam de fora. */
 export const NARRATIVE_KINDS = new Set(["activity", "decision", "result", "alert", "error", "thought"]);
 
+const NARRATIVE_LABEL = {
+  activity: "Atividade",
+  decision: "Decisão",
+  result: "Resultado",
+  alert: "Alerta",
+  error: "Erro",
+  thought: "Pensamento",
+};
+
 /**
- * Acopla explicações (`work.explained`, pensamento) ao item operacional seguinte.
+ * Acopla a narração ao item operacional seguinte.
  *
- * A narração chega no stream antes da ferramenta ou do modelo que ela descreve.
- * Mantém a ordem temporal dentro de `activity-items`, sem uma lista separada no topo.
+ * `note_thought` grava a mesma frase em `agent.thought` e, em seguida, em
+ * `work.explained`. As duas entradas são o mesmo relato: fica a explicação.
+ * Um pensamento sem explicação correspondente continua no item.
  *
  * @param {Array<object>} activity Entradas já descritas, na ordem recebida.
- * @returns {Array<object>} Linhas do feed; cada operação pode carregar `narrations`.
+ * @returns {Array<object>} Linhas do feed; cada uma pode carregar `narrations`.
  */
 export function integrateNarrative(activity) {
   const rows = [];
@@ -550,27 +560,130 @@ export function integrateNarrative(activity) {
   for (const item of activity || []) {
     if (!item) continue;
     if (NARRATIVE_KINDS.has(item.kind)) {
+      const prev = pending[pending.length - 1];
+      if (prev?.kind === "thought" && item.kind !== "thought" && prev.title === item.title) pending.pop();
       pending.push(item);
       continue;
     }
-    rows.push({ ...item, narrations: pending.length ? pending : [] });
+    rows.push({ ...item, narrations: pending.length ? pending.slice() : item.narrations || [] });
     pending = [];
   }
   if (pending.length && rows.length) {
     const last = rows[rows.length - 1];
-    last.narrations = [...(last.narrations || []), ...pending];
+    const existing = last.narrations || [];
+    const seen = new Set(existing.map((note) => note.eventId || note.id));
+    last.narrations = [...existing, ...pending.filter((note) => !seen.has(note.eventId || note.id))];
   } else if (pending.length) {
     for (const note of pending) {
       rows.push({
         ...note,
         kind: "narrative",
         icon: note.icon || "spark",
-        narrations: [],
-        narrativeOnly: true,
+        title: NARRATIVE_LABEL[note.kind] || "Narração",
+        explanation: "",
+        narrations: [note],
       });
     }
   }
   return rows;
+}
+
+/**
+ * Inclui uma entrada no feed da mensagem, atualizando a que já existe.
+ *
+ * O mesmo `eventId` substitui o conteúdo. A saída de comando acumula no comando
+ * em andamento. Identidades diferentes continuam lado a lado.
+ *
+ * @param {Array<object>} feed Feed já existente da mensagem.
+ * @param {object|null} entry Entrada descrita.
+ * @returns {void}
+ */
+export function mergeActivity(feed, entry) {
+  if (!entry) return;
+  if (entry.eventId) {
+    const index = feed.findIndex((item) => item.eventId === entry.eventId && item.kind === entry.kind);
+    if (index >= 0) {
+      const prev = feed[index];
+      feed.splice(index, 1, { ...prev, ...entry, id: prev.id });
+      return;
+    }
+  }
+  if (entry.callId) {
+    const index = feed.findIndex((item) => item.callId === entry.callId && item.kind === entry.kind);
+    if (index >= 0 && entry.kind !== "command-output") {
+      const prev = feed[index];
+      feed.splice(index, 1, { ...prev, ...entry, id: prev.id });
+      return;
+    }
+    if (entry.kind === "command-output") {
+      const target = feed.find((item) => item.callId === entry.callId && item.kind === "command");
+      if (target) {
+        target.output = `${target.output || ""}${entry.detail || ""}`;
+        return;
+      }
+    }
+  }
+  feed.push(entry);
+}
+
+/**
+ * O item nasce fechado. Diff de arquivo abre porque o trecho alterado é o conteúdo.
+ *
+ * @param {object} entry Entrada do feed.
+ * @returns {boolean} `true` quando o conteúdo expansível começa visível.
+ */
+export function activityStartsOpen(entry) {
+  return Boolean(entry?.diff);
+}
+
+/**
+ * Estado de expansão de um item, com a escolha do usuário acima do padrão.
+ *
+ * @param {object} entry Entrada do feed.
+ * @param {Set<string>} openIds Ids que o usuário abriu.
+ * @param {Set<string>} closedIds Ids que o usuário fechou.
+ * @returns {boolean} `true` quando a seção expansível está visível.
+ */
+export function activityIsOpen(entry, openIds, closedIds) {
+  if (!entry) return false;
+  if (closedIds?.has(entry.id)) return false;
+  if (openIds?.has(entry.id)) return true;
+  return activityStartsOpen(entry);
+}
+
+/**
+ * Abre ou fecha a seção do item sem alterar a narração guardada.
+ *
+ * @param {object} entry Entrada do feed.
+ * @param {Set<string>} openIds Ids que o usuário abriu.
+ * @param {Set<string>} closedIds Ids que o usuário fechou.
+ * @returns {void}
+ */
+export function toggleActivity(entry, openIds, closedIds) {
+  if (!entry) return;
+  if (activityIsOpen(entry, openIds, closedIds)) {
+    closedIds.add(entry.id);
+    openIds.delete(entry.id);
+  } else {
+    openIds.add(entry.id);
+    closedIds.delete(entry.id);
+  }
+}
+
+/**
+ * Tira da faixa de pensamentos o texto que já é narração do item.
+ *
+ * @param {Array<object>} thoughts Pensamentos da visão ao vivo.
+ * @param {Iterable<string>} narrationTitles Textos já acoplados ao feed.
+ * @returns {Array<object>} Pensamentos que não repetem a narração.
+ */
+export function thoughtsOutsideNarration(thoughts, narrationTitles) {
+  const shown = narrationTitles instanceof Set ? narrationTitles : new Set(narrationTitles || []);
+  const noisy = /^(Planejando|Pronta para executar|Concluída sem teste|Liberada|Aguardando|Começando)/;
+  return (thoughts || []).filter((item) => {
+    const text = item?.text || "";
+    return !noisy.test(text) && !shown.has(text);
+  });
 }
 
 /**

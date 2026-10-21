@@ -680,13 +680,13 @@ pre,
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 0 12px 6px 36px;
+  margin: 0 0 4px;
+  padding: 0;
 }
-.activity-narration {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--text);
+.activity-narration { margin: 0; }
+.activity-details .activity-narration {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .activity-narration.narration-alert,
 .activity-narration.narration-error { color: var(--danger, var(--text)); }

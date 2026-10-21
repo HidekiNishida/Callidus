@@ -27,6 +27,9 @@ import {
   summarizeActivity,
   diffLines,
   integrateNarrative,
+  activityIsOpen,
+  toggleActivity,
+  thoughtsOutsideNarration,
 } from "../ui.js";
 import { filesList, currentTask } from "../live-state.js";
 import { createScrollFollow } from "../chat-scroll.js";
@@ -38,7 +41,6 @@ export const ChatView = {
     const messages = Vue.computed(() => {
       return roots().map((root) => {
         const kids = childrenOf(root.id);
-        const ids = descendantIds(root.id);
         const answer = root.consolidated_result_json?.final_answer || null;
         const reply = answer ? renderMarkdown(answer) : "";
         const busy = BUSY_STATUSES.includes(root.status) || kids.some((task) => BUSY_STATUSES.includes(task.status));
@@ -70,7 +72,6 @@ export const ChatView = {
             active: BUSY_STATUSES.includes(task.status),
             selected: state.selectedTaskId === task.id,
           })),
-          focusHere: !state.live?.focus || ids.has(state.live.focus.id),
         };
       });
     });
@@ -116,11 +117,26 @@ export const ChatView = {
       },
       { flush: "pre", immediate: true },
     );
+    const thoughtHostId = Vue.computed(() => {
+      const list = roots();
+      const focusId = state.live?.focus?.id;
+      if (!list.length) return null;
+      const message = focusId
+        ? list.find((item) => descendantIds(item.id).has(focusId) || item.id === focusId)
+        : list[list.length - 1];
+      return message?.id || null;
+    });
+
     const thoughts = Vue.computed(() => {
       const live = state.live;
-      if (!live) return [];
-      const noisy = /^(Planejando|Pronta para executar|Concluída sem teste|Liberada|Aguardando|Começando)/;
-      return (live.thoughts || []).filter((item) => !noisy.test(item.text || ""));
+      if (!live || !thoughtHostId.value) return [];
+      const shown = [];
+      for (const row of integrateNarrative(state.feeds[thoughtHostId.value] || [])) {
+        for (const note of row.narrations || []) {
+          if (note?.title) shown.push(note.title);
+        }
+      }
+      return thoughtsOutsideNarration(live.thoughts, shown);
     });
 
     // Etiquetas do plano (estilo Kilo): as tarefas da mensagem atual que ainda estão
@@ -166,19 +182,11 @@ export const ChatView = {
     const collapsedTurns = Vue.reactive(new Set());
 
     function isOpen(entry) {
-      if (closedIds.has(entry.id)) return false;
-      if (openIds.has(entry.id)) return true;
-      return Boolean(entry.diff);
+      return activityIsOpen(entry, openIds, closedIds);
     }
 
     function toggleEntry(entry) {
-      if (isOpen(entry)) {
-        closedIds.add(entry.id);
-        openIds.delete(entry.id);
-      } else {
-        openIds.add(entry.id);
-        closedIds.delete(entry.id);
-      }
+      toggleActivity(entry, openIds, closedIds);
     }
 
     function isTurnCollapsed(message) {
@@ -305,6 +313,7 @@ export const ChatView = {
       providerOptions,
       models,
       thoughts,
+      thoughtHostId,
       onProviderChange,
       onKeydown,
       onSend,
@@ -385,17 +394,6 @@ export const ChatView = {
                   class="activity-row"
                   :class="['activity-' + entry.kind, 'state-' + entry.status]"
                 >
-                  <div
-                    class="activity-narrations"
-                    v-if="entry.narrations && entry.narrations.length"
-                  >
-                    <p
-                      v-for="note in entry.narrations"
-                      :key="note.id"
-                      class="activity-narration"
-                      :class="'narration-' + note.kind"
-                    >{{ note.title }}</p>
-                  </div>
                   <button
                     type="button"
                     class="activity-toggle"
@@ -421,6 +419,17 @@ export const ChatView = {
 
                   <Transition name="expand">
                     <div class="activity-details" v-if="isOpen(entry) && !entry.narrativeOnly">
+                      <div
+                        class="activity-narrations"
+                        v-if="entry.narrations && entry.narrations.length"
+                      >
+                        <p
+                          v-for="note in entry.narrations"
+                          :key="note.id"
+                          class="activity-detail activity-narration"
+                          :class="'narration-' + note.kind"
+                        >{{ note.title }}</p>
+                      </div>
                       <p class="activity-explanation" v-if="entry.explanation">{{ entry.explanation }}</p>
                       <p class="activity-stats muted small" v-if="entry.stats">{{ entry.stats }}</p>
                       <pre class="activity-output" v-if="entry.output">{{ entry.output }}</pre>
@@ -438,7 +447,7 @@ export const ChatView = {
               </TransitionGroup>
             </div>
 
-            <ul class="thoughts" v-if="thoughts.length && message.focusHere">
+            <ul class="thoughts" v-if="thoughts.length && message.id === thoughtHostId">
               <li v-for="(thought, index) in thoughts" :key="index" :class="thought.phase">
                 <span class="thought-dot"></span>{{ thought.text }}
               </li>

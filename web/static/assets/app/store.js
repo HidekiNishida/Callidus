@@ -10,7 +10,7 @@
  */
 import { api } from "./api.js";
 import { formatToolsReport } from "./tools-report.js";
-import { describeActivity } from "./ui.js";
+import { describeActivity, mergeActivity } from "./ui.js";
 import { applyEvent, applyLive, createState, markConnection, markResync } from "./live-state.js";
 import { createStream } from "./live-stream.js";
 
@@ -1032,8 +1032,8 @@ export function rootIdOf(taskId) {
  *
  * @param {object} envelope Envelope do stream.
  * @returns {void}
- * Observações: a entrada em andamento (mesma chamada de ferramenta/comando) é atualizada
- * no lugar, em vez de duplicada.
+ * Observações: o mesmo evento atualiza a entrada existente. A saída de comando acumula
+ * no comando em andamento.
  */
 function pushActivity(envelope) {
   const entry = describeActivity(envelope);
@@ -1045,23 +1045,7 @@ function pushActivity(envelope) {
   if (!state.feeds[rootId]) state.feeds[rootId] = [];
   const feed = state.feeds[rootId];
   state.feed = feed;
-  if (entry.eventId && feed.some((item) => item.eventId === entry.eventId && item.kind === entry.kind)) return;
-  if (entry.callId) {
-    // Atualiza a entrada em andamento (mesma chamada de ferramenta/comando).
-    const index = feed.findIndex((item) => item.callId === entry.callId && item.kind === entry.kind);
-    if (index >= 0 && entry.kind !== "command-output") {
-      feed.splice(index, 1, { ...feed[index], ...entry });
-      return;
-    }
-    if (entry.kind === "command-output") {
-      const target = feed.find((item) => item.callId === entry.callId && item.kind === "command");
-      if (target) {
-        target.output = `${target.output || ""}${entry.detail || ""}`;
-        return;
-      }
-    }
-  }
-  feed.push(entry);
+  mergeActivity(feed, entry);
   if (feed.length > 120) feed.splice(0, feed.length - 120);
 }
 

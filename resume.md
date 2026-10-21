@@ -2945,6 +2945,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** regressão com fixture real de `/observe` — todo texto de `work.explained` aparece acoplado às linhas do feed, sem entradas narrativas soltas.
 
+### `tests/web/feed-narration.test.mjs`
+
+**Propósito:** verificar que a narração nasce recolhida, aparece uma vez na seção expansível, reutiliza a tipografia de “resposta em tempo real”, não duplica atualização nem replay e não mistura tarefas.
+
 ### `tests/web/fixtures/observe-with-narration.json`
 
 **Propósito:** snapshot persistido de uma run com eventos `work.explained` (entrada do teste `narrative-replay.test.mjs`).
@@ -4837,7 +4841,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `deleteConversation`
 - `refreshTasks()` — Recarrega tarefas da conversa ou projeto e chama `hydrateFeedsFromHistory()` para repor feeds a partir de `/observe`.
 - `hydrateFeedsFromHistory()` — Para cada mensagem raiz sem feed em memória, reaplica eventos da run mais recente (`replayFeedFromRun`).
-- `replayFeedFromRun(runId, rootId)` — Rejoga eventos de `/observe` no feed da mensagem raiz (dedupe por `eventId` em `pushActivity`).
+- `replayFeedFromRun(runId, rootId)` — Rejoga eventos de `/observe` no feed da mensagem raiz; o mesmo `eventId` atualiza a entrada existente em `mergeActivity`.
 - `refreshRun`
 - `runConfig`
 - `sendMessage`
@@ -4899,7 +4903,12 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `plural`
 - `toolArgsSummary`
 - `describeActivity`
-- `integrateNarrative(activity)` — Acopla entradas narrativas (`work.explained`, pensamento) ao item operacional seguinte; narração residual vai para a última operação ou vira linha `narrative` dentro de `activity-items`. Entrada: feed descrito; saída: linhas com campo opcional `narrations`.
+- `integrateNarrative(activity)` — Acopla a narração ao item operacional seguinte, dentro da seção expansível. O par imediato `agent.thought` + `work.explained` com o mesmo texto fica só na explicação; narração sem operação seguinte vira linha expansível com o texto em `narrations`. Entrada: feed descrito; saída: linhas com `narrations`.
+- `mergeActivity(feed, entry)` — Atualiza a entrada do mesmo `eventId` ou da mesma chamada; a saída de comando acumula no comando em andamento. Entrada: feed da mensagem e entrada descrita. Saída: o feed é alterado no lugar.
+- `activityStartsOpen(entry)` — O item nasce aberto só quando traz diff de arquivo. Entrada: entrada do feed. Saída: `true` quando a seção expansível começa visível.
+- `activityIsOpen(entry, openIds, closedIds)` — Diz se a seção do item está aberta, com a escolha do usuário acima do padrão. Entrada: entrada e os conjuntos de ids abertos e fechados. Saída: `true` quando a narração e o detalhe estão visíveis.
+- `toggleActivity(entry, openIds, closedIds)` — Abre ou fecha a seção sem alterar a narração guardada. Entrada: entrada e os conjuntos de ids. Saída: os conjuntos são atualizados.
+- `thoughtsOutsideNarration(thoughts, narrationTitles)` — Tira da faixa de pensamentos o texto que já é narração do item. Entrada: pensamentos ao vivo e os títulos já acoplados. Saída: pensamentos que não repetem a narração.
 - `splitFeed(activity)` — Classifica entradas em narrativas vs operações (legado/testes). Saída: `{narrative, operations}`.
 - `summarizeActivity`
 - `diffLines`
