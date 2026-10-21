@@ -217,27 +217,35 @@ class OperationContextBuilder:
             root = root_of(self._session, task)
             reqs = ensure_requirements(self._session, root)
         except Exception:  # pragma: no cover - contrato ausente não impede a execução
-            return ""
-        if not reqs:
-            return ""
-        covers = {c["req"]: c for c in effective_covers(self._session, task, reqs)}
+            reqs = []
         lines: list[str] = []
-        for req in reqs:
-            cover = covers.get(req["id"])
-            if cover is None or req["applicability"] != MANDATORY:
-                continue
-            part = f" (parte: {cover['part']})" if cover.get("part") else ""
-            lines.append(f"- {req['id']}: {req['description']}{part}")
-            criterion = str(req.get("criterion") or "").strip()
-            if criterion:
-                lines.append(f"  critério de aceite: {criterion}")
-        if not lines:
-            return ""
-        return (
-            "Requisitos obrigatórios que esta etapa tem de atender (todos):\n"
-            + "\n".join(lines)
-            + "\nA etapa só vale se o requisito for cumprido e comprovado."
-        )
+        if reqs:
+            covers = {c["req"]: c for c in effective_covers(self._session, task, reqs)}
+            for req in reqs:
+                cover = covers.get(req["id"])
+                if cover is None or req["applicability"] != MANDATORY:
+                    continue
+                part = f" (parte: {cover['part']})" if cover.get("part") else ""
+                lines.append(f"- {req['id']}: {req['description']}{part}")
+                criterion = str(req.get("criterion") or "").strip()
+                if criterion:
+                    lines.append(f"  critério de aceite: {criterion}")
+        body = ""
+        if lines:
+            body = (
+                "Requisitos obrigatórios que esta etapa tem de atender (todos):\n"
+                + "\n".join(lines)
+                + "\nA etapa só vale se o requisito for cumprido e comprovado."
+            )
+        try:
+            from agent.orchestrator.quality_contract import render_quality_for_prompt
+
+            quality = render_quality_for_prompt(task.metadata_json)
+        except Exception:
+            quality = ""
+        if quality:
+            body = f"{body}\n\n{quality}".strip()
+        return body
 
     def _capability_summary(self, root_path: str, task: TaskModel) -> str:
         """Resumo das capacidades extras expostas nesta etapa.

@@ -549,6 +549,22 @@ export function describeActivity(event) {
       const text = data.text || data.thought || "Pensando";
       return { ...base, kind: "thought", icon: "spark", title: text, explanation: "raciocínio do agente" };
     }
+    case "work.explained": {
+      const category = ["activity", "decision", "result", "alert", "error"].includes(data.category)
+        ? data.category
+        : "activity";
+      const text = data.text || "";
+      if (!text) return null;
+      return {
+        ...base,
+        kind: category,
+        icon: category === "error" || category === "alert" ? "alert" : category === "result" ? "check" : "spark",
+        title: text,
+        detail: data.phase || "",
+        explanation: text,
+        status: category === "error" ? "error" : "ok",
+      };
+    }
     case "agent.started":
       return {
         ...base,

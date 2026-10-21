@@ -46,6 +46,12 @@ Voltar: [architecture/README.md](/docs/architecture/README.md)
     de permissão. Windows e Linux não foram executados. Wayland não recebe as mesmas
     capacidades do X11. Detalhes: [automacao-sistema.md](/docs/architecture/automacao-sistema.md).
 
+19. **Qualidade e feed** — o contrato de qualidade é determinístico (perfis fixos, sem modelo).
+    A disposição nova só troca o atomizador; o primeiro plano da raiz continua no planejador
+    já existente. Não houve medição comparativa com o modelo local. A explicação do feed não
+    declara critério verificado: o estado inicial é `pendente`.
+    Detalhes: [orquestracao-qualidade.md](/docs/architecture/orquestracao-qualidade.md).
+
 15. **Remoção em cascata** — a remoção de projeto e de conversa segue o grafo de chaves estrangeiras
     do modelo (`src/agent/services/cascade.py`); se alguma linha pendurada escapar, a API responde
     409 com o motivo em vez de 500.

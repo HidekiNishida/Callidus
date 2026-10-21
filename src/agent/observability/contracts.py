@@ -114,6 +114,7 @@ EVENT_SPECS: dict[str, EventSpec] = {
         _spec("automation.chat_tool", ("tool", "success"), description="ferramenta de automação chamada pela conversa"),
         _spec("automation.chat_result", ("action",), description="desfecho da operação de automação pedida na conversa"),
         _spec("decomposition.recursive", ("depth", "source"), description="decomposição recursiva da etapa interna"),
+        _spec("work.explained", ("category", "text"), description="explicação fiel de uma decisão ou resultado"),
         _spec("verification.recovery_planned", ("cause", "action"), description="recuperação da verificação planejada"),
     )
 }

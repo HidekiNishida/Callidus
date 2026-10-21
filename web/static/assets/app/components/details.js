@@ -238,6 +238,7 @@ export const DetailsPanel = {
       <ul class="feed">
         <li v-for="(event, index) in feed" :key="index" class="feed-item">
           <span class="feed-type">{{ event.type }}</span>
+          <span class="feed-note" v-if="event.type === 'work.explained' && event.data && event.data.text">{{ event.data.text }}</span>
           <span class="muted">{{ stamp(event.created_at) }}</span>
         </li>
       </ul>

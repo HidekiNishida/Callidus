@@ -72,7 +72,9 @@ mensagem fica **agendada** (aparece o aviso “Mensagem agendada: …”, com op
 assim que a execução atual termina.
 
 **Atividade por mensagem**: cada mensagem guarda a sua própria atividade (o feed é separado por
-tarefa raiz), então a segunda mensagem não herda o que aconteceu na primeira. O painel de
+tarefa raiz), então a segunda mensagem não herda o que aconteceu na primeira. O evento
+`work.explained` entra nessa atividade com a frase da decisão (investigar, executar, dividir
+ou o plano definido), distinta do pensamento bruto do modelo. O painel de
 detalhes acompanha a tarefa selecionada e ignora respostas antigas que chegam fora de ordem.
 
 **Rolagem automática**: a conversa acompanha o feed **enquanto a rolagem da conversa estiver no

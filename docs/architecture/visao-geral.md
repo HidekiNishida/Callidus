@@ -71,6 +71,7 @@ em `live_view.py`. Nenhuma rota concentra regra de negócio — elas validam, de
 | 7 | MCP stdio + visão (refs) | Concluída — ver [mcp.md](/docs/architecture/mcp.md) |
 | 8 | E2E pytest | Concluída |
 | 9 | Skills sob demanda, estratégia profissional, decomposição recursiva e recuperação da verificação | Concluída — ver [skills-estrategia.md](/docs/architecture/skills-estrategia.md) |
+| 10 | Contrato de qualidade, disposição seletiva e explicação do feed | Concluída no ciclo existente — ver [orquestracao-qualidade.md](/docs/architecture/orquestracao-qualidade.md) |
 
 ## 🏗️ Decisões (ADR resumido)
 

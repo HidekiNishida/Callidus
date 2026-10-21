@@ -12,6 +12,8 @@ complexidade — decisão, ordem, critério de parada — precisa estar na arqui
 
 **Quando/onde:** na raiz de cada run (a estratégia é formulada uma vez), na decomposição de cada tarefa
 (as skills orientam o prompt da operação) e na verificação (a recuperação decide se há nova tentativa).
+O contrato de qualidade, a disposição seletiva e o evento `work.explained` estão em
+[orquestracao-qualidade.md](/docs/architecture/orquestracao-qualidade.md).
 
 ---
 
@@ -246,6 +248,7 @@ skills por operação é configurável (`skills_max_per_operation`, padrão 2).
 | `strategy.formulated` | raiz da run planificada | estratégia completa |
 | `skill.selected` | contexto da operação montado | `skills` (ids) |
 | `decomposition.recursive` | tarefa decomposta | `depth`, `source`, `count`, `titles` |
+| `work.explained` | decisão ou resultado já ocorrido | `category`, `text`, `phase` |
 | `verification.recovery_planned` | verificação reprovada | `cause`, `action`, `retry` |
 
 Todos entram no barramento em memória (ring buffer + SSE) e os duráveis vão para `event_logs`.

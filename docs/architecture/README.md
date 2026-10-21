@@ -28,6 +28,7 @@ Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 | [estrategia-resolucao.md](/docs/architecture/estrategia-resolucao.md) | **Estratégia de resolução** — memória de abordagem, detecção de estagnação, mudança de estratégia e limites coerentes |
 | [avaliacao.md](/docs/architecture/avaliacao.md) | **Avaliação reproduzível** — cenários com critérios objetivos e resultado medido com o modelo local |
 | [skills-estrategia.md](/docs/architecture/skills-estrategia.md) | Skills sob demanda, estratégia profissional, decomposição recursiva e recuperação da verificação |
+| [orquestracao-qualidade.md](/docs/architecture/orquestracao-qualidade.md) | Contrato de qualidade, disposição seletiva e feed explicativo |
 | [automacoes.md](/docs/architecture/automacoes.md) | **Automações persistentes** — definição aprovada, gatilhos, ações, dependências, supervisor nativo (launchd/systemd/Windows) |
 | [hierarquia-agentes.md](/docs/architecture/hierarquia-agentes.md) | **Hierarquia de agentes** — executor compartilhado, ciclo de vida, consultas sob demanda, escalonador e descarte |
 

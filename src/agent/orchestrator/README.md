@@ -18,6 +18,9 @@
 | [`consolidation.py`](consolidation.py) | `consolidate_parent`, `children_of`, `settled`, `verification_evidence_ok` | Consolida pai ← filhos concluídos com evidência válida |
 | [`global_verify.py`](global_verify.py) | `evaluate_global_acceptance`, `reopen_verification_gaps`, `correct_requirement_gaps`, `ensure_global_verification_task` | **Aceite global por requisito**: run só completa se todo requisito obrigatório `satisfied` |
 | [`requirements.py`](requirements.py) | `ensure_requirements`, `effective_covers`, `root_of`, `requirement_status` | Requisitos rastreáveis (derive do contrato/objetivo + cobertura declarada `covers`) |
+| [`quality_contract.py`](quality_contract.py) | `build_quality_contract`, `inherit_quality`, `attach_quality_contract` | **Contrato de qualidade**: pedido explícito, piso inferido, premissas, exclusões e herança para a filha |
+| [`disposition.py`](disposition.py) | `decide_disposition`, `investigation_plan` | **Disposição**: executar, investigar, decompor ou replanejar no lugar do atomizador |
+| [`narration.py`](narration.py) | `explain_quality`, `explanation_event` | **Feed**: frase determinística do que foi decidido, com redação de segredo |
 | [`progress.py`](progress.py) | `progress_state`, `made_progress` | **Progresso real** (não atividade): mais tarefas verificadas ou menos pendências sem perder verificadas |
 | [`stagnation.py`](stagnation.py) | `diagnose`, `limit_reached`, `error_signature`, `strategy_signature`, `problem_attempts`, `problem_key` | **Estagnação e limites**: assinatura normalizada da falha, assinatura da abordagem, contador do problema por objetivo e limites do run |
 | [`approach.py`](approach.py) | `record_attempt`, `declare_change`, `approach_of`, `approach_signature`, `render_approach`, `alternatives_for` | **Memória de abordagem**: o que foi tentado, a hipótese da falha e o que será diferente na próxima tentativa |

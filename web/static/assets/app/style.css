@@ -1138,8 +1138,9 @@ pre,
 .kv.compact { margin-top: 6px; }
 
 .feed { list-style: none; margin: 0; padding: 6px 12px 16px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-.feed-item { display: flex; gap: 8px; align-items: center; }
-.feed-type { font-family: var(--mono); color: var(--accent); }
+.feed-item { display: flex; gap: 8px; align-items: baseline; }
+.feed-type { font-family: var(--mono); color: var(--accent); flex: none; }
+.feed-note { color: var(--text); font-size: 12px; line-height: 1.35; }
 
 /* ── Drawer ao vivo / acompanhamento ───────────────────────────────────── */
 
@@ -1780,7 +1781,12 @@ pre,
 .activity-state { display: inline-flex; align-items: center; margin-top: 2px; }
 .activity-ms { font-size: 10.5px; color: var(--faint); }
 
-.activity-thought .activity-ico { color: var(--accent-2); }
+.activity-thought .activity-ico,
+.activity-decision .activity-ico,
+.activity-activity .activity-ico { color: var(--accent-2); }
+.activity-result .activity-ico { color: var(--ok); }
+.activity-alert .activity-ico,
+.activity-error .activity-ico { color: var(--danger); }
 .activity-model .activity-ico { color: var(--accent); }
 .activity-tool.state-running .activity-ico,
 .activity-command.state-running .activity-ico { color: var(--accent); }

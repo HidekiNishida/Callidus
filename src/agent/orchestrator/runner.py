@@ -411,6 +411,13 @@ class RunOrchestrator:
                 child_meta.setdefault("atomize", True)
             if strategy.extracted_requirements:
                 child_meta.setdefault("strategy_requirements", strategy.extracted_requirements[:5])
+            parent_quality = meta.get("quality_contract")
+            if isinstance(parent_quality, dict) and "quality_contract" not in child_meta:
+                from agent.orchestrator.quality_contract import inherit_quality
+
+                inherited = inherit_quality(parent_quality, child.objective)
+                if inherited:
+                    child_meta["quality_contract"] = inherited
             child.metadata_json = child_meta
 
     def _run_as_leaf(self, run: ExecutionRunModel, task: TaskModel, *, note: str) -> dict[str, Any]:
@@ -430,6 +437,7 @@ class RunOrchestrator:
             meta["atomic"] = True
             task.metadata_json = meta
         self._note_thought(run, task, note)
+        self._explain(task, category="decision", text=note, phase="execute")
         if self._tasks.dependencies_satisfied(task.id):
             blocked = self._promote_ready_or_block(task.id)
             if blocked:
@@ -718,6 +726,42 @@ class RunOrchestrator:
         """Grava o que está acontecendo e libera o banco para a interface ler durante a inferência."""
         note_thought(self._session, run, task, text, phase=phase)
 
+    def _record_quality(self, run: ExecutionRunModel, task: TaskModel, strategy: Any) -> None:
+        """Grava o contrato de qualidade da raiz e publica o resumo no feed.
+
+        A falha desta camada não impede o planejamento: o pedido continua com os
+        requisitos que já existiam.
+        """
+        try:
+            from agent.orchestrator.narration import explain_quality
+            from agent.orchestrator.quality_contract import (
+                attach_quality_contract,
+                build_quality_contract,
+                compact_quality,
+            )
+
+            contract = build_quality_contract(task.objective, strategy)
+            stored = attach_quality_contract(self._session, task, contract)
+            task.metadata_json = {**(task.metadata_json or {}), "quality_contract": compact_quality(stored)}
+            text = explain_quality(stored)
+            if text:
+                self._note_thought(run, task, text, phase="quality")
+                self._explain(task, category="decision", text=text, phase="quality")
+        except Exception:
+            return
+
+    def _explain(self, task: TaskModel, *, category: str, text: str, phase: str) -> None:
+        """Publica uma explicação determinística. Se o evento falhar, a etapa segue."""
+        try:
+            from agent.orchestrator.narration import explanation_event
+
+            payload = explanation_event(category, text, phase=phase)
+            if payload is None:
+                return
+            emit("work.explained", payload, task_id=task.id, commit=True)
+        except Exception:
+            return
+
     def _remember_failure(self, task: TaskModel, failure: Failure) -> dict[str, Any]:
         """Guarda a falha na tarefa: a próxima tentativa e a política de replanejamento leem daqui."""
         return remember_failure(task, failure)
@@ -993,6 +1037,7 @@ class RunOrchestrator:
                     task.metadata_json = {**task.metadata_json, "read_only": True}
                 if strat.metadata.get("protect_tests"):
                     task.metadata_json = {**task.metadata_json, "protect_tests": True}
+                self._record_quality(run, task, strat)
                 emit("strategy.formulated", strat.as_dict(), task_id=task.id, commit=True)
             return {"action": "started_planning", "task_id": str(task.id)}
 
@@ -1023,19 +1068,56 @@ class RunOrchestrator:
                 attempts = self._attempts.count_attempts(task.id)
                 depth = self._depth(task)
                 emit("plan.started", {"title": task.title, "depth": depth})
-                if meta.get("atomize") or (
-                    attempts >= 2
-                    and should_decompose_further(
+                plan = None
+                source = ""
+                atomize_now = bool(meta.get("atomize")) and attempts < 2
+                retry_split = attempts >= 2 and should_decompose_further(
+                    objective=task.objective,
+                    metadata=meta,
+                    kind=task.kind,
+                    attempt_count=attempts,
+                    has_children=False,
+                    depth=depth,
+                    max_depth=self._settings.max_tree_depth,
+                )
+                if atomize_now:
+                    from agent.orchestrator.disposition import decide_disposition, investigation_plan
+
+                    decision = decide_disposition(
                         objective=task.objective,
                         metadata=meta,
-                        kind=task.kind,
-                        attempt_count=attempts,
-                        has_children=False,
                         depth=depth,
                         max_depth=self._settings.max_tree_depth,
+                        attempt_count=attempts,
+                        strategy=meta.get("professional_strategy") if isinstance(meta.get("professional_strategy"), dict) else None,
                     )
-                ):
+                    task.metadata_json = {**meta, "disposition": decision.as_dict()}
+                    meta = task.metadata_json
+                    if decision.action in {"execute", "replan"}:
+                        task.metadata_json = {**meta, "atomize": False}
+                        return self._run_as_leaf(run, task, note=decision.reason)
+                    if decision.action == "investigate":
+                        plan = investigation_plan(task.objective, read_only=bool(meta.get("read_only")))
+                        source = "disposition-investigate"
+                        task.metadata_json = {**meta, "investigated": True}
+                        self._explain(task, category="decision", text=decision.reason, phase="investigate")
+                    else:
+                        from agent.orchestrator.atomizer import adaptive_decompose_operation
+
+                        strat_meta = meta.get("professional_strategy") or {}
+                        lead_spec = strat_meta.get("lead_specialty") or meta.get("lead_specialty")
+                        plan = adaptive_decompose_operation(
+                            task.objective,
+                            metadata=meta,
+                            lead_specialty=lead_spec,
+                            depth=depth,
+                            max_depth=self._settings.max_tree_depth,
+                        )
+                        source = "atomizer-adaptive"
+                        self._explain(task, category="decision", text=decision.reason, phase="decompose")
+                elif meta.get("atomize") or retry_split:
                     from agent.orchestrator.atomizer import adaptive_decompose_operation
+
                     strat_meta = meta.get("professional_strategy") or {}
                     lead_spec = strat_meta.get("lead_specialty") or meta.get("lead_specialty")
                     plan = adaptive_decompose_operation(
@@ -1047,7 +1129,20 @@ class RunOrchestrator:
                     )
                     source = "atomizer-adaptive"
                 else:
-                    self._note_thought(run, task, f"Pensando em como dividir «{task.title}».")
+                    from agent.orchestrator.disposition import decide_disposition
+
+                    decision = decide_disposition(
+                        objective=task.objective,
+                        metadata=meta,
+                        depth=depth,
+                        max_depth=self._settings.max_tree_depth,
+                        attempt_count=attempts,
+                        strategy=meta.get("professional_strategy") if isinstance(meta.get("professional_strategy"), dict) else None,
+                    )
+                    task.metadata_json = {**meta, "disposition": decision.as_dict()}
+                    opening = f"Vou definir as etapas de «{task.title}». {decision.reason}"
+                    self._note_thought(run, task, opening, phase="plan")
+                    self._explain(task, category="activity", text=opening, phase="plan")
                     plan, source = await resolve_decomposition_plan(
                         settings=self._settings,
                         run_config=config,
@@ -1105,13 +1200,16 @@ class RunOrchestrator:
                 if not validation.runnable:
                     return self._block_invalid_plan(task, validation)
                 titles = ", ".join(spec.title for spec in plan.subtasks[:6])
+                thought = f"Vou fazer: {titles}."
+                self._note_thought(run, task, thought, phase="plan")
+                self._explain(task, category="result", text=thought, phase="plan")
                 return {
                     "action": "decomposed",
                     "task_id": str(task.id),
                     "count": len(plan.subtasks),
                     "source": source,
                     "plan": validation.verdict.value,
-                    "thought": f"Vou fazer: {titles}.",
+                    "thought": thought,
                 }
 
             if self._tasks.dependencies_satisfied(task.id):

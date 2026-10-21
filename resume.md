@@ -391,6 +391,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Integração MCP stdio (config, discover, call, transport).
 
+### `docs/architecture/orquestracao-qualidade.md`
+
+**Propósito:** Contrato de qualidade, disposição seletiva (executar, investigar, decompor, replanejar) e evento `work.explained` no feed.
+
 ### `docs/architecture/modelo-dados.md`
 
 **Propósito:** 14 entidades SQLite + campos essenciais + relações.
@@ -1029,7 +1033,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Monta o contexto operacional de uma tarefa (regras, memória, contrato, arquivos-alvo, guias, skills e falhas anteriores) dentro do orçamento do modelo e grava o snapshot do contexto. **Quando/onde:** Chamado pelo orquestrador antes de cada operação de modelo, por meio de `build_for_task`.
 
-- `OperationContextBuilder._requirements_block(self, task) → str` — Requisitos obrigatórios que esta etapa responde, com o critério de cada um.
+- `OperationContextBuilder._requirements_block(self, task) → str` — Requisitos obrigatórios que esta etapa responde, com o critério de cada um e o recorte do contrato de qualidade quando a etapa o herdou.
 - `OperationContextBuilder._inspection_budget(self) → int` — Quantas leituras o modelo pode fazer antes de responder (o mesmo limite do ciclo).
 - `OperationContextBuilder._inspection_block(self, task) → str` — O que a tentativa anterior já leu: evita reler os mesmos arquivos do zero.
 
@@ -1065,11 +1069,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [schemas.py](/src/agent/domain/schemas.py)
 - Arquivo: [state_machine.py](/src/agent/domain/state_machine.py)
 
-- `_requirements_block(self, task) → str` — Requisitos obrigatórios que esta etapa responde, com o critério de cada um.
+- `_requirements_block(self, task) → str` — Requisitos obrigatórios que esta etapa responde, com o critério de cada um e o recorte do contrato de qualidade quando a etapa o herdou.
 - `_inspection_budget(self) → int` — Quantas leituras o modelo pode fazer antes de responder (o mesmo limite do ciclo).
 - `_inspection_block(self, task) → str` — O que a tentativa anterior já leu: evita reler os mesmos arquivos do zero.
 
-- `OperationContextBuilder._requirements_block(self, task) → str` — Requisitos obrigatórios que esta etapa responde, com o critério de cada um.
+- `OperationContextBuilder._requirements_block(self, task) → str` — Requisitos obrigatórios que esta etapa responde, com o critério de cada um e o recorte do contrato de qualidade quando a etapa o herdou.
 - `OperationContextBuilder._inspection_budget(self) → int` — Quantas leituras o modelo pode fazer antes de responder (o mesmo limite do ciclo).
 - `OperationContextBuilder._inspection_block(self, task) → str` — O que a tentativa anterior já leu: evita reler os mesmos arquivos do zero.
 ### `src/agent/domain/README.md`
@@ -1579,6 +1583,35 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `requirements_report(session: Session, root: TaskModel) -> list[dict]` — status de cada requisito.
 - `unmet_requirements(report: list[dict]) -> list[dict]` — Filtra do relatório os requisitos que não são `satisfied`, `não aplicável` ou `informativo`. Entrada: relatório de requisitos; saída: lista dos requisitos não atendidos.
 
+### `src/agent/orchestrator/disposition.py`
+
+**Propósito:** escolhe executar, investigar, decompor ou replanejar antes de subdividir uma etapa já marcada com `atomize`. **Quando/onde:** o `RunOrchestrator` usa no planejamento quando a etapa pede atomização e ainda não gastou duas tentativas.
+
+- `Disposition` — Decisão com `action`, `reason` e `factors`. Entrada: os três campos; saída: objeto serializável.
+- `Disposition.as_dict() -> dict[str, Any]` — Serializa a decisão para o metadado da tarefa. Entrada: a própria decisão; saída: dicionário.
+- `decide_disposition(*, objective: str, metadata: dict[str, Any] | None, depth: int, max_depth: int, attempt_count: int, strategy: dict[str, Any] | None=None) -> Disposition` — Escolhe o modo da etapa pela ordem fixa: passo fechado, profundidade de proteção, falha repetida, falta de contexto, várias partes ou objetivo único. Entrada: objetivo, metadados, profundidade, tentativas e estratégia; saída: `Disposition`.
+- `investigation_plan(objective: str, *, read_only: bool=False) -> DecompositionResult` — Plano curto que lista o diretório antes de agir e só verifica quando o pedido muda arquivo. Entrada: objetivo e flag de leitura; saída: `DecompositionResult`.
+
+### `src/agent/orchestrator/narration.py`
+
+**Propósito:** monta a frase do feed a partir do contrato e da decisão, sem chamar o modelo. **Quando/onde:** o orquestrador publica `work.explained` no início da raiz e ao definir ou aplicar um plano.
+
+- `explain_quality(contract: dict[str, Any] | None) -> str` — Resume pedido explícito, piso inferido e incerteza, sem marcar critério como verificado. Entrada: contrato ou `None`; saída: frase redigida, ou vazia.
+- `explanation_event(category: str, text: str, *, phase: str) -> dict[str, str] | None` — Monta o payload de `work.explained` se a categoria e o texto forem válidos. Entrada: categoria, texto e fase; saída: payload ou `None`.
+- `safe_explanation(text: str | None, *, limit: int=400) -> str` — Redige segredo e trunca a frase. Entrada: texto e limite; saída: texto publicável, ou vazio.
+
+### `src/agent/orchestrator/quality_contract.py`
+
+**Propósito:** separa o que o usuário pediu, o piso profissional do domínio, as premissas e o que fica de fora. **Quando/onde:** gravado no aceite da raiz no primeiro passo de planejamento e herdado pelas filhas.
+
+- `_items(text: str) -> list[str]` — Extrai itens enumerados do pedido. Entrada: texto; saída: lista de itens.
+- `_profile_for(domain: str, objective: str) -> tuple[str, list[str]]` — Escolhe o perfil de qualidade do domínio, trocando para web quando o pedido é de interface. Entrada: domínio e objetivo; saída: nome do perfil e critérios.
+- `attach_quality_contract(session: Session, task: TaskModel, contract: dict[str, Any]) -> dict[str, Any]` — Grava o contrato em `acceptance_json.quality` sem apagar os requisitos já existentes. Entrada: sessão, tarefa e contrato; saída: contrato gravado.
+- `build_quality_contract(objective: str, strategy: ProfessionalStrategy | dict[str, Any] | None) -> dict[str, Any]` — Monta o contrato com origem explícita, inferida ou premissa, teto de protótipo e critérios pendentes. Entrada: objetivo e estratégia; saída: dicionário do contrato.
+- `compact_quality(contract: dict[str, Any]) -> dict[str, Any]` — Recorta o contrato para caber no metadado da tarefa. Entrada: contrato completo; saída: recorte.
+- `inherit_quality(parent: dict[str, Any] | None, child_objective: str) -> dict[str, Any] | None` — Leva à filha restrições, exclusões e critérios relacionados, sem premissas nem histórico. Entrada: contrato do pai e objetivo da filha; saída: recorte ou `None`.
+- `render_quality_for_prompt(metadata: dict[str, Any] | None) -> str` — Texto curto dos critérios herdados para o prompt, com premissa marcada como não confirmada. Entrada: metadados; saída: bloco de texto ou vazio.
+
 ### `src/agent/orchestrator/plan_validation.py`
 
 **Propósito:** valida de forma determinística o plano de subtarefas antes da execução, repara o que é seguro e decide se o plano pode rodar. **Quando/onde:** chamado pelo `RunOrchestrator` logo após decompor e antes de executar as etapas, e de novo quando o plano muda.
@@ -1676,17 +1709,19 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `RunOrchestrator._check_stagnation(run_id: uuid.UUID, out: dict[str, Any]) -> dict[str, Any] | None` — Reage à repetição da mesma falha com a mesma estratégia: diagnostica a causa, decide entre replanejar o pai ou pausar o run e grava o evento `run.stagnation`. Entrada: id do run e saída do passo; saída: dicionário de ação ou `None` quando ainda não há estagnação.
 - `RunOrchestrator._depth(task: TaskModel) -> int` — Calcula a profundidade da tarefa na árvore, contando os ancestrais. Entrada: modelo da tarefa; saída: inteiro de profundidade.
 - `RunOrchestrator._ensure_final_message(root: TaskModel) -> None` — Garante que a raiz tenha uma resposta final: reaproveita o Markdown da etapa `final_answer` ou compõe um relatório com as etapas filhas. Entrada: raiz; saída: `None` (resultado consolidado atualizado).
+- `RunOrchestrator._explain(task: TaskModel, *, category: str, text: str, phase: str) -> None` — Publica `work.explained` com a frase já redigida. Se o evento falhar, a etapa segue. Entrada: tarefa, categoria, texto e fase; saída: `None`.
 - `RunOrchestrator._note_thought(run: ExecutionRunModel, task: TaskModel | None, text: str, *, phase: str='thinking') -> None` — Registra o que está acontecendo como evento `agent.thought` e faz commit para a interface ler durante a inferência. Entrada: run, tarefa opcional, texto e fase; saída: `None`.
 - `RunOrchestrator._pause_run(run: ExecutionRunModel, root: TaskModel, hit: dict[str, Any], next_action: str, *, diagnosis: dict[str, Any] | None=None) -> dict[str, Any]` — Pausa o run (retomável) ao atingir um limite, gravando estado, pendências, requisitos, motivo e próxima ação na raiz e no evento `run.paused`, sem mudar o estado das tarefas. Entrada: run, raiz, limite atingido e próxima ação; saída: dicionário de ação `run_paused`.
 - `RunOrchestrator._pending_under(root_id: uuid.UUID) -> list[dict[str, Any]]` — Lista as folhas pendentes sob a raiz (não concluídas, não assentadas e sem filhos), com título, status e motivo. Entrada: id da raiz; saída: lista de dicionários de pendência.
 - `RunOrchestrator._pick_next_task(root_id: uuid.UUID) -> TaskModel | None` — Escolhe a próxima tarefa a executar por prioridade de status (running, verifying, ready, retry_pending, planning, pending), respeitando dependências e filhos não assentados. Entrada: id da raiz; saída: `TaskModel` ou `None` quando nada pode avançar.
 - `RunOrchestrator._promote_ready_or_block(task_id: uuid.UUID) -> dict[str, Any] | None` — Valida o contrato da tarefa: se estiver válido, move para READY; caso contrário, move para BLOCKED com os erros e devolve a ação `blocked_contract`. Entrada: id da tarefa; saída: dicionário de bloqueio ou `None`.
-- `RunOrchestrator._propagate_strategy(parent: TaskModel, plan: Any) -> None` — Repassa aos filhos a especialidade líder, o gatilho `atomize` (quando a estratégia é complexa) e os requisitos extraídos da estratégia do pai. Entrada: pai e plano; saída: `None` (metadados dos filhos atualizados).
+- `RunOrchestrator._propagate_strategy(parent: TaskModel, plan: Any) -> None` — Repassa aos filhos a especialidade líder, o gatilho `atomize` (quando a estratégia é complexa), os requisitos da estratégia e o recorte do contrato de qualidade. Entrada: pai e plano; saída: `None` (metadados dos filhos atualizados).
 - `RunOrchestrator._record_action(run_id: uuid.UUID, out: dict[str, Any]) -> None` — Registra o evento `orchestrator.action` com a saída do passo e emite `run.progress` quando o estado de progresso muda. Entrada: id do run e dicionário de saída; saída: `None`.
+- `RunOrchestrator._record_quality(run: ExecutionRunModel, task: TaskModel, strategy: Any) -> None` — Grava o contrato de qualidade da raiz no aceite e no metadado e publica o resumo no feed. Uma falha aqui não impede o planejamento. Entrada: run, tarefa e estratégia; saída: `None`.
 - `RunOrchestrator._recursion_guard(run: ExecutionRunModel, task: TaskModel) -> str | None` — Protege contra recursão: bloqueia quando a etapa repete título/objetivo de um ancestral, excede `max_tree_depth` ou o run atinge `max_tasks_per_run`. Entrada: run e tarefa; saída: motivo do bloqueio ou `None`.
 - `RunOrchestrator._remember_failure(task: TaskModel, failure: Failure) -> dict[str, Any]` — Guarda a falha na tarefa (histórico `failures` e `last_failure`) com a assinatura do erro e da estratégia, para a próxima tentativa e o replanejamento lerem. Entrada: tarefa e `Failure`; saída: dicionário da falha registrada.
 - `RunOrchestrator._revalidate_plan(run: ExecutionRunModel, task: TaskModel, config: dict[str, Any], work_root: str) -> dict[str, Any] | None` — Antes de executar a etapa, compara o fingerprint do plano do pai com o da última validação e revalida se mudou (replanejamento, dependência ou cobertura). Entrada: run, tarefa, configuração e raiz de trabalho; saída: dicionário de revalidação/bloqueio ou `None`.
-- `RunOrchestrator._run_as_leaf(run: ExecutionRunModel, task: TaskModel, *, note: str) -> dict[str, Any]` — Executa a etapa como folha, sem nova divisão: garante operação atômica, verifica dependências e promove para READY ou aguarda. Entrada: run, tarefa e nota de pensamento; saída: dicionário de ação.
+- `RunOrchestrator._run_as_leaf(run: ExecutionRunModel, task: TaskModel, *, note: str) -> dict[str, Any]` — Executa a etapa como folha, sem nova divisão: garante operação atômica, publica a nota no feed, verifica dependências e promove para READY ou aguarda. Entrada: run, tarefa e nota de pensamento; saída: dicionário de ação.
 - `RunOrchestrator._run_config(run: ExecutionRunModel) -> dict` — Devolve a configuração persistida do run. Entrada: modelo do run; saída: dicionário de configuração.
 - `RunOrchestrator._same_title_above(task: TaskModel) -> bool` — Verifica se algum ancestral tem o mesmo título ou o mesmo objetivo normalizado da tarefa. Entrada: modelo da tarefa; saída: booleano.
 - `RunOrchestrator._stall_run(run: ExecutionRunModel, root: TaskModel, reason: str) -> dict[str, Any]` — Encerra o run como falho quando nada pode avançar: bloqueia a raiz, salva o relatório com pendências e requisitos e emite `run.failed`. Entrada: run, raiz e motivo; saída: dicionário de ação `run_stalled`.
@@ -2833,9 +2868,17 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** verificar a validação de argumentos no registro, antes de o handler rodar.
 
+### `tests/test_quality_disposition.py`
+
+**Propósito:** verificar contrato de qualidade, disposição da etapa, redação da explicação e a gravação desses fatos no ciclo do orquestrador.
+
 ### `tests/web/tools-report.test.mjs`
 
 **Propósito:** verificar o resumo da aba Ferramentas a partir de respostas sintéticas da API.
+
+### `tests/web/work-explained.test.mjs`
+
+**Propósito:** verificar que `describeActivity` mostra o texto de `work.explained` e ignora evento sem texto.
 
 ### `tests/test_capability_exposure.py`
 
