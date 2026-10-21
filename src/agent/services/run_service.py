@@ -5,11 +5,12 @@ Propósito: manter as execuções (runs) do projeto: início, pausa, retomada e 
 Responsabilidade: camada de aplicação — ciclo de vida dos runs e registro dos fatos correspondentes.
 Componentes: RunService.
 Dependências: agent.domain.enums, agent.domain.schemas, agent.persistence.models, agent.services.agent_service.
-Observações: retomar um run não refaz o que já foi comprovado; os limites recomeçam a contar.
+Observações: retomar um run não refaz o que já foi comprovado nem zera o consumo. O teto de tokens só cresce com autorização explícita.
 """
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -185,7 +186,7 @@ class RunService:
         self._session.flush()
         return run
 
-    def _usage(self, run: ExecutionRunModel) -> dict[str, int]:
+    def _usage(self, run: ExecutionRunModel) -> dict[str, Any]:
         """Consumo acumulado do run até este ponto.
 
         Args:

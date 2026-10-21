@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from agent.api.deps import db_session, read_settings
@@ -220,6 +221,90 @@ def disable_autonomous(run_id: uuid.UUID, session: Session = Depends(db_session)
     run.config_json = cfg
     session.commit()
     return {"id": str(run.id), "autonomous": False}
+
+
+class BudgetGrantBody(BaseModel):
+    """Autorização explícita de mais tokens para uma execução."""
+
+    tokens: int
+    reason: str
+
+
+@router.get("/runs/{run_id}/usage")
+def run_usage(
+    run_id: uuid.UUID,
+    session: Session = Depends(db_session),
+    purpose: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    agent: str | None = None,
+    task_id: str | None = None,
+) -> dict:
+    """Consumo acumulado da execução e a composição da chamada mais recente.
+
+    Args:
+        run_id: execução consultada.
+        session: sessão do banco da requisição.
+        purpose: filtra por finalidade.
+        provider: filtra pelo provedor.
+        model: filtra pelo modelo.
+        agent: filtra pelo agente.
+        task_id: filtra por tarefa.
+
+    Returns:
+        O demonstrativo derivado dos registros de inferência.
+
+    Raises:
+        HTTPException: com status 404 quando a execução não existe.
+    """
+    from agent.orchestrator.usage_report import build_usage_view
+
+    view = build_usage_view(
+        session,
+        run_id=run_id,
+        filters={
+            "purpose": purpose or "",
+            "provider": provider or "",
+            "model": model or "",
+            "agent": agent or "",
+            "task_id": task_id or "",
+        },
+    )
+    if view is None:
+        raise HTTPException(status_code=404, detail="run não encontrado")
+    return view
+
+
+@router.post("/runs/{run_id}/budget-grant")
+def run_budget_grant(
+    run_id: uuid.UUID,
+    body: BudgetGrantBody,
+    session: Session = Depends(db_session),
+) -> dict:
+    """Autoriza mais tokens. A retomada sozinha não aumenta o teto.
+
+    Args:
+        run_id: execução que recebe a autorização.
+        body: quantidade e motivo.
+        session: sessão do banco da requisição.
+
+    Returns:
+        O teto resultante e a autorização gravada.
+
+    Raises:
+        HTTPException: com status 404 quando a execução não existe e 400 quando o pedido é inválido.
+    """
+    from agent.orchestrator.budget_gate import grant_budget
+
+    run = session.get(ExecutionRunModel, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run não encontrado")
+    try:
+        result = grant_budget(session, run, tokens=body.tokens, reason=body.reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    session.commit()
+    return result
 
 
 @router.get("/runs/{run_id}/metrics")

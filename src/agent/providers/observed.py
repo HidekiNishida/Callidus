@@ -44,12 +44,37 @@ async def observed_chat(
     Raises:
         Exception: qualquer erro do provedor é propagado depois de emitir o evento de falha.
     """
-    if current() is None:
+    obs = current()
+    if obs is None:
         return await provider.chat(request)
+    from agent.orchestrator.budget_gate import (
+        BudgetExhausted,
+        assess_inference,
+        mark_pressure,
+    )
+    from agent.orchestrator.inference_usage import estimate_messages, usage_from_response
+    from agent.orchestrator.ledger import record_inference
+
+    estimated_prompt = estimate_messages(request.messages)
+    estimated_completion = int(request.profile.output_reserve or 0)
+    decision = assess_inference(
+        obs.session,
+        obs.run_id,
+        purpose=purpose,
+        estimated_prompt=estimated_prompt,
+        estimated_completion=estimated_completion,
+        provider=getattr(provider, "name", "") or "",
+    )
+    if decision.action == "pause":
+        raise BudgetExhausted(decision)
+    if decision.action in {"reduce", "warn"}:
+        mark_pressure(obs.session, obs.task_id, "reduce" if decision.action == "reduce" else "elevated")
     streaming = bool(stream and getattr(provider, "supports_streaming", False))
     output_id = uuid.uuid4().hex[:12]
     model = request.profile.model_id
     started = time.monotonic()
+    if decision.action == "reduce":
+        emit("budget.pressure", {"level": decision.level, "purpose": purpose})
     emit(
         "agent.started",
         {"output_id": output_id, "provider": provider.name, "model": model, "streaming": streaming, "purpose": purpose},
@@ -102,6 +127,89 @@ async def observed_chat(
             commit=True,
         )
 
+    def _account(response: ChatCompletionResponse | None, *, failed_call: bool = False, timeout: bool = False, error: str = "") -> None:
+        """Grava a inferência assim que a resposta ou a falha existe.
+
+        Args:
+            response: resposta do provedor, quando chegou.
+            failed_call: a chamada não produziu resposta utilizável.
+            timeout: o provedor estourou o tempo.
+            error: motivo curto, sem o texto do prompt.
+        """
+        reporting = False
+        capabilities = getattr(provider, "capabilities", None)
+        if callable(capabilities):
+            try:
+                reporting = bool(capabilities().usage_reporting)
+            except Exception:
+                reporting = False
+        if response is None:
+            parsed_prompt = None
+            parsed_completion = None
+            reasoning = cache_read = cache_write = None
+            measurement = "unavailable"
+            status = "timeout" if timeout else "failed"
+            finish = None
+        else:
+            parsed = usage_from_response(
+                response,
+                usage_reporting=reporting,
+                estimated_prompt=estimated_prompt,
+                estimated_completion=estimated_completion,
+                failed=failed_call,
+                timeout=timeout,
+            )
+            parsed_prompt = parsed.prompt_tokens
+            parsed_completion = parsed.completion_tokens
+            reasoning = parsed.reasoning_tokens
+            cache_read = parsed.cache_read_tokens
+            cache_write = parsed.cache_write_tokens
+            measurement = parsed.measurement
+            status = parsed.status
+            finish = getattr(response, "finish_reason", None)
+        from agent.orchestrator.inference_usage import estimate_cost
+        from agent.persistence.models import ExecutionRunModel
+
+        run = obs.session.get(ExecutionRunModel, obs.run_id)
+        prices = (run.config_json or {}).get("prices") if run is not None and isinstance(run.config_json, dict) else {}
+        cost, cost_quality = estimate_cost(prices if isinstance(prices, dict) else {}, provider.name, parsed_prompt, parsed_completion)
+        try:
+            record_inference(
+                obs.session,
+                idempotency_key=f"{obs.run_id}:{output_id}",
+                run_id=obs.run_id,
+                task_id=obs.task_id,
+                project_id=obs.project_id,
+                agent=obs.agent,
+                purpose=purpose,
+                provider=provider.name,
+                model_id=model,
+                status=status,
+                failure_reason=(error or None),
+                duration_ms=int((time.monotonic() - started) * 1000),
+                measurement=measurement,
+                prompt_tokens=parsed_prompt,
+                completion_tokens=parsed_completion,
+                reasoning_tokens=reasoning,
+                cache_read_tokens=cache_read,
+                cache_write_tokens=cache_write,
+                estimated_prompt_tokens=estimated_prompt,
+                estimated_completion_tokens=estimated_completion,
+                cost_usd=cost,
+                provider_meta_json={
+                    "finish_reason": finish,
+                    "cost_measurement": cost_quality,
+                    "usage_reporting": reporting,
+                },
+            )
+        except Exception:
+            # A resposta já foi paga. Perder a linha é ruim; repetir a chamada ao modelo seria pior.
+            return
+        try:
+            obs.session.commit()
+        except Exception:
+            return
+
     try:
         if streaming:
             response = await provider.chat_streaming(request, on_delta)
@@ -109,9 +217,13 @@ async def observed_chat(
             response = await provider.chat(request)
     except asyncio.CancelledError:
         failed("cancelado", cancelled=True)
+        _account(None, failed_call=True, error="cancelado")
         raise
     except Exception as exc:
+        from agent.providers.base import ProviderTimeoutError
+
         failed(str(exc) or type(exc).__name__)
+        _account(None, failed_call=True, timeout=isinstance(exc, ProviderTimeoutError), error=type(exc).__name__)
         raise
     batcher.flush()
     content = response.content or ""
@@ -130,4 +242,5 @@ async def observed_chat(
             "duration_ms": int((time.monotonic() - started) * 1000),
         },
     )
+    _account(response)
     return response

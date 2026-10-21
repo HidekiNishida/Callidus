@@ -851,6 +851,7 @@ export async function connectStream(runId) {
       if (state.streamEvents.length > 400) state.streamEvents.splice(0, 100);
       pushActivity(envelope);
       state.liveState.version += 1;
+      maybeRefreshUsage(envelope);
     },
     onLive: (snapshot) => {
       applyLive(reducer, snapshot);
@@ -934,6 +935,23 @@ export async function selectTask(taskId) {
 
 // Token do inspetor: uma resposta lenta de uma tarefa antiga não pode sobrescrever a atual.
 let inspectorToken = 0;
+let usageRefreshAt = 0;
+
+/**
+ * Atualiza o painel de contexto quando uma inferência termina, sem recarregar a aplicação.
+ *
+ * @param {{type?: string}} envelope Evento do stream.
+ * @returns {void}
+ */
+function maybeRefreshUsage(envelope) {
+  const type = envelope?.type;
+  if (type !== "agent.output.completed" && type !== "budget.pressure" && type !== "budget.granted") return;
+  if (state.detailsTab !== "context" || !state.selectedTaskId) return;
+  const now = Date.now();
+  if (now - usageRefreshAt < 800) return;
+  usageRefreshAt = now;
+  loadInspector(state.selectedTaskId);
+}
 
 /**
  * Carrega os detalhes de uma tarefa (tentativas, evidências, snapshots e contrato).
@@ -948,15 +966,16 @@ export async function loadInspector(taskId) {
     state.inspector = null;
     return;
   }
-  const [task, attempts, evidences, snapshots, contract] = await Promise.all([
+  const [task, attempts, evidences, snapshots, contract, usage] = await Promise.all([
     api(`/tasks/${taskId}`).catch(() => null),
     api(`/tasks/${taskId}/attempts`).catch(() => []),
     api(`/tasks/${taskId}/evidences`).catch(() => []),
     api(`/tasks/${taskId}/context-snapshots`).catch(() => []),
     api(`/tasks/${taskId}/contract`).catch(() => null),
+    api(`/tasks/${taskId}/usage`).catch(() => null),
   ]);
   if (token !== inspectorToken) return; // resposta obsoleta
-  state.inspector = { task, attempts, evidences, snapshots, contract };
+  state.inspector = { task, attempts, evidences, snapshots, contract, usage };
 }
 
 /**

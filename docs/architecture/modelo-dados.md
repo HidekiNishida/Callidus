@@ -26,11 +26,12 @@ Persistência principal: SQLite em `data/agent.db` (configurável via `AGENT_DAT
 | `KgNode` / `KgEdge` | Grafo de conhecimento (arquivo, símbolo, documento, requisito) |
 | `TaskContract` | Entradas/saídas/invariantes de integração por tarefa |
 | `ContextSnapshot` | Métricas e componentes do contexto enviado ao modelo |
+| `InferenceRecord` | Uma inferência: uso informado, estimativa e ausência, sem somar cache de novo |
 | `Agent` | Agente lógico: papel, instruções, permissões, pai e estado |
 | `AgentExecution` | Execução ativa do agente: checkpoint, tentativa, erro |
 | `AgentQuery` | Consulta entre agentes: perguntas, correlação, tentativas, resposta |
 
-São 22 tabelas. `projects`, `tasks`, `execution_runs`, `operation_attempts` e `event_logs` são
+São 23 tabelas. `projects`, `tasks`, `execution_runs`, `operation_attempts`, `inference_records` e `event_logs` são
 o núcleo do ciclo; as demais descrevem conversas, agentes, memórias, evidências e automações.
 
 ## 🏗️ Task — campos essenciais
@@ -71,6 +72,9 @@ Tipos (`MemoryKind`):
 - `contextual` — referências a arquivos/trechos
 - `evidence` — testes, logs, comandos
 - `procedure` — padrões reutilizáveis com escopo
+- `operational` — resumo curto da tarefa, o que volta na retomada
+- `task_detail` — decisão, descoberta ou evidência consultável sob demanda
+- `artifact` — referência a log, snapshot ou diff; o prompt não leva o conteúdo integral
 
 Compactação futura: nova versão com `source_refs` apontando para registros anteriores.
 

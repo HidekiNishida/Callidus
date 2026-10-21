@@ -94,7 +94,9 @@ def test_contract_root_goal_and_dependency_results_reach_the_operation(session, 
     assert "## contrato" in text and "não remover rotas existentes" in text and "/pedidos" in text
     assert "--- api.py ---\nROTAS = []" in text
     assert "## objetivo-global\nCriar a API de pedidos com testes" in text
-    assert "## resultados-dependências\n- Ler rotas (PENDING): ROTAS = []" in text
+    assert "## resultados-dependências" in text
+    assert "Ler rotas" in text and "PENDING" in text and "ROTAS = []" in text
+    assert "ref: task:" in text
 
 
 def test_compaction_never_alters_target_files():

@@ -24,12 +24,14 @@ class ContextComponent:
         text: conteúdo do componente.
         priority: prioridade de manutenção; maior é preservado por mais tempo.
         required: quando `True`, o componente nunca é descartado.
+        category: categoria do painel de contexto; um componente entra em uma só categoria.
     """
 
     name: str
     text: str
     priority: int = 50
     required: bool = False
+    category: str = "other"
 
 
 @dataclass
@@ -41,12 +43,14 @@ class BudgetResult:
         estimated_tokens: custo estimado do prompt montado.
         dropped: nomes dos componentes que não couberam no orçamento.
         strategy_notes: observações sobre as decisões de montagem.
+        selected: componentes que entraram, com a estimativa de cada um.
     """
 
     messages: list[ChatMessage]
     estimated_tokens: int
     dropped: list[str] = field(default_factory=list)
     strategy_notes: list[str] = field(default_factory=list)
+    selected: list[dict] = field(default_factory=list)
 
 
 class ContextBudgetError(ValueError):
@@ -72,6 +76,76 @@ def estimate_tokens(text: str) -> int:
 
 _INNER_SPACES = re.compile(r"(?<=\S)[ \t]{2,}")
 _BLANK_RUNS = re.compile(r"\n{3,}")
+
+
+# Obrigatórios de significado: a compactação por pressão não os resume.
+_PROTECTED = {
+    "regras-globais",
+    "regras-projeto",
+    "objetivo",
+    "objetivo-global",
+    "requisitos",
+    "critérios",
+    "formato-saída",
+    "contrato",
+    "memória-operacional",
+}
+
+
+def compact_for_pressure(name: str, text: str, *, limit: int = 900) -> str:
+    """Encolhe um componente dispensável quando o orçamento da execução aperta.
+
+    Args:
+        name: nome do componente.
+        text: texto já limpo de espaços repetidos.
+        limit: tamanho a partir do qual o meio do texto sai, com a referência do tamanho original.
+
+    Returns:
+        O texto integral quando o componente é protegido ou já é curto. Caso contrário,
+        o começo, o fim e a contagem original — o conteúdo completo continua no snapshot.
+    """
+    cleaned = compact_text(text or "")
+    if name in _PROTECTED or len(cleaned) <= limit:
+        return cleaned
+    head = cleaned[: limit // 2].rstrip()
+    tail = cleaned[-200:].lstrip()
+    return (
+        f"{head}\n… [{name}: {len(cleaned)} caracteres; o texto integral permanece no snapshot]\n{tail}"
+    )
+
+
+def group_categories(selected: list[dict]) -> list[dict]:
+    """Agrupa os componentes enviados por categoria, sem contar o mesmo texto duas vezes.
+
+    Args:
+        selected: componentes escolhidos, cada um com `category` e `tokens`.
+
+    Returns:
+        Uma lista de categorias com a soma estimada e os componentes.
+    """
+    order: list[str] = []
+    buckets: dict[str, dict] = {}
+    for item in selected:
+        category = str(item.get("category") or "other")
+        if category not in buckets:
+            order.append(category)
+            buckets[category] = {
+                "category": category,
+                "tokens": 0,
+                "measurement": "estimate",
+                "components": [],
+            }
+        tokens = int(item.get("tokens") or 0)
+        buckets[category]["tokens"] += tokens
+        buckets[category]["components"].append(
+            {
+                "name": item.get("name"),
+                "tokens": tokens,
+                "required": bool(item.get("required")),
+                "measurement": "estimate",
+            }
+        )
+    return [buckets[name] for name in order]
 
 
 def compact_text(text: str) -> str:
@@ -117,6 +191,7 @@ def assemble_messages(
     selected: list[ContextComponent] = []
     dropped: list[str] = []
     used = 0
+    chosen: list[dict] = []
 
     for comp in sorted_components:
         cost = estimate_tokens(comp.text)
@@ -126,6 +201,15 @@ def assemble_messages(
                 continue
             selected.append(comp)
             used += cost
+            chosen.append(
+                {
+                    "name": comp.name,
+                    "tokens": cost,
+                    "required": comp.required,
+                    "category": comp.category or "other",
+                    "measurement": "estimate",
+                }
+            )
         else:
             dropped.append(comp.name)
 
@@ -141,12 +225,24 @@ def assemble_messages(
         ChatMessage(role="system", content="Siga o objetivo e o formato pedido. Responda de forma concisa."),
         ChatMessage(role="user", content=body),
     ]
+    system_tokens = estimate_tokens(messages[0].content)
+    chosen.insert(
+        0,
+        {
+            "name": "instrução-de-sistema",
+            "tokens": system_tokens,
+            "required": True,
+            "category": "instructions",
+            "measurement": "estimate",
+        },
+    )
     notes: list[str] = []
     if dropped:
         notes.append("Removidos componentes de baixa prioridade: " + ", ".join(dropped))
     return BudgetResult(
         messages=messages,
-        estimated_tokens=used + estimate_tokens(messages[0].content) + estimate_tokens(messages[1].content),
+        estimated_tokens=sum(estimate_tokens(message.content) for message in messages),
         dropped=dropped,
         strategy_notes=notes,
+        selected=chosen,
     )

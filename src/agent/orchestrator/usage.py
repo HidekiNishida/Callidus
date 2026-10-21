@@ -34,17 +34,23 @@ def accumulate_usage(metadata: dict | None, prompt: int, completion: int) -> dic
 
 
 def remember_usage(provider, prompt: int | None, completion: int | None) -> None:
-    """Guarda no provedor o consumo da última chamada, quando houve algum.
+    """Acrescenta o consumo desta chamada ao diário do provedor.
 
     Args:
         provider: provedor usado na chamada.
-        prompt: tokens consumidos na entrada do modelo.
-        completion: tokens consumidos na saída do modelo.
+        prompt: tokens de entrada informados, ou `None` quando o provedor não os mandou.
+        completion: tokens de saída informados, ou `None` quando o provedor não os mandou.
 
     Observações:
-        Chamada sem consumo não sobrescreve o uso anterior do provedor.
+        Cada chamada entra na lista. A última não apaga as anteriores. Ausência
+        continua `None`; só um zero informado pelo provedor vira zero.
+        `last_usage` guarda o par mais recente que teve algum número, para os
+        chamadores que ainda leem só a última resposta.
     """
-    prompt_count = int(prompt or 0)
-    completion_count = int(completion or 0)
+    prompt_count = None if prompt is None else int(prompt)
+    completion_count = None if completion is None else int(completion)
+    log = list(getattr(provider, "usage_log", None) or [])
+    log.append({"prompt": prompt_count, "completion": completion_count})
+    provider.usage_log = log
     if prompt_count or completion_count:
-        provider.last_usage = (prompt_count, completion_count)
+        provider.last_usage = (int(prompt_count or 0), int(completion_count or 0))

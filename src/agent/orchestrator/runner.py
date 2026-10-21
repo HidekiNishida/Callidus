@@ -477,11 +477,20 @@ class RunOrchestrator:
             raise LookupError(str(run_id))
         bus = get_bus()
         bus.step_started(str(run.id))
+        from agent.orchestrator.budget_gate import BudgetExhausted, use_budget_settings
+        from agent.orchestrator.ledger import note_budget_pause
+
         try:
-            with observe(self._session, run_id=run.id, project_id=run.project_id):
-                out = await self._step_body(run_id)
-                out = self._check_stagnation(run_id, out) or out
-                self._record_action(run_id, out)
+            with use_budget_settings(self._settings):
+                with observe(self._session, run_id=run.id, project_id=run.project_id):
+                    try:
+                        out = await self._step_body(run_id)
+                    except BudgetExhausted as exc:
+                        root = self._tasks.get_task(run.root_task_id)
+                        note_budget_pause(self._session, root, exc.reason)
+                        out = self._pause_run(run, root, exc.as_hit(), exc.next_action)
+                    out = self._check_stagnation(run_id, out) or out
+                    self._record_action(run_id, out)
         finally:
             bus.step_finished(str(run.id))
         return out

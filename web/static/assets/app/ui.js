@@ -993,6 +993,60 @@ export function summarizeActivity(entries) {
  * @param {string} text Diff cru (formato unified).
  * @returns {Array<{type: string, text: string}>} As linhas classificadas.
  */
+const MEASUREMENT_LABELS = {
+  exact: "informado pelo provedor",
+  estimate: "estimativa",
+  partial: "parcial",
+  unavailable: "indisponível",
+};
+
+/**
+ * Nome legível da qualidade de uma contagem de tokens.
+ *
+ * @param {string} measurement `exact`, `estimate`, `partial` ou `unavailable`.
+ * @returns {string} O rótulo em português.
+ */
+export function measurementLabel(measurement) {
+  return MEASUREMENT_LABELS[measurement] || MEASUREMENT_LABELS.unavailable;
+}
+
+/**
+ * Formata uma contagem que pode estar ausente.
+ *
+ * @param {{value?: number|null, measurement?: string}|number|null} entry Valor embalado ou número cru.
+ * @returns {string} O texto para a interface. Ausência não vira zero.
+ */
+export function formatTokenCount(entry) {
+  if (entry == null) return "indisponível";
+  if (typeof entry === "number") return String(entry);
+  if (entry.value == null) return measurementLabel(entry.measurement);
+  return `${entry.value} (${measurementLabel(entry.measurement)})`;
+}
+
+/**
+ * Percentual de ocupação, ou texto de indisponível quando a base não existe.
+ *
+ * @param {number|null|undefined} ratio Fração entre 0 e 1.
+ * @returns {string} Percentual inteiro ou "indisponível".
+ */
+export function formatRatio(ratio) {
+  if (ratio == null || Number.isNaN(Number(ratio))) return "indisponível";
+  return `${Math.round(Number(ratio) * 100)}%`;
+}
+
+/**
+ * Faixa de consumo para o alerta do painel.
+ *
+ * @param {string} level `normal`, `elevated`, `reduce`, `stop` ou `unavailable`.
+ * @returns {string} Frase curta, ou string vazia quando não há alerta.
+ */
+export function budgetAlert(level) {
+  if (level === "elevated") return "Consumo elevado da execução.";
+  if (level === "reduce") return "Consumo alto: o contexto das próximas chamadas será reduzido.";
+  if (level === "stop") return "Orçamento operacional esgotado. A reserva de conclusão permanece protegida.";
+  return "";
+}
+
 export function diffLines(text) {
   return String(text || "")
     .split("\n")

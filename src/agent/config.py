@@ -108,6 +108,12 @@ class Settings(BaseSettings):
     max_model_calls_per_run: int = 400
     max_tool_calls_per_run: int = 600
     max_tokens_per_run: int = 5_000_000
+    # Faixas do orçamento acumulado e a reserva que implementação não pode gastar.
+    # Aplicam-se ao teto autorizado da execução, não à janela de contexto do modelo.
+    budget_warn_ratio: float = 0.70
+    budget_reduce_ratio: float = 0.85
+    budget_stop_ratio: float = 0.90
+    budget_reserve_ratio: float = 0.10
     max_replans_per_run: int = 80
     # Unidades do limite base que cada retomada da run concede. A cota cresce a cada retomada,
     # mas o consumo já feito continua contando — a retomada destrava, não zera.

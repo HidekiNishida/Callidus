@@ -41,6 +41,10 @@ class MemoryKind(StrEnum):
     CONTEXTUAL = "contextual"
     EVIDENCE = "evidence"
     PROCEDURE = "procedure"
+    # Níveis da memória operacional da tarefa: resumo, detalhe recuperável e artefato.
+    OPERATIONAL = "operational"
+    TASK_DETAIL = "task_detail"
+    ARTIFACT = "artifact"
 
 
 class RunStatus(StrEnum):

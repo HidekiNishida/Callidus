@@ -12,7 +12,8 @@ Cada chamada ao modelo para uma tarefa passa por `OperationContextBuilder`, que 
 - **Arquivos-alvo** (obrigatório): conteúdo atual dos arquivos citados no título, objetivo, critérios, contrato ou `tool_args.path` que existem dentro do projeto — até 8 mil caracteres por arquivo e 12 mil no total; arquivo maior entra com o início e o aviso do tamanho. Nunca é compactado, para `old_string` casar com o disco. A lista vai em `strategy_notes_json` (`arquivos: …`).
 - **Contrato** (obrigatório, se existir): entradas, saídas, invariantes e aceite do `TaskContractModel`.
 - **Objetivo global** (obrigatório): objetivo da raiz, quando a tarefa é um passo dele.
-- **Resultados das dependências** (opcional): título, status e resumo do resultado de cada tarefa da qual esta depende.
+- **Resultados das dependências** (opcional): resumo operacional da subtarefa, com referência para consultar o detalhe. O pai não recebe o histórico do filho.
+- **Memória operacional** (opcional, prioridade alta): resumo de nível 1 da própria tarefa. Detalhe e artefato ficam fora do prompt.
 - **Tentativas anteriores** (obrigatório, se houver falhas): ver abaixo.
 - Trechos técnicos (símbolos sugeridos pelo grafo).
 - Guias do repositório na raiz: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, Copilot, `.cursor/rules`, `llms.txt`, índice de `SKILL.md`. Um `AGENTS.md` de subpasta entra só se o pedido cita essa pasta.
@@ -43,6 +44,11 @@ O runner guarda a impressão do prompt (`request_json.prompt_fp`, que inclui os 
 
 - `GET /tasks/{id}/context-snapshots`
 - `GET /context-snapshots/{id}`
-- Aba **Contexto** na UI web.
+- `GET /tasks/{id}/usage` e `GET /runs/{id}/usage` — janela estimada e consumo acumulado em campos separados
+- Aba **Contexto** na UI web
+
+A janela desta página é o limite de uma chamada. O teto acumulado da execução, a reserva de conclusão e o livro-razão de cada inferência estão em [orcamento-contexto.md](orcamento-contexto.md).
+
+Quando `context_pressure` da tarefa é `reduce`, a montagem também aplica `compact_for_pressure`: critérios, requisitos, objetivo, contrato e memória operacional permanecem; log e inspeção longos viram começo, fim e a referência do tamanho original.
 
 Código: [operation_builder.py](/src/agent/context/operation_builder.py)

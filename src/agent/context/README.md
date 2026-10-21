@@ -65,6 +65,8 @@ def assemble_messages(profile: ModelProfile, components: list[ContextComponent])
 
 **`ContextBudgetError`**: levantada se required > `input_budget` — orchestrator tenta `compact=True` uma vez, se ainda falha → task `BLOCKED` com detalhe do maior componente.
 
+Esse orçamento é o da **janela de uma chamada**. O teto acumulado da execução, a reserva de conclusão e o registro de cada inferência estão em [orcamento-contexto.md](/docs/architecture/orcamento-contexto.md). `estimated_tokens` do snapshot é a estimativa das mensagens montadas, não o consumo informado pelo provedor.
+
 ## ⚙️ OperationContextBuilder (`operation_builder.py`)
 
 ```python

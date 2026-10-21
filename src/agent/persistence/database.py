@@ -107,6 +107,7 @@ def _migrate_sqlite(engine: Engine) -> None:
         _add_column(conn, "event_logs", "parent_task_id", "CHAR(32)")
         _add_column(conn, "event_logs", "agent", "VARCHAR(64)")
         _add_column(conn, "event_logs", "schema_version", "INTEGER")
+        _add_column(conn, "context_snapshots", "categories_json", "JSON")
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_event_logs_run_seq ON event_logs (run_id, seq)"
         )

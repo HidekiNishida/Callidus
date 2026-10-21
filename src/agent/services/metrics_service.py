@@ -142,7 +142,9 @@ class MetricsService:
         usage = Counter()
         for t in tasks:
             for key, value in ((t.metadata_json or {}).get("usage") or {}).items():
-                usage[key] += int(value or 0)
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    continue
+                usage[key] += int(value)
         statuses = Counter(t.status for t in tasks)
         stale = sum(
             1 for e in evidences if e.passed is True and not _current(e)
@@ -182,6 +184,7 @@ class MetricsService:
             "tokens": {
                 "estimated_context": int(sum(s.estimated_tokens or 0 for s in snapshots)),
                 "reported": dict(usage),
+                "accounted": _accounted(self._session, run_id),
             },
             "omitted_context": dict(omitted),
             "errors_by_category": dict(errors),
@@ -267,6 +270,22 @@ class MetricsService:
                 cur = by_id[cur.parent_id]
             best = max(best, d)
         return best
+
+
+def _accounted(session: Session, run_id: uuid.UUID) -> dict:
+    """Totais do livro-razão da execução, separados da estimativa de janela.
+
+    Args:
+        session: sessão do banco.
+        run_id: execução consultada.
+
+    Returns:
+        O gasto contabilizado e a qualidade. Sem registros, a medição é indisponível.
+    """
+    from agent.orchestrator.ledger import run_spend
+
+    value, measurement = run_spend(session, run_id)
+    return {"value": value, "measurement": measurement}
 
 
 def _naive(moment):

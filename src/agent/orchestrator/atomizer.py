@@ -22,7 +22,7 @@ def complexity_score(*, objective: str, metadata: dict | None, kind: str, attemp
 
     Args:
         objective: texto do objetivo da etapa.
-        metadata: metadados da etapa, que revelam operação de modelo, atomização pedida e quantidade de chaves.
+        metadata: metadados da etapa, que revelam operação de modelo e atomização pedida.
         kind: tipo da tarefa.
         attempt_count: número de tentativas já feitas na etapa.
 
@@ -32,7 +32,8 @@ def complexity_score(*, objective: str, metadata: dict | None, kind: str, attemp
     score = 0
     meta = metadata or {}
     score += min(len(objective) // 40, 5)
-    score += len(meta.keys())
+    # A quantidade de chaves do metadado não é complexidade: uso, inspeção e pausa
+    # incham o dicionário e fariam a etapa se dividir sem necessidade.
     if kind in (TaskKind.SUBSYSTEM.value, "SUBSYSTEM", "OBJECTIVE"):
         score += 2
     if meta.get("model_operation"):
@@ -51,7 +52,7 @@ def should_decompose_further(
     kind: str,
     attempt_count: int,
     has_children: bool,
-    threshold: int = 4,
+    threshold: int = 6,
     depth: int = 0,
     max_depth: int = 3,
 ) -> bool:

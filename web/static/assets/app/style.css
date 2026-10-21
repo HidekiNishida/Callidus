@@ -1147,6 +1147,13 @@ pre,
 }
 
 .row-item { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border-soft); }
+.context-block { margin: 0 0 14px; }
+.context-block h3, .context-block h4 { margin: 0 0 6px; font-size: 13px; }
+.context-alert { color: var(--warn); font-size: 12.5px; margin: 0 0 8px; }
+.context-block details { margin: 4px 0; font-size: 12.5px; }
+.context-block summary { cursor: pointer; }
+.meter { height: 6px; background: var(--border-soft); border-radius: 99px; overflow: hidden; margin: 6px 0 8px; }
+.meter > span { display: block; height: 100%; background: var(--accent); }
 
 .kv { display: grid; gap: 4px; margin: 8px 0 0; }
 .kv > div { display: flex; gap: 10px; font-size: 12.5px; }

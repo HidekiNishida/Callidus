@@ -261,7 +261,7 @@ LIMIT_LABELS = {
     "seconds": "tempo de execução (s)",
     "model_calls": "chamadas ao modelo",
     "tool_calls": "execuções de ferramentas e comandos",
-    "tokens": "tokens estimados de contexto",
+    "tokens": "tokens contabilizados da execução",
     "replans": "replanejamentos e decomposições",
 }
 
@@ -276,6 +276,17 @@ def limits_for(settings: Settings, config: dict[str, Any]) -> dict[str, int]:
             out[key] = max(0, int(value))
         except (TypeError, ValueError):
             out[key] = int(getattr(settings, attr))
+    extra = 0
+    grants = config.get("budget_grants") if isinstance(config.get("budget_grants"), list) else []
+    for item in grants:
+        if not isinstance(item, dict):
+            continue
+        try:
+            extra += max(0, int(item.get("tokens") or 0))
+        except (TypeError, ValueError):
+            continue
+    if extra:
+        out["tokens"] = int(out.get("tokens") or 0) + extra
     return out
 
 
@@ -326,7 +337,7 @@ def resume_count(session: Session, run: ExecutionRunModel) -> int:
     )
 
 
-def usage_since(session: Session, run: ExecutionRunModel) -> dict[str, int]:
+def usage_since(session: Session, run: ExecutionRunModel) -> dict[str, Any]:
     """Consumo do run inteiro, com a exceção dos passos sem progresso.
 
     O consumo de chamadas, tokens e tempo é **cumulativo**: a retomada não devolve orçamento
@@ -368,12 +379,24 @@ def usage_since(session: Session, run: ExecutionRunModel) -> dict[str, int]:
     actions = [(e.payload_json or {}).get("action") for e in events]
     started = _naive(run.created_at) or datetime.now(timezone.utc).replace(tzinfo=None)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    from agent.orchestrator.ledger import run_spend
+
+    accounted, source = run_spend(session, run.id)
+    if accounted is None:
+        # Execução antiga, anterior ao livro-razão: a soma dos snapshots é estimativa
+        # de janela, não consumo processado. O campo `tokens_source` deixa isso explícito.
+        tokens = int(sum(s.estimated_tokens or 0 for s in snapshots))
+        tokens_source = "snapshot_estimate" if snapshots else "unavailable"
+    else:
+        tokens = int(accounted)
+        tokens_source = source
     return {
         "steps_without_progress": steps,
         "seconds": int((now - started).total_seconds()),
         "model_calls": sum(1 for a in attempts if a.kind == "model"),
         "tool_calls": sum(1 for a in attempts if a.kind == "tool"),
-        "tokens": int(sum(s.estimated_tokens or 0 for s in snapshots)),
+        "tokens": tokens,
+        "tokens_source": tokens_source,
         "replans": sum(1 for a in actions if a in {"replanned", "decomposed"}),
     }
 
@@ -394,7 +417,9 @@ def effective_cap(limits: dict[str, int], key: str, resumes: int, allowance: int
         A cota efetiva; `0` quando o limite está desligado.
     """
     cap = int(limits.get(key) or 0)
-    if not cap or key == "steps_without_progress":
+    if not cap or key in {"steps_without_progress", "tokens"}:
+        # O teto de tokens não cresce com a retomada. Autorização nova entra em
+        # `config.budget_grants` e já está somada em `limits["tokens"]`.
         return cap
     return cap * (1 + max(0, int(allowance)) * max(0, int(resumes)))
 
@@ -447,6 +472,12 @@ def next_action_for_limit(run_id: uuid.UUID, hit: dict[str, Any]) -> str:
         return (
             "Veja as pendências e o último erro; ajuste a orientação ou corrija a causa e retome "
             f"(POST /runs/{run_id}/resume). O trabalho comprovado não será refeito."
+        )
+    if hit["limit"] == "tokens":
+        return (
+            "O consumo de tokens não é devolvido na retomada e o teto não aumenta sozinho. "
+            f"Autorize um acréscimo explícito (POST /runs/{run_id}/budget-grant) ou reduza o escopo. "
+            "O trabalho comprovado não será refeito."
         )
     return (
         f"Retome para continuar com uma nova cota (POST /runs/{run_id}/resume) "

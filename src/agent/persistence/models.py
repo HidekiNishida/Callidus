@@ -3,7 +3,7 @@ Arquivo: src/agent/persistence/models.py
 Nome: models.py
 Propósito: definir os modelos SQLAlchemy que mapeiam o estado canônico do Callidus no SQLite.
 Responsabilidade: camada de infraestrutura — esquema relacional do agente, das execuções e das automações.
-Componentes: Base e os modelos Project, Conversation, Task, Branch, ExecutionRun, Automation, AutomationFiring, AutomationEvent, OperationAttempt, EventLog, MemoryRecord, KgNode, KgEdge, TaskContract, ContextSnapshot, Evidence, Agent, AgentExecution, AgentQuery.
+Componentes: Base e os modelos Project, Conversation, Task, Branch, ExecutionRun, Automation, AutomationFiring, AutomationEvent, OperationAttempt, EventLog, MemoryRecord, KgNode, KgEdge, TaskContract, ContextSnapshot, InferenceRecord, Evidence, Agent, AgentExecution, AgentQuery.
 Dependências: sqlalchemy, agent.domain.agent_enums, agent.domain.enums.
 Observações: o SQLite é a fonte da verdade; o formato das evidências e do histórico de tentativas é contrato.
 """
@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -408,6 +408,53 @@ class ContextSnapshotModel(Base):
     components_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     strategy_notes_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     refs_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Composição estimada do que entrou no prompt, por categoria. Ausente em snapshots antigos.
+    categories_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class InferenceRecordModel(Base):
+    """Uma inferência contabilizada: a unidade canônica do consumo de tokens.
+
+    O total da execução é a soma destes registros. Estimativa, uso informado pelo
+    provedor e métrica ausente ficam em colunas diferentes — ausência não vira zero.
+    Tokens de cache e de raciocínio não entram de novo no total de entrada ou saída.
+    """
+
+    __tablename__ = "inference_records"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_inference_idempotency"),
+        Index("ix_inference_run", "run_id"),
+        Index("ix_inference_task", "task_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    idempotency_key: Mapped[str] = mapped_column(String(191), nullable=False)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("execution_runs.id"), nullable=True)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    agent: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    call_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # exact | estimate | partial | unavailable
+    measurement: Mapped[str] = mapped_column(String(16), nullable=False)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reasoning_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cache_read_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cache_write_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    context_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("context_snapshots.id"), nullable=True
+    )
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    provider_meta_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

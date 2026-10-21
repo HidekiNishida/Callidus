@@ -195,6 +195,7 @@ def task_context_snapshots(task_id: uuid.UUID, session: Session = Depends(db_ses
             "components": r.components_json,
             "strategy_notes": r.strategy_notes_json,
             "refs": r.refs_json,
+            "categories": r.categories_json,
             "created_at": r.created_at.isoformat(),
         }
         for r in rows
@@ -227,8 +228,109 @@ def get_context_snapshot(snapshot_id: uuid.UUID, session: Session = Depends(db_s
         "components": row.components_json,
         "strategy_notes": row.strategy_notes_json,
         "refs": row.refs_json,
+        "categories": row.categories_json,
         "created_at": row.created_at.isoformat(),
     }
+
+
+@router.get("/tasks/{task_id}/usage")
+def task_usage(
+    task_id: uuid.UUID,
+    session: Session = Depends(db_session),
+    purpose: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    agent: str | None = None,
+) -> dict:
+    """Demonstrativo de contexto e de consumo da tarefa.
+
+    Args:
+        task_id: tarefa consultada.
+        session: sessão do banco da requisição.
+        purpose: filtra as inferências por finalidade.
+        provider: filtra pelo provedor.
+        model: filtra pelo modelo.
+        agent: filtra pelo agente.
+
+    Returns:
+        A janela da última chamada e o consumo acumulado da execução, em campos separados.
+
+    Raises:
+        HTTPException: com status 404 quando a tarefa não existe.
+    """
+    from agent.orchestrator.usage_report import build_usage_view
+    from agent.persistence.models import TaskModel
+
+    if session.get(TaskModel, task_id) is None:
+        raise HTTPException(status_code=404, detail="tarefa não encontrada")
+    view = build_usage_view(
+        session,
+        task_id=task_id,
+        filters={"purpose": purpose or "", "provider": provider or "", "model": model or "", "agent": agent or ""},
+    )
+    if view is None:
+        raise HTTPException(status_code=404, detail="tarefa não encontrada")
+    return view
+
+
+@router.get("/tasks/{task_id}/memory")
+def task_memory(
+    task_id: uuid.UUID,
+    session: Session = Depends(db_session),
+    kind: str | None = None,
+    q: str | None = None,
+    file: str | None = None,
+    state: str | None = None,
+    include_children: bool = False,
+) -> list[dict]:
+    """Recupera a memória persistida da tarefa, sem devolver o histórico do modelo.
+
+    Args:
+        task_id: tarefa consultada.
+        session: sessão do banco.
+        kind: tipo do registro.
+        q: assunto procurado no título, no resumo ou no conteúdo.
+        file: arquivo ou símbolo procurado.
+        state: estado mencionado no registro.
+        include_children: quando verdadeiro, inclui as filhas diretas.
+
+    Returns:
+        Os registros encontrados, com resumo e referência. O conteúdo longo de artefato
+        permanece no campo `content`, que para o nível 3 é a referência e o diagnóstico.
+
+    Raises:
+        HTTPException: com status 404 quando a tarefa não existe.
+    """
+    from agent.memory.operational import recall
+    from agent.persistence.models import TaskModel
+
+    task = session.get(TaskModel, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="tarefa não encontrada")
+    rows = recall(
+        session,
+        project_id=task.project_id,
+        task_id=None if include_children else task.id,
+        parent_task_id=task.id if include_children else None,
+        kind=kind,
+        text=q,
+        file=file,
+        state=state,
+    )
+    return [
+        {
+            "id": str(row.id),
+            "task_id": str(row.task_id) if row.task_id else None,
+            "kind": row.kind,
+            "title": row.title,
+            "summary": row.summary,
+            "outline": row.outline_json,
+            "refs": row.source_refs_json,
+            "version": row.version,
+            "created_at": row.created_at.isoformat(),
+        }
+        for row in rows
+    ]
 
 
 @router.get("/tasks/{task_id}/contract")

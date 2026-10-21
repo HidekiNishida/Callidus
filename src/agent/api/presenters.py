@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from agent.domain.schemas import BranchRead, ConversationRead, TaskRead
 from agent.i18n.locale import translate
-from agent.persistence.models import ContextSnapshotModel, ConversationModel, ExecutionRunModel, ProjectModel
+from agent.persistence.models import ConversationModel, ExecutionRunModel, ProjectModel
 from agent.services.conversation_service import ConversationService, locale_for_task
 from agent.services.inbox import effective_root, is_inbox_project
 
@@ -30,17 +30,18 @@ def usage_tokens(session: Session, task) -> int:
     Returns:
         O total de tokens registrado na tarefa, ou o estimado no snapshot mais recente quando a tarefa não tem uso próprio.
     """
+    from agent.orchestrator.ledger import task_reported_total
+
+    total, measurement = task_reported_total(session, task.id)
+    if total is not None and measurement != "unavailable":
+        return int(total)
     meta = task.metadata_json or {}
     usage = meta.get("usage") if isinstance(meta.get("usage"), dict) else None
-    if usage and usage.get("total"):
+    if usage and usage.get("total") is not None and usage.get("measurement"):
         return int(usage["total"])
-    latest = session.scalar(
-        select(ContextSnapshotModel.estimated_tokens)
-        .where(ContextSnapshotModel.task_id == task.id)
-        .order_by(ContextSnapshotModel.created_at.desc())
-        .limit(1)
-    )
-    return int(latest or 0)
+    # Estimativa de janela não é consumo. Sem registro, o total exibido é zero
+    # e o painel de contexto mostra a estimativa no campo próprio.
+    return 0
 
 
 def remembered_model(session: Session, task) -> dict:

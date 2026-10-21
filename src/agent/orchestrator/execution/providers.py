@@ -109,14 +109,48 @@ def supports_tool_loop(provider: Any) -> bool:
 
 
 def apply_provider_usage(task: TaskModel, provider: Any) -> None:
-    """Acumula o consumo de tokens do provedor no metadado da etapa.
+    """Reconcilia o uso da etapa com o livro-razão, ou soma o diário do provedor.
 
     Args:
         task: etapa que disparou a inferência.
-        provider: provedor usado; o acumulado em `last_usage` é consumido e zerado.
+        provider: provedor usado. O diário `usage_log` é consumido e esvaziado.
+
+    Observações:
+        Quando a chamada já foi gravada no livro-razão, o metadado é reescrito
+        pela soma dos registros. Somar `last_usage` de novo contaria a última
+        resposta duas vezes e esqueceria as anteriores do ciclo de ferramentas.
     """
-    usage = getattr(provider, "last_usage", None)
+    from sqlalchemy.orm import object_session
+
+    from agent.orchestrator.ledger import reconcile_task_usage
+
+    log = list(getattr(provider, "usage_log", None) or [])
+    provider.usage_log = []
     provider.last_usage = None
-    if not usage:
+    session = object_session(task)
+    if session is not None and reconcile_task_usage(session, task):
         return
-    task.metadata_json = accumulate_usage(task.metadata_json, usage[0], usage[1])
+    if not log:
+        return
+    prompt = 0
+    completion = 0
+    prompt_missing = 0
+    completion_missing = 0
+    for event in log:
+        if event.get("prompt") is None:
+            prompt_missing += 1
+        else:
+            prompt += int(event["prompt"])
+        if event.get("completion") is None:
+            completion_missing += 1
+        else:
+            completion += int(event["completion"])
+    previous = (task.metadata_json or {}).get("usage") or {}
+    meta = accumulate_usage(task.metadata_json, prompt, completion)
+    usage = dict(meta.get("usage") or {})
+    usage["calls"] = int(previous.get("calls") or 0) + len(log)
+    usage["prompt_missing"] = int(previous.get("prompt_missing") or 0) + prompt_missing
+    usage["completion_missing"] = int(previous.get("completion_missing") or 0) + completion_missing
+    usage["measurement"] = "partial" if usage["prompt_missing"] or usage["completion_missing"] else "exact"
+    meta["usage"] = usage
+    task.metadata_json = meta

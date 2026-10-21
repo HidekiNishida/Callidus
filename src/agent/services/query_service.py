@@ -591,7 +591,26 @@ class QueryService:
             messages=[ChatMessage(role="user", content=prompt)],
             profile=profile,
         )
-        response = await provider.chat(request)
+        from agent.observability.emitter import current, observe
+        from agent.orchestrator.budget_gate import use_budget_settings
+        from agent.providers.observed import observed_chat
+
+        async def _ask():
+            """Passa a consulta pelo mesmo controlador das outras inferências."""
+            return await observed_chat(provider, request, purpose="agent_query", stream=False)
+
+        if current() is None and execution is not None and execution.run_id:
+            with use_budget_settings(self._settings):
+                with observe(
+                    self._session,
+                    run_id=execution.run_id,
+                    project_id=agent.project_id,
+                    task_id=agent.task_id,
+                    agent=agent.role,
+                ):
+                    response = await _ask()
+        else:
+            response = await _ask()
         content = (response.content or "").strip()
         if not content:
             return None

@@ -9,7 +9,13 @@ Observações: a compactação nunca altera `arquivos-alvo`, que precisa casar c
 """
 from __future__ import annotations
 
-from agent.context.budget import ContextComponent, BudgetResult, assemble_messages, compact_text
+from agent.context.budget import (
+    BudgetResult,
+    ContextComponent,
+    assemble_messages,
+    compact_for_pressure,
+    compact_text,
+)
 from agent.providers.base import ModelProfile
 
 _EXACT = {"arquivos-alvo"}
@@ -33,7 +39,9 @@ def build_operation_context(
     dependency_results: str = "",
     skills: str = "",
     requirements: str = "",
+    operational: str = "",
     compact: bool = False,
+    pressure: bool = False,
 ) -> BudgetResult:
     """Componentes do prompt da operação. Obrigatórios nunca são cortados: se não couberem, o orçamento
     lança `ContextBudgetError`. A compactação não mexe em `arquivos-alvo`, que precisa ficar idêntico ao
@@ -45,32 +53,39 @@ def build_operation_context(
     o que sai quando falta espaço.
     """
     components = [
-        ContextComponent(name="regras-globais", text=global_rules, required=True, priority=100),
-        ContextComponent(name="objetivo", text=objective, required=True, priority=99),
-        ContextComponent(name="requisitos", text=requirements, required=True, priority=98),
-        ContextComponent(name="critérios", text=acceptance, required=True, priority=97),
-        ContextComponent(name="formato-saída", text=output_format, required=True, priority=96),
-        ContextComponent(name="objetivo-global", text=global_objective, required=True, priority=92),
-        ContextComponent(name="regras-projeto", text=project_rules, required=True, priority=90),
-        ContextComponent(name="skills", text=skills, required=False, priority=75),
-        ContextComponent(name="contexto-técnico", text=technical, required=False, priority=70),
-        ContextComponent(name="ferramentas", text=tools_summary, required=False, priority=60),
+        ContextComponent(name="regras-globais", text=global_rules, required=True, priority=100, category="instructions"),
+        ContextComponent(name="objetivo", text=objective, required=True, priority=99, category="objective"),
+        ContextComponent(name="requisitos", text=requirements, required=True, priority=98, category="objective"),
+        ContextComponent(name="critérios", text=acceptance, required=True, priority=97, category="objective"),
+        ContextComponent(name="formato-saída", text=output_format, required=True, priority=96, category="objective"),
+        ContextComponent(name="objetivo-global", text=global_objective, required=True, priority=92, category="objective"),
+        ContextComponent(name="regras-projeto", text=project_rules, required=True, priority=90, category="project_rules"),
+        ContextComponent(name="memória-operacional", text=operational, required=False, priority=94, category="memory"),
+        ContextComponent(name="skills", text=skills, required=False, priority=75, category="skills"),
+        ContextComponent(name="contexto-técnico", text=technical, required=False, priority=70, category="files"),
+        ContextComponent(name="ferramentas", text=tools_summary, required=False, priority=60, category="tools"),
     ]
     optional = [
-        ("tentativas-anteriores", previous_failures, True, 95),
-        ("contrato", contract, True, 94),
-        ("arquivos-alvo", target_files, True, 93),
-        ("inspeção-anterior", previous_inspection, False, 88),
-        ("resultados-dependências", dependency_results, False, 85),
+        ("tentativas-anteriores", previous_failures, True, 95, "history"),
+        ("contrato", contract, True, 94, "objective"),
+        ("arquivos-alvo", target_files, True, 93, "files"),
+        ("inspeção-anterior", previous_inspection, False, 88, "tool_results"),
+        ("resultados-dependências", dependency_results, False, 85, "summaries"),
     ]
-    for name, text, required, priority in optional:
+    for name, text, required, priority, category in optional:
         if text:
-            components.append(ContextComponent(name=name, text=text, required=required, priority=priority))
-    if compact:
+            components.append(
+                ContextComponent(name=name, text=text, required=required, priority=priority, category=category)
+            )
+    if compact or pressure:
         for comp in components:
             if comp.name not in _EXACT:
                 comp.text = compact_text(comp.text)
+            if pressure and comp.name not in _EXACT:
+                comp.text = compact_for_pressure(comp.name, comp.text)
     result = assemble_messages(profile, components)
     if compact:
         result.strategy_notes.append("contexto compactado (espaços e linhas repetidas)")
+    if pressure:
+        result.strategy_notes.append("contexto reduzido por pressão de orçamento; critérios e requisitos preservados")
     return result

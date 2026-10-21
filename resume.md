@@ -342,6 +342,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - Arquivo: [README.md](/docs/architecture/README.md)
 - Arquivo: [context-builder.md](/docs/architecture/context-builder.md)
+- Arquivo: [orcamento-contexto.md](/docs/architecture/orcamento-contexto.md)
 - Arquivo: [diagnostico-evolucao.md](/docs/architecture/diagnostico-evolucao.md)
 - Arquivo: [execucao-autonoma.md](/docs/architecture/execucao-autonoma.md)
 - Arquivo: [execucao-local.md](/docs/architecture/execucao-local.md)
@@ -368,7 +369,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `docs/architecture/context-builder.md`
 
-**Propósito:** Orçamento de tokens, componentes do prompt, compactação, `ContextBudgetError`.
+**Propósito:** Orçamento da janela de uma chamada, componentes do prompt, compactação, `ContextBudgetError`. O teto acumulado da execução está em `orcamento-contexto.md`.
+
+### `docs/architecture/orcamento-contexto.md`
+
+**Propósito:** Livro-razão de cada inferência, teto da execução, reserva de conclusão, memória em três níveis e o que o painel de contexto mostra. **Quando/onde:** ao auditar consumo, retomada ou a diferença entre estimativa e uso informado pelo provedor.
 
 ### `docs/architecture/diagnostico-evolucao.md`
 
@@ -959,7 +964,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `get_task(task_id: uuid.UUID, session: Session=Depends(db_session)) -> TaskRead` — `GET /tasks/{task_id}`: devolve a tarefa apresentada (título traduzido, usage, modelo lembrado) em `TaskRead`; 404 se não existir.
 - `get_task_contract(task_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /tasks/{task_id}/contract`: devolve o contrato da tarefa (inputs, outputs, invariantes, aceite) ou 404 quando o contrato não foi definido.
 - `task_attempts(task_id: uuid.UUID, session: Session=Depends(db_session)) -> list[dict]` — `GET /tasks/{task_id}/attempts`: lista as tentativas de operação da tarefa (kind, provider, sucesso, erro, timestamp) da mais nova para a mais antiga.
-- `task_context_snapshots(task_id: uuid.UUID, session: Session=Depends(db_session)) -> list[dict]` — `GET /tasks/{task_id}/context-snapshots`: devolve até 20 snapshots de contexto da tarefa (tokens, componentes, notas, refs) ordenados por data decrescente.
+- `task_context_snapshots(task_id: uuid.UUID, session: Session=Depends(db_session)) -> list[dict]` — `GET /tasks/{task_id}/context-snapshots`: devolve até 20 snapshots de contexto da tarefa (tokens, componentes, categorias, notas, refs) ordenados por data decrescente.
+- `task_usage(task_id: uuid.UUID, session: Session=Depends(db_session), purpose: str | None=None, provider: str | None=None, model: str | None=None, agent: str | None=None) -> dict` — `GET /tasks/{id}/usage`: chamada atual e consumo acumulado do run da tarefa, com filtros opcionais. Número ausente não vira zero.
+- `task_memory(task_id: uuid.UUID, session: Session=Depends(db_session), kind: str | None=None, q: str | None=None, file: str | None=None, state: str | None=None, include_children: bool=False) -> list[dict]` — `GET /tasks/{id}/memory`: recupera memória operacional, detalhe ou artefato por texto, arquivo ou estado, sem devolver o histórico inteiro.
 - `task_evidences(task_id: uuid.UUID, session: Session=Depends(db_session)) -> list[dict]` — `GET /tasks/{task_id}/evidences`: lista as evidências de verificação da tarefa (verifier, passed, summary).
 - `task_resume_brief(task_id: uuid.UUID, body: ResumeBody, session: Session=Depends(db_session)) -> dict` — `POST /tasks/{task_id}/resume-brief`: sobe até a tarefa raiz e devolve o brief de retomada; com `body.apply` reativa a execução e devolve `reactivated_run_id`.
 - `update_task_status(task_id: uuid.UUID, body: TaskStatusUpdate, session: Session=Depends(db_session)) -> TaskRead` — `PATCH /tasks/{task_id}/status`: aplica a mudança de status validando a máquina de estados; 404 tarefa inexistente, 409 transição inválida.
@@ -976,7 +983,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `enable_autonomous(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/autonomous/enable`: habilita o modo autônomo via `enable_autonomous_on_run`, faz commit e devolve `{id, autonomous}`.
 - `pause_run(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/pause`: pausa a execução via `RunService.pause_run` e devolve `{id, status}`.
 - `resume_run(run_id: uuid.UUID, retry_blocked: bool=False, session: Session=Depends(db_session)) -> dict` — `POST /runs/{run_id}/resume`: retoma a run pausada, opcionalmente repetindo tarefas bloqueadas (`retry_blocked`); 404 run inexistente, 409 quando não pode retomar.
-- `run_metrics(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /runs/{run_id}/metrics`: devolve as métricas da execução (tokens, tempos) via `MetricsService.run_metrics` ou 404 se a run não existir.
+- `run_metrics(run_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /runs/{run_id}/metrics`: devolve as métricas da execução (tokens, tempos) via `MetricsService.run_metrics` ou 404 se a run não existir. `tokens.accounted` vem do livro-razão; `tokens.estimated_context` continua sendo a soma dos snapshots.
+- `BudgetGrantBody(BaseModel)` — corpo de `POST /runs/{id}/budget-grant`: quantidade de tokens e o motivo da autorização.
+- `run_usage(run_id: uuid.UUID, session: Session=Depends(db_session), purpose: str | None=None, provider: str | None=None, model: str | None=None, agent: str | None=None, task_id: str | None=None) -> dict` — `GET /runs/{id}/usage`: demonstrativo da execução, filtrável por finalidade, provedor, modelo, agente e tarefa.
+- `run_budget_grant(run_id: uuid.UUID, body: BudgetGrantBody, session: Session=Depends(db_session)) -> dict` — `POST /runs/{id}/budget-grant`: soma uma autorização explícita ao teto de tokens e grava o evento `budget.granted`. Recusa quantidade não positiva ou motivo vazio.
 
 - `start_run(project_id, body, session) → ExecutionRunRead` — Inicia uma execução no projeto.
 - `list_runs(project_id, session) → list[ExecutionRunRead]` — Lista as execuções de um projeto.
@@ -989,7 +999,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `present_conversation(session: Session, item: ConversationModel) -> ConversationRead` — Serializa a conversa em `ConversationRead`, garantindo a branch ativa, anexando branches, `root_path` efetivo e `path_origin` (chosen/home), e ocultando `project_id` nas conversas da inbox.
 - `present_task(session: Session, task) -> TaskRead` — Monta o `TaskRead` da tarefa, traduzindo o título para o idioma da tarefa e preenchendo `usage_tokens` e `metadata_json` com o modelo lembrado.
 - `remembered_model(session: Session, task) -> dict` — Devolve os metadados da tarefa preservando `model_id`; se a tarefa raiz não tiver modelo, procura na run mais recente que a iniciou para recuperar o `model_id` usado.
-- `usage_tokens(session: Session, task) -> int` — Estima os tokens consumidos pela tarefa: usa `metadata["usage"]["total"]` quando existe, senão o `estimated_tokens` do snapshot de contexto mais recente.
+- `usage_tokens(session: Session, task) -> int` — Tokens contabilizados da tarefa. Com livro-razão, usa a soma informada ou a estimativa guardada na linha, conforme a medição. Sem linha, usa o total legado do metadado quando ele tem qualidade. Não usa o snapshot de janela como se fosse consumo do provedor.
 
 ### `src/agent/api/live_view.py`
 
@@ -1039,7 +1049,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** `build_operation_context(...)` — monta componentes do prompt da operação (required + optional com prioridades).
 
-- `build_operation_context(profile: ModelProfile, *, global_rules: str, project_rules: str, objective: str, technical: str, acceptance: str, tools_summary: str, output_format: str, previous_failures: str='', contract: str='', target_files: str='', global_objective: str='', dependency_results: str='', skills: str='', compact: bool=False) -> BudgetResult` — Monta os componentes do prompt da operação (obrigatórios e opcionais por prioridade) e devolve o `BudgetResult` com as mensagens, os tokens estimados e as notas de estratégia. Entradas: perfil do modelo e cada bloco de contexto; saída: prompt pronto dentro do orçamento.
+- `build_operation_context(profile: ModelProfile, *, global_rules: str, project_rules: str, objective: str, technical: str, acceptance: str, tools_summary: str, output_format: str, previous_failures: str='', previous_inspection: str='', contract: str='', target_files: str='', global_objective: str='', dependency_results: str='', skills: str='', requirements: str='', operational: str='', compact: bool=False, pressure: bool=False) -> BudgetResult` — Monta os componentes do prompt, com categoria por bloco. Com `pressure`, encurta o que não é critério, requisito, objetivo, contrato ou memória operacional. Saída: mensagens, estimativa e componentes escolhidos.
 
 ### `src/agent/context/budget.py`
 
@@ -1049,8 +1059,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ContextBudgetError(ValueError)` — exceção quando obrigatórios > orçamento.
 - `ContextBudgetError.__init__(budget: int, required_tokens: int, breakdown: list[dict]) -> None` — Constrói o `ValueError` que sinaliza que os componentes obrigatórios não cabem no orçamento; guarda `budget`, `required_tokens` e o `breakdown` (custo por componente) para diagnóstico, além do `snapshot_id` preenchido depois pelo orquestrador.
 - `ContextComponent` — componente com prioridade.
-- `assemble_messages(profile: ModelProfile, components: list[ContextComponent], *, safety_margin: int=256) -> BudgetResult` — adiciona required (sempre), depois optional por prioridade até estourar input_budget; `ContextBudgetError` se required não couber.
+- `assemble_messages(profile: ModelProfile, components: list[ContextComponent], *, safety_margin: int=256) -> BudgetResult` — adiciona required (sempre), depois optional por prioridade até estourar input_budget; `ContextBudgetError` se required não couber. A estimativa é a das mensagens montadas, uma vez. Os componentes escolhidos ficam em `selected`.
 - `compact_text(text: str) -> str` — remove linhas duplicadas consecutivas + espaços extras (não corta conteúdo semântico).
+- `compact_for_pressure(name: str, text: str, *, limit: int=900) -> str` — Sob pressão de orçamento, troca texto longo e dispensável por começo, fim e a referência do tamanho. Não altera critério, requisito, objetivo, contrato nem memória operacional.
+- `group_categories(selected: list[dict]) -> list[dict]` — Agrupa os componentes enviados por categoria, sem contar o mesmo bloco duas vezes. Saída: lista com nome, tokens estimados e componentes.
 - `estimate_tokens(text: str) -> int` — Estima o custo de um texto em tokens pela heurística conservadora de ~4 caracteres por token (texto PT/EN misto). Retorna 0 para texto vazio e no mínimo 1 para texto não vazio.
 
 ### `src/agent/context/operation_builder.py`
@@ -1068,19 +1080,18 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `OperationContextBuilder._ancestor_attachments(task: TaskModel) -> list[dict]` — Percorre a cadeia de tarefas-pai (com proteção contra ciclos) e concatena os `attachments` declarados em `metadata_json`. Retorna a lista de referências de anexos (imagens/textos) da tarefa e de seus ancestrais.
 - `OperationContextBuilder._attachment_snippet(root_path: str, task: TaskModel) -> str` — Monta o bloco textual dos anexos do pedido: lista até 8 anexos e, para os do tipo `text`, o preview de até 2000 caracteres lido via `resolve_under_root` (ignora anexos ilegíveis). Retorna string vazia quando não há anexos.
 - `OperationContextBuilder._contract_block(task: TaskModel) -> tuple[str, list[str]]` — Lê o contrato da tarefa no `ContractService` e devolve o corpo formatado (entradas, saídas, invariantes e aceite, truncados a 600 caracteres cada) e a lista de arquivos referenciados no contrato.
-- `OperationContextBuilder._dependency_results(task: TaskModel) -> str` — Busca as tarefas das quais esta depende e monta uma linha por dependência com título, status e o resumo do `consolidated_result_json`. Retorna as linhas unidas por quebra de linha (vazio se não houver dependências).
+- `OperationContextBuilder._dependency_results(task: TaskModel) -> str` — Monta o resumo operacional de cada dependência (estado, resultado curto e referência). O pai não recebe o histórico do filho.
 - `OperationContextBuilder._failures_block(task: TaskModel) -> str` — Devolve o resumo das falhas anteriores da etapa (`describe_failures`) e, se houver, anexa a seção "Orientação de recuperação" vinda de `metadata_json["recovery_guidance"]` — a orientação do ciclo diagnóstico → correção → re-verificação.
 - `OperationContextBuilder._global_objective(task: TaskModel) -> str` — Sobe até a tarefa-raiz pela cadeia de `parent_id` e devolve o objetivo global (até 800 caracteres) quando ele difere do objetivo da tarefa atual. Retorna string vazia quando a tarefa já é a raiz ou compartilha o mesmo objetivo.
 - `OperationContextBuilder._image_payloads(root_path: str, task: TaskModel, profile: ModelProfile) -> list[str]` — Converte anexos de imagem em base64 para envio multimodal, lendo os bytes sob a raiz do projeto. Devolve lista vazia se o perfil não suporta visão, se o arquivo estoura 4 MB ou se não há anexos de imagem (máximo de 2 imagens).
 - `OperationContextBuilder._max_skills() -> int` — Lê `skills_max_per_operation` das settings e devolve o limite de Skills por operação (mínimo 1). Cai para 2 quando a configuração está ausente, para não impedir a execução.
-- `OperationContextBuilder._memory_block(project_id: uuid.UUID, task: TaskModel) -> tuple[str, str]` — Escolhe as memórias relevantes ao objetivo e monta as linhas de contexto (`projeto`/`conversa` + tipo + título + fragmento). Retorna o bloco textual (ou "(sem memória registrada)") e uma nota de diagnóstico com o tamanho do índice e quantas memórias foram escolhidas.
+- `OperationContextBuilder._memory_block(project_id: uuid.UUID, task: TaskModel, *, tight: bool=False) -> tuple[str, str]` — Escolhe as memórias relevantes ao objetivo. Com pressão, cada fragmento cabe em 200 caracteres em vez de 480. Retorna o bloco e a nota de diagnóstico.
 - `OperationContextBuilder._memory_bodies(ids: list[uuid.UUID]) -> dict[uuid.UUID, str]` — Busca no banco os conteúdos completos das memórias indicadas. Retorna um dicionário `id → content` (vazio quando a lista de ids é vazia).
 - `OperationContextBuilder._memory_index(project_id: uuid.UUID, task) -> list[dict]` — Monta o índice de memórias visíveis do projeto e da conversa, filtrando por `memory_visible` e derivando o outline de cada registro. Retorna até 24 dicionários com `id`, `title`, `summary`, `facts`, `topics`, `kind` e `scope`.
 - `OperationContextBuilder._skills_block(root_path: str, task: TaskModel, profile: ModelProfile) -> tuple[str, list[SkillMatch]]` — Seleciona as Skills com `SkillSelector` (por estratégia profissional ou por palavras-chave do objetivo), renderiza suas instruções e limita o bloco a ~12% do orçamento de entrada (entre 400 e 2500 caracteres). Retorna o texto renderizado e a lista de `SkillMatch` aplicada.
 - `OperationContextBuilder._target_files(root_path: str, task: TaskModel, extra: list[str]) -> tuple[str, list[str]]` — Seleciona os arquivos citados no pedido (título, objetivo, aceite, contrato e `path` da ferramenta) que existem sob a raiz e monta seus conteúdos, truncando em 8000 caracteres por arquivo e 12000 no total. Retorna o bloco de arquivos e a lista de caminhos incluídos.
 - `OperationContextBuilder._technical_snippet(project_id: uuid.UUID, objective: str) -> str` — Busca no grafo de conhecimento os símbolos mencionados no objetivo (até 8 tokens, 3 hits cada) e devolve as referências encontradas. Retorna um aviso para usar `list_dir`/`search_grep` quando nada é encontrado.
 - `OperationContextBuilder.build_for_task(*, project_id: uuid.UUID, root_path: str, task: TaskModel, profile: ModelProfile, run_id: uuid.UUID | None=None, compact: bool=False) -> tuple[BudgetResult, ContextSnapshotModel]` — Monta o prompt completo da operação (objetivo, contrato, regras, memórias, arquivos citados, skills selecionadas, dependências) respeitando o orçamento do modelo, grava o `ContextSnapshotModel` e devolve `(BudgetResult, ContextSnapshotModel)`.
-- `_result_summary(result: dict | None, limit: int=400) -> str` — Resume o `consolidated_result_json` de uma tarefa, preferindo os campos `summary`, `stdout`, `content` ou `markdown` e, na ausência deles, serializando o resultado em JSON. Retorna "(sem resultado)" para entrada vazia e trunca no limite informado.
 
 ## `src/agent/domain/`
 
@@ -1307,6 +1318,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - Arquivo: [README.md](/src/agent/memory/README.md)
 - Arquivo: [__init__.py](/src/agent/memory/__init__.py)
+- Arquivo: [operational.py](/src/agent/memory/operational.py)
 - Arquivo: [store.py](/src/agent/memory/store.py)
 
 ### `src/agent/memory/README.md`
@@ -1316,6 +1328,20 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `src/agent/memory/__init__.py`
 
 **Propósito:** Re-exporta `store`.
+
+### `src/agent/memory/operational.py`
+
+**Propósito:** Memória da tarefa em três níveis: resumo operacional no prompt, detalhe sob demanda e artefato só por referência. **Quando/onde:** na montagem do contexto, na pausa por orçamento e na entrega do filho ao pai.
+
+- `_clip(text: str | None, limit: int) -> str` — Corta um texto no limite, sem transformar ausência em string vazia de conteúdo inventado.
+- `level1_payload(task: TaskModel, *, status_note: str='') -> dict[str, Any]` — Monta o resumo estruturado: objetivo, aceite, estado, próximo passo, arquivos e último erro.
+- `render_level1(payload: dict[str, Any]) -> str` — Transforma esse resumo em texto curto para o prompt e para a retomada.
+- `upsert_operational(session: Session, task: TaskModel, *, status_note: str='') -> MemoryRecordModel` — Atualiza o único registro operacional da tarefa, incrementando a versão.
+- `remember_detail(session: Session, task: TaskModel, *, title: str, body: str, facts: dict[str, Any] | None=None) -> MemoryRecordModel` — Grava decisão, descoberta ou evidência consultável, fora do prompt normal.
+- `remember_artifact(session: Session, task: TaskModel, *, title: str, ref: str, summary: str) -> MemoryRecordModel` — Guarda a referência de um snapshot, log ou diff e um diagnóstico curto, não o conteúdo integral.
+- `render_for_prompt(session: Session, task: TaskModel) -> str` — Devolve só o nível 1, limitado a cerca de mil caracteres. Sem registro, sintetiza o resumo a partir da tarefa.
+- `child_summary(session: Session, task: TaskModel) -> str` — Resumo que o pai recebe: estado, resultado curto, aceite e referência. Não inclui o histórico do filho.
+- `recall(session: Session, *, project_id: uuid.UUID, task_id: uuid.UUID | None=None, parent_task_id: uuid.UUID | None=None, kind: str | None=None, text: str | None=None, file: str | None=None, state: str | None=None, limit: int=20) -> list[MemoryRecordModel]` — Busca por tarefa, pai e filhos diretos, tipo, texto, arquivo ou estado. Sem índice vetorial.
 
 ### `src/agent/memory/store.py`
 
@@ -1477,11 +1503,14 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Subpasta: [src/agent/orchestrator/execution/](/src/agent/orchestrator/execution/)
 - Arquivo: [approach.py](/src/agent/orchestrator/approach.py)
 - Arquivo: [atomizer.py](/src/agent/orchestrator/atomizer.py)
+- Arquivo: [budget_gate.py](/src/agent/orchestrator/budget_gate.py)
 - Arquivo: [closing.py](/src/agent/orchestrator/closing.py)
 - Arquivo: [consolidation.py](/src/agent/orchestrator/consolidation.py)
 - Arquivo: [decomposition.py](/src/agent/orchestrator/decomposition.py)
 - Arquivo: [engine.py](/src/agent/orchestrator/engine.py)
 - Arquivo: [global_verify.py](/src/agent/orchestrator/global_verify.py)
+- Arquivo: [inference_usage.py](/src/agent/orchestrator/inference_usage.py)
+- Arquivo: [ledger.py](/src/agent/orchestrator/ledger.py)
 - Arquivo: [plan_validation.py](/src/agent/orchestrator/plan_validation.py)
 - Arquivo: [planner.py](/src/agent/orchestrator/planner.py)
 - Arquivo: [progress.py](/src/agent/orchestrator/progress.py)
@@ -1492,6 +1521,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [stagnation.py](/src/agent/orchestrator/stagnation.py)
 - Arquivo: [strategy.py](/src/agent/orchestrator/strategy.py)
 - Arquivo: [usage.py](/src/agent/orchestrator/usage.py)
+- Arquivo: [usage_report.py](/src/agent/orchestrator/usage_report.py)
 
 ### `src/agent/orchestrator/README.md`
 
@@ -1520,10 +1550,30 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** decide de forma adaptativa quando e como uma etapa interna do plano deve ser subdividida em subetapas atômicas. **Quando/onde:** usado pelo `RunOrchestrator` durante o planejamento de uma tarefa sem filhos, quando o gatilho `atomize` está ativo ou a complexidade/tentativas justificam dividir mais.
 
 - `adaptive_decompose_operation(objective: str, *, metadata: dict[str, Any] | None=None, lead_specialty: str | None=None, depth: int=0, max_depth: int=3) -> DecompositionResult` — Escolhe o roteiro de decomposição conforme o domínio do objetivo (bug, refatoração, documentação ou engenharia padrão) e a especialidade líder. Entrada: objetivo, metadados, `lead_specialty` e profundidade; saída: `DecompositionResult` com subetapas encadeadas por `depends_on_indices`; ao atingir `max_depth`, devolve uma única etapa atômica.
-- `complexity_score(*, objective: str, metadata: dict | None, kind: str, attempt_count: int) -> int` — Pontua a complexidade da etapa: tamanho do objetivo (até +5), número de chaves de metadata, +2 para kind SUBSYSTEM/OBJECTIVE, +3 para `model_operation`, +2 a partir de 2 tentativas e +5 para o gatilho `atomize`. Entrada: objetivo, metadados, tipo e nº de tentativas; saída: inteiro comparável ao limiar de subdivisão.
+- `complexity_score(*, objective: str, metadata: dict | None, kind: str, attempt_count: int) -> int` — Pontua a complexidade da etapa: tamanho do objetivo (até +5), +2 para kind SUBSYSTEM/OBJECTIVE, +3 para `model_operation`, +2 a partir de 2 tentativas e +5 para o gatilho `atomize`. O número de chaves do metadado não entra: uso, inspeção e pausa inchavam a conta.
 - `depth_guard(*, depth: int, max_depth: int, parent_title: str='', sibling_titles: list[str] | None=None) -> str | None` — Barreira contra recursão e ciclos na decomposição recursiva: devolve o motivo do bloqueio quando a profundidade máxima é atingida ou quando o título do pai repetiria um título de etapa irmã; devolve `None` quando a decomposição pode seguir.
 - `micro_decompose_operation(objective: str) -> DecompositionResult` — plano granular.
-- `should_decompose_further(*, objective: str, metadata: dict | None, kind: str, attempt_count: int, has_children: bool, threshold: int=4, depth: int=0, max_depth: int=3) -> bool` — decide se divide mais (tentativas ≥ 2).
+- `should_decompose_further(*, objective: str, metadata: dict | None, kind: str, attempt_count: int, has_children: bool, threshold: int=6, depth: int=0, max_depth: int=3) -> bool` — Decide se divide mais. Etapa atômica, ferramenta, verificação, etapa que já tem filhos ou profundidade máxima não divide. O limiar padrão é 6.
+
+### `src/agent/orchestrator/budget_gate.py`
+
+**Propósito:** Consulta o teto da execução antes de cada inferência observada e decide seguir, reduzir contexto ou pausar. **Quando/onde:** dentro de `observed_chat`, antes do provedor.
+
+- `BudgetDecision` — Resultado da consulta: ação (`allow`, `warn`, `reduce`, `pause`), faixa, motivo, gasto, teto e reserva.
+- `BudgetExhausted(RuntimeError)` — A chamada não foi enviada porque o orçamento não comporta mais trabalho não essencial.
+- `BudgetExhausted.__init__(decision: BudgetDecision) -> None` — Guarda a decisão que interrompeu a chamada.
+- `BudgetExhausted.as_hit() -> dict[str, Any]` — Formato de limite que o caminho de pausa já entende.
+- `BudgetExhausted.next_action() -> str` — Próxima ação sugerida: autorizar orçamento ou retomar depois da pausa.
+- `BudgetExhausted.reason() -> str` — Frase da decisão, para o registro da pausa.
+- `_allowance(settings: Settings, config: dict[str, Any]) -> int` — Folga de retomada dos limites que não são tokens.
+- `_ratio(value: Any, default: float) -> float` — Lê uma faixa configurada e cai no padrão quando o valor não é numérico.
+- `active_settings() -> Settings` — Configuração do passo atual, ou a do processo quando não há passo.
+- `assess_inference(session: Session, run_id: uuid.UUID, *, purpose: str, estimated_prompt: int, estimated_completion: int, provider: str='') -> BudgetDecision` — Estima a próxima chamada, compara com o teto, a reserva e as faixas, e escolhe a ação. Finalidade de conclusão pode usar a reserva até o teto autorizado.
+- `grant_budget(session: Session, run: ExecutionRunModel, *, tokens: int, reason: str) -> dict[str, Any]` — Soma uma autorização explícita e auditável. Não zera o que já foi gasto.
+- `latest_record(session: Session, task_id: uuid.UUID) -> InferenceRecordModel | None` — Última inferência da tarefa, para o painel da chamada atual.
+- `mark_pressure(session: Session, task_id: uuid.UUID | None, level: str) -> None` — Marca `context_pressure` na tarefa para a próxima montagem reduzir o contexto dispensável.
+- `policy_ratios(settings: Settings, config: dict[str, Any]) -> dict[str, float]` — Faixas de aviso, redução, parada e reserva. Valores fora de ordem voltam ao padrão 0,70 / 0,85 / 0,90 e a reserva não invade o teto operacional.
+- `use_budget_settings(settings: Settings) -> Iterator[None]` — Faz o passo do orquestrador usar as configurações daquele processo, inclusive em teste.
 
 ### `src/agent/orchestrator/closing.py`
 
@@ -1863,7 +1913,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `default_provider_name(settings) -> str` — Provedor padrão: o do arquivo de provedores, se houver; senão o das settings.
 - `profile_from_config(run_config, settings, provider=None) -> ModelProfile` — Deriva o `ModelProfile` (modelo, limites de contexto e geração) da configuração do run e das configurações globais. Entrada: configuração do run e settings; saída: `ModelProfile`.
 - `supports_tool_loop(provider) -> bool` — Indica se o provedor sabe manter a conversa de ferramentas (capacidade declarada).
-- `apply_provider_usage(task, provider) -> None` — Acumula no metadado da tarefa o uso de tokens reportado pelo provider na última chamada. Entrada: tarefa e provider; saída: `None` (metadado atualizado).
+- `apply_provider_usage(task, provider) -> None` — Se a tarefa já tem linhas no livro-razão, o metadado passa a ser a soma delas e o log do provedor é descartado, para não contar duas vezes. Sem linhas, soma o log, preservando a contagem de lados ausentes.
 
 ### `src/agent/orchestrator/execution/guards.py`
 
@@ -1915,7 +1965,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_digest(data: Any) -> str` — Calcula o hash estável (sha1, 16 caracteres) de qualquer estrutura serializável, usado para comparar assinaturas. Entrada: dado qualquer; saída: string hexadecimal.
 - `_naive(value: datetime | None) -> datetime | None` — Normaliza um datetime para UTC sem timezone (ou devolve `None`). Entrada: datetime possivelmente nulo; saída: datetime naive ou `None`.
 - `diagnose(failure: dict[str, Any], count: int) -> dict[str, Any]` — kind, probable_cause, action, automatic.
-- `effective_cap(limits: dict[str, int], key: str, resumes: int, allowance: int=1) -> int` — Cota efetiva de um limite, dada a quantidade de retomadas do run: cada retomada concede uma unidade do limite base, mas o consumo já feito continua contando. Entrada: limites, retomadas, Allowance; saída: cota efetiva (0 quando o limite está desligado).
+- `effective_cap(limits: dict[str, int], key: str, resumes: int, allowance: int=1) -> int` — Cota efetiva de chamadas, tempo e ferramentas: cada retomada concede uma unidade, e o consumo continua contando. Tokens e passos sem progresso não são multiplicados pela retomada.
 - `error_signature(failure: dict[str, Any]) -> str` — categoria+causa+texto normalizado (sem números/ids/hashes).
 - `limit_reached(session: Session, run: ExecutionRunModel, limits: dict[str, int], *, allowance: int=1) -> dict[str, Any] | None` — verifica limites operacionais.
 - `limits_for(settings: Settings, config: dict[str, Any]) -> dict[str, int]` — merge settings + config.limits.
@@ -1928,7 +1978,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `resume_count(session: Session, run: ExecutionRunModel) -> int` — Quantas vezes o run foi retomado. Entrada: sessão e run; saída: contagem dos eventos `run.resumed`.
 - `segment_start(session: Session, run: ExecutionRunModel) -> datetime` — Devolve o início do trecho atual do run: o último evento `run.resumed` ou a criação do run, para que retomar não zere o trabalho feito. Entrada: sessão e run; saída: datetime naive.
 - `strategy_signature(task: Any) -> str` — tool/args/verification/mode/strategy. Não inclui o objetivo: reescrever o mesmo objetivo não é outra abordagem, e incluí-lo fazia cada replanejamento parecer uma novidade e zerar o contador.
-- `usage_since(session: Session, run: ExecutionRunModel) -> dict[str, int]` — Mede o consumo do run: passos sem progresso (no trecho atual), segundos, chamadas ao modelo, chamadas a ferramentas, tokens estimados e replanejamentos. Entrada: sessão e run; saída: dicionário de contadores.
+- `usage_since(session: Session, run: ExecutionRunModel) -> dict[str, Any]` — Mede o consumo do run. Tokens vêm do livro-razão quando há linhas (`tokens_source` diz a qualidade). Sem linhas, a soma dos snapshots entra marcada como `snapshot_estimate`, não como uso do provedor.
 
 ### `src/agent/orchestrator/strategy.py`
 
@@ -1955,7 +2005,51 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** Acúmulo de tokens por tarefa.
 
 - `accumulate_usage(metadata: dict | None, prompt: int, completion: int) -> dict` — atualiza `metadata_json.usage`.
-- `remember_usage(provider, prompt: int | None, completion: int | None) -> None` — guarda no `provider.last_usage`.
+- `remember_usage(provider, prompt: int | None, completion: int | None) -> None` — Acrescenta a chamada ao `usage_log`, preservando ausência (`None` não vira zero). `last_usage` só é preenchido quando o provedor informou algum lado.
+
+### `src/agent/orchestrator/inference_usage.py`
+
+**Propósito:** Classifica o uso de uma resposta em informado, estimado, parcial ou indisponível, sem somar cache e raciocínio de novo. **Quando/onde:** ao gravar cada inferência e ao somar o livro-razão.
+
+- `ParsedUsage` — Uso classificado de uma resposta: tokens, qualidade, estado e detalhes do provedor.
+- `_opt_int(value: Any) -> int | None` — Converte um número informado. Valor ausente ou inválido permanece `None`.
+- `_known(value: int | None, fallback: int | None) -> tuple[int, str] | None` — Prefere o número do provedor; senão a estimativa local, marcada como tal.
+- `provider_details(raw: dict[str, Any] | None) -> dict[str, int | None]` — Extrai cache e raciocínio dos formatos OpenAI, Anthropic e Gemini. Campo ausente fica `None`.
+- `usage_from_response(response: ChatCompletionResponse, *, usage_reporting: bool, estimated_prompt: int | None, estimated_completion: int | None, failed: bool=False, timeout: bool=False) -> ParsedUsage` — Classifica a resposta. Timeout e falha não inventam tokens. Resposta cortada fica com estado `truncated`.
+- `estimate_messages(messages: list[ChatMessage]) -> int` — Estima a entrada pela heurística de cerca de 4 caracteres por token, incluindo chamadas de ferramenta.
+- `estimate_cost(prices: dict[str, Any] | None, provider: str, prompt: int | None, completion: int | None) -> tuple[float | None, str]` — Calcula o custo só quando `config.prices` traz o preço do provedor. Sem tabela, o custo é indisponível.
+- `spend_of(row: Any) -> tuple[int, str]` — Gasto da linha para o teto: número do provedor, senão a estimativa guardada. Cache e raciocínio não entram. Os dois lados ausentes não contribuem.
+- `fold_usage(rows: list[Any]) -> dict[str, Any]` — Soma as linhas. Cada campo informa valor, qualidade e quantos registros não trouxeram o número.
+
+### `src/agent/orchestrator/ledger.py`
+
+**Propósito:** Persiste cada inferência e reconcilia o total da tarefa com essas linhas. **Quando/onde:** imediatamente depois de cada resposta observada, e de novo ao aplicar o uso do provedor.
+
+- `_uuid(value: Any) -> uuid.UUID | None` — Converte um identificador. Valor inválido vira `None`.
+- `bind_snapshot(snapshot_id: str | None) -> Iterator[None]` — Associa as inferências seguintes ao snapshot de contexto já gravado.
+- `record_inference(session: Session, *, idempotency_key: str, **fields: Any) -> InferenceRecordModel` — Grava a linha. A mesma chave não soma outra vez. Em seguida atualiza a memória operacional e substitui o uso da tarefa pela soma do livro.
+- `records_for(session: Session, *, run_id: uuid.UUID | None=None, task_id: uuid.UUID | None=None) -> list[InferenceRecordModel]` — Lista as inferências da execução ou da tarefa, na ordem de criação.
+- `run_spend(session: Session, run_id: uuid.UUID) -> tuple[int | None, str]` — Gasto contabilizado da execução e a qualidade dessa soma. Sem linhas, devolve ausência.
+- `reconcile_task_usage(session: Session, task: TaskModel) -> bool` — Reescreve `metadata.usage` a partir das linhas da tarefa. Sem linhas, não mexe no total legado.
+- `consistency_report(session: Session, run_id: uuid.UUID) -> dict[str, Any]` — Compara a soma do livro com o total gravado em cada tarefa e aponta divergência.
+- `task_reported_total(session: Session, task_id: uuid.UUID) -> tuple[int | None, str]` — Total que a API mostra: o livro, quando existe; senão o metadado legado com qualidade.
+- `note_budget_pause(session: Session, task: TaskModel | None, reason: str) -> None` — Registra no resumo operacional que a execução pausou por orçamento.
+- `iter_spend(rows: list[InferenceRecordModel]) -> list[tuple[InferenceRecordModel, int, str]]` — Gasto e qualidade de cada linha, para a conferência.
+
+### `src/agent/orchestrator/usage_report.py`
+
+**Propósito:** Monta o demonstrativo lido pela aba Contexto: janela da chamada e consumo acumulado em campos separados. **Quando/onde:** nas rotas `GET /tasks/{id}/usage` e `GET /runs/{id}/usage`.
+
+- `_count(value: int | None, measurement: str) -> dict[str, Any]` — Empacota valor e qualidade. Ausência não vira zero.
+- `_iso(value: datetime | None) -> str | None` — Formata o instante para a interface.
+- `_labels(categories: list[dict] | None) -> list[dict]` — Acrescenta o nome legível de cada categoria gravada. Snapshot antigo fica sem composição.
+- `_matches(row: InferenceRecordModel, filters: dict[str, str]) -> bool` — Aplica os filtros de finalidade, provedor, modelo, agente e tarefa.
+- `_window(session: Session, task_id: uuid.UUID | None) -> dict[str, Any]` — Estimativa e categorias do último snapshot. Sem snapshot, os números ficam ausentes.
+- `_window_limit(run: ExecutionRunModel | None, basis: int | None, basis_quality: str) -> dict[str, Any]` — Janela conhecida (configuração da execução ou padrão do processo) e a ocupação dela pela chamada.
+- `_group(rows: list[InferenceRecordModel], attr: str) -> list[dict[str, Any]]` — Agrupa o gasto por finalidade, tarefa, agente, modelo ou provedor.
+- `_record_view(row: InferenceRecordModel, index: int) -> dict[str, Any]` — Uma linha do demonstrativo, com medição e referência do snapshot.
+- `_budget_block(session: Session, run: ExecutionRunModel | None, folded: dict[str, Any]) -> dict[str, Any]` — Teto, reserva, saldo, faixa e autorizações. Sem teto, o saldo fica indisponível.
+- `build_usage_view(session: Session, *, run_id: uuid.UUID | None=None, task_id: uuid.UUID | None=None, filters: dict[str, str] | None=None) -> dict[str, Any] | None` — Junta chamada atual, acumulado, orçamento, consistência e a evolução das últimas chamadas. Devolve `None` quando a execução ou a tarefa não existe.
 
 ## `src/agent/persistence/`
 
@@ -2003,7 +2097,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `Base(DeclarativeBase)` — classe base declarativa do SQLAlchemy 2.0 que concentra o metadado de todas as tabelas. Entrada: nenhuma; saída: classe base da qual herdam os modelos. Quando o banco é criado a partir do metadado.
 - `BranchModel(Base)` — `branches` (id, conversation_id, parent_id, fork_task_id, created_at).
-- `ContextSnapshotModel(Base)` — `context_snapshots` (id, project_id, task_id, run_id, estimated_tokens, components_json, strategy_notes_json, refs_json, created_at).
+- `ContextSnapshotModel(Base)` — `context_snapshots` (id, project_id, task_id, run_id, estimated_tokens, components_json, categories_json, strategy_notes_json, refs_json, created_at). `categories_json` é coluna aditiva.
+- `InferenceRecordModel(Base)` — `inference_records`: uma inferência, com chave de idempotência, tokens informados ou nulos, estimativa, cache, raciocínio, custo, medição, estado e referência do snapshot.
 - `ConversationModel(Base)` — `conversations` (id, project_id, title, locale, root_path, active_branch_id, timestamps).
 - `EventLogModel(Base)` — `event_logs` (id, project_id, run_id, task_id, event_type, payload_json, created_at, seq, parent_task_id, agent, schema_version, index `ix_event_logs_run_seq`).
 - `EvidenceModel(Base)` — `evidences` (id, task_id, attempt_id, verifier, passed, summary, detail_json, created_at).
@@ -2331,6 +2426,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `MetricsService._model_calls_since_progress(attempts: list, events: list) -> int` — Encontra o último evento `orchestrator.action` que representa avanço (`made_progress`) e conta as tentativas de tipo `model` criadas depois dele; devolve o contador. Quando se mede o quanto o run avançou desde a última evolução verificável.
 - `MetricsService.project_metrics(project_id: uuid.UUID) -> dict` — Devolve as métricas agregadas do projeto: tasks por status, tokens totais, tentativas e evidências.
 - `MetricsService.run_metrics(run_id: uuid.UUID) -> dict | None` — Devolve as métricas de uma execução: passos, tentativas, tokens, duração e progresso real (verificados/pendentes).
+- `_accounted(session: Session, run_id: uuid.UUID) -> dict` — Total do livro-razão da execução, com valor e qualidade. A soma dos metadados ignora campos que não são número.
 - `_current(evidence: EvidenceModel) -> bool` — Indica se a evidência ainda reflete o estado atual dos artefatos, delegando a `verification.fingerprint.is_current` com os artefatos de `detail_json`; devolve booleano. Quando se separa evidências válidas de evidências obsoletas.
 - `_naive(moment)` — Normaliza um `datetime` removendo o fuso (`replace(tzinfo=None)`), pois SQLite devolve datas ingênuas e as em memória estão em UTC; devolve `None` se a entrada for None. Quando se comparam timestamps vindos do banco com timestamps em memória.
 
@@ -2370,7 +2466,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `RunService.resume_run(run_id: uuid.UUID, *, retry_blocked: bool=False) -> ExecutionRunModel` — Retoma uma execução pausada (PAUSED → ACTIVE); com `retry_blocked`, move tarefas BLOCKED de volta para PLANNING e zera os contadores de limites.
 - `RunService.start_run(project_id: uuid.UUID, data: ExecutionRunCreate) -> ExecutionRunModel` — Símbolo do módulo — ver a descrição do arquivo.
 
-- `RunService._usage(run: ExecutionRunModel) -> dict[str, int]` — Consumo acumulado do run, para a auditoria da retomada: a retomada concede cota nova, mas o que já foi gasto continua contando. Entrada: run; saída: consumo por indicador.
+- `RunService._usage(run: ExecutionRunModel) -> dict[str, Any]` — Consumo acumulado do run. A retomada não zera esse consumo e não amplia o teto de tokens; isso só acontece com autorização explícita.
 ### `src/agent/services/scheduler.py`
 
 **Propósito:** Serviço de agendamento cron que dispara execuções automáticas. **Quando/onde:** usado pelo servidor da API quando há `ScheduledRunModel` habilitados.
@@ -2911,6 +3007,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [test_state_machine.py](/tests/test_state_machine.py)
 - Arquivo: [test_strategy_and_decomposition.py](/tests/test_strategy_and_decomposition.py)
 - Arquivo: [test_sufficient_context.py](/tests/test_sufficient_context.py)
+- Arquivo: [test_token_budget.py](/tests/test_token_budget.py)
 - Arquivo: [test_tools.py](/tests/test_tools.py)
 
 ### `tests/test_browser_actions.py`
@@ -2990,12 +3087,17 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [chat-scroll.test.mjs](/tests/web/chat-scroll.test.mjs)
 - Arquivo: [replay.mjs](/tests/web/replay.mjs)
 - Arquivo: [tools-report.test.mjs](/tests/web/tools-report.test.mjs)
+- Arquivo: [usage-format.test.mjs](/tests/web/usage-format.test.mjs)
 
 ## `tests/web/fixtures/`
 
 **Propósito:** Snapshots JSON para testes offline do feed e da observabilidade.
 
 - Arquivo: [observe-with-narration.json](/tests/web/fixtures/observe-with-narration.json)
+
+### `tests/web/usage-format.test.mjs`
+
+**Propósito:** Verificar que a interface distingue uso informado, estimativa, parcial e ausência, e que o alerta de teto não se confunde com a janela.
 
 ### `tests/test_automation_chat_execution.py`
 
@@ -3261,6 +3363,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Testes de contexto suficiente (budget, compactação, fallback).
 
+### `tests/test_token_budget.py`
+
+**Propósito:** Verificar o livro-razão, a reserva de conclusão, a pausa, a memória seletiva, a compactação dos critérios e a migração aditiva. **Quando/onde:** testes determinísticos com provedor simulado, sem inferência real.
+
 ### `tests/test_tools.py`
 
 **Propósito:** Testes do registro de ferramentas + builtins (execução, aprovação, timeout, aliases).
@@ -3325,7 +3431,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `latestRunId()` — devolve o id da run atual ou da última run vinculada à tarefa raiz. Quando o painel de observação precisa se abrir.
 - `linkifyText(html)` — transforma URLs em texto puro em links, preservando as tags HTML existentes. Quando o texto renderizado contém endereços.
 - `loadFolder(path)` — lista o conteúdo de um diretório via `/fs/browse` e monta as entradas do modal de pasta. Quando o seletor de pasta navega entre diretórios.
-- `loadInspector(taskId)` — busca a tarefa, tentativas, evidências, snapshots de contexto e contrato, preenchendo o painel de detalhe. Quando uma tarefa é selecionada na árvore.
+- `loadInspector(taskId)` — busca a tarefa, tentativas, evidências, snapshots, contrato e o demonstrativo de uso. A falha do demonstrativo não apaga o restante do painel. Quando uma tarefa é selecionada na árvore.
 - `loadModels()` — popula o seletor de modelos do provider atual, com opção de fallback quando o provider está offline. Quando o provider muda ou a página carrega.
 - `loadPrefs()` — lê as preferências da UI do `localStorage`, tolerando JSON inválido. Quando se recupera o estado anterior (projeto, conversa, modelo).
 - `meterParts(startIso, endIso, tokens, live)` — calcula duração e tokens de um intervalo, usando o instante atual quando o medidor está "live". Quando se monta um medidor de tempo.
@@ -4652,7 +4758,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `web/static/assets/app/components/details.js`
 
-**Propósito:** details — módulo do projeto.
+**Propósito:** Painel de detalhe da tarefa. A aba Contexto mostra a chamada atual (janela e categorias) separada do consumo acumulado (teto, reserva e saldo).
 
 - `selectTab`
 
@@ -4861,6 +4967,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `disconnectStream`
 - `selectTask`
 - `loadInspector`
+- `maybeRefreshUsage`
 - `loadDiff`
 - `loadMetrics`
 - `loadGraph`
@@ -4913,6 +5020,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `splitFeed(activity)` — Classifica entradas em narrativas vs operações (legado/testes). Saída: `{narrative, operations}`.
 - `summarizeActivity`
 - `diffLines`
+- `measurementLabel`
+- `formatTokenCount`
+- `formatRatio`
+- `budgetAlert`
 
 ### `.pytest_cache/README.md`
 

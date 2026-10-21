@@ -19,7 +19,7 @@ import {
   discoverMcp,
   loadInspector,
 } from "../store.js";
-import { icon, stamp, statusLabel } from "../ui.js";
+import { budgetAlert, formatRatio, formatTokenCount, icon, stamp, statusLabel } from "../ui.js";
 
 /** Abas do painel de detalhes. */
 const TABS = [
@@ -67,6 +67,7 @@ export const DetailsPanel = {
     const attempts = Vue.computed(() => state.inspector?.attempts || []);
     const evidences = Vue.computed(() => state.inspector?.evidences || []);
     const snapshots = Vue.computed(() => state.inspector?.snapshots || []);
+    const usage = Vue.computed(() => state.inspector?.usage || null);
     const contract = Vue.computed(() => state.inspector?.contract || null);
     const feed = Vue.computed(() => state.streamEvents.slice(-60).reverse());
 
@@ -79,6 +80,7 @@ export const DetailsPanel = {
      */
     async function selectTab(id) {
       state.detailsTab = id;
+      if (id === "context" && state.selectedTaskId) await loadInspector(state.selectedTaskId);
       if (id === "diff") await loadDiff();
       if (id === "metrics") await loadMetrics();
       if (id === "graph") await loadGraph();
@@ -93,13 +95,19 @@ export const DetailsPanel = {
       attempts,
       evidences,
       snapshots,
+      usage,
       contract,
+      formatTokenCount,
+      formatRatio,
+      budgetAlert,
       feed,
       selectTab,
       selectTask,
       loadInspector,
       loadDiff,
       loadMetrics,
+      loadGraph,
+      loadTools,
       discoverMcp,
       icon,
       stamp,
@@ -208,11 +216,71 @@ export const DetailsPanel = {
       </div>
 
       <div class="tab-panel" v-else-if="state.detailsTab === 'context'">
-        <p class="muted small" v-if="!snapshots.length">Sem snapshots de contexto.</p>
-        <div class="row-item" v-for="snapshot in snapshots" :key="snapshot.id">
-          <span class="muted">{{ snapshot.estimated_tokens || 0 }} tokens</span>
-          <span class="muted">{{ stamp(snapshot.created_at) }}</span>
-        </div>
+        <p class="context-alert" v-if="budgetAlert(usage?.budget?.level)">{{ budgetAlert(usage.budget.level) }}</p>
+
+        <section class="context-block">
+          <h3>Chamada atual</h3>
+          <p class="muted small" v-if="!usage?.call?.available">Ainda não há snapshot nem inferência registrada.</p>
+          <dl class="kv" v-else>
+            <div><dt>Modelo</dt><dd>{{ usage.call.model || "indisponível" }}</dd></div>
+            <div><dt>Provedor</dt><dd>{{ usage.call.provider || "indisponível" }}</dd></div>
+            <div><dt>Janela</dt><dd>{{ usage.call.context_limit ?? "indisponível" }} <span class="muted" v-if="usage.call.context_limit_source">({{ usage.call.context_limit_source }})</span></dd></div>
+            <div><dt>Ocupação da janela</dt><dd>{{ formatRatio(usage.call.window_occupancy) }}</dd></div>
+            <div><dt>Entrada prevista</dt><dd>{{ formatTokenCount(usage.call.estimated_input_tokens) }}</dd></div>
+            <div><dt>Entrada informada</dt><dd>{{ formatTokenCount(usage.call.reported_input_tokens) }}</dd></div>
+            <div><dt>Saída informada</dt><dd>{{ formatTokenCount(usage.call.reported_output_tokens) }}</dd></div>
+            <div><dt>Reserva de saída</dt><dd>{{ usage.call.output_reserve_tokens ?? "indisponível" }}</dd></div>
+            <div><dt>Previsão − real</dt><dd>{{ usage.call.delta_input_tokens ?? "indisponível" }}</dd></div>
+            <div><dt>Medição</dt><dd>{{ usage.call.measurement || "indisponível" }}</dd></div>
+          </dl>
+          <p class="muted small" v-if="usage?.call?.method">{{ usage.call.method }}</p>
+          <details v-for="category in (usage?.call?.categories || [])" :key="category.category">
+            <summary>{{ category.label }} — {{ category.tokens }} (estimativa)</summary>
+            <div class="row-item" v-for="item in category.components" :key="item.name">
+              <span>{{ item.name }}</span>
+              <span class="muted">{{ item.tokens }} estimados</span>
+            </div>
+          </details>
+          <p class="muted small" v-if="usage?.call?.available && !(usage.call.categories || []).length">A composição por categoria não foi gravada neste snapshot.</p>
+        </section>
+
+        <section class="context-block">
+          <h3>Consumo acumulado</h3>
+          <p class="muted small" v-if="!usage">Sem registros de inferência.</p>
+          <template v-else>
+            <div class="meter" v-if="usage.budget?.occupancy != null" :title="'Ocupação do teto autorizado'">
+              <span :style="{ width: Math.min(100, Math.round(usage.budget.occupancy * 100)) + '%' }"></span>
+            </div>
+            <dl class="kv">
+              <div><dt>Entrada</dt><dd>{{ formatTokenCount(usage.accumulated.prompt_tokens) }}</dd></div>
+              <div><dt>Saída</dt><dd>{{ formatTokenCount(usage.accumulated.completion_tokens) }}</dd></div>
+              <div><dt>Chamadas</dt><dd>{{ usage.accumulated.calls }}</dd></div>
+              <div><dt>Falhas</dt><dd>{{ usage.accumulated.failed }}</dd></div>
+              <div><dt>Raciocínio</dt><dd>{{ formatTokenCount(usage.accumulated.reasoning_tokens) }}</dd></div>
+              <div><dt>Cache</dt><dd>{{ formatTokenCount(usage.accumulated.cache_read_tokens) }}</dd></div>
+              <div><dt>Custo</dt><dd>{{ formatTokenCount(usage.accumulated.cost_usd) }}</dd></div>
+              <div><dt>Teto autorizado</dt><dd>{{ usage.budget.authorized_tokens ?? "sem teto" }}</dd></div>
+              <div><dt>Reserva</dt><dd>{{ usage.budget.reserve_tokens ?? "indisponível" }}</dd></div>
+              <div><dt>Saldo</dt><dd>{{ usage.budget.balance_tokens ?? "indisponível" }}</dd></div>
+              <div><dt>Ocupação do teto</dt><dd>{{ formatRatio(usage.budget.occupancy) }}</dd></div>
+            </dl>
+            <p class="muted small">A ocupação acima é o consumo acumulado sobre o teto da execução. A entrada prevista da chamada é a janela, não o teto.</p>
+            <h4>Por finalidade</h4>
+            <div class="row-item" v-for="item in usage.accumulated.by_purpose" :key="item.key">
+              <span>{{ item.key }}</span>
+              <span class="muted">{{ item.calls }} · {{ formatTokenCount(item.spend) }}</span>
+            </div>
+          </template>
+        </section>
+
+        <section class="context-block">
+          <h3>Snapshots</h3>
+          <p class="muted small" v-if="!snapshots.length">Sem snapshots de contexto.</p>
+          <div class="row-item" v-for="snapshot in snapshots" :key="snapshot.id">
+            <span class="muted">{{ snapshot.estimated_tokens || 0 }} estimados</span>
+            <span class="muted">{{ stamp(snapshot.created_at) }}</span>
+          </div>
+        </section>
       </div>
 
       <div class="tab-panel" v-else-if="state.detailsTab === 'metrics'">

@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from agent.context.assembler import build_operation_context
-from agent.context.budget import BudgetResult, ContextBudgetError
+from agent.context.budget import BudgetResult, ContextBudgetError, group_categories
 from agent.domain.failures import describe_failures
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.knowledge.indexer import grep_symbols_in_objective
@@ -28,6 +28,7 @@ from agent.services.contract_service import ContractService
 from agent.providers.base import ModelProfile
 from agent.security.paths import PathSecurityError, resolve_under_root
 from agent.guides.discover import guide_digest
+from agent.memory.operational import child_summary, remember_artifact, render_for_prompt
 from agent.memory.store import choose_memory_index, fragments_for_prompt, structure_memory
 from agent.persistence.models import BranchModel
 from agent.services.branches import memory_visible
@@ -40,18 +41,6 @@ from sqlalchemy import select
 FILE_CHARS = 8000
 FILES_TOTAL = 12000
 _PATH_TOKEN = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w-][\w.-]*\.[A-Za-z0-9]{1,6})(?![\w/-])")
-
-
-def _result_summary(result: dict | None, limit: int = 400) -> str:
-    """Resumo de `consolidated_result_json`: saída da ferramenta, conteúdo lido ou o resultado em JSON."""
-    if not result:
-        return "(sem resultado)"
-    inner = result.get("result") if isinstance(result.get("result"), dict) else result
-    for key in ("summary", "stdout", "content", "markdown"):
-        value = inner.get(key) if isinstance(inner, dict) else None
-        if isinstance(value, str) and value.strip():
-            return " ".join(value.split())[:limit]
-    return json.dumps(inner, ensure_ascii=False, default=str)[:limit]
 
 
 GLOBAL_RULES = (
@@ -91,7 +80,9 @@ class OperationContextBuilder:
     ) -> tuple[BudgetResult, ContextSnapshotModel]:
         """Monta o contexto da operação e grava o snapshot. Se o obrigatório não couber, grava um snapshot
         do estouro (custo por componente) e relança `ContextBudgetError` com `snapshot_id`."""
-        project_rules, memory_note = self._memory_block(project_id, task)
+        pressure = (task.metadata_json or {}).get("context_pressure") == "reduce"
+        project_rules, memory_note = self._memory_block(project_id, task, tight=pressure)
+        operational = render_for_prompt(self._session, task)
         technical = self._technical_snippet(project_id, task.objective)
         contract, contract_paths = self._contract_block(task)
         target_files, included = self._target_files(root_path, task, contract_paths)
@@ -156,7 +147,9 @@ class OperationContextBuilder:
                 dependency_results=dependency_results,
                 skills=skills_rendered,
                 requirements=requirements,
-                compact=compact,
+                operational=operational,
+                compact=compact or pressure,
+                pressure=pressure,
             )
         except ContextBudgetError as exc:
             overflow = ContextSnapshotModel(
@@ -191,9 +184,18 @@ class OperationContextBuilder:
             components_json=components,
             strategy_notes_json=budget.strategy_notes,
             refs_json=budget.dropped,
+            categories_json=group_categories(budget.selected),
         )
         self._session.add(snap)
         self._session.flush()
+        if budget.dropped or pressure:
+            remember_artifact(
+                self._session,
+                task,
+                title="Snapshot de contexto",
+                ref=f"snapshot:{snap.id}",
+                summary="Componentes fora do prompt: " + (", ".join(budget.dropped) or "nenhum"),
+            )
         images = self._image_payloads(root_path, task, profile)
         if images and budget.messages:
             budget.messages[-1].images = images
@@ -362,20 +364,28 @@ class OperationContextBuilder:
             blocks.append(f"## Orientação de recuperação\n{guidance}")
         return "\n\n".join(blocks)
 
-    def _memory_block(self, project_id: uuid.UUID, task: TaskModel) -> tuple[str, str]:
-        """Monta o bloco de memória (canônica e contextual) que entra no prompt da operação."""
+    def _memory_block(self, project_id: uuid.UUID, task: TaskModel, *, tight: bool = False) -> tuple[str, str]:
+        """Monta o bloco de memória (canônica e contextual) que entra no prompt da operação.
+
+        Args:
+            project_id: projeto dono das memórias.
+            task: tarefa em execução.
+            tight: quando verdadeiro, cada fragmento fica mais curto porque o orçamento apertou.
+        """
         index = self._memory_index(project_id, task)
         chosen = choose_memory_index(index, task.objective)
         note = f"memória: índice {len(index)}, escolhidas {len(chosen)}"
         if not chosen:
             return "(sem memória registrada)", note
         bodies = self._memory_bodies([item["id"] for item in chosen])
+        fragment_budget = 200 if tight else 480
         lines: list[str] = []
         for item in chosen:
             fragment = fragments_for_prompt(
                 item.get("summary") or "",
                 bodies.get(item["id"], ""),
                 task.objective,
+                budget=fragment_budget,
             )
             if not fragment:
                 continue
@@ -569,7 +579,7 @@ class OperationContextBuilder:
             dep = self._session.get(TaskModel, dep_id)
             if dep is None:
                 continue
-            lines.append(f"- {dep.title} ({dep.status}): {_result_summary(dep.consolidated_result_json)}")
+            lines.append(child_summary(self._session, dep))
         return "\n".join(lines)
 
     def _ancestor_attachments(self, task: TaskModel) -> list[dict]:

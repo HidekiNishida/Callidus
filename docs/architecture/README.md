@@ -23,6 +23,7 @@ Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 | [diagnostico-evolucao.md](/docs/architecture/diagnostico-evolucao.md) | Evolução v0.5 |
 | [knowledge-graph.md](/docs/architecture/knowledge-graph.md) | Grafo do projeto |
 | [context-builder.md](/docs/architecture/context-builder.md) | Contexto por operação |
+| [orcamento-contexto.md](/docs/architecture/orcamento-contexto.md) | **Orçamento de tokens** — livro-razão por inferência, reserva de conclusão, memória em três níveis e painel |
 | [execucao-autonoma.md](/docs/architecture/execucao-autonoma.md) | Worker autônomo |
 | [requisitos-verificacao-progresso.md](/docs/architecture/requisitos-verificacao-progresso.md) | Requisitos rastreáveis, validação do plano, verificação independente, progresso real |
 | [estrategia-resolucao.md](/docs/architecture/estrategia-resolucao.md) | **Estratégia de resolução** — memória de abordagem, detecção de estagnação, mudança de estratégia e limites coerentes |

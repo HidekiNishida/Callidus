@@ -246,44 +246,47 @@ class ModelOperation:
                 task_id=task.id,
             )
 
+        from agent.orchestrator.ledger import bind_snapshot
+
         try:
-            if supports_tool_loop(provider):
-                outcome = await run_tool_loop(
-                    provider=provider,
-                    messages=budget.messages,
-                    profile=profile,
-                    registry=tools,
-                    ctx=ctx,
-                    approved=bool(config.get("approve_risky_tools") or meta.get("approved")),
-                    max_iterations=settings.max_tool_iterations,
-                    max_tool_calls=settings.max_tool_calls,
-                    stream=stream_allowed,
-                    chat=_chat_model,
-                    on_tool_call=_on_tool_call,
-                    tool_ids=operation_tools_for(
-                        meta,
+            with bind_snapshot(str(snap.id)):
+                if supports_tool_loop(provider):
+                    outcome = await run_tool_loop(
+                        provider=provider,
+                        messages=budget.messages,
+                        profile=profile,
                         registry=tools,
-                        settings=settings,
-                        objective=task.objective or "",
-                    ),
-                    payload_ok=payload_is_usable,
-                    tool_guard=lambda name, args: write_refusal_reason(meta, name, args.get("path")),
-                    deliverable_hint=(
-                        "Entregue agora a alteração. Responda só com JSON: "
-                        '{"path":"arquivo","content":"conteúdo inteiro"} ou '
-                        '{"path":"arquivo","old_string":"trecho","new_string":"novo"}. '
-                        "Nada de explicação, nada de comentário."
-                    ),
-                )
-            else:
-                resp = await _chat_model(
-                    provider,
-                    ChatCompletionRequest(messages=budget.messages, profile=profile),
-                    purpose="operation",
-                    stream=stream_allowed,
-                )
-                outcome = ToolLoopOutcome(content=resp.content or "", iterations=1, stop_reason="final")
-            content = outcome.content or ""
+                        ctx=ctx,
+                        approved=bool(config.get("approve_risky_tools") or meta.get("approved")),
+                        max_iterations=settings.max_tool_iterations,
+                        max_tool_calls=settings.max_tool_calls,
+                        stream=stream_allowed,
+                        chat=_chat_model,
+                        on_tool_call=_on_tool_call,
+                        tool_ids=operation_tools_for(
+                            meta,
+                            registry=tools,
+                            settings=settings,
+                            objective=task.objective or "",
+                        ),
+                        payload_ok=payload_is_usable,
+                        tool_guard=lambda name, args: write_refusal_reason(meta, name, args.get("path")),
+                        deliverable_hint=(
+                            "Entregue agora a alteração. Responda só com JSON: "
+                            '{"path":"arquivo","content":"conteúdo inteiro"} ou '
+                            '{"path":"arquivo","old_string":"trecho","new_string":"novo"}. '
+                            "Nada de explicação, nada de comentário."
+                        ),
+                    )
+                else:
+                    resp = await _chat_model(
+                        provider,
+                        ChatCompletionRequest(messages=budget.messages, profile=profile),
+                        purpose="operation",
+                        stream=stream_allowed,
+                    )
+                    outcome = ToolLoopOutcome(content=resp.content or "", iterations=1, stop_reason="final")
+                content = outcome.content or ""
         except ProviderError as exc:
             failure = classify_provider_error(str(exc), exc)
             from agent.orchestrator.recovery_policy import narrate_failure
