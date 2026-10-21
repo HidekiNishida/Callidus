@@ -130,6 +130,9 @@ class Settings(BaseSettings):
     # Runtime de automações dentro da API. O supervisor nativo (`callidus-supervisor`)
     # usa o mesmo núcleo e funciona sem a interface.
     enable_automation_supervisor: bool = True
+    # Fuso padrão das automações criadas pelo chat. Sem esta configuração, o
+    # interpretador temporal usa o fuso do Brasil (documentado no módulo).
+    automation_timezone: str = "America/Sao_Paulo"
     # Segundos entre tiques do runtime de automações.
     automation_tick_seconds: float = 5.0
     # Teto de execuções de automação por tique (protege contra rajada de disparos).

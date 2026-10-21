@@ -121,6 +121,138 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Ignora `.venv/`, `data/`, `__pycache__/`, `.pytest_cache/`, backups, `*.bak`, `*.pyc`.
 
+### `scripts/chat_automation_manual.py`
+
+**Propósito:** Validação manual com o modelo real (gpt-oss:20b via Ollama).
+
+- `_one(session, project, provider, settings, objective: str, conversation_id) -> str` — Roda uma conversa (tarefa + run) e devolve a resposta final.
+- `converse(messages: list[str], *, model: str=MODEL) -> list[str]` — Roda uma sequência de conversas com o modelo local.
+- `main() -> None` — Ponto de entrada: as mensagens vêm da linha de comando.
+
+### `src/agent/automation/chat_service.py`
+
+**Propósito:** aplicar, pelo chat, as operações do subsistema de automações.
+
+- `AutomationChatError(RuntimeError)` — Falha de negócio na operação de automação pedida pelo chat.
+- `__init__(message: str, **payload: Any) -> None` — Cria o erro com o detalhe da falha.
+- `AutomationChatService` — Operações de automação disponíveis ao chat.
+- `__init__(session: Session, settings: Settings | None=None, *, project_id: uuid.UUID | str | None=None, conversation_id: uuid.UUID | str | None=None) -> None` — Cria o serviço ligado a uma sessão.
+- `_await_terminal(firing_id: uuid.UUID, *, timeout: float) -> None` — Espera o disparo alcançar um estado terminal.
+- `_build_action(*, action_kind: str, objective: str, command: list[str] | None, script: str | None, conversation_id: str | None, objective_mode: str, model_id: str | None, provider: str | None, allow_scripts: bool, allowed_commands: list[str] | None, allowed_paths: list[str] | None) -> tuple[Any, PermissionSpec]` — Monta a ação e as permissões da automação.
+- `_build_dependencies(dependencies: list[dict[str, Any]] | None) -> list[DependencySpec]` — Valida as dependências pedidas.
+- `_build_trigger(*, schedule: str | None, cron: str | None, run_at: str | None, interval_seconds: int | None, timezone: str) -> TriggerSpec` — Monta o gatilho a partir do que o usuário pediu.
+- `_confirmation_token(row: AutomationModel) -> str` — Token que liga a confirmação à definição apresentada.
+- `_describe_execution(result: dict[str, Any]) -> str` — Texto que separa os três estados: disparo registrado, run iniciado, objetivo concluído.
+- `_existing_conversation(conversation_id: str | None) -> str | None` — Conversa a associar, quando ela realmente existe no banco.
+- `_find_duplicate(definition: AutomationDefinition) -> AutomationModel | None` — Procura uma automação equivalente, para não duplicar registros.
+- `_present_firing(row: AutomationFiringModel) -> dict[str, Any]` — Serializa um disparo.
+- `_readiness(row: AutomationModel) -> dict[str, Any]` — Verifica as dependências declaradas da automação.
+- `_recent_firings(automation_id: uuid.UUID, *, limit: int=20) -> list[dict[str, Any]]` — Disparos recentes de uma automação.
+- `_resolve(automation_id: str | None, query: str | None) -> AutomationModel` — Resolve a automação pedida pelo identificador ou pelo nome.
+- `_resolve_timezone(timezone: str | None) -> str` — Fuso da automação: o pedido, o configurado ou o padrão documentado.
+- `_select_firings(automation_id: uuid.UUID)` — Consulta base dos disparos de uma automação.
+- `_summarize(row: AutomationModel, *, brief: bool=False) -> dict[str, Any]` — Resumo estruturado de uma automação (sem objeto ORM).
+- `_supervisor()` — Supervisor ligado ao mesmo banco da conversa.
+- `_validate_trigger(spec: TriggerSpec) -> None` — Confere que o gatilho é executável pelo runtime.
+- `cancel_pending(automation_id: str) -> dict[str, Any]` — Cancela os disparos pendentes de uma automação.
+- `create(*, name: str, objective: str, schedule: str | None=None, cron: str | None=None, run_at: str | None=None, interval_seconds: int | None=None, action_kind: str='callidus', command: list[str] | None=None, script: str | None=None, timezone: str | None=None, description: str | None=None, dependencies: list[dict[str, Any]] | None=None, allow_scripts: bool=False, allowed_commands: list[str] | None=None, allowed_paths: list[str] | None=None, conversation_id: str | None=None, objective_mode: str=ObjectiveMode.FROZEN.value, model_id: str | None=None, provider: str | None=None) -> dict[str, Any]` — Cria uma automação **desabilitada**, com a definição validada.
+- `delete(automation_id: str, *, confirm: bool=False) -> dict[str, Any]` — Remove uma automação.
+- `diagnose() -> dict[str, Any]` — Diagnóstico do runtime: automações, próximos disparos e pendências.
+- `get(automation_id: str | None=None, *, query: str | None=None) -> dict[str, Any]` — Detalha uma automação, resolvendo o identificador ou o nome citado.
+- `history(automation_id: str, *, limit: int=20) -> dict[str, Any]` — Lista os disparos de uma automação, do mais recente para o mais antigo.
+- `list(*, state: str | None=None, query: str | None=None, limit: int=50) -> dict[str, Any]` — Lista as automações visíveis para a conversa.
+- `run_now(automation_id: str, *, wait: bool=False) -> dict[str, Any]` — Executa a automação imediatamente, sem esperar o próximo horário.
+- `runtime_status() -> dict[str, Any]` — Estado do runtime de automações e do serviço nativo.
+- `set_state(automation_id: str, state: str, *, confirmation_token: str | None=None) -> dict[str, Any]` — Muda o estado da automação (ativar, suspender, desativar).
+- `test(automation_id: str, *, execute: bool=False) -> dict[str, Any]` — Verifica a prontidão da automação e, opcionalmente, dispara um teste.
+- `update(automation_id: str, *, name: str | None=None, description: str | None=None, objective: str | None=None, schedule: str | None=None, cron: str | None=None, run_at: str | None=None, interval_seconds: int | None=None, timezone: str | None=None, dependencies: list[dict[str, Any]] | None=None, missed_policy: str | None=None, confirm: bool=False) -> dict[str, Any]` — Altera uma automação existente.
+- `_heartbeat_is_fresh(heartbeat: dict[str, Any]) -> bool` — Diz se o batimento do runtime é recente.
+- `_local_label(moment: datetime | None, timezone: str) -> str | None` — Instante no fuso local, em texto.
+- `_normalize(text: str) -> str` — Texto em minúsculas e sem acentos, para comparar nomes.
+- `_parse_instant(value: str, timezone: str) -> datetime` — Converte um texto de instante em datetime com fuso.
+- `_uuid_or_none(value: Any) -> uuid.UUID | None` — Converte um valor em UUID, tolerando ausência e texto inválido.
+
+### `src/agent/automation/intent.py`
+
+**Propósito:** reconhecer quando o pedido da conversa é sobre tarefas agendadas.
+
+- `is_automation_request(text: str, *, previous: list[str] | None=None) -> bool` — Diz se o pedido é sobre tarefas agendadas.
+- `is_confirmation(text: str) -> bool` — Diz se o texto é uma confirmação curta de algo já apresentado.
+- `looks_like_schedule(text: str) -> bool` — Diz se o texto carrega uma expressão de horário ou recorrência.
+- `normalize_text(text: str) -> str` — Texto em minúsculas e sem acentos, para comparação tolerante.
+
+### `src/agent/automation/natural.py`
+
+**Propósito:** entender horários, datas e recorrências escritos em linguagem natural.
+
+- `ScheduleIntent` — Resultado da interpretação de um texto de agendamento.
+- `needs_clarification() -> bool` — Diz se falta informação para o usuário.
+- `resolved() -> bool` — Diz se o texto virou um gatilho utilizável.
+- `_amount(text: str) -> float` — Valor numérico de um número escrito por extenso ou em dígitos.
+- `_cron_dow(weekday: int) -> int` — Converte o dia da semana do Python (0 = segunda) para o do cron (0 = domingo).
+- `_day_of_month(text: str) -> int | None` — Dia do mês citado no texto ("dia 15", "15 de março").
+- `_format_local(moment: datetime, timezone: str) -> str` — Formata um instante no fuso local, para a prévia e para a resposta ao usuário.
+- `_human_interval(seconds: int) -> str` — Duração em linguagem legível.
+- `_match_interval(text: str) -> int | None` — Procura uma recorrência de intervalo fixo no texto.
+- `_match_next_weekday(text: str, today: date, current: date | None) -> tuple[date | None, str]` — Reconhece "na próxima segunda": uma ocorrência, não uma recorrência.
+- `_match_recurrence(text: str) -> tuple[str | None, str]` — Reconhece a recorrência do texto.
+- `_match_relative_date(text: str, reference: datetime) -> tuple[date | None, tuple[int, int] | None, str]` — Procura uma data relativa ou absoluta no texto.
+- `_match_time(text: str) -> tuple[int, int] | None` — Procura um horário de parede no texto ("9h", "8h30", "14:00", "às 9").
+- `_next_weekday(today: date, weekday: int) -> date` — Próxima data de um dia da semana (o próprio dia conta, quando é hoje).
+- `_now_in(timezone: str) -> datetime` — Instante atual no fuso informado.
+- `_remove(text: str, pattern: re.Pattern[str]) -> tuple[str, str | None]` — Separa um trecho do texto, devolvendo o resto e o trecho encontrado.
+- `_strip_accents(text: str) -> str` — Remove acentos e baixa a caixa, para comparar texto em português.
+- `_weekday_from(text: str) -> int | None` — Dia da semana citado no texto.
+- `describe_cron(expression: str) -> str` — Descreve uma expressão cron em português, quando o padrão é reconhecível.
+- `describe_trigger(trigger: TriggerSpec | None, *, timezone: str | None=None) -> str` — Descreve um gatilho em linguagem legível.
+- `parse_schedule(text: str, *, now: datetime | None=None, timezone: str | None=None) -> ScheduleIntent` — Interpreta um pedido de horário escrito em linguagem natural.
+
+### `src/agent/orchestrator/execution/automation_operation.py`
+
+**Propósito:** executar a etapa de automação — o modelo fala com as ferramentas de tarefas agendadas.
+
+- `AutomationOperation` — Etapa de automação: o modelo opera as ferramentas de tarefas agendadas.
+- `__init__(executor: Any) -> None` — Guarda o executor responsável pela etapa.
+- `_context_block(project: Any, task: Any) -> str` — Contexto que o modelo precisa para resolver referências ("essa automação").
+- `_conversation_history(task: Any, *, limit: int=5) -> list[str]` — Últimas mensagens da conversa, para resolver «esta tarefa».
+- `_existing_automations(project: Any) -> list[str]` — Resumo das automações do projeto, com identificador e estado.
+- `_runtime()` — Colaboradores da execução (sessão, configurações, ferramentas).
+- `run(run: Any, project: Any, task: Any, config: dict, root_path: str, ctx: Any) -> dict[str, Any]` — Executa a etapa de automação e devolve o desfecho.
+- `_automation_tool_ids() -> tuple[str, ...]` — Identificadores das ferramentas de automação.
+- `_compose(outcome: ToolLoopOutcome, results: list[dict[str, Any]]) -> str` — Monta o texto entregue ao usuário a partir do estado real.
+
+### `src/agent/tools/automations.py`
+
+**Propósito:** expor ao modelo as operações de automação como ferramentas do chat.
+
+- `_call(ctx: ToolContext, func, *args, **kwargs) -> dict[str, Any]` — Executa uma operação do serviço e devolve o resultado no formato da ferramenta.
+- `_cancel(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Cancela os disparos pendentes de uma automação.
+- `_create(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Cria uma automação desabilitada, a partir de um pedido em linguagem natural.
+- `_delete(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Remove uma automação, exigindo confirmação.
+- `_disable(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Desativa uma automação.
+- `_enable(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Ativa uma automação, exigindo o token da prévia confirmada.
+- `_fail(exc: AutomationChatError) -> dict[str, Any]` — Transforma um erro de negócio no resultado que o modelo recebe.
+- `_get(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Detalha uma automação.
+- `_history(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Lista os disparos de uma automação.
+- `_list(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Lista as automações do projeto.
+- `_one_line(result: dict[str, Any]) -> str` — Resumo de uma linha do resultado.
+- `_opt_int(value: Any) -> int | None` — Inteiro de um argumento, ignorando valores vazios.
+- `_opt_list(value: Any) -> list[str] | None` — Lista de textos de um argumento.
+- `_opt_objects(value: Any) -> list[dict[str, Any]] | None` — Lista de objetos de um argumento.
+- `_opt_text(value: Any) -> str | None` — Texto de um argumento, ignorando valores vazios.
+- `_render_automation(automation: dict[str, Any]) -> str` — Texto de uma automação.
+- `_render_diagnostics(report: dict[str, Any]) -> str` — Texto do diagnóstico do supervisor.
+- `_run_now(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Executa a automação imediatamente.
+- `_schema(properties: dict[str, Any], required: list[str] | None=None) -> dict[str, Any]` — Monta um JSON Schema de objeto para o argumento de uma ferramenta.
+- `_service(ctx: ToolContext) -> AutomationChatService` — Serviço de automações ligado ao contexto da ferramenta.
+- `_supervisor_status(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Estado do runtime de automações e diagnóstico do supervisor.
+- `_suspend(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Suspende uma automação.
+- `_test(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Verifica a prontidão de uma automação (e só executa quando pedido).
+- `_update(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Altera uma automação existente.
+- `_with_content(result: dict[str, Any]) -> dict[str, Any]` — Acrescenta ao resultado o texto que o modelo lê.
+- `register_all(registry: ToolRegistry) -> None` — Registra no registro as ferramentas de automação.
+- `render_result(result: dict[str, Any]) -> str` — Texto que o modelo lê: os fatos da operação, sem ruído.
+
 ### `test_server.py`
 
 **Propósito:** Teste manual rápido do servidor (inicia uvicorn, faz requests básicos).
@@ -1372,7 +1504,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `plan_with_model(provider: LLMProvider, profile: ModelProfile, objective: str, context_snippet: str, *, language: str='pt', browser_mode: str='off', requirements: list[dict[str, Any]] | None=None) -> DecompositionResult | None` — Monta o prompt de decomposição (idioma, estado do navegador, contexto do projeto, bloco de requisitos, catálogo de ferramentas) e pede um JSON ao modelo via `observed_chat`. Entrada: provider, perfil, objetivo, contexto e requisitos; saída: `DecompositionResult` validado ou `None` quando a resposta não é JSON válido/sem subtarefas.
 - `profile_from_run_config(run_config: dict[str, Any], settings: Settings) -> ModelProfile` — Deriva o `ModelProfile` (limite de contexto, orçamento de entrada, reserva de saída) da configuração da run e dos padrões das settings. Entradas: config e settings; saída: perfil do modelo.
 - `requirements_block(requirements: list[dict[str, Any]] | None) -> str` — Monta o bloco de texto com os requisitos que o plano precisa cobrir e instrui o modelo a declarar `metadata.covers` em cada subtarefa. Entrada: lista de requisitos; saída: string (vazia quando não há requisitos).
-- `resolve_decomposition_plan(*, settings: Settings, run_config: dict[str, Any], objective: str, project_root: str, provider: LLMProvider | None=None, requirements: list[dict[str, Any]] | None=None) -> tuple[DecompositionResult | None, str]` — builtin e2e → modelo → template genérico → mock.
+- `automation_plan(objective: str) -> DecompositionResult` — Plano fixo de uma etapa para pedidos sobre tarefas agendadas.
+- `resolve_decomposition_plan(*, settings: Settings, run_config: dict[str, Any], objective: str, project_root: str, provider: LLMProvider | None=None, requirements: list[dict[str, Any]] | None=None, previous_objectives: list[str] | None=None) -> tuple[DecompositionResult | None, str]` — builtin e2e → automação → modelo → template genérico → mock; `previous_objectives` traz o contexto da conversa.
 - `seal_repeated_steps(parent_title: str, plan: DecompositionResult) -> DecompositionResult` — filho com mesmo título do pai vira model_operation.
 
 - `norm(items) → list[str]` — Normaliza uma lista de títulos para comparação.
@@ -1514,6 +1647,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `RunOrchestrator._stall_run(run: ExecutionRunModel, root: TaskModel, reason: str) -> dict[str, Any]` — Encerra o run como falho quando nada pode avançar: bloqueia a raiz, salva o relatório com pendências e requisitos e emite `run.failed`. Entrada: run, raiz e motivo; saída: dicionário de ação `run_stalled`.
 - `RunOrchestrator._step_body(run_id: uuid.UUID) -> dict[str, Any]` — Corpo do passo: checa limites, replaneja, escolhe a tarefa, e conforme o status avança planejamento, promoção, execução ou verificação, fechando o run quando o aceite global é aprovado. Entrada: id do run; saída: dicionário de ação do passo.
 - `RunOrchestrator._subtree_ids(root_id: uuid.UUID, tasks: list[TaskModel]) -> set[uuid.UUID]` — Devolve os ids de todas as descendentes da raiz, fechando a relação `parent_id` iterativamente sobre a lista de tarefas dada. Entrada: id da raiz e lista de tarefas; saída: conjunto de UUIDs.
+- `RunOrchestrator._conversation_objectives(task: TaskModel, limit: int=5) -> list[str]` — Pedidos anteriores da mesma conversa, do mais recente ao mais antigo; é o que permite reconhecer uma confirmação como resposta a um pedido de automação.
 - `RunOrchestrator._task_requirements(task: TaskModel) -> list[dict]` — Lista os requisitos obrigatórios que a etapa precisa atender, combinando os requisitos da raiz com a cobertura herdada da tarefa. Entrada: modelo da tarefa; saída: lista de requisitos com marcação de parcial.
 - `RunOrchestrator._validate_plan(run: ExecutionRunModel, parent: TaskModel, config: dict[str, Any], work_root: str, spec_issues: list | None=None) -> PlanValidation` — Valida o plano do pai e o repara quando possível, usando o limite de tarefas das configurações. Entrada: run, pai, configuração, raiz de trabalho e issues extras da spec; saída: `PlanValidation`.
 - `RunOrchestrator._work_root(project: ProjectModel, task: TaskModel | None) -> str` — Calcula a raiz de trabalho efetiva do projeto, considerando a conversa da tarefa. Entrada: projeto e tarefa opcional; saída: caminho da raiz de trabalho.
@@ -2499,6 +2633,26 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [observe-core.test.mjs](/tests/web/observe-core.test.mjs)
 - Arquivo: [observe-stream.test.mjs](/tests/web/observe-stream.test.mjs)
 - Arquivo: [replay.mjs](/tests/web/replay.mjs)
+
+### `tests/test_automation_chat_execution.py`
+
+**Propósito:** Verificar que a automação criada pelo chat realmente dispara, de uma vez só, e sobrevive ao reinício.
+
+
+### `tests/test_automation_chat_flow.py`
+
+**Propósito:** Verificar o caminho completo do chat: pedido em linguagem natural, ferramentas, estado persistido e resposta.
+
+
+### `tests/test_automation_chat_tools.py`
+
+**Propósito:** Verificar as ferramentas de automação oferecidas ao chat e o serviço que elas chamam.
+
+
+### `tests/test_automation_natural.py`
+
+**Propósito:** Verificar a interpretação de horários em linguagem natural e a detecção de intenção de automação.
+
 
 ### `tests/web/observe-core.test.mjs`
 

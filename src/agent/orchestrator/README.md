@@ -93,12 +93,28 @@ PENDING → PLANNING → READY → RUNNING → VERIFYING → COMPLETED
 ## 🔄 Decomposição — Ordem de Prioridade
 
 1. **Builtin E2E** — objetivo contém `e2e` ou `calc.py` → plano fixo de 3 etapas (inspecionar, corrigir, testar)
-2. **Direct Answer** — pergunta curta sem pedido de alteração → 1 etapa `final_answer`
-3. **Modelo (Ollama/llama.cpp)** — `plan_with_model` com prompt estruturado (ferramentas, requisitos, capability_line)
-4. **Template Genérico** — 3 etapas: inspecionar → aplicar (model_operation) → verificar (pytest)
-5. **Mock Fallback** — se `ALLOW_MOCK_FALLBACK` ou provider=mock
+2. **Automação** — pedido sobre tarefa agendada → plano fixo de 1 etapa (`automation_operation`), com as ferramentas de automação
+3. **Direct Answer** — pergunta curta sem pedido de alteração → 1 etapa `final_answer`
+4. **Modelo (Ollama/llama.cpp)** — `plan_with_model` com prompt estruturado (ferramentas, requisitos, capability_line)
+5. **Template Genérico** — 3 etapas: inspecionar → aplicar (model_operation) → verificar (pytest)
+6. **Mock Fallback** — se `ALLOW_MOCK_FALLBACK` ou provider=mock
 
 > `align_verification`: pedidos de página/site trocam `pytest` por `file_contains <html>`.
+
+## 💬 Etapa de automação (`execution/automation_operation.py`)
+
+Quando o pedido é sobre uma tarefa agendada, o plano é fixo: **uma** etapa que dá
+ao modelo apenas as 13 ferramentas de automação e responde com o estado real
+devolvido por elas. O modelo decide *qual* ferramenta chamar; quem decide *o que
+é uma automação* é o backend (interpretação de horário, validação do gatilho,
+confirmação e estado).
+
+O contexto da etapa leva o estado persistido (as automações do projeto, com id,
+estado, agenda e token de confirmação) e as últimas mensagens da conversa — é o
+que permite resolver «essa automação» e reconhecer «sim, pode ativar» como a
+confirmação do pedido anterior.
+
+Detalhes: [docs/architecture/automacoes.md](/docs/architecture/automacoes.md#12-automação-pela-conversa).
 
 ## 🧠 Estratégia Profissional e Decomposição Recursiva
 

@@ -26,21 +26,15 @@ from agent.domain.failures import (
 )
 from agent.domain.schemas import MemoryCreate, TaskStatusUpdate
 from agent.i18n.locale import detect_language
+from agent.observability import emit, get_bus, observe, set_task
+from agent.orchestrator.approach import approach_of, approach_signature
+from agent.orchestrator.atomizer import should_decompose_further
 from agent.orchestrator.consolidation import (
     children_of,
     pending_reason,
     settled,
     verification_evidence_ok,
 )
-from agent.orchestrator.global_verify import (
-    ensure_global_verification_task,
-    correct_requirement_gaps,
-    evaluate_global_acceptance,
-    reopen_verification_gaps,
-    requirements_report,
-)
-from agent.services.contract_service import ContractService
-from agent.orchestrator.atomizer import should_decompose_further
 from agent.orchestrator.decomposition import (
     apply_decomposition,
     executable_leaf,
@@ -48,28 +42,6 @@ from agent.orchestrator.decomposition import (
     resolve_decomposition_plan,
     seal_repeated_steps,
 )
-from agent.orchestrator.planner import ensure_canonical_memory_for_objective
-from agent.orchestrator.plan_validation import (
-    PlanValidation,
-    active_children,
-    plan_fingerprint,
-    sanitize_spec,
-    summarize,
-    validate_and_repair,
-)
-from agent.observability import emit, get_bus, observe, set_task
-from agent.orchestrator.progress import made_progress, progress_state
-from agent.orchestrator.approach import approach_of, approach_signature
-from agent.orchestrator.replan import replan_decision, replan_under
-from agent.orchestrator.stagnation import (
-    LIMIT_LABELS,
-    diagnose,
-    limit_reached,
-    limits_for,
-    next_action_for_limit,
-    problem_attempts,
-)
-from agent.orchestrator.requirements import effective_covers, ensure_requirements, root_of
 from agent.orchestrator.execution import (
     ExecutionRuntime,
     TaskExecutor,
@@ -80,6 +52,37 @@ from agent.orchestrator.execution import (
     select_provider,
     work_root,
 )
+from agent.orchestrator.global_verify import (
+    correct_requirement_gaps,
+    ensure_global_verification_task,
+    evaluate_global_acceptance,
+    reopen_verification_gaps,
+    requirements_report,
+)
+from agent.orchestrator.plan_validation import (
+    PlanValidation,
+    active_children,
+    plan_fingerprint,
+    sanitize_spec,
+    summarize,
+    validate_and_repair,
+)
+from agent.orchestrator.planner import ensure_canonical_memory_for_objective
+from agent.orchestrator.progress import made_progress, progress_state
+from agent.orchestrator.replan import replan_decision, replan_under
+from agent.orchestrator.requirements import (
+    effective_covers,
+    ensure_requirements,
+    root_of,
+)
+from agent.orchestrator.stagnation import (
+    LIMIT_LABELS,
+    diagnose,
+    limit_reached,
+    limits_for,
+    next_action_for_limit,
+    problem_attempts,
+)
 from agent.persistence.models import (
     EventLogModel,
     ExecutionRunModel,
@@ -89,6 +92,7 @@ from agent.persistence.models import (
 from agent.providers.base import LLMProvider, ModelProfile
 from agent.services.agent_service import AgentService
 from agent.services.attempt_service import AttemptService
+from agent.services.contract_service import ContractService
 from agent.services.project_service import ProjectService
 from agent.services.task_service import TaskService
 from agent.tools.registry import build_default_registry
@@ -310,6 +314,41 @@ class RunOrchestrator:
             for r in reqs
             if r["id"] in covered and r["applicability"] == "obrigatório"
         ]
+
+    def _conversation_objectives(self, task: TaskModel, limit: int = 5) -> list[str]:
+        """Pedidos anteriores da mesma conversa, do mais recente ao mais antigo.
+
+        Args:
+            task: etapa em curso.
+            limit: número máximo de pedidos devolvidos.
+
+        Returns:
+            A lista de objetivos anteriores.
+
+        Observações:
+            É o que permite reconhecer uma confirmação ("sim, pode ativar") como
+            resposta a um pedido de automação, e não como um pedido novo.
+        """
+        conversation_id = getattr(task, "conversation_id", None)
+        if not conversation_id:
+            return []
+        rows = list(
+            self._session.scalars(
+                select(TaskModel)
+                .where(TaskModel.conversation_id == conversation_id)
+                .order_by(TaskModel.created_at.desc())
+                .limit(limit + 1)
+            ).all()
+        )
+        objectives: list[str] = []
+        for row in rows:
+            if str(row.id) == str(task.id):
+                continue
+            if row.objective:
+                objectives.append(row.objective)
+            if len(objectives) >= limit:
+                break
+        return objectives
 
     def _recursion_guard(self, run: ExecutionRunModel, task: TaskModel) -> str | None:
         """Proteção contra recursão, separada da decisão de dividir: plano que repete um ancestral,
@@ -1018,6 +1057,7 @@ class RunOrchestrator:
                         if str(config.get("provider") or self._settings.default_provider) != "mock"
                         else None,
                         requirements=self._task_requirements(task),
+                        previous_objectives=self._conversation_objectives(task),
                     )
                 apply_provider_usage(task, provider)
                 if plan is None or not plan.subtasks:
@@ -1246,7 +1286,10 @@ class RunOrchestrator:
                 report["sources"] = result.get("sources") or []
                 root.consolidated_result_json = report
                 return
-        from agent.orchestrator.closing import compose_final_markdown, verification_footer
+        from agent.orchestrator.closing import (
+            compose_final_markdown,
+            verification_footer,
+        )
 
         stages = [
             {"title": child.title, "status": child.status, "sources": []}

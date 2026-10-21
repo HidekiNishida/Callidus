@@ -45,6 +45,25 @@ MUTATION_TOOLS: tuple[str, ...] = ("edit_file", "write_file")
 
 OPERATION_TOOLS: tuple[str, ...] = INSPECTION_TOOLS + MUTATION_TOOLS
 
+# Ferramentas de automação: o outro eixo do chat — o que fazer **mais tarde**, e não
+# agora. Elas entram sozinhas na etapa de automação (nunca na de edição de arquivos),
+# para que um modelo pequeno não precise escolher entre dois mundos incomparáveis.
+AUTOMATION_TOOLS: tuple[str, ...] = (
+    "automation_create",
+    "automation_list",
+    "automation_get",
+    "automation_update",
+    "automation_enable",
+    "automation_suspend",
+    "automation_disable",
+    "automation_run_now",
+    "automation_test",
+    "automation_history",
+    "automation_cancel",
+    "automation_delete",
+    "automation_supervisor_status",
+)
+
 _TYPE_BY_KIND = {
     "str": "string",
     "string": "string",

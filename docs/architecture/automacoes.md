@@ -21,7 +21,8 @@ máquina.
 9. [9. Confiabilidade](#9-confiabilidade)
 10. [10. Segurança](#10-segurança)
 11. [11. API](#11-api)
-12. [12. Limitações conhecidas](#12-limitações-conhecidas)
+12. [12. Automação pela conversa](#12-automação-pela-conversa)
+13. [13. Limitações conhecidas](#13-limitações-conhecidas)
 
 ---
 
@@ -330,7 +331,103 @@ nativo.
 
 ---
 
-## 12. Limitações conhecidas
+## 12. Automação pela conversa
+
+O mesmo runtime, dirigido pela conversa. O usuário não escreve cron, não consulta
+a API e não precisa do painel: ele **pede**.
+
+```mermaid
+flowchart TD
+  M["Mensagem do usuário"] --> I["intent.py<br/>é pedido de automação?"]
+  I -->|não| N["Caminho normal do orquestrador"]
+  I -->|sim| P["Plano fixo: etapa de automação"]
+  P --> T["tools/automations.py<br/>13 ferramentas"]
+  T --> S["chat_service.py<br/>valida, grava, resume"]
+  S --> D["store.py<br/>definição desabilitada"]
+  S --> U["Usuário confirma"]
+  U --> T
+  T --> R["supervisor.py<br/>dispara no horário"]
+```
+
+### 12.1 As ferramentas
+
+| Ferramenta | O que faz |
+|------------|-----------|
+| `automation_create` | Cria a automação **desabilitada** e devolve a prévia com o token de confirmação |
+| `automation_list` / `automation_get` | Consultam as automações do projeto (por id ou por nome) |
+| `automation_update` | Altera horário, recorrência, objetivo ou nome |
+| `automation_enable` / `automation_suspend` / `automation_disable` | Mudam o estado |
+| `automation_run_now` | Executa agora (disparo manual com chave própria) |
+| `automation_test` | Verifica a prontidão; só executa com pedido explícito |
+| `automation_history` / `automation_cancel` | Histórico de disparos e cancelamento de pendentes |
+| `automation_delete` | Remove, com `confirm=true` |
+| `automation_supervisor_status` | Estado do runtime e diagnóstico do supervisor |
+
+As ferramentas entram sozinhas na etapa de automação
+([`automation_operation.py`](/src/agent/orchestrator/execution/automation_operation.py)),
+nunca na etapa de edição de arquivos: um modelo pequeno não precisa escolher
+entre dois mundos incomparáveis. Elas chamam os **serviços** — não HTTP contra a
+própria API.
+
+### 12.2 Horário em linguagem natural
+
+[`natural.py`](/src/agent/automation/natural.py) traduz o texto do usuário no
+mesmo `TriggerSpec` que a API HTTP recebe:
+
+| O usuário diz | Vira |
+|---------------|-------|
+| «todos os dias às 9h» | `cron` `0 9 * * *` |
+| «toda segunda-feira às 8h30» | `cron` `30 8 * * 1` |
+| «amanhã às 14h» | `once` com o instante resolvido no fuso do usuário |
+| «a cada quatro horas» | `interval` de 14400 s |
+| «no último dia de cada mês às 23h» | `cron` `0 23 L * *` |
+| «de manhã», «toda semana» (sem dia) | **pergunta** — nada é inventado |
+
+A resolução usa a data e a hora reais do processo e o fuso configurado
+(`AUTOMATION_TIMEZONE`, padrão `America/Sao_Paulo`). O gatilho resultante é
+validado pelo contrato existente e calculado pelo mecanismo temporal existente —
+inclusive no horário de verão.
+
+### 12.3 Confirmação
+
+A criação **não ativa**. A prévia mostra nome, objetivo, agenda, fuso, próximo
+disparo, dependências e o estado do runtime; e devolve um `confirmation_token` —
+o hash dos campos que definem a automação.
+
+`automation_enable` só aceita o token da definição apresentada. Se o horário, a
+ação, o escopo ou as permissões mudaram depois da prévia, o token muda e a
+confirmação precisa ser refeita. Numa automação habilitada, uma alteração
+material sem confirmação explícita **suspende** a automação até o usuário
+confirmar a nova definição.
+
+### 12.4 O que o usuário vê
+
+A resposta da conversa é montada a partir do **estado persistido**, não do que o
+modelo disse. Três estados são distinguíveis e nunca confundidos:
+
+| Situação | O que a conversa diz |
+|----------|---------------------|
+| Automação persistida e desabilitada | «criada e **desabilitada**; falta a confirmação» + o próximo disparo previsto |
+| Automação habilitada, supervisor vivo só com o processo aberto | «ativada» + a limitação: ao fechar o Callidus, os disparos param |
+| Automação habilitada com o serviço nativo instalado | «ativada» + o runtime como `servico_nativo` |
+
+Quando nenhum runtime está de pé, a conversa diz isso — e diz que o disparo fica
+pendente até o Callidus voltar. O Callidus **não** promete execução com a
+máquina desligada; a retomada depois de ligar o aparelho é outra capacidade.
+
+### 12.5 Onde ficam as responsabilidades
+
+| Camada | Onde | O que garante |
+|--------|------|---------------|
+| Intenção | [`intent.py`](/src/agent/automation/intent.py) | Decide se a mensagem é sobre automação (inclusive uma confirmação curta vinda do contexto) |
+| Tempo | [`natural.py`](/src/agent/automation/natural.py) | Texto → gatilho validado;ambigidade vira pergunta |
+| Aplicação | [`chat_service.py`](/src/agent/automation/chat_service.py) | Valida, grava, resume, confirma, dispara, diagnostica |
+| Apresentação | [`tools/automations.py`](/src/agent/tools/automations.py) | Argumentos tipados e resultado estruturado para o modelo |
+| Execução | [`supervisor.py`](/src/agent/automation/supervisor.py) + [`executor.py`](/src/agent/automation/executor.py) | O disparo no horário, com a idempotência de sempre |
+
+---
+
+## 13. Limitações conhecidas
 
 - **Máquina desligada**: nada executa. A retomada depende do arranque nativo.
 - **Escopo do usuário**: a instalação por usuário só sobe no login (macOS, Linux) ou

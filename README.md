@@ -502,6 +502,32 @@ Windows usa o Agendador de Tarefas. O mesmo núcleo roda nas três.
 Detalhes: [docs/architecture/automacoes.md](/docs/architecture/automacoes.md) ·
 código: [src/agent/automation/README.md](/src/agent/automation/README.md).
 
+### Automações pela conversa (peça em português)
+
+Você também pede as automações **no chat**, sem escrever cron:
+
+> «Todos os dias às 9h, verifique os testes dos meus projetos e me avise caso algum
+> esteja falhando.»
+
+O Callidus entende o horário, mostra a prévia (nome, objetivo, agenda, fuso,
+próximo disparo) e **espera sua confirmação** antes de ativar. Depois disso, a
+conversa também administra: «pause o monitoramento», «mude para as 10h»,
+«execute agora», «quais automações existem?», «por que ela não rodou hoje?» e
+«exclua a automação de relatório semanal».
+
+- **O horário é interpretado, não adivinhado**: «amanhã às 14h», «toda
+  segunda-feira às 8h30», «a cada quatro horas» e «no último dia do mês» viram
+  gatilho validado; «de manhã» vira pergunta, não escolha.
+- **A criação não ativa**: a automação nasce desabilitada e só é ativada com o
+  token da definição que você viu — se o horário mudar, a confirmação é refeita.
+- **A resposta é o estado real**: identificador, estado, próximo disparo e
+  histórico vêm do banco, não da conversa.
+- **O runtime é honesto**: se o supervisor não estiver rodando, a conversa diz
+  que o disparo fica pendente — nada promete execução com a máquina desligada.
+
+Detalhes: [docs/architecture/automacoes.md](/docs/architecture/automacoes.md#12-automação-pela-conversa) ·
+código: [src/agent/tools/README.md](/src/agent/tools/README.md).
+
 ### Configurar pela interface web
 
 A aba **Provedores** (`http://127.0.0.1:8765/`) cria, edita e testa provedores sem editar arquivo:

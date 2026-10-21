@@ -49,6 +49,10 @@ class ToolContext:
         memory_saver: callback opcional para gravar memória.
         browser_mode: modo do navegador (`off` por padrão).
         remote: configuração do computador remoto, quando o projeto roda em outro servidor.
+        session: sessão do banco da execução, quando a ferramenta precisar do estado persistente.
+        project_id: projeto da conversa, para as ferramentas que pertencem a um projeto.
+        conversation_id: conversa em curso, para as ferramentas que pertencem a uma conversa.
+        settings: configurações do processo, para as ferramentas que dependem delas.
     """
 
     project_root: str
@@ -58,6 +62,12 @@ class ToolContext:
     browser_mode: str = "off"
     # Configuração do computador remoto (quando o projeto roda em outro servidor).
     remote: Any = None
+    # Sessão do banco da execução: as ferramentas que consultam o estado persistente
+    # (as automações) usam os serviços, e não HTTP contra a própria API.
+    session: Any = None
+    project_id: str | None = None
+    conversation_id: str | None = None
+    settings: Any = None
 
 
 ToolHandler = Callable[[ToolContext, dict[str, Any]], Awaitable[dict[str, Any]]]
@@ -280,10 +290,13 @@ def build_default_registry() -> ToolRegistry:
     """Monta o registro com todas as ferramentas embutidas.
 
     Returns:
-        O registro pronto para uso, com as ferramentas de `agent.tools.builtins` cadastradas.
+        O registro pronto para uso, com as ferramentas de `agent.tools.builtins` e
+        `agent.tools.automations` cadastradas.
     """
+    from agent.tools import automations as automation_tools
     from agent.tools import builtins as built
 
     reg = ToolRegistry()
     built.register_all(reg)
+    automation_tools.register_all(reg)
     return reg

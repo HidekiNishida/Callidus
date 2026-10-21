@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from agent.automation.contracts import TriggerSpec
 from agent.automation.dispatcher import Dispatcher
@@ -407,13 +408,21 @@ class AutomationSupervisor:
 
     # ------------------------------------------------------------ diagnóstico
 
-    def status(self) -> dict[str, Any]:
+    def status(self, session: Session | None = None) -> dict[str, Any]:
         """Situação do runtime: automações, disparos e contadores.
+
+        Args:
+            session: sessão a usar; quando ausente, o supervisor abre a própria.
 
         Returns:
             O dicionário com o estado do runtime e o próximo disparo previsto.
+
+        Observações:
+            Quem já tem uma sessão aberta (a conversa do chat) passa a dela: assim o
+            estado lido é o mesmo que o da conversa, e não o do último commit.
         """
-        session = self._session_factory()
+        own = session is None
+        session = session or self._session_factory()
         try:
             automations = list(session.scalars(select(AutomationModel)).all())
             firings = list(session.scalars(select(AutomationFiringModel)).all())
@@ -441,7 +450,8 @@ class AutomationSupervisor:
                 "next_run_automation_id": str(upcoming[0].id) if upcoming else None,
             }
         finally:
-            session.close()
+            if own:
+                session.close()
 
     def _read_heartbeat(self, session) -> dict[str, Any] | None:
         """Batimento gravado pelo runtime em execução (visível de outro processo).
@@ -464,13 +474,21 @@ class AutomationSupervisor:
         payload["created_at"] = row.created_at.isoformat() if row.created_at else None
         return payload
 
-    def diagnose(self) -> dict[str, Any]:
+    def diagnose(self, session: Session | None = None) -> dict[str, Any]:
         """Diagnóstico detalhado: automações vencidas, dependências e disparos pendentes.
+
+        Args:
+            session: sessão a usar; quando ausente, o supervisor abre a própria.
 
         Returns:
             O dicionário com as automações, seus próximos disparos e os disparos pendentes.
+
+        Observações:
+            Quem já tem uma sessão aberta (a conversa do chat) passa a dela: assim o
+            diagnóstico vê o estado da conversa, e não o do último commit.
         """
-        session = self._session_factory()
+        own = session is None
+        session = session or self._session_factory()
         try:
             service = AutomationService(session)
             now = to_utc(datetime.now(timezone.utc))
@@ -529,7 +547,8 @@ class AutomationSupervisor:
                 ],
             }
         finally:
-            session.close()
+            if own:
+                session.close()
 
 
 def build_supervisor(settings: Settings | None = None) -> AutomationSupervisor:

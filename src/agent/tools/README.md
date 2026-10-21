@@ -1,4 +1,4 @@
-# Ferramentas (`tools/`) — Registro, Execução e 17 Builtins
+# Ferramentas (`tools/`) — Registro, Execução, 17 Builtins e 13 de Automação
 
 Ferramentas determinísticas que o agente executa no filesystem/projeto autorizado. Registro central com aliases, aprovação, timeouts e observabilidade.
 
@@ -8,6 +8,7 @@ Ferramentas determinísticas que o agente executa no filesystem/projeto autoriza
 |---------|---------|-----------|
 | [`registry.py`](registry.py) | `ToolRegistry`, `ToolSpec`, `ToolContext`, `build_default_registry`, `canonical_tool_id`, `current_call_id` | **Registro central** — specs, handlers, aliases, execução com eventos |
 | [`builtins.py`](builtins.py) | 17 handlers (`_read_file`, `_write_file`, `_edit_file`, `_search_grep`, `_run_command`, `_run_pytest`, `_run_script`, `_list_dir`, `_glob_files`, `_delete_file`, `_make_dir`, `_move_file`, `_git_status`, `_git_diff`, `_remember`, `_system_info`, `_browser`) | **Implementações reais** — filesystem, comandos, git, testes, navegador, memória |
+| [`automations.py`](automations.py) | `register_all`, `AUTOMATION_TOOL_CATALOG`, `render_result` | **Tarefas agendadas pelo chat** — 13 ferramentas que chamam os serviços de automação |
 | [`browser.py`](browser.py) | `browser_call`, `search_web` | Navegador (Playwright CDP) — navigate, snapshot, click, type, press, scroll, search, close |
 | [`diffing.py`](diffing.py) | `unified_diff_text` | Diff unificado (added/removed lines) para `file.changed/created` events |
 
@@ -21,6 +22,11 @@ class ToolContext:
     task_id: str | None        # Para logs/eventos
     memory_saver: Callable     # Tool `remember` → ProjectService.add_memory
     browser_mode: str          # "off" | "headless" | "visible"
+    remote: Any = None         # Configuração do computador remoto do projeto
+    session: Any = None        # Sessão do banco: as ferramentas de automação usam os serviços
+    project_id: str | None     # Projeto da conversa (escopo das automações)
+    conversation_id: str | None
+    settings: Any = None       # Configurações do processo
 ```
 
 ## 🛠️ 17 Ferramentas Builtins
@@ -44,6 +50,38 @@ class ToolContext:
 | `remember` | Grava memória | `content`, `title?`, `scope: project\|conversation` | Não |
 | `system_info` | Sistema, usuário, pasta home | — | Não |
 | `browser` | Navegador (quando ligado) | `action`, `url?`, `text?`, `selector?`, `query?` | Não |
+
+## 💬 13 Ferramentas de Automação (`automations.py`)
+
+São as ferramentas que o chat usa para falar de tarefas agendadas. Cada handler
+chama o [`AutomationChatService`](/src/agent/automation/chat_service.py) — os
+serviços do Callidus, **não** HTTP contra a própria API.
+
+| ID | O que faz | Args principais |
+|----|-----------|-----------------|
+| `automation_create` | Cria a tarefa agendada (nasce desabilitada, devolve o token de confirmação) | `name`, `objective`, `schedule`, `action_kind?`, `command?` |
+| `automation_list` | Lista as automações do projeto | `state?`, `query?`, `limit?` |
+| `automation_get` | Detalha uma automação | `automation_id?`, `query?` |
+| `automation_update` | Altera horário, recorrência, objetivo ou nome | `automation_id`, `schedule?`, `objective?`, `confirm?` |
+| `automation_enable` | Ativa — exige o `confirmation_token` da prévia | `automation_id`, `confirmation_token` |
+| `automation_suspend` | Suspende (pausa os disparos futuros) | `automation_id` |
+| `automation_disable` | Desativa | `automation_id` |
+| `automation_run_now` | Executa agora, sem esperar o horário | `automation_id`, `wait?` |
+| `automation_test` | Verifica a prontidão; só executa com pedido explícito | `automation_id`, `execute?` |
+| `automation_history` | Histórico de disparos, com estado, erro e run | `automation_id`, `limit?` |
+| `automation_cancel` | Cancela os disparos pendentes | `automation_id` |
+| `automation_delete` | Remove — exige `confirm=true` | `automation_id`, `confirm` |
+| `automation_supervisor_status` | Estado do runtime e diagnóstico do supervisor | `diagnose?` |
+
+O `schedule` aceita **linguagem natural** («todos os dias às 9h», «toda
+segunda-feira às 8h30», «amanhã às 14h», «a cada 4 horas»): a conversão para o
+gatilho validado é do backend ([`natural.py`](/src/agent/automation/natural.py)),
+não do modelo.
+
+As ferramentas de automação entram **sozinhas** na etapa de automação do
+orquestrador ([`automation_operation.py`](/src/agent/orchestrator/execution/automation_operation.py)),
+nunca na etapa de edição de arquivos — assim um modelo pequeno não precisa
+escolher entre dois mundos incomparáveis.
 
 ## 🛠️ Aliases (O que o Modelo Costuma Inventar → Real)
 

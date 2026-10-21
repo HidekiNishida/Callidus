@@ -17,18 +17,18 @@ from typing import Any
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from agent.automation.intent import is_automation_request
 from agent.config import Settings
+from agent.context.budget import ContextComponent, assemble_messages
 from agent.domain.enums import TaskKind, TaskStatus
 from agent.domain.schemas import TaskCreate, TaskDependencyCreate, TaskStatusUpdate
-from agent.providers.base import LLMProvider, ModelProfile
-from agent.context.budget import ContextComponent, assemble_messages
-from agent.providers.base import ChatCompletionRequest
-from agent.providers.registry import build_provider_by_name
-from agent.orchestrator.plan_contract import normalize_plan_payload
-from agent.services.task_service import DependencyError, TaskService
-from agent.services.agent_service import AgentService
 from agent.guides.discover import capability_line, guide_digest
 from agent.i18n.locale import detect_language, language_instruction
+from agent.orchestrator.plan_contract import normalize_plan_payload
+from agent.providers.base import ChatCompletionRequest, LLMProvider, ModelProfile
+from agent.providers.registry import build_provider_by_name
+from agent.services.agent_service import AgentService
+from agent.services.task_service import DependencyError, TaskService
 from agent.tools.builtins import TOOL_CATALOG
 from agent.util.json_parse import parse_json_object
 
@@ -375,6 +375,38 @@ def direct_answer_plan(objective: str) -> DecompositionResult | None:
     )
 
 
+def automation_plan(objective: str) -> DecompositionResult:
+    """Plano de uma única etapa para pedidos sobre tarefas agendadas.
+
+    O pedido não é uma alteração de código: é uma pergunta sobre o futuro. O plano
+    é deliberadamente curto — uma etapa que opera as ferramentas de automação e
+    responde com o estado real — para que o modelo não tenha de decidir, entre
+    duas famílias de ferramentas incomparáveis, o que fazer.
+
+    A etapa é também a resposta final: o texto entregue ao usuário vem do que a
+    ferramenta devolveu, não de uma segunda chamada ao modelo.
+
+    Args:
+        objective: pedido do usuário.
+
+    Returns:
+        O plano da etapa de automação.
+    """
+    return DecompositionResult(
+        subtasks=[
+            SubTaskSpec(
+                title="Tarefa agendada",
+                objective=objective,
+                metadata={
+                    "automation_operation": True,
+                    "final_answer": True,
+                    "atomic": True,
+                },
+            )
+        ]
+    )
+
+
 async def resolve_decomposition_plan(
     *,
     settings: Settings,
@@ -383,11 +415,17 @@ async def resolve_decomposition_plan(
     project_root: str,
     provider: LLMProvider | None = None,
     requirements: list[dict[str, Any]] | None = None,
+    previous_objectives: list[str] | None = None,
 ) -> tuple[DecompositionResult | None, str]:
-    """Ordem: builtin e2e (só no demo explícito) → modelo do provedor escolhido → template genérico →
+    """Ordem: builtin e2e (só no demo explícito) → automação → modelo do provedor escolhido → template genérico →
     mock (se permitido)."""
     if builtin := builtin_plan_for_objective(objective):
         return builtin, "builtin-e2e"
+    if is_automation_request(objective, previous=previous_objectives):
+        # Pedido de tarefa agendada: o caminho é o das ferramentas de automação, sem
+        # passar pelo modelo que decide o plano — o plano aqui é fixo e o modelo
+        # decide apenas **qual** ferramenta chamar.
+        return automation_plan(objective), "automation"
     if direct := direct_answer_plan(objective):
         return direct, "direct-answer"
 

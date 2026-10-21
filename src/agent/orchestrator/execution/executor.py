@@ -29,6 +29,7 @@ from agent.orchestrator.consolidation import (
     settled,
     stages_outcome,
 )
+from agent.orchestrator.execution.automation_operation import AutomationOperation
 from agent.orchestrator.execution.guards import evidence_state, write_refusal_reason
 from agent.orchestrator.execution.journal import note_thought, remember_failure
 from agent.orchestrator.execution.model_operation import ModelOperation
@@ -38,7 +39,10 @@ from agent.orchestrator.execution.providers import (
     select_provider,
 )
 from agent.orchestrator.execution.runtime import ExecutionRuntime
-from agent.orchestrator.execution.tool_results import is_informative_test_result, test_summary
+from agent.orchestrator.execution.tool_results import (
+    is_informative_test_result,
+    test_summary,
+)
 from agent.orchestrator.execution.workspace import work_root
 from agent.orchestrator.execution.writes import tool_refusal_result
 from agent.orchestrator.requirements import effective_covers
@@ -57,7 +61,7 @@ from agent.verification.runner import VerificationResult, run_verification
 ENVIRONMENT_FAILURES = (FailureCategory.CONFIGURATION, FailureCategory.EXTERNAL_UNAVAILABLE)
 
 # Natureza possível de uma etapa: cada uma leva a um ramo diferente do despacho.
-_ACTION_KEYS = ("mcp_tool", "final_answer", "model_operation", "tool", "verification")
+_ACTION_KEYS = ("mcp_tool", "final_answer", "model_operation", "automation_operation", "tool", "verification")
 
 
 class TaskExecutor:
@@ -79,6 +83,7 @@ class TaskExecutor:
         """
         self.runtime = runtime
         self._model_operation = ModelOperation(self)
+        self._automation_operation = AutomationOperation(self)
 
     @property
     def _session(self):
@@ -264,6 +269,12 @@ class TaskExecutor:
             memory_saver=lambda args, task=task, project=project: self.save_requested_memory(project, task, args),
             browser_mode=str(config.get("browser_mode") or "off"),
             remote=remote,
+            # As ferramentas que consultam o estado persistente (as automações) usam a
+            # mesma sessão da execução: o modelo fala com os serviços, não com HTTP.
+            session=self._session,
+            project_id=str(project.id) if project is not None else None,
+            conversation_id=str(task.conversation_id) if task.conversation_id else None,
+            settings=self._settings,
         )
         approved = bool(config.get("approve_risky_tools") or meta.get("approved"))
 
@@ -291,6 +302,11 @@ class TaskExecutor:
             noted = self.remember_failure(task, failure)
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
             return {"action": "mcp_tool", "task_id": str(task.id), "success": False, "failure": noted}
+
+        if meta.get("automation_operation"):
+            # Pedido sobre tarefas agendadas: a etapa opera as ferramentas de automação
+            # e responde com o estado real devolvido por elas.
+            return await self._automation_operation.run(run, project, task, config, root_path, ctx)
 
         if meta.get("final_answer"):
             return await self.write_final_answer(run, project, task, config)
@@ -727,13 +743,12 @@ class TaskExecutor:
         Returns:
             O plano de recuperação, com causa, ação e indicação de nova tentativa.
         """
+        from agent.observability import emit
         from agent.verification.recovery import (
             diagnose_verification_failure,
             plan_recovery,
             recovery_signature,
         )
-
-        from agent.observability import emit
 
         diagnosis = diagnose_verification_failure(
             verifier=vresult.verifier,

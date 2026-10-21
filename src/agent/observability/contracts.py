@@ -111,6 +111,8 @@ EVENT_SPECS: dict[str, EventSpec] = {
         _spec("verification.inconclusive", ("verifier",), description="verificação sem veredito (nunca aprova)"),
         _spec("strategy.formulated", description="abordagem profissional formulada"),
         _spec("skill.selected", description="skills selecionadas para a tarefa"),
+        _spec("automation.chat_tool", ("tool", "success"), description="ferramenta de automação chamada pela conversa"),
+        _spec("automation.chat_result", ("action",), description="desfecho da operação de automação pedida na conversa"),
         _spec("decomposition.recursive", ("depth", "source"), description="decomposição recursiva da etapa interna"),
         _spec("verification.recovery_planned", ("cause", "action"), description="recuperação da verificação planejada"),
     )
