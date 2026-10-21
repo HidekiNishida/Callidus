@@ -1489,7 +1489,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `declare_change(task: Any, description: str) -> dict[str, Any]` — Registra que a etapa vai passar a fazer outra coisa, tornando a mudança auditável. Entrada: etapa e descrição; saída: a memória depois do registro.
 - `hypothesis_for(cause: str, detail: str='') -> str` — Hipótese declarada para a falha, derivada da causa de forma determinística. Entrada: causa e detalhe; saída: a hipótese em texto.
 - `record_attempt(task: Any, failure: dict[str, Any], *, alternatives: list[str] | None=None) -> dict[str, Any]` — Registra a tentativa que falhou e prepara a próxima abordagem: o que travou, a hipótese, o que foi tentado, o que será diferente e os critérios de sucesso e de fracasso. Entrada: etapa e falha; saída: a memória depois do registro.
-- `render_approach(task: Any) -> str` — Bloco de abordagem para o prompt da etapa: o que travou, a hipótese, o que já foi tentado, o que precisa ser diferente e os critérios. Entrada: etapa; saída: texto (vazio quando a etapa ainda não falhou).
+- `render_approach(task: Any) -> str` — Bloco de abordagem para o prompt da etapa: o que travou, a hipótese, o que já foi tentado, o que precisa ser diferente e os critérios. Quando a lista acaba, pede inspeção do estado antes de ação de fora. Entrada: etapa; saída: texto (vazio quando a etapa ainda não falhou).
 
 ### `src/agent/orchestrator/atomizer.py`
 
@@ -1656,13 +1656,24 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `progress_state(session: Session, root_id: uuid.UUID) -> dict[str, int]` — `{verified, pending, blocked, total}`.
 - `subtree(session: Session, root_id: uuid.UUID) -> list[TaskModel]` — Devolve todas as tarefas da subárvore da raiz, fechando a relação `parent_id` iterativamente dentro do mesmo projeto. Entrada: sessão e id da raiz; saída: lista de `TaskModel`.
 
+### `src/agent/orchestrator/recovery_policy.py`
+
+**Propósito:** decidir se a falha segue, pede uma investigação, pausa ou para porque a condição é externa. **Quando/onde:** o replanejamento e a estagnação leem esta política; a frase do feed sai daqui sem chamar o modelo.
+
+- `alternative_continuance(approach: dict[str, Any] | None) -> str` — `continue` enquanto houver alternativa, `investigate` uma vez quando a lista acaba, `pause` depois dessa investigação. Entrada: memória de abordagem; saída: uma dessas três palavras.
+- `mark_open_investigation(task: Any) -> dict[str, Any]` — Grava na etapa o passo de inspeção, preserva `tried` e muda a assinatura. Entrada: etapa; saída: memória atualizada.
+- `may_have_partial_effect(cause: str) -> bool` — Indica timeout, indisponibilidade, erro de provedor ou limite de taxa, casos em que a resposta pode ter se perdido depois de um efeito. Entrada: causa; saída: booleano.
+- `narrate_failure(category: str, cause: str, detail: str) -> str` — Frase do feed para a falha já classificada, sem anunciar sucesso. Entrada: categoria, causa e detalhe; saída: texto curto.
+- `pause_next_action(*, total: int, run_id: Any, probable_cause: str) -> str` — Texto da pausa quando o orçamento acaba sem prova de impossibilidade, com o caminho de retomada. Entrada: total, run e causa; saída: próxima ação.
+- `root_should_recover(*, has_parent: bool, already_recovered: bool, replan: bool) -> bool` — A raiz sem pai volta a planejar uma vez quando o replanejamento ainda cabe. Entrada: as três flags; saída: booleano.
+
 ### `src/agent/orchestrator/replan.py`
 
 **Propósito:** revisa o plano do pai quando uma etapa para no meio, conforme orçamento e progresso, sem refazer o que já foi concluído. **Quando/onde:** chamado pelo `RunOrchestrator` no início de cada passo, antes de escolher a próxima tarefa.
 
 - `ReplanDecision` — Dataclass imutável com o veredito `replan` e o `reason` da recusa ou da decisão. Entrada: campos da decisão; saída: registro consultado pela política de replanejamento.
 - `_carried_covers(session: Session, kids: list[TaskModel], stopped: TaskModel) -> list[dict] | None` — Funde a cobertura de requisitos da etapa parada e das irmãs ainda pendentes para que o plano corrigido não perca requisito; devolve `None` quando o plano não declara cobertura. Entrada: sessão, filhos e etapa parada; saída: lista de coberturas ou `None`.
-- `replan_decision(parent_meta: dict, stopped: TaskModel, completed: int) -> ReplanDecision` — decide se replaneja (policy).
+- `replan_decision(parent_meta: dict, stopped: TaskModel, completed: int) -> ReplanDecision` — Decide se replaneja. Recusa ação externa, orçamento da linhagem e repetição sem progresso. Lista de alternativas esgotada ainda autoriza uma investigação; a segunda vez pausa.
 - `replan_parent(session: Session, parent: TaskModel) -> dict | None` — Reescreve o plano do pai cujo filho parou: cancela as etapas irrecuperáveis, marca a parada como substituída, cria o plano corrigido e registra o histórico. Entrada: sessão e tarefa pai; saída: dicionário com `action`, `task_id`, `stopped_at` e `cancelled`, ou `None` quando não cabe replanejar.
 - `replan_under(session: Session, root_id: uuid.UUID) -> dict | None` — replaneja se diagnóstico novo em `metadata.stagnation`.
 
@@ -1706,11 +1717,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `RunOrchestrator._all_terminal_under(root_id: uuid.UUID) -> bool` — Verifica se todas as descendentes da raiz já estão em estado terminal (completed, cancelled ou failed), ignorando a própria raiz. Entrada: id da raiz; saída: booleano.
 - `RunOrchestrator._block_invalid_plan(parent: TaskModel, validation: PlanValidation) -> dict[str, Any]` — Bloqueia o pai quando o plano não pôde ser corrigido: classifica a falha (externo, limite operacional ou mudança de estratégia), move a tarefa para BLOCKED pela tabela de transições e devolve a ação `plan_invalid`. Entrada: pai e validação; saída: dicionário de ação com veredito e falha.
 - `RunOrchestrator._capture_outcome_memory(project: ProjectModel, root: TaskModel) -> None` — Grava a memória contextual "Resultado da conversa" com objetivo e resposta final da raiz, evitando duplicar. Entrada: projeto e raiz; saída: `None`.
-- `RunOrchestrator._check_stagnation(run_id: uuid.UUID, out: dict[str, Any]) -> dict[str, Any] | None` — Reage à repetição da mesma falha com a mesma estratégia: diagnostica a causa, decide entre replanejar o pai ou pausar o run e grava o evento `run.stagnation`. Entrada: id do run e saída do passo; saída: dicionário de ação ou `None` quando ainda não há estagnação.
+- `RunOrchestrator._check_stagnation(run_id: uuid.UUID, out: dict[str, Any]) -> dict[str, Any] | None` — Reage à repetição da mesma falha: replaneja o pai, faz a raiz sem pai planejar de novo uma vez, pausa quando o orçamento acaba sem prova de impossibilidade, ou encerra quando a causa pede ação externa. Entrada: id do run e saída do passo; saída: dicionário de ação ou `None` quando ainda não há estagnação.
 - `RunOrchestrator._depth(task: TaskModel) -> int` — Calcula a profundidade da tarefa na árvore, contando os ancestrais. Entrada: modelo da tarefa; saída: inteiro de profundidade.
 - `RunOrchestrator._ensure_final_message(root: TaskModel) -> None` — Garante que a raiz tenha uma resposta final: reaproveita o Markdown da etapa `final_answer` ou compõe um relatório com as etapas filhas. Entrada: raiz; saída: `None` (resultado consolidado atualizado).
 - `RunOrchestrator._explain(task: TaskModel, *, category: str, text: str, phase: str) -> None` — Publica `work.explained` com a frase já redigida. Se o evento falhar, a etapa segue. Entrada: tarefa, categoria, texto e fase; saída: `None`.
-- `RunOrchestrator._note_thought(run: ExecutionRunModel, task: TaskModel | None, text: str, *, phase: str='thinking') -> None` — Registra o que está acontecendo como evento `agent.thought` e faz commit para a interface ler durante a inferência. Entrada: run, tarefa opcional, texto e fase; saída: `None`.
+- `RunOrchestrator._note_thought(run: ExecutionRunModel, task: TaskModel | None, text: str, *, phase: str='thinking', category: str | None=None) -> None` — Registra o que está acontecendo como `agent.thought` e publica a mesma frase em `work.explained` quando a categoria é válida. Entrada: run, tarefa opcional, texto, fase e categoria; saída: `None`.
 - `RunOrchestrator._pause_run(run: ExecutionRunModel, root: TaskModel, hit: dict[str, Any], next_action: str, *, diagnosis: dict[str, Any] | None=None) -> dict[str, Any]` — Pausa o run (retomável) ao atingir um limite, gravando estado, pendências, requisitos, motivo e próxima ação na raiz e no evento `run.paused`, sem mudar o estado das tarefas. Entrada: run, raiz, limite atingido e próxima ação; saída: dicionário de ação `run_paused`.
 - `RunOrchestrator._pending_under(root_id: uuid.UUID) -> list[dict[str, Any]]` — Lista as folhas pendentes sob a raiz (não concluídas, não assentadas e sem filhos), com título, status e motivo. Entrada: id da raiz; saída: lista de dicionários de pendência.
 - `RunOrchestrator._pick_next_task(root_id: uuid.UUID) -> TaskModel | None` — Escolhe a próxima tarefa a executar por prioridade de status (running, verifying, ready, retry_pending, planning, pending), respeitando dependências e filhos não assentados. Entrada: id da raiz; saída: `TaskModel` ou `None` quando nada pode avançar.
@@ -1767,7 +1778,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `TaskExecutor.plan_verification_recovery(task, vresult, detail, spec) -> dict[str, Any]` — Diagnostica a reprovação da verificação e planeja a recuperação (diagnóstico → correção → re-verificação), contando as recuperações e emitindo `verification.recovery_planned`. Entrada: tarefa, resultado da verificação, detalhe e spec; saída: dicionário de plano de recuperação.
 - `TaskExecutor.criteria_of(task) -> dict[str, Any]` — Monta o critério avaliado pela verificação: requisitos cobertos pela etapa (e os parciais) e o critério de aceite dela. Entrada: modelo da tarefa; saída: dicionário com `requirements`, `partial` e `acceptance`.
 - `TaskExecutor.save_requested_memory(project, task, args) -> dict` — Executa o pedido de salvar memória feito pelo modelo, definindo escopo (projeto ou conversa) e tipo canônico/contextual. Entrada: projeto, tarefa e argumentos da ferramenta; saída: dicionário com sucesso, id e resumo da memória.
-- `TaskExecutor.note_thought(run, task, text, *, phase='thinking') -> None` — Registra o que está acontecendo como evento `agent.thought` e faz commit para a interface ler durante a inferência. Entrada: run, tarefa opcional, texto e fase; saída: `None`.
+- `TaskExecutor.note_thought(run, task, text, *, phase='thinking', category=None) -> None` — Registra o que está acontecendo como `agent.thought` e publica a frase no feed. Entrada: run, tarefa opcional, texto, fase e categoria; saída: `None`.
 - `TaskExecutor.remember_failure(task, failure) -> dict[str, Any]` — Guarda a falha na tarefa (histórico `failures` e `last_failure`) com a assinatura do erro e da estratégia, para a próxima tentativa e o replanejamento lerem. Entrada: tarefa e `Failure`; saída: dicionário da falha registrada.
 - `TaskExecutor.work_root(project, task) -> str` — Calcula a raiz de trabalho efetiva do projeto, considerando a conversa da tarefa. Entrada: projeto e tarefa opcional; saída: caminho da raiz de trabalho.
 - `TaskExecutor._provider(settings, config)` — Provedor do run segundo a política da execução (a fábrica injetada ou a padrão do pacote).
@@ -1841,7 +1852,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Registra no banco o que a execução está fazendo e o que ela já falhou. **Quando/onde:** a cada passo da execução.
 
-- `note_thought(session, run, task, text, *, phase='thinking') -> None` — Registra o pensamento como evento `agent.thought` e faz commit para a interface ler durante a inferência.
+- `note_thought(session, run, task, text, *, phase='thinking', category=None) -> None` — Registra `agent.thought` e, em seguida, publica `work.explained`. A falha da publicação não desfaz o registro.
+- `_publish_explanation(task: TaskModel | None, text: str, *, phase: str, category: str | None) -> None` — Emite `work.explained` com a categoria da fase quando o chamador não informa outra. Se o evento falhar, a execução segue.
 - `remember_failure(task, failure) -> dict[str, Any]` — Guarda a falha na tarefa com assinatura e estratégia (usadas para detectar estagnação).
 - `failure_timestamp() -> str` — Instante atual em ISO-8601 (UTC) para registros de diagnóstico.
 
@@ -2878,7 +2890,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `tests/web/work-explained.test.mjs`
 
-**Propósito:** verificar que `describeActivity` mostra o texto de `work.explained` e ignora evento sem texto.
+**Propósito:** verificar que `describeActivity` mostra o texto de `work.explained`, ignora evento sem texto e que `splitFeed` deixa a narrativa fora da resposta do modelo e das ferramentas.
 
 ### `tests/test_capability_exposure.py`
 
@@ -4818,6 +4830,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `plural`
 - `toolArgsSummary`
 - `describeActivity`
+- `splitFeed(activity)` — Separa a narrativa da bolha das operações do modelo e das ferramentas. Entrada: entradas do feed; saída: `{narrative, operations}`.
 - `summarizeActivity`
 - `diffLines`
 
@@ -5244,6 +5257,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `tests/test_query_service.py`
 
 **Propósito:** Arquivo: tests/test_query_service.py.
+
+### `tests/test_recovery_policy.py`
+
+**Propósito:** verificar a decisão de continuar, investigar uma vez, pausar por orçamento ou recusar replanejamento quando a falha pede ação externa.
 
 ### `tests/test_recovery_and_reporting.py`
 

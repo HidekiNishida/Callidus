@@ -41,7 +41,7 @@ Depois de duas tentativas, a divisão adaptativa antiga permanece: é o caminho 
 
 ## Feed
 
-O evento `work.explained` carrega `category` (`activity`, `decision`, `result`, `alert`, `error`), `text` e `phase`. O texto passa pela mesma redação de segredos dos outros eventos. A interface mostra essa frase na atividade da conversa e na linha do tempo do detalhe.
+O evento `work.explained` carrega `category` (`activity`, `decision`, `result`, `alert`, `error`), `text` e `phase`. O texto passa pela mesma redação de segredos dos outros eventos. A interface mostra essa frase na narrativa da bolha, fora da resposta do modelo e fora do acordeão de ferramentas. Uma falha ao publicar a frase não interrompe a etapa.
 
 A narração não chama o modelo. Se montar o evento falhar, o passo do orquestrador continua. O feed não calcula porcentagem nem anuncia verificação que não rodou: o critério nasce com estado `pendente`.
 

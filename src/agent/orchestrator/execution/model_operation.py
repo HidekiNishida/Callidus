@@ -285,8 +285,16 @@ class ModelOperation:
                 outcome = ToolLoopOutcome(content=resp.content or "", iterations=1, stop_reason="final")
             content = outcome.content or ""
         except ProviderError as exc:
-            self._executor.note_thought(run, task, f"A inferência falhou: {exc}.")
             failure = classify_provider_error(str(exc), exc)
+            from agent.orchestrator.recovery_policy import narrate_failure
+
+            self._executor.note_thought(
+                run,
+                task,
+                narrate_failure(failure.category.value, failure.cause.value, str(exc)),
+                phase="recover",
+                category="error" if failure.category.value == "configuration" else "alert",
+            )
             attempts.record(
                 run_id=run.id,
                 task_id=task.id,

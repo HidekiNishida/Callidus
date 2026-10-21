@@ -114,9 +114,15 @@ O replanejamento é **recusado** quando:
 
 - a falha precisa de ação de fora (credencial, executável ausente, aprovação);
 - o orçamento de replanejamento da linhagem acabou;
-- o replanejamento anterior não trouxe progresso;
-- **não há alternativa sobrando** — a etapa precisa de ação de fora, e insistir seria repetir a
-  mesma operação com o contador zerado.
+- o replanejamento anterior não trouxe progresso e ainda existe alternativa conhecida;
+- a lista de alternativas já foi seguida por uma investigação do estado, e essa investigação
+  também não abriu caminho.
+
+Esgotar a lista determinística **não** declara o problema insolúvel. A política em
+[`recovery_policy.py`](/src/agent/orchestrator/recovery_policy.py) autoriza uma investigação
+material (`open_investigation`). A raiz sem pai usa o mesmo critério e volta a `PLANNING`
+uma vez (`root_recovery`). Quando o orçamento do problema acaba sem essa prova, o run
+**pausa** com diagnóstico e próxima ação, retomável por `POST /runs/{id}/resume`.
 
 ### 2.4 Limites coerentes
 
@@ -204,8 +210,9 @@ Exemplo de leitura de uma estagnação:
 ## 4. Limites conhecidos
 
 - **A memória de abordagem é determinística, não aprendida.** A hipótese vem da causa
-  classificada; o modelo pode refiná-la, mas o sistema não a infere sozinho. Para causas não
-  mapeadas, `alternatives_for` devolve lista vazia e a etapa para pedindo ação de fora.
+  classificada. Para causas não mapeadas, `alternatives_for` devolve lista vazia; a política
+  então autoriza uma investigação do estado antes de pausar. Não há, nesta versão, uma
+  chamada extra ao modelo para inventar uma estratégia fora dessa investigação.
 - **A impressão do disco é por arquivo** (nome, tamanho, mtime). Uma mudança que preserve os três
   não é detectada — o que é aceitável para escrita de código, mas não para arquivos de conteúdo
   arbitrário.

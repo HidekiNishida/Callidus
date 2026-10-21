@@ -20,6 +20,21 @@ from agent.orchestrator.stagnation import error_signature, strategy_signature
 from agent.persistence.models import EventLogModel, ExecutionRunModel, TaskModel
 
 
+_PHASE_CATEGORY = {
+    "quality": "decision",
+    "execute": "decision",
+    "investigate": "decision",
+    "decompose": "decision",
+    "plan": "activity",
+    "tool": "activity",
+    "thinking": "activity",
+    "recover": "alert",
+    "pause": "alert",
+    "block": "error",
+    "result": "result",
+}
+
+
 def note_thought(
     session,
     run: ExecutionRunModel,
@@ -27,8 +42,12 @@ def note_thought(
     text: str,
     *,
     phase: str = "thinking",
+    category: str | None = None,
 ) -> None:
-    """Grava o que está acontecendo e libera o banco para a interface ler durante a inferência.
+    """Grava o que está acontecendo e publica a mesma frase no feed, se isso for seguro.
+
+    A frase vai para `agent.thought` e, quando a categoria é válida, também para
+    `work.explained`. Falha ao publicar a explicação não desfaz o registro nem a etapa.
 
     Args:
         session: sessão SQLAlchemy em uso.
@@ -36,6 +55,7 @@ def note_thought(
         task: etapa em foco, quando houver.
         text: descrição curta do que está acontecendo.
         phase: fase da execução (`thinking`, `tool`, ...).
+        category: categoria do feed; quando ausente, deriva da fase.
     """
     session.add(
         EventLogModel(
@@ -47,6 +67,23 @@ def note_thought(
         )
     )
     session.commit()
+    _publish_explanation(task, text, phase=phase, category=category)
+
+
+def _publish_explanation(task: TaskModel | None, text: str, *, phase: str, category: str | None) -> None:
+    """Publica `work.explained` sem deixar a falha da narrativa derrubar a execução."""
+    if task is None:
+        return
+    try:
+        from agent.observability import emit
+        from agent.orchestrator.narration import explanation_event
+
+        payload = explanation_event(category or _PHASE_CATEGORY.get(phase, "activity"), text, phase=phase)
+        if payload is None:
+            return
+        emit("work.explained", payload, task_id=task.id, commit=True)
+    except Exception:
+        return
 
 
 def remember_failure(task: TaskModel, failure: Failure) -> dict[str, Any]:

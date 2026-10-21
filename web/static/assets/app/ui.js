@@ -532,6 +532,25 @@ export function toolArgsSummary(tool, args) {
   return "";
 }
 
+/** Tipos que explicam o trabalho. A resposta do modelo e as ferramentas ficam de fora. */
+export const NARRATIVE_KINDS = new Set(["activity", "decision", "result", "alert", "error", "thought"]);
+
+/**
+ * Separa a narrativa do feed das operações (modelo, ferramenta, comando, arquivo).
+ *
+ * @param {Array<object>} activity Entradas já descritas.
+ * @returns {{narrative: Array<object>, operations: Array<object>}} Os dois grupos, na ordem original.
+ */
+export function splitFeed(activity) {
+  const narrative = [];
+  const operations = [];
+  for (const item of activity || []) {
+    if (item && NARRATIVE_KINDS.has(item.kind)) narrative.push(item);
+    else if (item) operations.push(item);
+  }
+  return { narrative, operations };
+}
+
 /**
  * Converte um evento do stream em uma entrada de atividade (título, detalhe, estado).
  *

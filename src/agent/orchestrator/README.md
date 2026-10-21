@@ -25,6 +25,7 @@
 | [`stagnation.py`](stagnation.py) | `diagnose`, `limit_reached`, `error_signature`, `strategy_signature`, `problem_attempts`, `problem_key` | **Estagnação e limites**: assinatura normalizada da falha, assinatura da abordagem, contador do problema por objetivo e limites do run |
 | [`approach.py`](approach.py) | `record_attempt`, `declare_change`, `approach_of`, `approach_signature`, `render_approach`, `alternatives_for` | **Memória de abordagem**: o que foi tentado, a hipótese da falha e o que será diferente na próxima tentativa |
 | [`replan.py`](replan.py) | `replan_under`, `replan_decision` | Replanejamento dirigido por diagnóstico de estagnação |
+| [`recovery_policy.py`](recovery_policy.py) | `alternative_continuance`, `root_should_recover`, `narrate_failure` | Continuidade: seguir, investigar uma vez, pausar ou parar por impedimento externo |
 | [`closing.py`](closing.py) | `compose_final_markdown`, `compose_incomplete_markdown`, `ensure_closing_stages` | Resposta final (markdown + fontes) ou mensagem de "não concluído" |
 | [`usage.py`](usage.py) | `accumulate_usage`, `remember_usage` | Acúmulo de tokens (prompt + completion) por tarefa |
 | [`resume.py`](resume.py) | `resume_root` | Resumo de onde parou (para UI: `POST /tasks/{id}/resume-brief`) |

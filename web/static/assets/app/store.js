@@ -775,6 +775,13 @@ export async function connectStream(runId) {
   state.streamEvents = [];
   const snapshot = await api(`/runs/${runId}/observe`).catch(() => ({}));
   const reducer = createState(snapshot || {});
+  const replayRoot = snapshot?.run?.root_task_id;
+  if (replayRoot) {
+    const previousRoot = state.currentRootId;
+    state.currentRootId = replayRoot;
+    for (const envelope of snapshot.events || []) pushActivity(envelope);
+    state.currentRootId = previousRoot || replayRoot;
+  }
   state.liveState.data = reducer;
   state.liveState.version += 1;
   stream = createStream({
@@ -988,12 +995,14 @@ export function rootIdOf(taskId) {
 function pushActivity(envelope) {
   const entry = describeActivity(envelope);
   if (!entry) return;
+  if (envelope?.id) entry.eventId = envelope.id;
   // A atividade vai para a mensagem (tarefa raiz) a que pertence. A raiz da execução em
   // curso é a fonte confiável: o evento chega antes de a lista de tarefas ser atualizada.
   const rootId = state.currentRootId || rootIdOf(envelope.task_id) || envelope.task_id || "live";
   if (!state.feeds[rootId]) state.feeds[rootId] = [];
   const feed = state.feeds[rootId];
   state.feed = feed;
+  if (entry.eventId && feed.some((item) => item.eventId === entry.eventId && item.kind === entry.kind)) return;
   if (entry.callId) {
     // Atualiza a entrada em andamento (mesma chamada de ferramenta/comando).
     const index = feed.findIndex((item) => item.callId === entry.callId && item.kind === entry.kind);

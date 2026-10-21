@@ -118,6 +118,7 @@ class TaskExecutor:
         text: str,
         *,
         phase: str = "thinking",
+        category: str | None = None,
     ) -> None:
         """Grava o que está acontecendo e libera o banco para a interface ler durante a inferência.
 
@@ -126,8 +127,9 @@ class TaskExecutor:
             task: etapa em foco, quando houver.
             text: descrição curta do que está acontecendo.
             phase: fase da execução (`thinking`, `tool`, ...).
+            category: categoria do feed; quando ausente, deriva da fase.
         """
-        note_thought(self._session, run, task, text, phase=phase)
+        note_thought(self._session, run, task, text, phase=phase, category=category)
 
     def remember_failure(self, task: TaskModel, failure: Failure) -> dict[str, Any]:
         """Guarda a falha na tarefa: a próxima tentativa e a política de replanejamento leem daqui.
@@ -347,6 +349,14 @@ class TaskExecutor:
                     task,
                     Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.REPEATED_OUTPUT, "loop detectado"),
                 )
+                self.note_thought(
+                    run,
+                    task,
+                    "A mesma chamada de ferramenta se repetiu sem mudança. "
+                    "Vou encerrar esta tentativa para escolher outra abordagem.",
+                    phase="recover",
+                    category="alert",
+                )
                 self._tasks.update_status(
                     task.id,
                     TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="loop detectado"),
@@ -397,6 +407,13 @@ class TaskExecutor:
                         f"a mesma chamada de ferramenta falhou de novo: {failure.detail}",
                     ),
                 )
+                self.note_thought(
+                    run,
+                    task,
+                    "Os mesmos argumentos falharam de novo. Vou corrigir a entrada em vez de repetir a chamada idêntica.",
+                    phase="recover",
+                    category="alert",
+                )
                 self._tasks.update_status(
                     task.id,
                     TaskStatusUpdate(
@@ -411,6 +428,15 @@ class TaskExecutor:
                     "failure": noted,
                 }
             noted = self.remember_failure(task, failure)
+            from agent.orchestrator.recovery_policy import narrate_failure
+
+            self.note_thought(
+                run,
+                task,
+                narrate_failure(failure.category.value, failure.cause.value, failure.detail),
+                phase="recover",
+                category="error" if failure.category == FailureCategory.CONFIGURATION else "alert",
+            )
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING))
             return {"action": "tool_executed", "task_id": str(task.id), "success": False, "failure": noted}
 
@@ -434,6 +460,13 @@ class TaskExecutor:
                         FailureCause.DEPENDENCY_FAILED,
                         f"etapas não concluídas: {pending}",
                     ),
+                )
+                self.note_thought(
+                    run,
+                    task,
+                    f"Etapas ainda não concluídas impedem fechar «{task.title}». O que já passou permanece.",
+                    phase="recover",
+                    category="alert",
                 )
                 self._tasks.update_status(
                     task.id, TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=f"etapas não concluídas: {pending}")
@@ -689,6 +722,14 @@ class TaskExecutor:
                     task,
                     Failure(FailureCategory.CHANGE_STRATEGY, FailureCause.REPEATED_OUTPUT, vresult.summary),
                 )
+                self.note_thought(
+                    run,
+                    task,
+                    "A mesma verificação reprovou outra vez. A contagem não prova que o problema é insolúvel; "
+                    "vou mudar a abordagem.",
+                    phase="recover",
+                    category="alert",
+                )
                 self._tasks.update_status(
                     task.id,
                     TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="a mesma verificação falhou de novo"),
@@ -709,6 +750,15 @@ class TaskExecutor:
                     "failure": noted,
                     "recovery": recovery,
                 }
+            guidance = str(recovery.get("guidance") or "")[:180]
+            if recovery.get("action") == "manual_review":
+                recovery_text = f"A verificação não pode seguir sozinha. O impedimento é: {guidance}"
+            else:
+                recovery_text = (
+                    "A mesma recuperação não será repetida. Vou registrar o diagnóstico e mudar a abordagem. "
+                    f"{guidance}"
+                )
+            self.note_thought(run, task, recovery_text, phase="recover", category="alert")
             self._tasks.update_status(
                 task.id,
                 TaskStatusUpdate(
@@ -724,6 +774,13 @@ class TaskExecutor:
             }
 
         noted = self.remember_failure(task, failure)
+        self.note_thought(
+            run,
+            task,
+            "A verificação não mediu o resultado. O estado fica sem evidência, não como sucesso.",
+            phase="recover",
+            category="alert",
+        )
         self._tasks.update_status(
             task.id,
             TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="verificação inconclusiva"),

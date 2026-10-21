@@ -8,8 +8,9 @@ Dependências: agent.domain.enums, agent.domain.failures, agent.domain.schemas, 
 Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
 
 O replanejamento aqui **não** é uma nova tentativa com o contador zerado: ele escolhe a próxima
-abordagem da lista de alternativas da falha e a leva junto, declarada, para a etapa nova. Sem
-abordagem nova sobrando, o replanejamento é recusado e a etapa precisa de ação de fora.
+abordagem da lista de alternativas da falha e a leva junto, declarada, para a etapa nova. Quando
+a lista acaba, ainda cabe uma investigação do estado. Só depois dela, ou quando a falha pede
+ação externa, o replanejamento é recusado.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from agent.domain.failures import Failure, FailureCategory
 from agent.domain.schemas import TaskStatusUpdate
 from agent.observability import emit
 from agent.orchestrator.approach import approach_of
+from agent.orchestrator.recovery_policy import INVESTIGATE_CHANGE, alternative_continuance
 from agent.orchestrator.consolidation import children_of, pending_reason, superseded
 from agent.orchestrator.decomposition import (
     DecompositionResult,
@@ -66,24 +68,31 @@ def replan_decision(parent_meta: dict, stopped: TaskModel, completed: int) -> Re
     - O orçamento `REPLAN_BUDGET` é da linhagem inteira (o nó replanejado herda a contagem).
     - Sem etapa nova concluída desde o último replanejamento e com o mesmo motivo (comparado normalizado:
       números, ids e aspas não contam), o plano novo não ajudou.
-    - Sem alternativa de abordagem sobrando, replanejar de novo seria repetir a mesma operação com
-      o contador zerado: é recusado, e a etapa precisa de ação de fora.
+    - Lista de alternativas esgotada ainda permite uma investigação do estado. A segunda vez,
+      com essa investigação já registrada, pausa: a lista acabou, o que não prova insolubilidade.
     """
     failure = Failure.from_dict((stopped.metadata_json or {}).get("last_failure"))
     if failure is not None and failure.category in _NEEDS_OUTSIDE_ACTION:
         return ReplanDecision(False, f"precisa de ação externa ({failure.category.value}): {failure.detail[:200]}")
-    approach = approach_of(stopped)
-    if approach.get("exhausted"):
-        return ReplanDecision(False, "não há outra abordagem disponível para esta falha")
     if int(parent_meta.get("replan_count") or 0) >= REPLAN_BUDGET:
         return ReplanDecision(False, f"limite de {REPLAN_BUDGET} replanejamentos atingido")
+    approach = approach_of(stopped)
+    choice = alternative_continuance(approach)
+    if choice == "pause":
+        return ReplanDecision(
+            False,
+            "a investigação aberta não encontrou outro caminho seguro nas condições atuais",
+        )
     history = parent_meta.get("replan_history") or []
-    if history:
+    if history and choice != "investigate":
         last = history[-1]
         same = normalize_error(str(last.get("reason") or "")) == normalize_error(pending_reason(stopped))
         if completed <= int(last.get("completed") or 0) and same:
             return ReplanDecision(False, "o replanejamento anterior não trouxe progresso")
+    if choice == "investigate":
+        return ReplanDecision(True, "alternativas conhecidas acabaram; investigar o estado antes de concluir")
     return ReplanDecision(True)
+
 
 def replan_under(session: Session, root_id: uuid.UUID) -> dict | None:
     """Se algum filho parou, revisa o pai (conforme a política) e deixa o plano novo seguir."""
@@ -174,7 +183,8 @@ def replan_parent(session: Session, parent: TaskModel) -> dict | None:
 
     count = int(meta.get("replan_count") or 0) + 1
     approach = approach_of(stopped)
-    change = str(approach.get("next_change") or "").strip()
+    choice = alternative_continuance(approach)
+    change = INVESTIGATE_CHANGE if choice == "investigate" else str(approach.get("next_change") or "").strip()
     hypothesis = str(approach.get("hypothesis") or "").strip()
     success = str(approach.get("success_criterion") or "").strip()
     failure_criterion = str(approach.get("failure_criterion") or "").strip()
@@ -206,6 +216,12 @@ def replan_parent(session: Session, parent: TaskModel) -> dict | None:
         "current_change": change,
         "changed_at": approach.get("changed_at"),
     }
+    if choice == "investigate":
+        # A etapa nova nasce na investigação, com o histórico das tentativas anteriores.
+        # `exhausted` não viaja: este passo é a mudança, não o fim da lista.
+        carried_approach["open_investigation"] = True
+        carried_approach["exhausted"] = False
+        carried_approach["next_change"] = change
     plan = DecompositionResult(
         subtasks=[
             SubTaskSpec(

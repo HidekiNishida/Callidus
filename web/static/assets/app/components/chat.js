@@ -26,6 +26,7 @@ import {
   BUSY_STATUSES,
   summarizeActivity,
   diffLines,
+  splitFeed,
 } from "../ui.js";
 import { filesList, currentTask } from "../live-state.js";
 import { createScrollFollow } from "../chat-scroll.js";
@@ -44,12 +45,15 @@ export const ChatView = {
         const meta = root.metadata_json || {};
         const pause = (root.metadata_json || {}).pause || null;
         const isLast = roots().length > 0 && root.id === roots()[roots().length - 1].id;
+        const feed = state.feeds[root.id] || [];
+        const parts = splitFeed(feed);
         return {
           id: root.id,
           title: root.display_title || root.title,
           pause,
-          activity: state.feeds[root.id] || [],
-          summary: summarizeActivity(state.feeds[root.id] || []),
+          activity: parts.operations,
+          narrative: parts.narrative,
+          summary: summarizeActivity(feed),
           objective: String(root.objective || "").split("\n\nAnexos do usuário:")[0],
           attachments: meta.attachments || [],
           createdAt: stamp(root.created_at),
@@ -100,7 +104,7 @@ export const ChatView = {
     Vue.watch(
       () =>
         messages.value
-          .map((message) => `${message.stages.length}:${message.activity.length}`)
+          .map((message) => `${message.stages.length}:${message.activity.length}:${message.narrative.length}`)
           .join(","),
       () => {
         // A decisão é tomada antes do DOM mudar: o feed é seguido enquanto a
@@ -355,6 +359,10 @@ export const ChatView = {
               <span class="status-pill" :class="'status-' + message.status">{{ message.statusText }}</span>
             </div>
 
+            <ol class="narrative" v-if="message.narrative.length">
+              <li v-for="entry in message.narrative" :key="entry.id" :class="'narrative-' + entry.kind">{{ entry.title }}</li>
+            </ol>
+
             <div class="activity" v-if="message.activity.length">
               <div class="activity-head">
                 <span class="activity-head-title">
@@ -432,7 +440,7 @@ export const ChatView = {
             </div>
 
             <div class="answer" v-if="message.reply" v-html="message.reply"></div>
-            <p class="muted thinking" v-else-if="message.busy">
+            <p class="muted thinking" v-else-if="message.busy && !message.narrative.length">
               <span class="spinner"></span> Trabalhando…
             </p>
           </div>

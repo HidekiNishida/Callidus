@@ -436,8 +436,7 @@ class RunOrchestrator:
             meta["model_operation"] = True
             meta["atomic"] = True
             task.metadata_json = meta
-        self._note_thought(run, task, note)
-        self._explain(task, category="decision", text=note, phase="execute")
+        self._note_thought(run, task, note, phase="execute", category="decision")
         if self._tasks.dependencies_satisfied(task.id):
             blocked = self._promote_ready_or_block(task.id)
             if blocked:
@@ -573,28 +572,48 @@ class RunOrchestrator:
         category = FailureCategory.CHANGE_STRATEGY if diag["automatic"] else FailureCategory.CONFIGURATION
         reason = f"estagnação ({diag['kind']}): {diag['probable_cause']}"
         if exhausted and not repeated:
-            reason = f"problema sem solução após {total} tentativas: {diag['probable_cause']}"
+            reason = (
+                f"orçamento de {total} tentativas esgotado sem conclusão: {diag['probable_cause']}. "
+                "A impossibilidade não está comprovada."
+            )
         noted = self._remember_failure(task, Failure(category, FailureCause.STAGNATION, reason))
         self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=reason[:300]))
         parent = self._session.get(TaskModel, task.parent_id) if task.parent_id else None
         decision = None
-        # O problema esgotou o orçamento: outra abordagem não resolve, e o run precisa parar.
-        if diag["automatic"] and parent is not None and not exhausted:
-            kids = children_of(self._session, parent.id)
-            done = sum(1 for k in kids if k.status == TaskStatus.COMPLETED.value)
-            decision = replan_decision(parent.metadata_json or {}, task, done)
-        if decision is not None and decision.replan:
+        already_recovered = bool((task.metadata_json or {}).get("self_recovery"))
+        # Orçamento do problema esgotado pausa. Enquanto o orçamento existir, a política
+        # ainda pode replanejar — inclusive a raiz, que não tem pai.
+        if diag["automatic"] and not exhausted:
+            owner = parent if parent is not None else task
+            kids = children_of(self._session, owner.id) if parent is not None else []
+            done = sum(1 for kid in kids if kid.status == TaskStatus.COMPLETED.value)
+            decision = replan_decision(owner.metadata_json or {}, task, done)
+        from agent.orchestrator.recovery_policy import (
+            alternative_continuance,
+            mark_open_investigation,
+            pause_next_action,
+            root_should_recover,
+        )
+
+        recovering_root = root_should_recover(
+            has_parent=parent is not None,
+            already_recovered=already_recovered,
+            replan=bool(decision is not None and decision.replan),
+        )
+        if decision is not None and decision.replan and parent is not None:
             record["next_action"] = f"replanejar «{parent.title}» para {diag['action']}"
+        elif recovering_root:
+            record["next_action"] = "a raiz investiga a própria falha e monta outro passo"
         else:
             if exhausted:
-                record["next_action"] = (
-                    f"o problema já consumiu {total} tentativas, com abordagens diferentes; "
-                    "revisar a causa ou aumentar `limits.attempts_per_problem`, depois retomar "
-                    f"(POST /runs/{run_id}/resume)"
+                record["next_action"] = pause_next_action(
+                    total=total,
+                    run_id=run_id,
+                    probable_cause=str(diag.get("probable_cause") or ""),
                 )
             else:
                 record["next_action"] = f"{diag['action']}; depois retomar (POST /runs/{run_id}/resume)"
-            if decision is not None:
+            if decision is not None and not recovering_root:
                 record["replan_refused"] = decision.reason
         task.metadata_json = {**(task.metadata_json or {}), "stagnation": record}
         self._session.add(
@@ -607,10 +626,36 @@ class RunOrchestrator:
             )
         )
         result = {"task_id": raw, "after": out.get("action"), "failure": noted, "stagnation": record}
-        if decision is not None and decision.replan:
-            self._note_thought(run, task, f"«{task.title}» repete o mesmo erro. Vou {diag['action']}.")
+        if decision is not None and decision.replan and parent is not None:
+            self._note_thought(
+                run,
+                task,
+                f"«{task.title}» repete o mesmo erro. Vou {diag['action']}.",
+                phase="recover",
+                category="alert",
+            )
             return {"action": "stagnation_replan", **result}
+        if recovering_root:
+            if alternative_continuance(approach_of(task)) == "investigate":
+                mark_open_investigation(task)
+            task.metadata_json = {**(task.metadata_json or {}), "stagnation": record, "self_recovery": True}
+            self._tasks.update_status(
+                task.id,
+                TaskStatusUpdate(status=TaskStatus.PLANNING, reason="a raiz recupera a própria falha"),
+            )
+            self._note_thought(
+                run,
+                task,
+                f"«{task.title}» é a raiz e parou. Vou investigar e montar outro passo, sem esperar uma tarefa pai.",
+                phase="recover",
+                category="alert",
+            )
+            return {"action": "root_recovery", **result}
         root = self._tasks.get_task(run.root_task_id)
+        if not diag["automatic"]:
+            # Credencial, executável ausente, funcionalidade desligada ou aprovação:
+            # não há recuperação autônoma. A parada explica o impedimento.
+            return {**self._stall_run(run, root, reason), **result}
         limit_key = "attempts_per_problem" if exhausted else "attempts_per_strategy"
         hit = {
             "limit": limit_key,
@@ -668,6 +713,14 @@ class RunOrchestrator:
                 payload_json={"reason": reason, "limit": hit, "next_action": next_action, "pending": pending},
             )
         )
+        self._note_thought(
+            run,
+            root,
+            "Pausei a execução porque o limite atual acabou. O diagnóstico e a próxima ação ficam gravados, "
+            "sem concluir que o objetivo é impossível.",
+            phase="pause",
+            category="alert",
+        )
         return {"action": "run_paused", "run_id": str(run.id), "reason": reason, "next_action": next_action}
 
     def _record_action(self, run_id: uuid.UUID, out: dict[str, Any]) -> None:
@@ -721,10 +774,16 @@ class RunOrchestrator:
         )
 
     def _note_thought(
-        self, run: ExecutionRunModel, task: TaskModel | None, text: str, *, phase: str = "thinking"
+        self,
+        run: ExecutionRunModel,
+        task: TaskModel | None,
+        text: str,
+        *,
+        phase: str = "thinking",
+        category: str | None = None,
     ) -> None:
-        """Grava o que está acontecendo e libera o banco para a interface ler durante a inferência."""
-        note_thought(self._session, run, task, text, phase=phase)
+        """Grava o que está acontecendo e publica a frase no feed quando a categoria é válida."""
+        note_thought(self._session, run, task, text, phase=phase, category=category)
 
     def _record_quality(self, run: ExecutionRunModel, task: TaskModel, strategy: Any) -> None:
         """Grava o contrato de qualidade da raiz e publica o resumo no feed.
@@ -745,8 +804,7 @@ class RunOrchestrator:
             task.metadata_json = {**(task.metadata_json or {}), "quality_contract": compact_quality(stored)}
             text = explain_quality(stored)
             if text:
-                self._note_thought(run, task, text, phase="quality")
-                self._explain(task, category="decision", text=text, phase="quality")
+                self._note_thought(run, task, text, phase="quality", category="decision")
         except Exception:
             return
 
@@ -845,6 +903,13 @@ class RunOrchestrator:
                 event_type="run.failed",
                 payload_json={"reason": reason, "kind": "stalled", "pending": pending, "requirements": requirements},
             )
+        )
+        self._note_thought(
+            run,
+            root,
+            f"Não há caminho autônomo seguro nas condições atuais. O impedimento é: {reason[:180]}",
+            phase="block",
+            category="error",
         )
         return {"action": "run_stalled", "run_id": str(run.id), "reason": reason, "pending": pending}
 
@@ -1100,7 +1165,7 @@ class RunOrchestrator:
                         plan = investigation_plan(task.objective, read_only=bool(meta.get("read_only")))
                         source = "disposition-investigate"
                         task.metadata_json = {**meta, "investigated": True}
-                        self._explain(task, category="decision", text=decision.reason, phase="investigate")
+                        self._note_thought(run, task, decision.reason, phase="investigate", category="decision")
                     else:
                         from agent.orchestrator.atomizer import adaptive_decompose_operation
 
@@ -1114,7 +1179,7 @@ class RunOrchestrator:
                             max_depth=self._settings.max_tree_depth,
                         )
                         source = "atomizer-adaptive"
-                        self._explain(task, category="decision", text=decision.reason, phase="decompose")
+                        self._note_thought(run, task, decision.reason, phase="decompose", category="decision")
                 elif meta.get("atomize") or retry_split:
                     from agent.orchestrator.atomizer import adaptive_decompose_operation
 
@@ -1141,8 +1206,7 @@ class RunOrchestrator:
                     )
                     task.metadata_json = {**meta, "disposition": decision.as_dict()}
                     opening = f"Vou definir as etapas de «{task.title}». {decision.reason}"
-                    self._note_thought(run, task, opening, phase="plan")
-                    self._explain(task, category="activity", text=opening, phase="plan")
+                    self._note_thought(run, task, opening, phase="plan", category="activity")
                     plan, source = await resolve_decomposition_plan(
                         settings=self._settings,
                         run_config=config,
@@ -1201,8 +1265,7 @@ class RunOrchestrator:
                     return self._block_invalid_plan(task, validation)
                 titles = ", ".join(spec.title for spec in plan.subtasks[:6])
                 thought = f"Vou fazer: {titles}."
-                self._note_thought(run, task, thought, phase="plan")
-                self._explain(task, category="result", text=thought, phase="plan")
+                self._note_thought(run, task, thought, phase="plan", category="result")
                 return {
                     "action": "decomposed",
                     "task_id": str(task.id),

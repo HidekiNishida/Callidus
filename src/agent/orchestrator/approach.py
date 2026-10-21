@@ -434,8 +434,16 @@ def render_approach(task: Any) -> str:
         lines.append(f"Abordagem em vigor: {change}")
     if pending:
         lines.append(f"Agora é preciso fazer diferente: {pending}")
+    elif approach.get("exhausted") and not approach.get("open_investigation"):
+        lines.append(
+            "As alternativas conhecidas acabaram. Antes de pedir ação de fora, "
+            "o próximo passo é inspecionar o estado atual."
+        )
     elif approach.get("exhausted"):
-        lines.append("Não há abordagem nova disponível: esta etapa precisa de ação de fora.")
+        lines.append(
+            "A investigação aberta não encontrou outro caminho seguro. "
+            "Repetir a mesma operação não resolve."
+        )
     success = str(approach.get("success_criterion") or "").strip()
     failure = str(approach.get("failure_criterion") or "").strip()
     if success:

@@ -676,6 +676,22 @@ pre,
 .status-pill.status-PLANNING,
 .status-pill.status-VERIFYING { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 
+.narrative {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.narrative li {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.narrative-alert,
+.narrative-error { color: var(--danger, var(--text)); }
+
 .thoughts {
   list-style: none;
   margin: 4px 0 8px;
