@@ -36,3 +36,6 @@ web/node_modules/
 # OS / tooling noise
 Thumbs.db
 *.log
+
+# Caderno local dos agentes (estado e plano; ver AGENTS.md §0)
+plan/

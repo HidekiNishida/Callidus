@@ -208,12 +208,12 @@ def main(argv: list[str]) -> int:
     """Analisa os documentos indicados e imprime o resultado.
 
     Args:
-        argv: pastas ou arquivos Markdown (padrão: README, AGENTS.md, docs, src, internal, web, tests, scripts, skills).
+        argv: pastas ou arquivos Markdown (padrão: README, AGENTS.md, ROADMAP.md, docs, src, internal, web, tests, scripts, skills).
 
     Returns:
         0 quando nenhum problema foi encontrado; 1 quando há problemas.
     """
-    paths = argv[1:] or ["README.md", "AGENTS.md", "docs", "src", "internal", "web", "tests", "scripts", "skills"]
+    paths = argv[1:] or ["README.md", "AGENTS.md", "ROADMAP.md", "docs", "src", "internal", "web", "tests", "scripts", "skills"]
     problems: list[str] = []
     for file in _targets(paths):
         problems.extend(analyse(file))

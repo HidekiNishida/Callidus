@@ -13,6 +13,7 @@ As regras de engenharia que todo agente segue ao escrever código.
 
 ## Sumário
 
+0. [Comece toda sessão aqui](#0-comece-toda-sessão-aqui)
 1. [Princípio geral](#1-princípio-geral)
 2. [Camadas e dependências](#2-camadas-e-dependências)
 3. [Cabeçalho obrigatório dos arquivos](#3-cabeçalho-obrigatório-dos-arquivos)
@@ -24,9 +25,31 @@ As regras de engenharia que todo agente segue ao escrever código.
 9. [Contratos que não podem quebrar](#9-contratos-que-não-podem-quebrar)
 10. [Testes](#10-testes)
 11. [Documentação hierárquica](#11-documentação-hierárquica)
+12. [Documentação é parte da implementação](#12-documentação-é-parte-da-implementação)
 13. [Sincronização obrigatória](#13-sincronização-obrigatória)
 14. [Checklist de execução](#14-checklist-de-execução)
 15. [Referência rápida de comandos](#15-referência-rápida-de-comandos)
+16. [Inegociáveis](#16-inegociáveis)
+17. [Decisões do dono](#17-decisões-do-dono)
+18. [Agentes em paralelo](#18-agentes-em-paralelo)
+19. [Roadmap e documentos de progresso](#19-roadmap-e-documentos-de-progresso)
+20. [Receitas](#20-receitas)
+
+---
+
+## 0. Comece toda sessão aqui
+
+O agente não depende de memória: o estado e a fila estão escritos. Em toda sessão:
+
+1. Leia [`ROADMAP.md`](/ROADMAP.md) e a fila ranqueada em [`docs/progresso/gaps.md`](/docs/progresso/gaps.md).
+   Sem tarefa do usuário, pegue o **maior rank em que consiga avançar**.
+2. Leia `plan/STATUS.md` (onde parou, próximo passo, decisões pendentes, quem mexe em quê), a
+   tarefa em `plan/execution-plan.md` §3 e o checklist da atividade em
+   [`internal/tarefas/`](/docs/regras/checklists-tarefas.md). `plan/` é local e está no `.gitignore`.
+3. Leia o [hub de regras](/docs/regras/README.md) e só os ramos que a tarefa pede.
+4. Siga o protocolo de `plan/execution-plan.md` §7: orientar → planejar → implementar + testar →
+   verificar (`python scripts/ci.py`) → registrar → comitar e publicar. **Não pare para perguntar**,
+   exceto nas decisões do [§17](#17-decisões-do-dono).
 
 ---
 
@@ -370,6 +393,8 @@ Code, test, index, diagram and documentation move **juntos**. Ao encerrar a tare
 - [ ] `resume.md` sincronizado: `python3 scripts/resume.py check`
 - [ ] `docs/architecture/` coerente com o código
 - [ ] `AGENTS.md` e `docs/regras/` sem contradição
+- [ ] documentos de progresso atualizados ([§19](#19-roadmap-e-documentos-de-progresso))
+- [ ] `python scripts/ci.py` verde
 
 ---
 
@@ -395,6 +420,8 @@ O estado da tarefa vive em [`internal/tarefas/`](/internal/tarefas/) (modelo:
 | Comando | O que faz |
 |---------|-----------|
 | `source .venv/bin/activate` | ativa o ambiente |
+| `python scripts/ci.py` | **comando único de verificação**: lint, cabeçalhos, docs, `resume.md`, interface e suíte Python |
+| `python scripts/ci.py --rapido` | o mesmo, sem a suíte Python |
 | `pip install -e ".[dev]"` | instala o pacote `callidus` em modo editável |
 | `python -m pytest -q` | suíte de testes completa |
 | `python -m pytest tests/<arquivo>.py -v` | um arquivo de teste |
@@ -408,9 +435,111 @@ O estado da tarefa vive em [`internal/tarefas/`](/internal/tarefas/) (modelo:
 
 ---
 
+## 16. Inegociáveis
+
+Regras que nenhuma tarefa justifica quebrar. Cada uma diz **por quê** e **qual verificação a
+pega**; regra sem fiscal está marcada e tem gap aberto. Se uma tarefa exigir quebrar uma delas,
+pare e diga.
+
+| Regra | Por quê | Fiscal |
+|-------|---------|--------|
+| Contratos do [§9](#9-contratos-que-não-podem-quebrar) não mudam sem migração, teste e documentação | a UI, os scripts e os dados do usuário dependem deles | testes de rota e de contrato (`tests/test_agent_api.py`, `tests/test_api.py`, `tests/test_tool_contracts.py`) no `scripts/ci.py` |
+| Nunca apagar, reinicializar ou migrar à força o banco real (`data/agent.db`) | é o estado canônico do usuário | testes em banco temporário (`tests/conftest.py`); **sem fiscal automático** — [G6](/docs/progresso/gaps.md#g6-fiscais-automáticos-das-regras-de-engenharia) |
+| Quem executa não aprova o próprio resultado | evita conclusão falsa | `tests/test_independent_verification.py`, `tests/test_global_acceptance.py` |
+| Falha vira mensagem, nunca travamento, erro 500 ou perda de dados | entradas do modelo e de provedores não são confiáveis | `tests/test_project_delete.py` (409), `tests/test_providers_api.py` (`ok: false`), `tests/test_failures.py` |
+| Camadas do [§2](#2-camadas-e-dependências): domínio sem FastAPI/SQLAlchemy | o domínio precisa ser testável sozinho | revisão; **sem fiscal automático** — [G6](/docs/progresso/gaps.md#g6-fiscais-automáticos-das-regras-de-engenharia) |
+| Cabeçalho obrigatório ([§3](#3-cabeçalho-obrigatório-dos-arquivos)) | navegação por humanos e agentes | passo "cabeçalhos" do `scripts/ci.py` |
+| Testes determinísticos: sem rede, sem credencial real, sem relógio real ([§10](#10-testes)) | a suíte precisa dar o mesmo resultado em qualquer máquina | revisão; **sem fiscal automático** — [G6](/docs/progresso/gaps.md#g6-fiscais-automáticos-das-regras-de-engenharia) |
+| Documentação e `resume.md` mudam junto com o código ([§12](#12-documentação-é-parte-da-implementação)–[§13](#13-sincronização-obrigatória)) | documento velho faz o próximo agente decidir sobre um sistema que não existe | passos de links, referências, Markdown e `resume.md` do `scripts/ci.py` |
+| Lint limpo, sem silenciar erro para passar | erro silenciado vira defeito invisível | passo "lint (ruff)" do `scripts/ci.py` |
+
+**Portões de qualidade** antes de todo commit:
+
+```bash
+python scripts/ci.py            # todos os portões
+python scripts/ci.py --rapido   # sem a suíte Python, durante o trabalho
+```
+
+**Commits** seguem [commits.md](/docs/regras/commits.md): português, uma mudança coerente por
+commit, o gap citado no corpo (`Parte do G3.`) e o `Co-Authored-By:` do modelo quando o autor é
+um agente.
+
+---
+
+## 17. Decisões do dono
+
+O agente trabalha sem pedir licença, **exceto** nestas decisões — aqui ele para, prepara o
+material e pergunta:
+
+- Quebrar um inegociável do [§16](#16-inegociáveis) ou um contrato do [§9](#9-contratos-que-não-podem-quebrar).
+- Apagar, reinicializar ou migrar de forma incompatível o banco real ou outro dado do usuário em `data/`.
+- Adicionar dependência nova (de execução ou com licença diferente das atuais).
+- **Trocar o provedor ou o modelo padrão** — `data/providers.yaml`, padrões de configuração em
+  `src/agent/config.py` e o modelo de referência da avaliação (`gpt-oss:20b` em `lab/avaliar.py`).
+- Segredos, credenciais e `.env`.
+- Escopo do produto e critérios de estágio (beta, 1.0) em [roadmap.md](/docs/progresso/roadmap.md).
+- Licença, número de versão e publicação de versão; ligar CI remoto.
+
+O commit e o push na branch atual ao concluir **já estão autorizados** pela preferência
+"Publicar ao concluir" ([commits.md](/docs/regras/commits.md)).
+
+---
+
+## 18. Agentes em paralelo
+
+Mais de um agente (Cursor, Claude, sessões em paralelo) pode trabalhar no repositório ao mesmo
+tempo. Para não pisar no trabalho do outro:
+
+- **Anote a posse antes de começar** na tabela "Quem mexe em quê" de `plan/STATUS.md` (pasta ou
+  arquivos) e libere ao terminar.
+- **Edite só o que possui.** Precisa mexer em arquivo de outra sessão? Registre em
+  `plan/STATUS.md` e espere a liberação, ou trabalhe em outro gap.
+- **Arquivos compartilhados** (`resume.md`, `.cursor/resume-inventario.json`, `AGENTS.md`,
+  `docs/progresso/`): releia imediatamente antes de gravar, faça a menor edição possível e nunca
+  reescreva o arquivo inteiro a partir de uma cópia antiga.
+- **Escrita atômica** para arquivos gerados: grave num temporário e renomeie.
+- **Commit só do que é seu:** `git add <caminhos>`, nunca `git add -A` com trabalho de outra sessão
+  na árvore.
+- **Saídas separadas:** experimentos em `lab/out/<label>` com rótulo próprio; nunca use o
+  `data/agent.db` do usuário para avaliar (o `lab/avaliar.py` já isola o banco).
+
+---
+
+## 19. Roadmap e documentos de progresso
+
+Formato em [progresso.md](/docs/regras/progresso.md). Quando uma tarefa entra, atualize **na
+mesma entrega**:
+
+- a área em [avaliacao.md](/docs/progresso/avaliacao.md) (nota, faltando, horas, evidência);
+- o gap em [gaps.md](/docs/progresso/gaps.md) (Faltando / Feito e o rank);
+- o checklist da dimensão em [checklists/](/docs/progresso/checklists/README.md);
+- o marco em [roadmap.md](/docs/progresso/roadmap.md);
+- [ROADMAP.md](/ROADMAP.md) se um número principal mudou — e a seção Status do
+  [README](/README.md) igual a ele;
+- `plan/STATUS.md`.
+
+Avalie por comportamento, erre para baixo e marque cada número como *medido* ou *estimado*.
+
+---
+
+## 20. Receitas
+
+Tarefas recorrentes, passo a passo. O detalhe está no README do módulo.
+
+| Tarefa | Passos |
+|--------|--------|
+| Novo provedor de modelo | adaptador em `src/agent/providers/` seguindo [providers/README.md](/src/agent/providers/README.md) → teste `tests/test_<nome>_provider.py` com servidor falso → registrar em [provedores.md](/docs/architecture/provedores.md) |
+| Nova ferramenta | implementação em `src/agent/tools/` + entrada no catálogo ([tools/README.md](/src/agent/tools/README.md)) → contrato e política → teste em `tests/test_tools.py` ou `tests/test_tool_contracts.py` → [ferramentas.md](/docs/architecture/ferramentas.md) |
+| Nova rota HTTP | rota fina em `src/agent/api/` que delega a um serviço → teste de rota → [api/README.md](/src/agent/api/README.md) |
+| Mudança de comportamento do agente | teste determinístico → `python lab/avaliar.py` antes e depois com o mesmo modelo → resultado em [avaliacao.md](/docs/architecture/avaliacao.md) |
+| Fechar um gap | checklist em `internal/tarefas/` → implementar + testar → `python scripts/ci.py` → [§19](#19-roadmap-e-documentos-de-progresso) → commit citando o gap |
+
+---
+
 ## Links cruzados
 
 - [Hub de regras](/docs/regras/README.md) · [Princípios](/docs/regras/principios.md)
 - [Documentação](/docs/regras/documentacao.md) · [Organização de arquivos](/docs/regras/organizacao-arquivos.md)
 - [Validações e testes](/docs/regras/validacoes-testes.md) · [Verificação final](/docs/regras/verificacao-final.md)
 - [Arquitetura](/docs/architecture/README.md) · [Visão geral](/docs/architecture/visao-geral.md)
+- [ROADMAP](/ROADMAP.md) · [Gaps](/docs/progresso/gaps.md) · [Documentos de progresso](/docs/regras/progresso.md)

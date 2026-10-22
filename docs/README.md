@@ -21,6 +21,7 @@ desça até o detalhe. Quem procura uma funcionalidade em código deve usar os
 | Entender a verificação | [requisitos-verificacao-progresso.md](/docs/architecture/requisitos-verificacao-progresso.md) · [verification/README.md](/src/agent/verification/README.md) |
 | Trabalhar na interface | [frontend.md](/docs/architecture/frontend.md) · [api/README.md](/src/agent/api/README.md) |
 | Escrever ou ajustar testes | [validacoes-testes.md](/docs/regras/validacoes-testes.md) · [tests/](/tests) |
+| Saber o estágio e o que falta | [ROADMAP.md](/ROADMAP.md) · [progresso/gaps.md](/docs/progresso/gaps.md) · [progresso/](/docs/progresso/README.md) |
 
 ## 🏗️ Arquitetura e runtime
 

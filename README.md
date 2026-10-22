@@ -20,6 +20,13 @@ A porta de entrada do Callidus: o que é, como rodar e para onde ir.
 
 ---
 
+## 📍 Status
+
+**Estágio:** alpha · **Próximo:** beta · 6/6 fluxos centrais passam no portão (1 com ressalvas) · 15/15 cenários aceitos com `gpt-oss:20b` (*medido*, 2026-10-20) · qualidade ~61 % (*estimado*) · ~43 h até o beta (*estimado*).
+Detalhes e fila de trabalho: [ROADMAP.md](/ROADMAP.md) · [docs/progresso/gaps.md](/docs/progresso/gaps.md). Agentes de IA começam pelo [AGENTS.md](/AGENTS.md#0-comece-toda-sessão-aqui).
+
+---
+
 ## 🎯 Visão Geral & Proposta de Valor
 
 ### O que é

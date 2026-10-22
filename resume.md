@@ -749,7 +749,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `AGENTS.md`
 
-**Propósito:** Regras de engenharia do Callidus — cabeçalho padrão, docstrings, SOLID pragmático, design patterns, organização modular, contratos que não podem quebrar, testes, documentação hierárquica e sincronização obrigatória. **Quando/onde:** fonte canônica lida por qualquer agente antes de escrever código.
+**Propósito:** Regras de engenharia do Callidus — cabeçalho padrão, docstrings, SOLID pragmático, design patterns, organização modular, contratos que não podem quebrar, testes, documentação hierárquica e sincronização obrigatória; mais o ritual de início de sessão (§0), inegociáveis com fiscal (§16), decisões do dono (§17), agentes em paralelo (§18), documentos de progresso (§19) e receitas (§20). **Quando/onde:** fonte canônica lida por qualquer agente antes de escrever código.
 
 ### `docs/architecture/decisoes-arquitetura.md`
 
@@ -6034,3 +6034,85 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ProcessManager.reap() -> int` — Fecha os descritores e remove as tarefas já terminadas.
 - `_tail(path: str, limit: int) -> str` — Lê a cauda de um arquivo de log.
 - `format_command(command: Sequence[str]) -> str` — Formata um comando para exibição.
+
+## `.github/`
+
+**Propósito:** Arquivos lidos pelo GitHub. Hoje só o modelo de pull request; o CI remoto ainda não existe ([G6](/docs/progresso/gaps.md#g6-fiscais-automáticos-das-regras-de-engenharia)).
+
+### `.github/pull_request_template.md`
+
+**Propósito:** Modelo de pull request — o que e por quê, como foi testado e o checklist dos portões (`python scripts/ci.py`, inegociáveis, docs de progresso). **Quando/onde:** preenchido a cada PR aberto no GitHub.
+
+### `CLAUDE.md`
+
+**Propósito:** Ponte para o Claude Code: contém só `@AGENTS.md`, para que a fonte única das instruções continue sendo o `AGENTS.md`.
+
+### `ROADMAP.md`
+
+**Propósito:** Estágio atual (alpha), próximo estágio, números principais medidos/estimados, porcentagem por dimensão, próximos gaps e log de progresso. **Quando/onde:** primeira leitura de toda sessão de agente; espelhado na seção Status do `README.md`.
+
+## `docs/progresso/`
+
+**Propósito:** Documentos de progresso do projeto inteiro — fila de gaps, roadmap detalhado, avaliação por área e checklists por dimensão. Formato em `docs/regras/progresso.md`.
+
+### `docs/progresso/README.md`
+
+**Propósito:** Índice da pasta de progresso: qual documento consultar e quando.
+
+### `docs/progresso/gaps.md`
+
+**Propósito:** A fila de trabalho: gaps G1–G15 ranqueados pelo quanto bloqueiam o uso, com horas estimadas, se bloqueiam o beta, e o que falta / o que já foi feito em cada um.
+
+### `docs/progresso/roadmap.md`
+
+**Propósito:** Portão do alpha com evidência por fluxo central, proposta de portão do beta (decisão do dono), foco atual e marcos M0–M5.
+
+### `docs/progresso/avaliacao.md`
+
+**Propósito:** Placar por área (nota, faltando, horas, tipo), contagens medidas do código, calibração de horas pelo `git log` e evidências por área.
+
+## `docs/progresso/checklists/`
+
+**Propósito:** Um checklist por dimensão (funcionalidades, interface, desempenho, segurança, plataformas, qualidade) com item, esperado, estado e gap.
+
+### `docs/progresso/checklists/README.md`
+
+**Propósito:** Índice dos checklists com o resumo (porcentagem e horas) de cada dimensão.
+
+### `docs/progresso/checklists/funcionalidades.md`
+
+**Propósito:** Capacidades do agente (plano, decomposição, verificação, recuperação, skills, grafo, contratos, hierarquia, automações) e o estado de cada uma.
+
+### `docs/progresso/checklists/interface.md`
+
+**Propósito:** Partes da SPA (conversa, feed, histórico, narração, tokens ao vivo, administração, inspetor) e o estado de cada uma.
+
+### `docs/progresso/checklists/desempenho.md`
+
+**Propósito:** Aceite e custo com o modelo local real (cenários curtos, custo da falha, sessão longa, amostra, tokens).
+
+### `docs/progresso/checklists/seguranca.md`
+
+**Propósito:** Pedido somente leitura, aprovação de ferramenta arriscada, credenciais, banco do usuário e remoção em cascata.
+
+### `docs/progresso/checklists/plataformas.md`
+
+**Propósito:** macOS, Windows, Linux, versões de Python, provedores com e sem ciclo de ferramentas e MCP.
+
+### `docs/progresso/checklists/qualidade.md`
+
+**Propósito:** Comando único, CI remoto, lint, fiscal de camadas, documentação navegável, versão/licença e limitações em dia.
+
+### `docs/regras/progresso.md`
+
+**Propósito:** Regra dos documentos de progresso — linha de status, histórico de revisão, *medido*/*registrado*/*estimado*, estágios e o que atualizar em cada entrega.
+
+### `scripts/ci.py`
+
+**Propósito:** Comando único de verificação (`python scripts/ci.py`): roda lint, cabeçalhos, links, referências, estrutura Markdown, `resume.md`, testes da interface e suíte Python, e sai com 1 se algum falhar. **Quando/onde:** antes de todo commit; `--rapido` pula a suíte Python durante o trabalho.
+
+- `Passo` — Dataclass imutável de um portão: nome, comando, regra fiscalizada, se é lento, ferramenta exigida e texto de saída que reprova.
+- `passos() -> list[Passo]` — Lista os portões na ordem em que rodam, do mais barato ao mais caro.
+- `_disponivel(exige: str) -> bool` — Diz se a ferramenta exigida (ruff, pytest, node) está instalada.
+- `rodar_passo(passo: Passo, verbose: bool) -> tuple[bool, float, str]` — Executa um passo e devolve se passou, a duração e um resumo (ou o fim da saída quando reprova).
+- `main(argv: list[str] | None=None) -> int` — Lê `--rapido`/`-v`, roda os portões, imprime o placar e devolve 0 ou 1.

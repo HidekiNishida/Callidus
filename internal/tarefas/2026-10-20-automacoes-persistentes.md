@@ -50,18 +50,18 @@ do usuário (`callidus-supervisor install`) para rodar sem a interface.
 
 | Path absoluto | Notas |
 |---------------|-------|
-| `/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/automation/` | Núcleo: contratos, gatilhos, ações, dependências, despacho, execução, supervisor, CLI, adaptadores |
-| `/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/automation/README.md` | Índice do pacote |
-| `/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/services/scheduler.py` | Fachada do agendamento (compatibilidade) |
-| `/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/persistence/models.py` | `AutomationModel`, `AutomationFiringModel`, `AutomationEventModel` |
-| `/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/persistence/database.py` | `migrate_legacy_schedules` (idempotente) |
-| `/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/api/automation_routes.py` | Rotas das automações |
-| `/Users/hidekinishida/Documents/Projetos/Callidus/web/static/assets/app/components/automations.js` | Painel da interface |
-| `/Users/hidekinishida/Documents/Projetos/Callidus/docs/architecture/automacoes.md` | Documento de arquitetura |
-| `/Users/hidekinishida/Documents/Projetos/Callidus/tests/test_automation_runtime.py` | 35 regressões do runtime |
-| `/Users/hidekinishida/Documents/Projetos/Callidus/tests/test_automation_platforms.py` | Adaptadores das três plataformas |
-| `/Users/hidekinishida/Documents/Projetos/Callidus/tests/test_automation_api.py` | HTTP das automações |
-| `/Users/hidekinishida/Documents/Projetos/Callidus/tests/test_automation_end_to_end.py` | Fluxo de aceitação |
+| `/src/agent/automation/` | Núcleo: contratos, gatilhos, ações, dependências, despacho, execução, supervisor, CLI, adaptadores |
+| `/src/agent/automation/README.md` | Índice do pacote |
+| `/src/agent/services/scheduler.py` | Fachada do agendamento (compatibilidade) |
+| `/src/agent/persistence/models.py` | `AutomationModel`, `AutomationFiringModel`, `AutomationEventModel` |
+| `/src/agent/persistence/database.py` | `migrate_legacy_schedules` (idempotente) |
+| `/src/agent/api/automation_routes.py` | Rotas das automações |
+| `/web/static/assets/app/components/automations.js` | Painel da interface |
+| `/docs/architecture/automacoes.md` | Documento de arquitetura |
+| `/tests/test_automation_runtime.py` | 35 regressões do runtime |
+| `/tests/test_automation_platforms.py` | Adaptadores das três plataformas |
+| `/tests/test_automation_api.py` | HTTP das automações |
+| `/tests/test_automation_end_to_end.py` | Fluxo de aceitação |
 
 ---
 

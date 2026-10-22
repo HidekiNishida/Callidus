@@ -1,4 +1,11 @@
 """
+Arquivo: scripts/chat_automation_manual.py
+Nome: chat_automation_manual.py
+Propósito: Validação manual com o modelo real (gpt-oss:20b via Ollama).
+Responsabilidade: script de manutenção.
+Componentes: converse, main.
+Dependências: agent.config, agent.domain.schemas, agent.orchestrator.runner, agent.persistence.database, agent.persistence.models, agent.providers.ollama….
+
 Validação manual com o modelo real (gpt-oss:20b via Ollama).
 
 Uso:

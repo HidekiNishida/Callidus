@@ -60,6 +60,7 @@ Contexto estável do projeto: [project-context.md](/docs/project-context.md).
 | <img src="/media/icons/tarefas.svg" width="20" alt="Tarefas"> | [checklists-tarefas.md](/docs/regras/checklists-tarefas.md) | **Toda** atividade: criar/atualizar estado e retomar |
 | <img src="/media/icons/verificacao.svg" width="20" alt="Verificação"> | [verificacao-final.md](/docs/regras/verificacao-final.md) | **Antes de encerrar** qualquer tarefa |
 | <img src="/media/icons/documentacao.svg" width="20" alt="Documentação"> | [resumo-projeto.md](/docs/regras/resumo-projeto.md) | **Toda** tarefa que altera o repo: manter o [`resume.md`](/resume.md) em dia |
+| <img src="/media/icons/tarefas.svg" width="20" alt="Progresso"> | [progresso.md](/docs/regras/progresso.md) | Ao fechar uma entrega que muda o estado do projeto: [ROADMAP](/ROADMAP.md), [gaps](/docs/progresso/gaps.md), avaliação e checklists |
 | <img src="/media/icons/organizacao.svg" width="20" alt="Organização"> | [AGENTS.md](/AGENTS.md) | **Fonte canônica** das regras de engenharia — cabeçalho, docstrings, camadas, SOLID, testes, documentação e sincronização |
 
 Template de checklist: [`internal/tarefas/_modelo-checklist.md`](/internal/tarefas/_modelo-checklist.md).

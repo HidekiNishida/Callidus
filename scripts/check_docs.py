@@ -132,7 +132,7 @@ def main(argv: list[str]) -> int:
     Returns:
         0 quando nenhum link está quebrado; 1 quando há links quebrados.
     """
-    paths = argv[1:] or ["README.md", "docs", "src", "internal", "tests", "web", "scripts", "AGENTS.md"]
+    paths = argv[1:] or ["README.md", "docs", "src", "internal", "tests", "web", "scripts", "AGENTS.md", "ROADMAP.md"]
     broken: list[str] = []
     for file in _targets(paths):
         text = file.read_text(encoding="utf-8")

@@ -1,4 +1,13 @@
-# tests/test_web_frontend.py — a interface Vue está montada e conversa com rotas que existem
+"""
+Arquivo: tests/test_web_frontend.py
+Nome: test_web_frontend.py
+Propósito: a interface Vue está montada e conversa com rotas que existem.
+Responsabilidade: camada de testes.
+Componentes: test_index_mounts_the_vue_application, test_vue_is_vendored_locally, test_application_modules_exist, test_frontend_uses_endpoints_that_exist, test_interface_exposes_project_management, test_interface_has_command_palette_and_settings….
+Dependências: agent.api.main, __future__, pathlib, pytest, re.
+Observações: banco e filesystem temporários; nunca depender de credencial real ou serviço externo.
+"""
+
 from __future__ import annotations
 
 import re

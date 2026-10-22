@@ -118,8 +118,9 @@ def _avaliar(
         alvo_rel = valor.lstrip("/")
         if any(marca in alvo_rel for marca in ("*", "?", "<", ">")):
             return
-        # Caminhos de runtime (gerados em execução) não vivem no repositório.
-        if alvo_rel.startswith(("data/", "lab/out/")):
+        # Caminhos de runtime (gerados em execução) e o caderno local dos agentes (`plan/`,
+        # fora do git) não vivem no repositório.
+        if alvo_rel.startswith(("data/", "lab/out/", "plan/")):
             return
         # Nome solto sem pasta: pode ser um exemplo (app.py, calc.py).
         if "/" not in alvo_rel:
@@ -145,12 +146,12 @@ def main(argv: list[str]) -> int:
     """Verifica as referências da documentação contra o código.
 
     Args:
-        argv: pastas ou arquivos Markdown (padrão: README.md, AGENTS.md, docs, src, internal, web, tests, scripts).
+        argv: pastas ou arquivos Markdown (padrão: README.md, AGENTS.md, ROADMAP.md, docs, src, internal, web, tests, scripts).
 
     Returns:
         0 quando toda referência existe; 1 quando há referências quebradas.
     """
-    paths = argv[1:] or ["README.md", "AGENTS.md", "docs", "src", "internal", "web", "tests", "scripts"]
+    paths = argv[1:] or ["README.md", "AGENTS.md", "ROADMAP.md", "docs", "src", "internal", "web", "tests", "scripts"]
     modulos = _modulos()
     caminhos = _caminhos_documentados()
     problemas: list[str] = []

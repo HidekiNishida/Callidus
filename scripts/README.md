@@ -10,6 +10,7 @@ documentação ou em código — elas são a barreira mecânica das regras de
 
 | Script | O que garante |
 |--------|----------------|
+| [ci.py](/scripts/ci.py) | **Comando único**: roda todos os portões abaixo + lint, cabeçalhos, `resume.md`, testes da interface e suíte Python (`--rapido` pula a suíte) |
 | [check_docs.py](/scripts/check_docs.py) | Nenhum link interno ou âncora quebrada na documentação |
 | [check_references.py](/scripts/check_references.py) | Nenhum arquivo ou símbolo citado que não exista no código |
 | [check_markdown.py](/scripts/check_markdown.py) | Estrutura do Markdown: H1, hierarquia, tabelas, blocos de código, diagramas Mermaid |
@@ -19,6 +20,7 @@ documentação ou em código — elas são a barreira mecânica das regras de
 
 ```bash
 source .venv/bin/activate
+python scripts/ci.py            # tudo
 python scripts/check_docs.py && python scripts/check_references.py && python scripts/check_markdown.py
 ```
 
