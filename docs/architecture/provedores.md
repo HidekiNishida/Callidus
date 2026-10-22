@@ -85,6 +85,37 @@ providers:
 O servidor remoto precisa expor a porta do Ollama com TLS ou atrás de um proxy; o Callidus não
 transfere pesos de modelo — a inferência acontece onde o servidor está.
 
+#### Política por família de modelo (`qwen3:8b` e outros)
+
+O Ollama decide sozinho a janela, o tamanho da saída e a amostragem quando o pedido não diz nada —
+e os padrões dele não combinam com o orçamento do Callidus. O adaptador completa o corpo do
+`/api/chat` com a política da família do modelo
+([`ollama_policy.py`](/src/agent/providers/ollama_policy.py)); **o que vier de `generation` na
+configuração sempre vence**.
+
+| Opção | Sem a política | Com a política |
+|-------|----------------|----------------|
+| `num_ctx` | padrão do servidor (4 096 abaixo de 24 GiB de VRAM); o excedente era cortado **em silêncio**, começando pelas regras e pelo formato de saída | `context_limit` do perfil (8 192); cresce em degraus de 4 096 (teto 32 768) só quando o prompt não cabe — a mesma janela entre chamadas, para o Ollama não recarregar o modelo |
+| `num_predict` | ilimitado (um plano em repetição chegou a 7 626 tokens em 466 s) | 2 048 para plano, JSON e resposta; o resto da janela para código; +4 096 com raciocínio ligado |
+| Amostragem (`qwen3`) | a do Modelfile (modo de raciocínio: 0,6 / 0,95) | modo direto: `prose` 0,7 / top_p 0,8 / top_k 20 (recomendação do fabricante); `code` 0,5; `structured` 0,3 — escolhida pela finalidade da chamada (`ChatCompletionRequest.purpose`) |
+
+| Família | Quem | O que a política faz |
+|---------|------|----------------------|
+| `qwen3` | `qwen3:8b`, `qwen3-vl:8b`, `qwen3:*` | janela, saída e amostragem por finalidade |
+| genérica | `llama3.2`, `mistral`, qualquer outro | janela e saída; amostragem do Modelfile |
+| `always_reasoning` | `gpt-oss`, `deepseek-r1` | nada muda — o raciocínio consome `num_predict`, e o `gpt-oss:20b` é o modelo de referência da avaliação |
+
+Na resposta, o adaptador também corrige dois desvios do formato do Qwen3:
+
+- `<think>…</think>` dentro do texto (servidor que não separa o canal de raciocínio) vai para
+  `reasoning`; um `<think>` sem fechamento esvazia a resposta — é saída cortada, não conteúdo.
+- `<tool_call>{json}</tool_call>` escrito como texto vira chamada de ferramenta, só quando o nome é
+  de uma ferramenta oferecida e o JSON é válido.
+
+Cada inferência grava as decisões em `provider_meta_json.adapter` (família, `num_ctx`,
+`num_predict`, `context_saturated`, correções aplicadas): é o que permite dizer, depois, se uma
+resposta ruim veio de um prompt cortado. Medição: [avaliacao.md](/docs/architecture/avaliacao.md#-qwen38b--servidor-ollama-simulado).
+
 ### llama.cpp local e remoto
 
 O `llama-server` expõe a API compatível com OpenAI em `/v1`; o adaptador usa
@@ -327,6 +358,8 @@ curl http://127.0.0.1:8080/v1/models
 | `Ollama indisponível` | servidor fora do ar ou URL errada | `curl` na URL; confira porta e proxy |
 | `llama.cpp server indisponível` | `llama-server` sem `/v1` ou porta errada | suba com `--host 0.0.0.0` e confira a porta |
 | `tempo esgotado` | modelo lento ou timeout curto | aumente `timeout` do provedor |
+| Resposta em prosa, sem o JSON pedido, só com modelo pequeno | prompt maior que a janela do servidor: o começo (regras, formato) foi cortado | confira `provider_meta_json.adapter.context_saturated`; não fixe `num_ctx` abaixo do `context_limit` em `generation` |
+| `<think>` aparecendo na resposta | servidor Ollama antigo, sem canal de raciocínio | o adaptador já separa; atualize o Ollama para o campo `think` funcionar |
 | `limite de uso atingido (HTTP 429)` | cota do plano | aguarde ou troque de provedor explicitamente |
 | `a transmissão terminou antes do fim` | servidor caiu no meio do streaming | repita a operação; o erro fica registrado |
 | Resposta sem ferramentas | o modelo não suporta tool calling | use outro modelo ou prompt explícito |

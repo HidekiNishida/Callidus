@@ -4,7 +4,7 @@ Em que estágio o Callidus está e quanto falta para o próximo.
 
 Detalhes: [docs/progresso/](/docs/progresso/README.md) · Fila: [gaps.md](/docs/progresso/gaps.md) · Formato: [progresso.md](/docs/regras/progresso.md)
 
-> **Revisado em:** 2026-10-21 · **Atualizado em:** 2026-10-21 · **Mudança:** major (criação)
+> **Revisado em:** 2026-10-22 · **Atualizado em:** 2026-10-22 · **Mudança:** minor (adaptação ao qwen3:8b; contagem de testes)
 
 **Estágio:** alpha · **Próximo:** beta (critérios propostos, aguardando o dono)
 
@@ -14,7 +14,7 @@ Detalhes: [docs/progresso/](/docs/progresso/README.md) · Fila: [gaps.md](/docs/
 |---|-------|------|
 | Fluxos centrais que passam no portão do alpha | 6 / 6 (1 com ressalvas) | medido |
 | Cenários aceitos com o modelo local (`gpt-oss:20b`) | 15 / 15 | medido (2026-10-20) |
-| Testes Python / testes da interface | 847 funções `test_` / 57 passam | medido (2026-10-21) |
+| Testes Python / testes da interface | 872 funções `test_` (929 casos passam, 1 pulado) / 57 passam | medido (2026-10-22) |
 | Qualidade geral | ~61 % | estimado |
 | Horas até o beta | ~43 h | estimado |
 | Horas para fechar toda a fila | ~117 h | estimado |
@@ -41,6 +41,7 @@ Detalhes: [docs/progresso/](/docs/progresso/README.md) · Fila: [gaps.md](/docs/
 
 | Data | O que entrou |
 |------|--------------|
+| 2026-10-22 | Adaptação ao `qwen3:8b`: janela e saída explícitas no Ollama, estimativa de tokens calibrada (real/estimado era 1,30), conversa do ciclo de ferramentas dentro da janela, reparo único do plano com esquema, estado de tarefas irmãs fora das regras do projeto; medição com servidor simulado ([avaliacao.md](/docs/architecture/avaliacao.md#-qwen38b--servidor-ollama-simulado)) |
 | 2026-10-21 | Documentos de progresso, comando único de verificação (`python scripts/ci.py`), ritual de sessão e decisões do dono no [AGENTS.md](/AGENTS.md) |
 | 2026-10-21 | Automação de sistema/desktop, tarefas agendadas pela conversa, piso de qualidade, feed com narração |
 | 2026-10-20 | Estratégia de resolução medida: −34 % de chamadas ao modelo, 15/15 aceitos |
@@ -50,4 +51,5 @@ Detalhes: [docs/progresso/](/docs/progresso/README.md) · Fila: [gaps.md](/docs/
 
 | Data | Mudança | Resumo |
 |------|---------|--------|
+| 2026-10-22 | minor | Adaptação ao `qwen3:8b` e contagem de testes refeita |
 | 2026-10-21 | major | Criação a partir do kit de agentes de IA |

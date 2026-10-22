@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from agent.providers.base import ChatMessage, ModelProfile
+from agent.providers.base import ChatMessage, ModelProfile, estimate_text_tokens
 
 
 @dataclass
@@ -68,10 +68,15 @@ class ContextBudgetError(ValueError):
 
 
 def estimate_tokens(text: str) -> int:
-    """Heurística conservadora (~4 chars/token em PT/EN misto)."""
-    if not text:
-        return 0
-    return max(1, len(text) // 4)
+    """Estimativa local de tokens do texto (ver `providers.base.CHARS_PER_TOKEN`, calibrada contra o Ollama).
+
+    Args:
+        text: texto do componente.
+
+    Returns:
+        A estimativa em tokens; texto vazio vale zero.
+    """
+    return estimate_text_tokens(text)
 
 
 _INNER_SPACES = re.compile(r"(?<=\S)[ \t]{2,}")

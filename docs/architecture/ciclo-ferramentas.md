@@ -79,8 +79,15 @@ prompt — vira permissão. Ver [execucao-autonoma.md](/docs/architecture/execuc
 
 ## ⚠️ Limites
 
-- `max_tool_iterations` (padrão 6, `Settings`): rodadas de inspeção. Ao estourar, o ciclo faz uma
-  última chamada com o mesmo histórico e a instrução de fazer a alteração agora.
+- `max_tool_iterations` (padrão 4, `Settings`) e `max_tool_calls` (padrão 8): rodadas de inspeção
+  e total de leituras. Ao estourar, o ciclo faz uma última chamada com o mesmo histórico e a
+  instrução de fazer a alteração agora.
+- **A conversa cabe na janela** (`fit_history`): antes de cada chamada, se o pedido + as leituras
+  passarem de `context_limit − output_reserve`, os resultados de ferramenta **antigos** viram um
+  trecho de 240 caracteres com o aviso de que podem ser lidos de novo. O sistema, o pedido, as
+  mensagens do assistente e os dois resultados mais recentes nunca são tocados. Sem isso, num
+  modelo de janela pequena (`qwen3:8b`), o servidor cortava o **começo** da conversa — o objetivo
+  e o formato de saída. Cada ajuste emite `context.history_compacted`.
 - Repetir a mesma chamada de ferramenta devolve ao modelo o aviso "você já consultou isto".
 - A escrita continua passando pelo registro de ferramentas: uma só origem de mutação no disco.
 - Provedores sem `tool_loop` (Anthropic, Gemini, mock) seguem no protocolo JSON de uma tacada.

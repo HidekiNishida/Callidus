@@ -86,8 +86,9 @@ def test_overflow_error_carries_breakdown_and_is_a_value_error():
         assemble_messages(profile, [ContextComponent(name="big", text="z" * 500, required=True)])
     exc = caught.value
     assert isinstance(exc, ContextBudgetError)
-    assert exc.required_tokens == 125
-    assert exc.breakdown == [{"name": "big", "tokens": 125, "required": True}]
+    # 500 caracteres a 3 caracteres por token (estimativa calibrada contra o Ollama), arredondado para cima.
+    assert exc.required_tokens == 167
+    assert exc.breakdown == [{"name": "big", "tokens": 167, "required": True}]
 
 
 def test_compact_text_keeps_content_and_indentation():

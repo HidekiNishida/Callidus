@@ -181,6 +181,56 @@ aceitação foi `false` nos dois lados e nenhum arquivo foi criado à revelia. A
 - Nenhuma medição de tokens do provedor foi feita (o Callidus estima tokens de contexto; o Ollama
   não expõe o consumo aqui).
 
+## 🎯 qwen3:8b — servidor Ollama simulado
+
+Medição de 22/10/2026, sem o modelo real (o Ollama não estava acessível no ambiente da auditoria).
+O roteiro [`scripts/simular-qwen3.py`](/scripts/simular-qwen3.py) roda o fluxo inteiro (planejar →
+ler → alterar → `pytest` → responder) contra um **servidor Ollama simulado** que reproduz o
+comportamento documentado do servidor real — janela padrão de 4 096 tokens quando o corpo não traz
+`num_ctx`, corte silencioso das mensagens mais antigas e do começo do texto, esquemas das
+ferramentas dentro do prompt — e um "modelo" determinístico que só vê o que sobrou depois do
+corte. Ele mede **o que o Callidus manda ao servidor**, não a qualidade do qwen3.
+
+```bash
+python scripts/simular-qwen3.py                      # servidor com janela padrão de 4096
+python scripts/simular-qwen3.py --janela-padrao 32768  # máquina com 24–48 GiB de VRAM
+```
+
+Antes = commit `d180d09`; depois = esta entrega. Mesmos cenários, mesmo servidor simulado.
+
+| Cenário (janela padrão 4 096) | Run antes → depois | `calc.py` corrigido | Chamadas ao modelo | Chamadas com corte | Tokens enviados |
+|-------------------------------|--------------------|---------------------|--------------------|--------------------|-----------------|
+| `simples` (fixture de 181 bytes) | completed → completed | sim → sim | 4 → 4 | 0 → 0 | 5 960 → 5 670 |
+| `inspecao_longa` (6 leituras) | completed → completed | sim → sim | 7 → 7 | 0 → 0 | 16 236 → 15 511 |
+| `arquivo_realista` (`calc.py` de ~9 KB) | **paused → completed** | **não → sim** | **20 → 6** | **18 → 0** | 106 801 → 24 394 |
+| `realista_inspecao_longa` | **paused → completed** | **não → sim** | **20 → 7** | **18 → 0** | 106 801 → 30 773 |
+| `pensamento_no_texto` | completed → completed | sim → sim | 4 → 4 | 0 → 0 | 5 960 → 5 670 |
+
+Com `--janela-padrao 32768`, os cinco cenários concluem nos dois lados, com as mesmas chamadas; o
+depois pede uma janela 4× menor (8 192, menos memória de KV) e manda ~4 % menos tokens. No cenário
+`pensamento_no_texto`, o antes grava o `<think>` na resposta final ao usuário; o depois, não.
+
+Como ler:
+
+- O ganho grande depende da máquina: abaixo de 24 GiB de VRAM (o padrão de 4 096 do Ollama), um
+  arquivo de tamanho comum já fazia o prompt passar da janela, e o servidor cortava o objetivo e o
+  formato de saída. Com 24 GiB ou mais, o padrão do servidor já era grande o bastante.
+- Os tokens menores vêm do fim do estado de tarefas irmãs nas regras do projeto
+  ([orcamento-contexto.md](/docs/architecture/orcamento-contexto.md#-memória)).
+- O "modelo" do simulador acerta sempre que vê a instrução: a medição não diz nada sobre a taxa
+  de acerto do qwen3:8b real.
+
+### Pendente: medição com o modelo real
+
+```bash
+ollama pull qwen3:8b
+python lab/avaliar.py --label qwen3-depois --model qwen3:8b --provider meu_ollama --max-steps 120
+```
+
+O modelo de referência da avaliação continua `gpt-oss:20b` (decisão do dono, AGENTS.md §17); a
+avaliação acima com o `qwen3:8b` ainda **não foi feita**. Rode três rodadas por lado antes de
+afirmar ganho de aceite.
+
 ## 🧪 Testes determinísticos
 
 A avaliação real depende do Ollama. Os testes de unidade cobrem os mesmos comportamentos sem
@@ -196,5 +246,8 @@ python -m pytest -q
 | [`tests/test_verification_integrity.py`](/tests/test_verification_integrity.py) | `stages` de verdade, evidência que envelhece |
 | [`tests/test_context_requirements.py`](/tests/test_context_requirements.py) | requisitos no prompt, objetivo global e regras do projeto protegidos |
 | [`tests/test_recovery_and_reporting.py`](/tests/test_recovery_and_reporting.py) | cancelamento previsto, suíte que reprova, rodapé da resposta final |
+| [`tests/test_qwen3_ollama_policy.py`](/tests/test_qwen3_ollama_policy.py) | janela e saída explícitas, amostragem por finalidade, `<think>`/`<tool_call>` no texto |
+| [`tests/test_qwen3_context.py`](/tests/test_qwen3_context.py) | conversa do ciclo dentro da janela, estado de tarefas irmãs fora das regras do projeto |
+| [`tests/test_qwen3_plan_repair.py`](/tests/test_qwen3_plan_repair.py) | recuperação única do plano com esquema imposto |
 
 Voltar: [architecture/README.md](/docs/architecture/README.md)

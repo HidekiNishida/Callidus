@@ -4,7 +4,7 @@ Tudo o que falta no Callidus, ranqueado pelo quanto bloqueia quem o usa para des
 
 Voltar: [docs/progresso/](/docs/progresso/README.md) · Formato: [progresso.md](/docs/regras/progresso.md)
 
-> **Revisado em:** 2026-10-21 · **Atualizado em:** 2026-10-21 · **Mudança:** major (criação)
+> **Revisado em:** 2026-10-22 · **Atualizado em:** 2026-10-22 · **Mudança:** minor (adaptação ao qwen3:8b; G1 e G11 atualizados)
 
 É a fila de trabalho: sem tarefa dada, pegue o **maior rank em que consiga avançar** e atualize a entrada na mesma entrega. Os ids (`G1`, `G2`…) são estáveis; o rank muda. As fontes desta primeira versão são [limitacoes.md](/docs/architecture/limitacoes.md), [diagnostico-evolucao.md](/docs/architecture/diagnostico-evolucao.md), a [avaliação reproduzível](/docs/architecture/avaliacao.md) e a auditoria de 2026-10-21 (`.cursor/CALLIDUS_AUDITORIA.md`, `.cursor/CALLIDUS_DESCOBERTAS.md`). Todas as horas são *estimadas*.
 
@@ -35,7 +35,8 @@ Fora de escopo por decisão registrada: serializar inferência entre **processos
 ## G1 Avaliação real ampla e repetível
 
 - **Faltando:** só 5 cenários curtos, 3 rodadas por lado ([avaliacao.md](/docs/architecture/avaliacao.md)); nenhuma sessão longa de produção; cenários B–F da auditoria só parciais; a disposição de qualidade nunca foi comparada com o modelo local ([limitacoes.md](/docs/architecture/limitacoes.md), item 19); nenhum benchmark multilíngue; sem medição de tokens do provedor.
-- **Feito:** `lab/avaliar.py` com aceite objetivo e falha injetada; 15/15 cenários aceitos em 2026-10-20 com `gpt-oss:20b` (*medido*).
+- **Feito:** `lab/avaliar.py` com aceite objetivo e falha injetada; 15/15 cenários aceitos em 2026-10-20 com `gpt-oss:20b` (*medido*). `scripts/simular-qwen3.py`: fluxo inteiro contra um servidor Ollama simulado — com a janela padrão de 4 096, dois cenários com arquivo de tamanho comum passaram de pausados (20 chamadas, 18 com o prompt cortado) a concluídos (6–7 chamadas, nenhum corte) (*medido*, 2026-10-22, [avaliacao.md](/docs/architecture/avaliacao.md#-qwen38b--servidor-ollama-simulado)).
+- **Faltando (qwen3:8b):** a avaliação real com `qwen3:8b` (`lab/avaliar.py --model qwen3:8b`, três rodadas por lado); a amostragem por finalidade do qwen3 é padrão do fabricante + julgamento, ainda sem medição.
 
 ## G2 Decomposição em repositórios grandes
 
@@ -85,7 +86,8 @@ Fora de escopo por decisão registrada: serializar inferência entre **processos
 ## G11 Paridade entre provedores
 
 - **Faltando:** Anthropic e Gemini fora do ciclo de ferramentas (`tool_loop`); Anthropic sem JSON estruturado nativo; sem `embeddings`, `audio` nem lote no modo OpenAI-compatível; visão só com `supports_vision` ([limitacoes.md](/docs/architecture/limitacoes.md), itens 2 e 13).
-- **Feito:** Ollama, OpenAI-compatível, llama.cpp, OpenRouter, Anthropic e Gemini com testes de provedor.
+- **Faltando (janela):** o llama.cpp e o OpenAI-compatível não recebem a política de janela e saída do Ollama — no llama.cpp a janela é a do `--ctx-size` do servidor, que o Callidus não confere.
+- **Feito:** Ollama, OpenAI-compatível, llama.cpp, OpenRouter, Anthropic e Gemini com testes de provedor. Ollama com política por família (`ollama_policy.py`): `num_ctx`/`num_predict` explícitos, amostragem do `qwen3` por finalidade, `<think>` e `<tool_call>` no texto corrigidos (`tests/test_qwen3_ollama_policy.py`).
 
 ## G12 Automação de desktop nas três plataformas
 
@@ -108,4 +110,5 @@ Fora de escopo por decisão registrada: serializar inferência entre **processos
 
 | Data | Mudança | Resumo |
 |------|---------|--------|
+| 2026-10-22 | minor | Adaptação ao `qwen3:8b`: janela e saída explícitas no Ollama, estimativa calibrada, conversa do ciclo na janela, reparo do plano; G1 com a medição simulada e a real pendente; G11 com a política por família |
 | 2026-10-21 | major | Criação: 15 gaps tirados das limitações, do diagnóstico, da avaliação e da auditoria |

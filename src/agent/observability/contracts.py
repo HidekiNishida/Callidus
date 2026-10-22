@@ -118,6 +118,11 @@ EVENT_SPECS: dict[str, EventSpec] = {
         _spec("budget.pressure", ("level", "purpose"), description="o consumo da execução entrou na faixa de redução"),
         _spec("budget.granted", ("tokens", "reason"), description="autorização explícita de mais tokens para a execução"),
         _spec("verification.recovery_planned", ("cause", "action"), description="recuperação da verificação planejada"),
+        _spec(
+            "context.history_compacted",
+            ("purpose", "results"),
+            description="resultados antigos do ciclo de ferramentas resumidos para a conversa caber na janela do modelo",
+        ),
     )
 }
 

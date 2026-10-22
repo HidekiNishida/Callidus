@@ -40,5 +40,6 @@ python scripts/check_docs.py && python scripts/check_references.py && python scr
 | [medir-hierarquia.py](/scripts/medir-hierarquia.py) | **Mede as consultas sob demanda** — caracteres levados ao pai, inferências gastas e concorrência máxima do executor (`--json`) |
 | [avaliar-consultas.py](/scripts/avaliar-consultas.py) | **Avalia o casamento lexical** com gabarito (direta/indireta/ambígua/sem evidência + adversariais) |
 | [medir-ollama.py](/scripts/medir-ollama.py) | **Mede com Ollama real** — latência, chamadas, contexto, RSS do servidor e VRAM |
+| [simular-qwen3.py](/scripts/simular-qwen3.py) | **Mede sem modelo real** — fluxo de ponta a ponta contra um servidor Ollama simulado (janela padrão, corte silencioso, `<think>` no texto); compara commits num *worktree* |
 
 **Voltar:** [README](/README.md) · [Regras](/docs/regras/README.md)

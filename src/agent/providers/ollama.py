@@ -3,9 +3,9 @@ Arquivo: src/agent/providers/ollama.py
 Nome: ollama.py
 Propósito: integrar o agente com o Ollama local ou remoto pela API nativa.
 Responsabilidade: camada de infraestrutura — inferência, streaming e listagem de modelos no Ollama.
-Componentes: OllamaProvider, chat_body, inference_failure_text.
+Componentes: OllamaProvider, chat_body, build_chat_body, normalize_reply, inference_failure_text.
 Dependências: agent.providers.base, agent.providers.http, httpx.
-Observações: a API nativa do Ollama é usada (`/api/tags` e `/api/chat`), não a compatível com OpenAI.
+Observações: a API nativa do Ollama é usada (`/api/tags` e `/api/chat`), não a compatível com OpenAI; a política por família de modelo vive em `ollama_policy.py`.
 """
 from __future__ import annotations
 
@@ -24,6 +24,13 @@ from agent.providers.base import (
     ToolCall,
 )
 from agent.providers.http import HttpClientConfig, client_kwargs, get_json, post_json, stream_lines
+from agent.providers.ollama_policy import (
+    apply_request_policy,
+    context_saturated,
+    offered_tool_names,
+    split_reasoning,
+    tool_calls_from_text,
+)
 
 
 def _ollama_message(message) -> dict:
@@ -93,13 +100,18 @@ def _reasoning_model(model_id: str) -> bool:
 
 
 def chat_body(request: ChatCompletionRequest) -> dict:
+    """Corpo da requisição de inferência no formato da API do Ollama (ver `build_chat_body`)."""
+    return build_chat_body(request)[0]
+
+
+def build_chat_body(request: ChatCompletionRequest) -> tuple[dict, dict]:
     """Monta o corpo da requisição de inferência no formato da API do Ollama.
 
     Args:
         request: requisição do Callidus.
 
     Returns:
-        O corpo JSON aceito pelo `/api/chat`.
+        `(corpo JSON aceito pelo /api/chat, decisões da política da família do modelo)`.
     """
     options = dict(request.profile.generation or {})
     think = options.pop("think", False)
@@ -119,13 +131,57 @@ def chat_body(request: ChatCompletionRequest) -> dict:
         body["keep_alive"] = keep_alive
     if options:
         body["options"] = options
+    # Padrões da família do modelo (janela, saída, amostragem) só onde a configuração calou.
+    policy = apply_request_policy(body, request)
     if request.response_format is not None:
         body["format"] = request.response_format.get("schema") or request.response_format
     if request.tools:
         body["tools"] = request.tools
     if request.tool_choice:
         body["tool_choice"] = request.tool_choice
-    return body
+    return body, policy
+
+
+def normalize_reply(
+    content: str,
+    reasoning: str | None,
+    calls: list[ToolCall] | None,
+    request: ChatCompletionRequest,
+) -> tuple[str, str | None, list[ToolCall] | None, list[str]]:
+    """Normaliza a resposta: raciocínio vazado no texto e chamada de ferramenta escrita como texto.
+
+    Args:
+        content: texto devolvido pelo servidor.
+        reasoning: canal de raciocínio devolvido pelo servidor.
+        calls: chamadas de ferramenta já reconhecidas pelo servidor.
+        request: requisição original (ferramentas oferecidas).
+
+    Returns:
+        `(texto, raciocínio, chamadas, correções aplicadas)`. As correções são rótulos curtos
+        (`think_in_content`, `tool_call_in_content`) gravados nos metadados da inferência.
+    """
+    fixes: list[str] = []
+    text, leaked = split_reasoning(content)
+    if leaked or text != content:
+        fixes.append("think_in_content")
+        reasoning = "\n".join(part for part in (reasoning, leaked) if part) or None
+    if not calls and request.tools:
+        recovered, rest = tool_calls_from_text(text, offered_tool_names(request.tools))
+        if recovered:
+            fixes.append("tool_call_in_content")
+            calls, text = recovered, rest
+    return text, reasoning, calls, fixes
+
+
+def _callidus_meta(policy: dict, data: dict, fixes: list[str]) -> dict:
+    """Metadados do Callidus anexados ao corpo bruto (janela pedida, saturação, correções)."""
+    meta = dict(policy)
+    meta["context_saturated"] = context_saturated(
+        data.get("prompt_eval_count"), data.get("eval_count"), policy.get("num_ctx")
+    )
+    if fixes:
+        meta["normalized"] = fixes
+    return meta
 
 
 def _tool_calls(message: dict) -> list[ToolCall] | None:
@@ -266,7 +322,7 @@ class OllamaProvider(LLMProvider):
             ProviderError: quando a chamada HTTP falha.
         """
         url = f"{self._base_url}/api/chat"
-        body = chat_body(request)
+        body, policy = build_chat_body(request)
 
         try:
             async with self._client() as client:
@@ -281,17 +337,20 @@ class OllamaProvider(LLMProvider):
         except httpx.HTTPError as exc:
             raise ProviderError(f"Falha na inferência Ollama: {inference_failure_text(exc)}") from exc
 
-        message = (data or {}).get("message") or {}
-        content = message.get("content") or ""
+        data = data or {}
+        message = data.get("message") or {}
+        content, reasoning, calls, fixes = normalize_reply(
+            message.get("content") or "", message.get("thinking") or None, _tool_calls(message), request
+        )
         response = ChatCompletionResponse(
             content=content,
-            raw=data,
-            prompt_tokens_estimate=(data or {}).get("prompt_eval_count"),
-            completion_tokens_estimate=(data or {}).get("eval_count"),
-            tool_calls=_tool_calls(message),
-            finish_reason=(data or {}).get("done_reason"),
-            model=(data or {}).get("model"),
-            reasoning=message.get("thinking") or None,
+            raw={**data, "callidus": _callidus_meta(policy, data, fixes)},
+            prompt_tokens_estimate=data.get("prompt_eval_count"),
+            completion_tokens_estimate=data.get("eval_count"),
+            tool_calls=calls,
+            finish_reason=data.get("done_reason"),
+            model=data.get("model"),
+            reasoning=reasoning,
         )
         from agent.orchestrator.usage import remember_usage
 
@@ -315,7 +374,7 @@ class OllamaProvider(LLMProvider):
             ProviderError: quando o stream falha, traz uma linha inválida ou termina sem a mensagem final.
         """
         url = f"{self._base_url}/api/chat"
-        body = chat_body(request)
+        body, policy = build_chat_body(request)
         body["stream"] = True
         parts: list[str] = []
         thoughts: list[str] = []
@@ -357,18 +416,22 @@ class OllamaProvider(LLMProvider):
             raise ProviderError(f"Falha na inferência Ollama: {inference_failure_text(exc)}") from exc
         if not final:
             raise ProviderError("Falha na inferência Ollama: a transmissão terminou sem a mensagem final")
-        content = "".join(parts)
         message = final.get("message") or {}
         calls = _tool_calls(message) or _tool_calls({"tool_calls": streamed_calls})
+        content, reasoning, calls, fixes = normalize_reply("".join(parts), "".join(thoughts) or None, calls, request)
         response = ChatCompletionResponse(
             content=content,
-            raw={**final, "message": {"role": "assistant", "content": content}},
+            raw={
+                **final,
+                "message": {"role": "assistant", "content": content},
+                "callidus": _callidus_meta(policy, final, fixes),
+            },
             prompt_tokens_estimate=final.get("prompt_eval_count"),
             completion_tokens_estimate=final.get("eval_count"),
             tool_calls=calls,
             finish_reason=final.get("done_reason"),
             model=final.get("model"),
-            reasoning="".join(thoughts) or None,
+            reasoning=reasoning,
         )
         from agent.orchestrator.usage import remember_usage
 

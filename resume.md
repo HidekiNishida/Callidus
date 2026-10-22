@@ -1634,6 +1634,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `norm(items) → list[str]` — Normaliza uma lista de títulos para comparação.
 
 - `_supports_tool_loop(provider) → bool` — O provedor sabe manter a conversa de ferramentas? (mesma regra do orquestrador.).
+- `PLAN_SCHEMA` — esquema JSON mínimo do plano para a decodificação restrita do servidor (`metadata` livre; o contrato completo continua em `normalize_plan_payload`).
+- `_plan_from_content(content: str) -> DecompositionResult | None` — interpreta, normaliza e valida o plano devolvido pelo modelo; `None` quando não há plano utilizável.
+- `_repair_plan(provider: LLMProvider, profile: ModelProfile, messages: list, previous: str) -> DecompositionResult | None` — recuperação **única**: o mesmo pedido + a resposta inválida + a ordem de entregar só o JSON, com `response_format` = `PLAN_SCHEMA`; falha devolve `None` (o template assume).
+- `_supports_structured_output(provider) -> bool` — o provedor declara saída estruturada (decodificação restrita a um esquema).
+
 ### `src/agent/orchestrator/engine.py`
 
 **Propósito:** esqueleto explícito do ciclo de orquestração, capable de promover e iniciar tarefas. **Quando/onde:** usado como ciclo mínimo de coordenação de status (base para as fases seguintes), independente do `RunOrchestrator` completo.
@@ -2177,6 +2182,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `LLMProvider._chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Implementação do streaming pelo provedor. Sempre chamada por `chat_streaming`.
 - `LLMProvider.health_check(self) → ProviderHealth` — Verificação de conectividade barata: lista os modelos do servidor, sem inferência.
 - `LLMProvider.close(self) → None` — Libera recursos do provedor (nenhum por padrão).
+- `CHARS_PER_TOKEN` — 3 caracteres por token na estimativa local (medido contra o `prompt_eval_count` do Ollama: com 4 a estimativa ficava 12–56 % abaixo do real).
+- `estimate_text_tokens(text: str) -> int` — estimativa local de tokens, arredondada para cima; base de `context.budget.estimate_tokens`.
+- `ChatCompletionRequest.purpose` — finalidade da chamada (`plan`, `operation`, `final_answer`...), preenchida pelo `observed_chat`; o provedor escolhe padrões de geração por ela.
+
 ### `src/agent/providers/llamacpp.py`
 
 **Propósito:** integra servidores llama.cpp/llama-server pela API compatível com OpenAI, com chat simples e streaming. **Quando/onde:** usado como provedor de inferência local quando o `provider` configurado é `llamacpp`.
@@ -2247,6 +2256,23 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_reasoning_model(model_id: str) -> bool` — detecta qwen3, gpt-oss, deepseek, reason.
 - `chat_body(request: ChatCompletionRequest) -> dict` — monta body (model, messages, stream, options, format, think para reasoning models).
 - `inference_failure_text(exc: Exception) -> str` — normaliza erro (timeout → "tempo esgotado").
+- `build_chat_body(request: ChatCompletionRequest) -> tuple[dict, dict]` — corpo do `/api/chat` e as decisões da política da família (`ollama_policy.apply_request_policy`); `chat_body` devolve só o corpo.
+- `normalize_reply(content: str, reasoning: str | None, calls: list[ToolCall] | None, request: ChatCompletionRequest) -> tuple[str, str | None, list[ToolCall] | None, list[str]]` — tira `<think>` do texto e recupera `<tool_call>` escrito como texto (só ferramentas oferecidas); devolve as correções aplicadas.
+- `_callidus_meta(policy: dict, data: dict, fixes: list[str]) -> dict` — metadados anexados em `raw["callidus"]`: família, `num_ctx`, `num_predict`, `context_saturated`, correções; o `observed_chat` grava em `provider_meta_json.adapter`.
+
+### `src/agent/providers/ollama_policy.py`
+
+**Propósito:** política por família de modelo do adaptador Ollama — janela (`num_ctx`) e saída (`num_predict`) explícitas, amostragem por finalidade, raciocínio vazado e chamada de ferramenta escrita como texto. **Quando/onde:** chamada pelo `ollama.build_chat_body` e pelo `normalize_reply`; o que vier de `generation` vence sempre.
+
+- `ModelFamily` — o que o adaptador sabe de uma família (`manage_window`, `sampling` por classe, `thinking_sampling`).
+- `family_for(model_id: str) -> ModelFamily` — `qwen3` (amostragem do modo direto), `always_reasoning` (`gpt-oss`, `deepseek-r1`: nada muda) ou genérica (só janela e saída).
+- `purpose_class(purpose: str | None, *, structured: bool=False) -> str | None` — `structured` (plano, automação, `response_format`), `code` (operação) ou `prose` (resposta, chat); `None` sem padrão.
+- `_round_up(value: int, step: int) -> int` — arredonda para o próximo múltiplo (degraus de janela estáveis).
+- `apply_request_policy(body: dict[str, Any], request: ChatCompletionRequest) -> dict[str, Any]` — completa `options`: `num_predict` = reserva de saída (+4096 com raciocínio), `num_ctx` = `context_limit` ou o degrau de 4096 que cabe (teto 32768), amostragem da família; devolve os metadados da decisão.
+- `split_reasoning(content: str) -> tuple[str, str]` — separa `<think>…</think>` (e o `<think>` sem fechamento) da resposta.
+- `tool_calls_from_text(content: str, offered: set[str]) -> tuple[list[ToolCall], str]` — recupera `<tool_call>{json}</tool_call>` com nome de ferramenta oferecida.
+- `offered_tool_names(tools: list[dict[str, Any]] | None) -> set[str]` — nomes das ferramentas oferecidas (formato OpenAI).
+- `context_saturated(prompt_tokens: int | None, completion_tokens: int | None, num_ctx: int | None) -> bool` — entrada + saída ≥ 98 % da janela: sinal de corte pelo servidor.
 
 ## `src/agent/security/`
 
@@ -4224,6 +4250,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `ToolLoopOutcome.asked_tools(self) → list[str]` — Lista as ferramentas que o modelo pediu no ciclo.
 - `ToolLoopOutcome.applied(self) → bool` — Diz se o modelo deixou alguma alteração aplicada no disco.
+- `history_tokens(history: list[ChatMessage], tools: list[dict[str, Any]] | None=None) -> int` — tamanho estimado da conversa do ciclo, com as chamadas e os esquemas das ferramentas.
+- `fit_history(history: list[ChatMessage], profile: ModelProfile, tools: list[dict[str, Any]] | None=None) -> list[str]` — mantém a conversa dentro de `context_limit − output_reserve`: resume só resultados de ferramenta antigos (os 2 últimos, o sistema, o pedido e o assistente ficam inteiros); emite `context.history_compacted`.
+
 ### `src/agent/providers/anthropic.py`
 
 **Propósito:** anthropic — módulo do projeto.
@@ -4677,6 +4706,18 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `rss_ollama_mb() → float` — RSS total (MB) dos processos `ollama` — a memória que o servidor de inferência usa.
 - `modelo_carregado(base_url) → dict` — `GET /api/ps` — modelo residente e VRAM, se o backend informar.
 - `main() → int` — Executa o cenário de medição contra o Ollama e imprime o relatório.
+
+### `scripts/simular-qwen3.py`
+
+**Propósito:** medir, sem modelo real, a resposta do Callidus às propriedades do servidor Ollama servindo o `qwen3:8b` (janela padrão sem `num_ctx`, corte silencioso do começo da conversa, raciocínio no texto). **Quando/onde:** comparação antes/depois de mudanças no adaptador e no contexto; roda num *worktree* de outro commit para comparar.
+
+- `ServidorSimulado` — servidor `/api/chat` falso com janela padrão configurável e modelo determinístico que só vê o que sobrou depois do corte.
+- `ServidorSimulado._tokens(text: str) -> int` — contagem do simulador (3 caracteres por token).
+- `ServidorSimulado._visivel(body: dict) -> str` — aplica a janela como o Ollama: tira mensagens antigas depois do sistema e, se preciso, o começo do texto; conta os cortes.
+- `ServidorSimulado._resposta(body: dict) -> dict` — resposta do modelo determinístico para o texto visível (plano, alteração, leitura, resposta final ou prosa).
+- `ServidorSimulado.handler(request: httpx.Request) -> httpx.Response` — transporte HTTP simulado, com e sem streaming.
+- `rodar_cenario(nome: str, spec: dict, max_steps: int=60) -> dict` — roda um cenário de ponta a ponta (banco e pasta temporários) e devolve desfecho, chamadas, cortes e tokens.
+- `main() -> int` — CLI (`--json`, `--only`, `--janela-padrao`).
 
 ### `scripts/preencher_resume.py`
 
@@ -5408,6 +5449,18 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `tests/test_ollama_provider.py`
 
 **Propósito:** Arquivo: tests/test_ollama_provider.py.
+
+### `tests/test_qwen3_ollama_policy.py`
+
+**Propósito:** verifica a política por família do adaptador Ollama: janela e saída explícitas, configuração que vence, degraus de janela estáveis, `gpt-oss` intocado, amostragem por finalidade e com raciocínio, `<think>` e `<tool_call>` no texto, saturação da janela, estimativa calibrada e a finalidade que chega ao provedor.
+
+### `tests/test_qwen3_context.py`
+
+**Propósito:** verifica que a conversa com janela pequena cabe na janela (`fit_history`, ciclo de ferramentas com leituras grandes) e que o estado de tarefas irmãs não entra nas regras do projeto.
+
+### `tests/test_qwen3_plan_repair.py`
+
+**Propósito:** verifica a recuperação limitada do plano: uma única nova chamada com `PLAN_SCHEMA` quando o JSON vem em prosa ou cortado, nenhuma chamada extra quando o plano é válido ou o provedor não impõe esquema.
 
 ### `tests/test_openai_compatible_provider.py`
 

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from agent.context.assembler import build_operation_context
 from agent.context.budget import BudgetResult, ContextBudgetError, group_categories
+from agent.domain.enums import MemoryKind
 from agent.domain.failures import describe_failures
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.knowledge.indexer import grep_symbols_in_objective
@@ -36,6 +37,13 @@ from agent.orchestrator.strategy import ProfessionalStrategy
 from agent.skills import SkillMatch, SkillSelector, get_skill_registry
 from agent.tools.builtins import TOOL_CATALOG
 from sqlalchemy import select
+
+# Registros de estado por tarefa: ficam fora do índice de regras do projeto.
+_TASK_STATE_KINDS = (
+    MemoryKind.OPERATIONAL.value,
+    MemoryKind.TASK_DETAIL.value,
+    MemoryKind.ARTIFACT.value,
+)
 
 
 FILE_CHARS = 8000
@@ -422,6 +430,12 @@ class OperationContextBuilder:
                 (MemoryRecordModel.conversation_id.is_(None))
                 | (MemoryRecordModel.conversation_id == conversation_id)
             )
+            # O estado de execução de cada tarefa (níveis 1–3 da memória operacional) não é
+            # regra do projeto: o da própria tarefa entra como `memória-operacional`, o das
+            # dependências entra como `resultados-dependências`. Deixá-lo aqui punha o estado
+            # (muitas vezes já velho, "RUNNING") de tarefas irmãs num componente obrigatório,
+            # gastando orçamento e induzindo o modelo a trabalhar na etapa errada.
+            .where(MemoryRecordModel.kind.not_in(_TASK_STATE_KINDS))
             .order_by(MemoryRecordModel.created_at.desc())
             .limit(24)
         )

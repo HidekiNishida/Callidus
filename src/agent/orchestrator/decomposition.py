@@ -205,11 +205,59 @@ async def plan_with_model(
             provider, ChatCompletionRequest(messages=budget.messages, profile=profile), purpose="plan"
         )
         content = resp.content or ""
+    plan = _plan_from_content(content)
+    if plan is None and _supports_structured_output(provider):
+        # Recuperação única e contextualizada: o mesmo pedido, a resposta inválida e a ordem
+        # de entregar só o JSON — agora com o formato imposto pelo servidor (decodificação
+        # restrita ao esquema). Não reinicia a inspeção nem replaneja do zero.
+        plan = await _repair_plan(provider, profile, budget.messages, content)
+    return plan
+
+
+# Esquema mínimo do plano para a decodificação restrita do servidor. É deliberadamente
+# frouxo em `metadata` (objeto livre): o contrato completo continua sendo validado por
+# `normalize_plan_payload` e `DecompositionResult`, como em qualquer plano.
+PLAN_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "subtasks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "objective": {"type": "string"},
+                    "kind": {"type": "string"},
+                    "metadata": {"type": "object"},
+                    "depends_on_indices": {"type": "array", "items": {"type": "integer"}},
+                },
+                "required": ["title", "objective"],
+            },
+        }
+    },
+    "required": ["subtasks"],
+}
+
+_REPAIR_ECHO_CHARS = 3000
+
+
+def _plan_from_content(content: str) -> DecompositionResult | None:
+    """Interpreta e valida o plano devolvido pelo modelo.
+
+    Args:
+        content: texto da resposta.
+
+    Returns:
+        O plano válido, ou `None` quando o texto não traz um plano utilizável.
+
+    Observações:
+        O plano é normalizado antes de ser validado: um rótulo fora do contrato
+        (`kind: "final_answer"`, índice de dependência inválido) não descarta o plano inteiro.
+    """
     data, err = parse_json_object(content)
     if err or not data:
         return None
-    # O plano do modelo é normalizado antes de ser validado: um rótulo fora do contrato
-    # (`kind: "final_answer"`, índice de dependência inválido) não descarta o plano inteiro.
     payload, warnings = normalize_plan_payload(data)
     if not payload.get("subtasks"):
         return None
@@ -218,6 +266,64 @@ async def plan_with_model(
     except Exception:
         return None
     return plan.model_copy(update={"warnings": warnings}) if plan.subtasks else None
+
+
+async def _repair_plan(
+    provider: LLMProvider,
+    profile: ModelProfile,
+    messages: list,
+    previous: str,
+) -> DecompositionResult | None:
+    """Pede o plano mais uma vez, com o formato JSON imposto pelo servidor.
+
+    Args:
+        provider: provedor com saída estruturada.
+        profile: perfil do modelo.
+        messages: mensagens do pedido de plano original (sem a inspeção).
+        previous: resposta inválida da primeira tentativa (vai como eco, cortada).
+
+    Returns:
+        O plano reparado, ou `None` quando a segunda resposta também não serve.
+    """
+    from agent.providers.base import ChatMessage
+    from agent.providers.observed import observed_chat
+
+    history = list(messages)
+    echo = (previous or "").strip()
+    if echo:
+        history.append(ChatMessage(role="assistant", content=echo[:_REPAIR_ECHO_CHARS]))
+        ask = (
+            "Essa resposta não é um plano em JSON válido. Reescreva o MESMO plano, completo, "
+            'somente como JSON no formato {"subtasks":[...]}. Nada além do JSON.'
+        )
+    else:
+        ask = 'A resposta veio vazia. Responda agora somente o plano em JSON no formato {"subtasks":[...]}.'
+    history.append(ChatMessage(role="user", content=ask))
+    try:
+        response = await observed_chat(
+            provider,
+            ChatCompletionRequest(
+                messages=history,
+                profile=profile,
+                response_format={"schema": PLAN_SCHEMA},
+            ),
+            purpose="plan",
+        )
+    except Exception:
+        # A recuperação é um bônus: falhar aqui devolve o caso ao caminho de sempre (template).
+        return None
+    return _plan_from_content(response.content or "")
+
+
+def _supports_structured_output(provider) -> bool:
+    """O provedor impõe um esquema JSON à saída (decodificação restrita)?"""
+    capabilities = getattr(provider, "capabilities", None)
+    if not callable(capabilities):
+        return False
+    try:
+        return bool(capabilities().structured_output)
+    except Exception:  # pragma: no cover - provedor de teste sem capacidades
+        return False
 
 
 def _supports_tool_loop(provider) -> bool:

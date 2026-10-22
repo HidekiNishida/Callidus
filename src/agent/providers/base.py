@@ -3,7 +3,7 @@ Arquivo: src/agent/providers/base.py
 Nome: base.py
 Propósito: definir o contrato comum dos provedores de inferência do Callidus.
 Responsabilidade: camada de domínio — tipos de mensagens, requisição, resposta, capacidades e erros.
-Componentes: ChatMessage, ToolCall, ProviderCapabilities, ProviderHealth, ModelProfile, ChatCompletionRequest, ChatCompletionResponse, LLMProvider e a taxonomia de ProviderError.
+Componentes: CHARS_PER_TOKEN, estimate_text_tokens, ChatMessage, ToolCall, ProviderCapabilities, ProviderHealth, ModelProfile, ChatCompletionRequest, ChatCompletionResponse, LLMProvider e a taxonomia de ProviderError.
 Dependências: pydantic.
 Observações: recurso ausente é declarado, nunca simulado; a exclusividade de inferência é garantida pelo executor.
 """
@@ -14,6 +14,27 @@ from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+# Caracteres por token da estimativa local. Medido contra a contagem real do Ollama
+# (`prompt_eval_count`) em 24 inferências reais de planejamento e operação: com 4 caracteres por
+# token a estimativa ficava abaixo do real em todas (real/estimado de 1,12 a 1,56, mediana 1,30).
+# Com 3, a mediana fica perto de 1,0 — e o que sobra é coberto pela margem do orçamento.
+CHARS_PER_TOKEN = 3
+
+
+def estimate_text_tokens(text: str) -> int:
+    """Estimativa local de tokens de um texto (sem tokenizador do modelo).
+
+    Args:
+        text: texto que será enviado ao modelo.
+
+    Returns:
+        A estimativa em tokens; texto vazio vale zero.
+    """
+    if not text:
+        return 0
+    return max(1, -(-len(text) // CHARS_PER_TOKEN))
 
 
 class ChatMessage(BaseModel):
@@ -109,6 +130,7 @@ class ChatCompletionRequest(BaseModel):
         stream: indica se o cliente quer os fragmentos durante a geração.
         tools: ferramentas oferecidas, no formato OpenAI.
         tool_choice: política de escolha de ferramenta.
+        purpose: finalidade da chamada, quando conhecida.
     """
 
     messages: list[ChatMessage]
@@ -119,6 +141,10 @@ class ChatCompletionRequest(BaseModel):
     # Provedores sem suporte recusam com `ProviderNotSupportedError` — nada é descartado em silêncio.
     tools: list[dict[str, Any]] | None = None
     tool_choice: str | None = None
+    # Finalidade da chamada (`plan`, `operation`, `final_answer`...). Opcional: quem chama pelo
+    # `observed_chat` recebe a finalidade dele; o provedor pode usá-la para escolher padrões de
+    # geração (amostragem do plano diferente da resposta ao usuário).
+    purpose: str | None = None
 
 
 class ChatCompletionResponse(BaseModel):

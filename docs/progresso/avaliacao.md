@@ -4,7 +4,7 @@ A nota de cada área do Callidus, o que falta e a evidência por trás.
 
 Voltar: [docs/progresso/](/docs/progresso/README.md) · Formato: [progresso.md](/docs/regras/progresso.md)
 
-> **Revisado em:** 2026-10-21 · **Atualizado em:** 2026-10-21 · **Mudança:** major (criação)
+> **Revisado em:** 2026-10-22 · **Atualizado em:** 2026-10-22 · **Mudança:** minor (contagem de testes refeita)
 
 Este documento é o **placar do projeto**. A medição do comportamento com o modelo real continua em [docs/architecture/avaliacao.md](/docs/architecture/avaliacao.md) (`lab/avaliar.py`); aqui ela vira nota por área.
 
@@ -28,6 +28,7 @@ O núcleo (pedido → plano → execução → verificação → resposta) funci
 | Documentos em `docs/` | 45 |
 
 - **Registrado, não refeito agora:** 892 testes Python passaram no checkpoint de 2026-10-21 (`.cursor/CALLIDUS_CHECKPOINT.md`). A suíte não foi rodada nesta revisão: o ambiente da revisão não tinha Python ≥ 3.11 com as dependências.
+- **Medido em 2026-10-22** (adaptação ao `qwen3:8b`): 872 funções `test_`, `python -m pytest -q` com 929 casos aprovados e 1 pulado (o caso que reprovava em `d180d09`, `test_end_to_end_requirements`, passou a aprovar — a causa era o estado de tarefas irmãs nas regras do projeto); 57 testes da interface aprovados.
 - **Dos usuários:** nenhuma medição de uso real registrada.
 - **Presença não é qualidade:** módulo que existe mas não foi exercitado com o modelo real não passa de 60 %.
 
@@ -80,4 +81,5 @@ Do `git log` (*estimado*): 113 commits entre 2026-10-17 e 2026-10-21, num interv
 
 | Data | Mudança | Resumo |
 |------|---------|--------|
+| 2026-10-22 | minor | Suíte Python rodada de novo (929 aprovados, 1 pulado) na adaptação ao `qwen3:8b` |
 | 2026-10-21 | major | Criação: contagens medidas no commit `6868a30`, notas estimadas por área |

@@ -3,7 +3,7 @@ Arquivo: src/agent/orchestrator/tool_loop.py
 Nome: tool_loop.py
 Propósito: operação do modelo com inspeção por ferramentas.
 Responsabilidade: camada de aplicação.
-Componentes: ToolLoopOutcome, json_schema_for, tool_schemas, tool_result_text, run_tool_loop.
+Componentes: ToolLoopOutcome, history_tokens, fit_history, json_schema_for, tool_schemas, tool_result_text, run_tool_loop.
 Dependências: agent.providers.base, agent.providers.observed, agent.tools.registry, __future__, dataclasses, json….
 Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
 
@@ -25,7 +25,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
-from agent.providers.base import ChatCompletionRequest, ChatMessage, LLMProvider, ModelProfile
+import json
+
+from agent.providers.base import ChatCompletionRequest, ChatMessage, LLMProvider, ModelProfile, estimate_text_tokens
+from agent.observability import emit
 from agent.tools.registry import ToolContext, ToolRegistry
 
 # Ferramentas de leitura oferecidas durante a operação.
@@ -80,6 +83,81 @@ _TYPE_BY_KIND = {
 }
 
 _RESULT_CHARS = 2000
+# Resultados de ferramenta mais recentes que nunca são resumidos: é o que o modelo acabou de pedir.
+_KEEP_RECENT_RESULTS = 2
+# Quanto do resultado antigo sobra quando ele é resumido para caber na janela.
+_STUB_CHARS = 240
+# Margem entre a soma estimada e a janela do modelo.
+_HISTORY_MARGIN = 256
+
+
+def history_tokens(history: list[ChatMessage], tools: list[dict[str, Any]] | None = None) -> int:
+    """Tamanho estimado da conversa do ciclo, com as ferramentas oferecidas.
+
+    Args:
+        history: mensagens que irão ao modelo.
+        tools: esquemas das ferramentas oferecidas nesta chamada.
+
+    Returns:
+        A estimativa local, em tokens.
+    """
+    total = sum(estimate_text_tokens(m.content or "") for m in history)
+    total += sum(estimate_text_tokens(json.dumps(m.tool_calls, ensure_ascii=False)) for m in history if m.tool_calls)
+    if tools:
+        total += estimate_text_tokens(json.dumps(tools, ensure_ascii=False))
+    return total
+
+
+def fit_history(
+    history: list[ChatMessage],
+    profile: ModelProfile,
+    tools: list[dict[str, Any]] | None = None,
+) -> list[str]:
+    """Mantém a conversa do ciclo dentro da janela do modelo, resumindo resultados antigos.
+
+    Args:
+        history: conversa do ciclo; é alterada no lugar.
+        profile: perfil do modelo (janela e reserva de saída).
+        tools: esquemas das ferramentas que irão na próxima chamada.
+
+    Returns:
+        A lista de resumos aplicados (vazia quando a conversa já cabia).
+
+    Observações:
+        O ciclo crescia sem conta: o prompt inicial já ocupa o orçamento de entrada e cada
+        leitura acrescenta até 2 000 caracteres. Com a janela de um modelo pequeno, o servidor
+        cortava o **começo** da conversa — as regras, o objetivo e o formato de saída — e o modelo
+        respondia sem saber o que entregar. Aqui só os resultados de ferramenta **antigos** são
+        reduzidos a um trecho com o aviso de que podem ser lidos de novo; mensagens do sistema,
+        do pedido e do assistente nunca são tocadas, e os dois resultados mais recentes ficam
+        inteiros. Se ainda não couber, a chamada segue e o adaptador amplia a janela.
+    """
+    limit = int(profile.context_limit or 0) - int(profile.output_reserve or 0) - _HISTORY_MARGIN
+    if limit <= 0:
+        return []
+    total = history_tokens(history, tools)
+    if total <= limit:
+        return []
+    tool_indexes = [i for i, m in enumerate(history) if m.role == "tool"]
+    candidates = tool_indexes[:-_KEEP_RECENT_RESULTS] if len(tool_indexes) > _KEEP_RECENT_RESULTS else []
+    applied: list[str] = []
+    for index in candidates:
+        if total <= limit:
+            break
+        message = history[index]
+        body = message.content or ""
+        if body.startswith("[resumido"):
+            continue
+        stub = (
+            f"[resumido para caber na janela do modelo; leia de novo se precisar do conteúdo]\n"
+            f"{body[:_STUB_CHARS]}"
+        )
+        if len(stub) >= len(body):
+            continue
+        total -= estimate_text_tokens(body) - estimate_text_tokens(stub)
+        history[index] = message.model_copy(update={"content": stub})
+        applied.append(message.tool_call_id or f"#{index}")
+    return applied
 
 
 @dataclass
@@ -229,6 +307,7 @@ async def run_tool_loop(
     history = list(messages)
     log: list[dict[str, Any]] = []
     seen: set[str] = set()
+    compactions: list[str] = []
     reasoning = ""
     limit = max(1, max_iterations)
     call_budget = max(1, max_tool_calls)
@@ -270,6 +349,25 @@ async def run_tool_loop(
             await on_tool_call(entry, result)
         return entry, result
 
+    def _request(offered: list[dict[str, Any]]) -> ChatCompletionRequest:
+        """Requisição da próxima chamada, com a conversa ajustada à janela do modelo.
+
+        Args:
+            offered: esquemas das ferramentas oferecidas nesta chamada.
+
+        Returns:
+            A requisição pronta; os resultados antigos que não cabiam já foram resumidos.
+        """
+        compacted = fit_history(history, profile, offered or None)
+        if compacted:
+            compactions.extend(compacted)
+            # Evento real (não narração): diz na linha do tempo que a conversa foi ajustada.
+            emit(
+                "context.history_compacted",
+                {"purpose": purpose, "results": len(compacted), "total": len(compactions)},
+            )
+        return ChatCompletionRequest(messages=history, profile=profile, tools=offered or None)
+
     def _budget_note() -> str:
         """Monta a nota de orçamento de chamadas de ferramenta que entra na conversa.
 
@@ -282,7 +380,7 @@ async def run_tool_loop(
         return f"\n(restam {restantes} leituras; depois disso, faça a alteração.)"
 
     for iteration in range(1, limit + 1):
-        request = ChatCompletionRequest(messages=history, profile=profile, tools=schemas or None)
+        request = _request(schemas)
         response = await call(provider, request, purpose=purpose, stream=stream)
         reasoning = getattr(response, "reasoning", None) or reasoning
         calls = list(getattr(response, "tool_calls", None) or [])
@@ -299,7 +397,7 @@ async def run_tool_loop(
             )
             retry = await call(
                 provider,
-                ChatCompletionRequest(messages=history, profile=profile, tools=final_schemas or None),
+                _request(final_schemas),
                 purpose=purpose,
                 stream=stream,
             )
@@ -366,7 +464,7 @@ async def run_tool_loop(
     history.append(ChatMessage(role="user", content=final_instruction))
     final = await call(
         provider,
-        ChatCompletionRequest(messages=history, profile=profile, tools=final_schemas or None),
+        _request(final_schemas),
         purpose=purpose,
         stream=stream,
     )
@@ -422,7 +520,7 @@ async def run_tool_loop(
     )
     last = await call(
         provider,
-        ChatCompletionRequest(messages=history, profile=profile, tools=final_after_schemas or None),
+        _request(final_after_schemas),
         purpose=purpose,
         stream=stream,
     )

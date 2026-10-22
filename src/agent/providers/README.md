@@ -12,6 +12,7 @@ streaming real e catálogo configurável. A camada não conhece skills, memória
 | [`registry.py`](registry.py) | `ProviderSpec`, `ProviderCatalog`, `load_catalog`, `build_provider`, `build_provider_by_name` | **Configuração declarativa** — arquivo YAML/JSON, interpolação `${VAR}`, fábrica de instâncias |
 | [`secrets.py`](secrets.py) | Segredos gravados pela interface: pasta `0700`, arquivo `0600`, leitura/escrita/apagamento
 | [`ollama.py`](ollama.py) | `OllamaProvider` | **Ollama** (local ou remoto) — API nativa `/api/chat` + `/api/tags`, streaming linha a linha, `think` em modelos reasoning |
+| [`ollama_policy.py`](ollama_policy.py) | `apply_request_policy`, `split_reasoning`, `tool_calls_from_text` | política por família do Ollama: `num_ctx`/`num_predict` explícitos, amostragem do `qwen3` por finalidade, `<think>` e `<tool_call>` escritos no texto ([detalhes](/docs/architecture/provedores.md#política-por-família-de-modelo-qwen38b-e-outros)) |
 | [`llamacpp.py`](llamacpp.py) | `LlamaCppProvider` | **llama.cpp** (local ou remoto) — `llama-server` pela API compatível com OpenAI, streaming SSE, chave por cabeçalho ou arquivo |
 | [`openai_compatible.py`](openai_compatible.py) | `OpenAICompatibleProvider` | **Adaptador reutilizável** para qualquer serviço no formato OpenAI (gateways, provedores compatíveis) |
 | [`openrouter.py`](openrouter.py) | `OpenRouterProvider` | **OpenRouter** — herda do adaptador compatível com OpenAI, com URL padrão e cabeçalhos `X-Title` / `HTTP-Referer` |
@@ -205,6 +206,7 @@ pytest tests/test_openrouter_provider.py -v        # OpenRouter
 pytest tests/test_anthropic_provider.py -v         # Anthropic
 pytest tests/test_gemini_provider.py -v             # Gemini
 pytest tests/test_ollama_provider.py -v            # Ollama local e remoto
+pytest tests/test_qwen3_ollama_policy.py -v        # política por família (qwen3:8b)
 pytest tests/test_llamacpp_remote.py -v            # llama.cpp local e remoto
 pytest tests/test_http_transport.py -v             # transporte, erros, redação
 ```

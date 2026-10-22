@@ -11,7 +11,7 @@ Cada inferência que passa por `observed_chat` dentro de uma run grava uma linha
 | Campo | Significado |
 |-------|-------------|
 | `prompt_tokens`, `completion_tokens` | O que o provedor informou. Ausência fica `NULL`, não zero |
-| `estimated_*` | Estimativa local feita antes da chamada (~4 caracteres por token) |
+| `estimated_*` | Estimativa local feita antes da chamada (3 caracteres por token, `providers.base.CHARS_PER_TOKEN`) |
 | `measurement` | `exact`, `estimate`, `partial` ou `unavailable` |
 | `reasoning_tokens`, `cache_*` | Informados à parte. Não entram de novo no total de entrada ou de saída |
 | `cost_usd` | Só existe quando `config.prices` traz preço por milhão para o provedor |
@@ -21,6 +21,22 @@ O ciclo de ferramentas chama o modelo várias vezes. Cada chamada vira uma linha
 `usage_since` usa essa soma. Execução antiga, sem nenhuma linha, ainda cai na soma dos snapshots, e `tokens_source` marca `snapshot_estimate`.
 
 Fora de uma run (`observe` inativo) a chamada não entra no teto. O diagnóstico `POST /debug/chat/ollama` é esse caso: não há execução para debitar.
+
+## 📏 Estimativa calibrada e janela do servidor
+
+A estimativa local era de 4 caracteres por token. Comparada com a contagem real do Ollama
+(`prompt_eval_count`) em 24 inferências reais (planejamento e operação), ela ficou **abaixo do real
+em todas**: real/estimado de 1,12 a 1,56, mediana 1,30 (*medido*, `data/agent.db`, 2026-10-21).
+Um prompt orçado em 6 000 tokens ocupava ~7 800 — e, somado à saída, passava da janela de 8 192. A
+estimativa passou a 3 caracteres por token (`estimate_text_tokens`), o que põe a mediana perto
+de 1,0; o restante fica na margem do orçamento.
+
+A janela que o servidor usa também passou a ser a do perfil: o adaptador do Ollama envia
+`num_ctx` = `context_limit` (antes, valia o padrão do servidor — 4 096 em máquinas com menos de
+24 GiB de VRAM). Detalhes em
+[provedores.md](/docs/architecture/provedores.md#política-por-família-de-modelo-qwen38b-e-outros).
+No ciclo de ferramentas, a conversa que cresce a cada leitura é ajustada à janela antes de cada
+chamada ([ciclo-ferramentas.md](/docs/architecture/ciclo-ferramentas.md#️-limites)).
 
 ## ⚙️ Controle antes da chamada
 
@@ -52,6 +68,13 @@ Três níveis em `memory_records`:
 3. `artifact` — referência a snapshot ou log, com um diagnóstico curto.
 
 O pai recebe `child_summary`: estado, status e a referência. Não recebe o histórico do filho.
+
+Esses três níveis são **estado de tarefa**, não regra do projeto: ficam fora do componente
+obrigatório `regras-projeto` das outras tarefas. O da própria tarefa entra como
+`memória-operacional`; o das dependências, como `resultados-dependências`. Antes, o estado de uma
+tarefa irmã (muitas vezes já velho, `RUNNING`, com o log da reprovação) entrava nas regras do
+projeto de qualquer etapa — gastando orçamento obrigatório e levando o modelo a trabalhar na etapa
+errada.
 
 A decomposição não trata metadado inchado como complexidade. Etapa de um resultado só continua um passo; a divisão segue o que já estava em `decide_disposition` (vários itens, investigação, profundidade).
 

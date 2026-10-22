@@ -44,6 +44,9 @@ async def observed_chat(
     Raises:
         Exception: qualquer erro do provedor é propagado depois de emitir o evento de falha.
     """
+    if request.purpose is None:
+        # A finalidade viaja na requisição: o provedor escolhe padrões de geração por ela.
+        request = request.model_copy(update={"purpose": purpose})
     obs = current()
     if obs is None:
         return await provider.chat(request)
@@ -167,6 +170,10 @@ async def observed_chat(
             measurement = parsed.measurement
             status = parsed.status
             finish = getattr(response, "finish_reason", None)
+        raw = getattr(response, "raw", None) if response is not None else None
+        # Decisões do adaptador (janela pedida, saturação, correções de formato): é o que
+        # permite dizer, depois, se uma resposta ruim veio de um prompt cortado pelo servidor.
+        adapter_meta = raw.get("callidus") if isinstance(raw, dict) and isinstance(raw.get("callidus"), dict) else None
         from agent.orchestrator.inference_usage import estimate_cost
         from agent.persistence.models import ExecutionRunModel
 
@@ -200,6 +207,7 @@ async def observed_chat(
                     "finish_reason": finish,
                     "cost_measurement": cost_quality,
                     "usage_reporting": reporting,
+                    **({"adapter": adapter_meta} if adapter_meta else {}),
                 },
             )
         except Exception:
