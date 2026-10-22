@@ -4719,6 +4719,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `rodar_cenario(nome: str, spec: dict, max_steps: int=60) -> dict` — roda um cenário de ponta a ponta (banco e pasta temporários) e devolve desfecho, chamadas, cortes e tokens.
 - `main() -> int` — CLI (`--json`, `--only`, `--janela-padrao`).
 
+### `scripts/medir-qwen3.sh`
+
+**Propósito:** medir com o modelo real (`qwen3:8b` no Ollama local) o Callidus antes e depois de um commit: roda `lab/avaliar.py` em rodadas alternadas, cada lado num *worktree* limpo, e guarda resumos, bancos isolados e dados do servidor em `lab/out/qwen3/`. **Quando/onde:** no Mac, com o Ollama aberto; variáveis `MODEL`, `ROUNDS`, `ANTES`, `DEPOIS`, `STEPS`, `PROVIDER`.
+
 ### `scripts/preencher_resume.py`
 
 **Propósito:** preencher_resume — módulo do projeto.

@@ -158,6 +158,7 @@
   "file:scripts/fix-python314-editable.py",
   "file:scripts/medir-hierarquia.py",
   "file:scripts/medir-ollama.py",
+  "file:scripts/medir-qwen3.sh",
   "file:scripts/padronizar_cabecalhos.py",
   "file:scripts/preencher_resume.py",
   "file:scripts/resume.py",

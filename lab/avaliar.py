@@ -156,9 +156,39 @@ def _pytest_passes(ws: Path) -> bool:
     return proc.returncode == 0
 
 
+def _cenario_arquivo_grande(ws: Path) -> dict:
+    """O mesmo bug num módulo de ~9 KB (tamanho comum num projeto real).
+
+    Mede o que os cenários curtos não medem: o prompt da operação perto da janela do modelo e
+    a integridade do arquivo — reescrever o módulo inteiro com conteúdo cortado apaga funções.
+    """
+    extra = "".join(
+        f"\n\ndef operacao_{i}(valores):\n"
+        f'    """Operação auxiliar {i}: acumula os valores com o fator {i}."""\n'
+        f"    total = 0\n    for valor in valores:\n        total += valor * {i}\n    return total\n"
+        for i in range(1, 46)
+    )
+    (ws / "calc.py").write_text("def add(a, b):\n    return a - b\n" + extra, encoding="utf-8")
+    (ws / "test_calc.py").write_text(
+        "import calc\n\n\ndef test_add():\n    assert calc.add(2, 3) == 5\n", encoding="utf-8"
+    )
+    return {
+        "name": "arquivo_grande",
+        "objective": "O teste test_calc.py está falhando. Descubra a causa e corrija o módulo do projeto para que add(a, b) retorne a soma.",
+        "accept": {
+            "add soma de verdade": lambda: _call_add(ws) == 5,
+            "teste passa": lambda: _pytest_passes(ws),
+            "teste não foi adulterado": lambda: "assert calc.add(2, 3) == 5"
+            in (ws / "test_calc.py").read_text(encoding="utf-8"),
+            "as outras 45 funções continuam": lambda: (ws / "calc.py").read_text(encoding="utf-8").count("def operacao_") == 45,
+        },
+    }
+
+
 SCENARIOS = [
     _cenario_funcional,
     _cenario_bug,
+    _cenario_arquivo_grande,
     _cenario_multirequisito,
     _cenario_verificacao_reprova,
     _cenario_pergunta_simples,

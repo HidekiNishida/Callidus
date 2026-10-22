@@ -41,5 +41,6 @@ python scripts/check_docs.py && python scripts/check_references.py && python scr
 | [avaliar-consultas.py](/scripts/avaliar-consultas.py) | **Avalia o casamento lexical** com gabarito (direta/indireta/ambígua/sem evidência + adversariais) |
 | [medir-ollama.py](/scripts/medir-ollama.py) | **Mede com Ollama real** — latência, chamadas, contexto, RSS do servidor e VRAM |
 | [simular-qwen3.py](/scripts/simular-qwen3.py) | **Mede sem modelo real** — fluxo de ponta a ponta contra um servidor Ollama simulado (janela padrão, corte silencioso, `<think>` no texto); compara commits num *worktree* |
+| [medir-qwen3.sh](/scripts/medir-qwen3.sh) | **Mede com o qwen3:8b real** — `lab/avaliar.py` antes e depois de um commit, em rodadas alternadas e *worktrees* limpos; resultados em `lab/out/qwen3/` |
 
 **Voltar:** [README](/README.md) · [Regras](/docs/regras/README.md)

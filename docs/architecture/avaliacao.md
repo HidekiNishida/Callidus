@@ -60,6 +60,7 @@ Além do resumo de sempre, cada cenário passa a reportar `estagnacoes`, `replan
 |---------|-----------|-----------|
 | `funcional` | tarefa simples com critério objetivo | `app.py` passa a conter `def dobro`; a suíte passa |
 | `bug` | investigação de causa raiz | `add` passa a somar; a suíte passa |
+| `arquivo_grande` | o mesmo bug num módulo de ~9 KB | `add` soma; a suíte passa; as outras 45 funções do módulo continuam lá (reescrita cortada apaga funções) |
 | `multirequisito` | dois requisitos no mesmo pedido | `a.py` tem `soma` **e** `b.py` tem `sub`; os dois requisitos comprovados |
 | `verificacao_reprova` | a verificação reprova e o pedido é só reportar | nenhum arquivo alterado; a resposta final **diz** que o teste reprovou |
 | `pergunta_simples` | pergunta sem trabalho | nenhum arquivo criado (não há árvore de subtarefas) |
@@ -223,9 +224,13 @@ Como ler:
 ### Pendente: medição com o modelo real
 
 ```bash
-ollama pull qwen3:8b
-python lab/avaliar.py --label qwen3-depois --model qwen3:8b --provider meu_ollama --max-steps 120
+scripts/medir-qwen3.sh            # 3 rodadas por lado, antes = d180d09, depois = HEAD
+ROUNDS=1 scripts/medir-qwen3.sh   # uma rodada (mais rápido)
 ```
+
+O roteiro baixa o modelo se faltar, roda os dois lados em *worktrees* limpos (trabalho sem commit
+não contamina), alterna a ordem a cada rodada e guarda em `lab/out/qwen3/` os resumos, os bancos
+de cada cenário (com `inference_records`) e o `api/ps` do Ollama.
 
 O modelo de referência da avaliação continua `gpt-oss:20b` (decisão do dono, AGENTS.md §17); a
 avaliação acima com o `qwen3:8b` ainda **não foi feita**. Rode três rodadas por lado antes de
