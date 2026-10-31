@@ -28,6 +28,7 @@ from agent.knowledge.models import (
 from agent.knowledge.request import KnowledgeDiscovery, KnowledgeRequestCreate, KnowledgeDepth
 from agent.knowledge.providers import DuckDuckGoProvider, GitHubProvider, DocumentationProvider
 from agent.persistence.models import (
+    KnowledgeRelationModel,
     ProjectModel, TaskModel, AgentModel,
     KnowledgeUsageModel, KnowledgeVersionModel,
 )

@@ -10,6 +10,7 @@ Observações: privacidade-first — não armazena dados sensíveis, apenas padr
 from __future__ import annotations
 
 import re
+import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta

@@ -21,6 +21,8 @@ from pydantic import BaseModel, Field
 
 from agent.domain.enums import TaskKind, TaskStatus
 
+from agent.persistence.models import TaskModel
+
 
 class IRSchema(StrEnum):
     """Versão do esquema do IR."""
@@ -147,6 +149,7 @@ class TaskIR(BaseModel):
     expected_artifacts: list[ArtifactRef] = Field(default_factory=list)
     inputs: list[ArtifactRef] = Field(default_factory=list)
     outputs: list[ArtifactRef] = Field(default_factory=list)
+    operations: list[dict[str, Any]] = Field(default_factory=list)
     status: str = TaskStatus.PENDING.value
     attempts: int = 0
     max_attempts: int = 8

@@ -43,3 +43,19 @@ pythonpath = ["src"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 norecursedirs = ["fixtures", ".venv", "web", "data"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["F"]
+ignore = [
+    "F401",  # Unused import - some are intentionally kept for readability
+    "F403",  # Undefined name in __all__
+    "F407",  # Deprecated alias
+    "F541",  # f-string without placeholders
+    "F811",  # Redefinition of unused name
+    "F841",  # Unused variable
+]

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from agent.knowledge.browser.session import AuthenticatedBrowserSession
+from agent.knowledge.browser.session import AuthenticatedBrowserSession, BrowserProfile
 
 
 @dataclass

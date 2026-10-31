@@ -10,6 +10,7 @@ Observações: nunca loga credenciais; sanitiza inputs antes de enviar a provedo
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import secrets
 from datetime import UTC, datetime
