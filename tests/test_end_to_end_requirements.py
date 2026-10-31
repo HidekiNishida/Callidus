@@ -17,7 +17,12 @@ from sqlalchemy import select
 
 from agent.config import Settings
 from agent.domain.enums import RunStatus, TaskStatus
-from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate, TaskDependencyCreate
+from agent.domain.schemas import (
+    ExecutionRunCreate,
+    ProjectCreate,
+    TaskCreate,
+    TaskDependencyCreate,
+)
 from agent.orchestrator.requirements import ensure_requirements
 from agent.orchestrator.runner import RunOrchestrator
 from agent.persistence.database import build_session_factory, init_db

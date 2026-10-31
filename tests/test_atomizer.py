@@ -9,7 +9,10 @@ Observações: funções puras: nenhum banco, rede ou relógio é usado.
 """
 
 from agent.domain.enums import TaskKind
-from agent.orchestrator.atomizer import micro_decompose_operation, should_decompose_further
+from agent.orchestrator.atomizer import (
+    micro_decompose_operation,
+    should_decompose_further,
+)
 
 
 def test_atomic_tool_skips_decompose():

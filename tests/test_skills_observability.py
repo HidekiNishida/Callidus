@@ -14,9 +14,12 @@ from pathlib import Path
 import pytest
 
 from agent.config import Settings
-from agent.domain.enums import TaskStatus
-from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate, TaskStatusUpdate
-from agent.observability import emit, get_bus
+from agent.domain.schemas import (
+    ExecutionRunCreate,
+    ProjectCreate,
+    TaskCreate,
+)
+from agent.observability import get_bus
 from agent.orchestrator.runner import RunOrchestrator
 from agent.persistence.database import build_session_factory, init_db
 from agent.services.project_service import ProjectService

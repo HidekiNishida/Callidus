@@ -10,7 +10,7 @@ Observações: as transições são validadas pela máquina de estados; dependê
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -25,7 +25,6 @@ from agent.persistence.models import (
     TaskDependencyModel,
     TaskModel,
 )
-
 
 # Demais destinos (PLANNING, READY, VERIFYING, RETRY_PENDING) são `task.progress`.
 _STATUS_EVENT: dict[TaskStatus, str] = {
@@ -175,7 +174,7 @@ class TaskService:
             raise
 
         task.status = target.value
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if target == TaskStatus.RUNNING and task.started_at is None:
             task.started_at = now
         if target in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}:

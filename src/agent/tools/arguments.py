@@ -3,7 +3,7 @@ Arquivo: src/agent/tools/arguments.py
 Nome: arguments.py
 Propósito: validar os argumentos de uma ferramenta contra o esquema declarado no registro.
 Responsabilidade: camada de infraestrutura — conferência de presença e de tipo antes da execução.
-Componentes: validate_arguments.
+Componentes: normalize_arguments, validate_arguments.
 Dependências: nenhuma além da biblioteca padrão.
 Observações: aceita o atalho textual (`path: str?`) e o JSON Schema usado pelas automações.
 """
@@ -28,6 +28,44 @@ _JSON_TYPES = {
     "object": "dict",
     "array": "list",
 }
+
+
+# Sinônimos que modelos pequenos usam no lugar de `path` (visto com o qwen3-vl:8b:
+# `run_script` com `script_path`, a etapa falhava duas vezes e o plano era refeito).
+_PATH_SYNONYMS = ("file_path", "filepath", "script_path", "script", "file", "filename", "file_name", "target", "target_path")
+_SCRIPT_SUFFIXES = (".py", ".sh", ".js", ".mjs", ".ts", ".rb")
+
+
+def normalize_arguments(schema: dict[str, Any] | None, args: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Preenche `path` obrigatório a partir de um sinônimo, sem mudar o que já veio certo.
+
+    Args:
+        schema: esquema declarado em `ToolSpec.input_schema`.
+        args: argumentos recebidos do modelo.
+
+    Returns:
+        Os argumentos com `path` preenchido quando o esquema o exige, ele faltou e havia um sinônimo
+        (`script_path`, `file_path`, `filename`...) ou um comando com um único arquivo de script
+        (`python main.py`); senão, os argumentos como vieram.
+    """
+    if not isinstance(args, dict) or not isinstance(schema, dict) or args.get("path") is not None:
+        return args
+    spec = schema.get("path")
+    required = isinstance(spec, str) and not spec.endswith("?")
+    if schema.get("type") == "object":
+        required = "path" in (schema.get("required") or [])
+    if not required:
+        return args
+    for name in _PATH_SYNONYMS:
+        value = args.get(name)
+        if isinstance(value, str) and value.strip():
+            return {**args, "path": value.strip()}
+    command = args.get("command") or args.get("cmd")
+    parts = command.split() if isinstance(command, str) else command if isinstance(command, list) else []
+    scripts = [str(p) for p in parts if str(p).lower().endswith(_SCRIPT_SUFFIXES)]
+    if len(scripts) == 1:
+        return {**args, "path": scripts[0]}
+    return args
 
 
 def validate_arguments(schema: dict[str, Any] | None, args: dict[str, Any] | None) -> str | None:

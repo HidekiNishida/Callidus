@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -29,7 +29,11 @@ from agent.automation.contracts import TriggerSpec
 from agent.automation.enums import FiringState, MissedPolicy
 from agent.automation.store import AutomationService
 from agent.automation.timezones import to_utc
-from agent.persistence.models import AutomationFiringModel, AutomationModel, EventLogModel
+from agent.persistence.models import (
+    AutomationFiringModel,
+    AutomationModel,
+    EventLogModel,
+)
 
 
 @dataclass
@@ -124,7 +128,7 @@ class Dispatcher:
         Returns:
             O desfecho do despacho, com os disparos criados, ignorados e duplicados.
         """
-        moment = to_utc(now or datetime.now(timezone.utc))
+        moment = to_utc(now or datetime.now(UTC))
         trigger = self._service.trigger_of(automation)
         if trigger.kind.value == "event":
             return DispatchResult(created=[])
@@ -256,7 +260,7 @@ class Dispatcher:
         firing = self._create(
             automation,
             key=manual_key(automation.id, tag),
-            scheduled_for=to_utc(scheduled_for or datetime.now(timezone.utc)),
+            scheduled_for=to_utc(scheduled_for or datetime.now(UTC)),
             state=state,
             result=result or {"policy": "manual", "tag": tag},
         )

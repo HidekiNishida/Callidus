@@ -41,7 +41,7 @@ _DROPPED_KEYS = frozenset({"env", "environ", "environment", "headers"})
 
 _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
-        re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)", re.S),
+        re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)", re.DOTALL),
         "-----PRIVATE KEY " + REDACTED + "-----",
     ),
     (re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}"), r"\1 " + REDACTED),

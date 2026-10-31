@@ -384,10 +384,6 @@ pre,
   width: auto;
 }
 
-[data-theme="light"] .brand-lockup {
-  filter: brightness(0.62) saturate(1.5);
-}
-
 .search-box {
   position: relative;
   margin: 0 12px 10px;

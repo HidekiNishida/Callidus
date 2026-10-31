@@ -10,27 +10,20 @@ Observações: uma conversa sem projeto vive na caixa de entrada, cuja raiz é a
 from __future__ import annotations
 
 import uuid
-
-from sqlalchemy import delete, or_, select
-from sqlalchemy.orm import Session
-
 from pathlib import Path
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from agent.domain.enums import TaskKind
 from agent.domain.schemas import ConversationCreate, ProjectCreate, TaskCreate
 from agent.i18n.locale import detect_language
 from agent.persistence.models import (
     BranchModel,
-    ContextSnapshotModel,
     ConversationModel,
-    EventLogModel,
-    EvidenceModel,
     ExecutionRunModel,
     MemoryRecordModel,
-    OperationAttemptModel,
     ProjectModel,
-    TaskContractModel,
-    TaskDependencyModel,
     TaskModel,
     utcnow,
 )

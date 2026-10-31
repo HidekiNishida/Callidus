@@ -10,7 +10,6 @@ Observações: banco e diretório de skills temporários por teste; o modelo nã
 Avaliação comparativa da execução com Skills, estratégia e integridade  Compara cenários que a tarefa "Evolução do Agente Local" exigiu: 1. tarefa simples (uma etapa) vs. tarefa multinível (decomposição recursiva); 2. falha de skill (catálogo com skill inválida) — o agente continua funcionando; 3. falha opcional vs. falha obrigatória — conclusões diferentes; 4. esgotamento de orçamento — o bloco de skills é cortado, o obrigatório nunca.
 """
 from pathlib import Path
-import uuid
 
 import pytest
 

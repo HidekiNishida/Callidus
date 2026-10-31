@@ -31,7 +31,13 @@ from agent.orchestrator.tool_loop import (
     tool_result_text,
     tool_schemas,
 )
-from agent.providers.base import ChatCompletionRequest, ChatMessage, ModelProfile, ProviderCapabilities, ToolCall
+from agent.providers.base import (
+    ChatCompletionRequest,
+    ChatMessage,
+    ModelProfile,
+    ProviderCapabilities,
+    ToolCall,
+)
 from agent.providers.ollama import OllamaProvider
 from agent.tools.registry import ToolContext, build_default_registry
 

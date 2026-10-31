@@ -20,10 +20,7 @@ from fastapi.testclient import TestClient
 
 from agent.api import deps
 from agent.config import Settings
-from agent.domain.schemas import ProjectCreate, TaskCreate
 from agent.services.agent_service import AgentService
-from agent.services.project_service import ProjectService
-from agent.services.task_service import TaskService
 
 
 @pytest.fixture

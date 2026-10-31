@@ -10,6 +10,7 @@ Observações: banco SQLite temporário por teste e nenhum arquivo do workspace 
 remoção de projeto em cascata
 """
 from __future__ import annotations
+
 from pathlib import Path
 
 import pytest
@@ -17,12 +18,17 @@ from fastapi.testclient import TestClient
 
 from agent.api import deps
 from agent.config import Settings
-from agent.domain.schemas import ConversationCreate, ExecutionRunCreate, ProjectCreate, TaskCreate
+from agent.domain.schemas import (
+    ConversationCreate,
+    ExecutionRunCreate,
+    ProjectCreate,
+    TaskCreate,
+)
 from agent.persistence.database import build_session_factory, init_db
 from agent.persistence.models import (
     ConversationModel,
-    EvidenceModel,
     EventLogModel,
+    EvidenceModel,
     ExecutionRunModel,
     KgNodeModel,
     MemoryRecordModel,

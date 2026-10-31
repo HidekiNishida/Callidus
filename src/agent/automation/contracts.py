@@ -71,7 +71,7 @@ class TriggerSpec(BaseModel):
 
         return resolve_timezone(value)
 
-    def model_post_init(self, _context: Any) -> None:  # noqa: D401
+    def model_post_init(self, _context: Any) -> None:
         """Confere que os campos exigidos pelo tipo de gatilho estão presentes.
 
         Raises:
@@ -284,8 +284,6 @@ class AutomationDefinition(BaseModel):
 
 __all__ = [
     "CONTRACT_VERSION",
-    "dump_action",
-    "parse_action",
     "ActionSpec",
     "AutomationDefinition",
     "CallidusAction",
@@ -295,4 +293,6 @@ __all__ = [
     "ScriptAction",
     "StartStrategy",
     "TriggerSpec",
+    "dump_action",
+    "parse_action",
 ]

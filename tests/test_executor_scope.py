@@ -226,7 +226,6 @@ async def test_o_streaming_tambem_passa_pelo_executor():
     from agent.providers.base import (
         ChatCompletionRequest,
         ChatMessage,
-        ChatCompletionResponse,
         LLMProvider,
         ModelProfile,
     )
@@ -353,16 +352,16 @@ async def test_cancelamento_no_streaming_libera_o_slot():
 @pytest.mark.asyncio
 async def test_a_rota_indireta_observada_tambem_e_limitada(tmp_path):
     """`observed_chat` é a rota usada pelo runner: ela também tem de passar pelo slot."""
+    from agent.config import Settings
     from agent.persistence.database import build_session_factory, init_db
     from agent.providers.base import (
         ChatCompletionRequest,
-        ChatMessage,
         ChatCompletionResponse,
+        ChatMessage,
         LLMProvider,
         ModelProfile,
     )
     from agent.providers.observed import observed_chat
-    from agent.config import Settings
 
     request = ChatCompletionRequest(
         messages=[ChatMessage(role="user", content="oi")], profile=ModelProfile(model_id="m")

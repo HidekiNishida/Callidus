@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from agent.api.deps import db_session, read_settings
 from agent.config import Settings
 from agent.domain.agent_enums import AgentStatus, ExecutionStatus
-from agent.domain.schemas import AgentAsk, AgentDiscard, AgentRead, AgentQueryRead
+from agent.domain.schemas import AgentAsk, AgentDiscard, AgentQueryRead, AgentRead
 from agent.orchestrator.decomposition import profile_from_run_config
 from agent.orchestrator.runner import _select_provider
 from agent.persistence.models import AgentExecutionModel, AgentModel, AgentQueryModel

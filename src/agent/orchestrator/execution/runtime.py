@@ -10,8 +10,8 @@ Observações: o executor, o modelo e o orquestrador compartilham a mesma instâ
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from sqlalchemy.orm import Session
 

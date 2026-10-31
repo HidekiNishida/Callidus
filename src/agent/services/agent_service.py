@@ -30,7 +30,7 @@ Duas garantias sustentam o resto do sistema:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -53,8 +53,8 @@ from agent.persistence.models import (
 )
 
 __all__ = [
-    "AgentNotFoundError",
     "AgentDepthError",
+    "AgentNotFoundError",
     "AgentService",
     "DiscardBlockedError",
 ]
@@ -78,7 +78,7 @@ def _utcnow_iso() -> str:
     Returns:
         A representação textual do instante atual.
     """
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _role_for_kind(kind: str) -> str:
@@ -332,7 +332,7 @@ class AgentService:
         if error is not None:
             execution.last_error = error[:2000]
         if target in {ExecutionStatus.COMPLETED, ExecutionStatus.FAILED, ExecutionStatus.CANCELLED}:
-            execution.finished_at = datetime.now(timezone.utc)
+            execution.finished_at = datetime.now(UTC)
         return execution
 
     # -------------------------------------------------------------- execuções
@@ -392,7 +392,7 @@ class AgentService:
                 execution.checkpoint_json = merged
         self._set_execution_status(execution, ExecutionStatus.RUNNING)
         execution.attempt = (execution.attempt or 0) + 1
-        execution.started_at = datetime.now(timezone.utc)
+        execution.started_at = datetime.now(UTC)
         execution.finished_at = None
         self._set_agent_status(agent, AgentStatus.ACTIVE)
         self._session.flush()
@@ -478,7 +478,7 @@ class AgentService:
         self._set_execution_status(execution, ExecutionStatus.RESUMING)
         self._set_execution_status(execution, ExecutionStatus.RUNNING)
         execution.attempt = (execution.attempt or 0) + 1
-        execution.started_at = datetime.now(timezone.utc)
+        execution.started_at = datetime.now(UTC)
         execution.finished_at = None
         # Efeito externo não retomável precisa ser verificado antes de a ação ser
         # repetida: a retomada não pode assumir que o processo de antes continua.

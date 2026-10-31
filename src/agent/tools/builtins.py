@@ -3,7 +3,7 @@ Arquivo: src/agent/tools/builtins.py
 Nome: builtins.py
 Propósito: implementar as ferramentas prioritárias do agente sobre o projeto local ou remoto.
 Responsabilidade: camada de apresentação — handlers das ferramentas de arquivo, comando, teste e navegador.
-Componentes: TOOL_CATALOG, register_all e os handlers `_read_file`, `_write_file`, `_edit_file`, `_search_grep`, `_list_dir`, `_glob_files`, `_delete_file`, `_make_dir`, `_move_file`, `_run_command`, `_run_script`, `_run_pytest`, `_git_diff`, `_git_status`, `_browser`, `_remember`, `_system_info`.
+Componentes: TOOL_CATALOG, register_all e os handlers `_read_file`, `_write_file`, `_edit_file`, `_search_grep`, `_list_dir`, `_glob_files`, `_delete_file`, `_make_dir`, `_move_file`, `_run_command`, `_run_script`, `_run_app`, `_run_pytest`, `_git_diff`, `_git_status`, `_browser`, `_remember`, `_system_info`.
 Dependências: agent.observability, agent.security.paths, agent.tools.diffing, agent.tools.registry.
 Observações: quando o projeto tem computador remoto, as ferramentas de arquivo e comando são delegadas ao SSH.
 """
@@ -25,8 +25,17 @@ from agent.observability import emit
 from agent.observability.batching import DeltaBatcher
 from agent.observability.sanitize import is_sensitive_path
 from agent.security.paths import PathSecurityError, resolve_under_root
+from agent.tools.app_runner import (
+    interpreter_for,
+    is_gui_script,
+    launch_detached,
+    missing_toolkit_result,
+    smoke_run,
+    tk_probe_command,
+)
 from agent.tools.contracts import ToolFamily, ToolRisk
-from agent.tools.diffing import unified_diff_text
+from agent.tools.diffing import append_block, unified_diff_text
+from agent.tools.edit_repair import python_ok, repair_edit
 from agent.tools.registry import ToolContext, ToolRegistry, ToolSpec, current_call_id
 
 SKIP_DIRS = {
@@ -42,14 +51,22 @@ SKIP_DIRS = {
 }
 READ_LINE_CAP = 400
 LIST_CAP = 200
+# Limites da varredura (busca e glob): visto com um projeto cuja raiz era a pasta pessoal inteira —
+# um `search_grep` síncrono e sem limite parou o servidor (nenhuma requisição era atendida).
+SCAN_SECONDS = 10.0
+SCAN_MAX_FILES = 20000
+SCAN_MAX_BYTES = 2_000_000
+_BINARY_SUFFIXES = {".pyc", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".zip", ".gz", ".tar", ".dmg", ".so", ".dylib", ".bin", ".db", ".sqlite"}
 
 TOOL_CATALOG = (
     "Ferramentas locais (use exatamente estes ids): "
     "list_dir, glob_files, read_file, search_grep, edit_file, write_file, "
-    "delete_file, make_dir, move_file, run_pytest, run_script, run_command, git_status, git_diff. "
+    "delete_file, make_dir, move_file, run_pytest, run_script, run_app, run_command, git_status, git_diff. "
     "edit_file: path, old_string, new_string. "
     "read_file: path, offset e limit opcionais. "
-    "run_script executa um .py. run_command aceita command como lista ou string e exige aprovação. "
+    "run_script executa um .py (path); programa de janela abre por alguns segundos e passa se não der erro. "
+    "run_app abre um programa do projeto (path, ex.: main.py) e o deixa aberto para o usuário ver. "
+    "run_command aceita command como lista ou string e exige aprovação. "
     "delete_file e move_file exigem aprovação. "
     "remember grava uma memória: content, title opcional e scope project ou conversation. "
     "system_info descreve o sistema, o usuário e a pasta pessoal, em qualquer sistema operacional. "
@@ -314,26 +331,58 @@ async def _search_grep(ctx: ToolContext, args: dict) -> dict:
         re.compile(pattern)
     except re.error as exc:
         return {"success": False, "error": f"regex inválida: {exc}"}
+    # Fora do loop de eventos e com limites: a varredura de uma raiz enorme não para o servidor.
+    return await asyncio.to_thread(_grep_scan, root, scope, pattern)
+
+
+def _grep_scan(root: Path, scope: Path, pattern: str) -> dict:
+    """Varredura da `search_grep`, com teto de tempo, de arquivos e de tamanho por arquivo.
+
+    Returns:
+        As ocorrências (no máximo 100) e, quando um teto foi atingido, `partial` com o motivo — o
+        modelo sabe que precisa estreitar `path` em vez de concluir que o trecho não existe.
+    """
+    regex = re.compile(pattern)
     matches: list[dict] = []
-    files = [scope] if scope.is_file() else scope.rglob("*")
+    started = time.monotonic()
+    scanned = 0
+    partial = ""
+    files = [scope] if scope.is_file() else _walk_files(scope, root)
     for p in files:
-        if not p.is_file() or p.suffix in {".pyc", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".zip"}:
-            continue
-        rel = p.relative_to(root)
-        if _skipped(rel):
+        if time.monotonic() - started > SCAN_SECONDS:
+            partial = f"busca interrompida em {SCAN_SECONDS:.0f} s; informe path para estreitar"
+            break
+        if scanned >= SCAN_MAX_FILES:
+            partial = f"busca interrompida depois de {SCAN_MAX_FILES} arquivos; informe path para estreitar"
+            break
+        if p.suffix.lower() in _BINARY_SUFFIXES:
             continue
         try:
+            if p.stat().st_size > SCAN_MAX_BYTES:
+                continue
             text = p.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
+        scanned += 1
         for i, line in enumerate(text.splitlines(), 1):
-            if re.search(pattern, line):
+            if regex.search(line):
                 matches.append({"path": str(p.relative_to(root)), "line": i, "text": line[:200]})
                 if len(matches) >= 100:
                     break
         if len(matches) >= 100:
             break
-    return {"success": True, "matches": matches, "count": len(matches)}
+    out: dict = {"success": True, "matches": matches, "count": len(matches)}
+    if partial:
+        out["partial"] = partial
+    return out
+
+
+def _walk_files(scope: Path, root: Path):
+    """Arquivos sob `scope`, sem descer nas pastas ignoradas nem em pastas ocultas de sistema (podadas na descida)."""
+    for dirpath, dirnames, filenames in os.walk(scope):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and d not in {"Library", ".Trash", ".cache", ".npm", ".nvm"}]
+        for name in filenames:
+            yield Path(dirpath) / name
 
 
 def _argv(command: object) -> list[str] | None:
@@ -444,7 +493,7 @@ async def _run_command(ctx: ToolContext, args: dict, *, kind: str = "command") -
             asyncio.gather(_pump(proc.stdout, out_chunks, out_batch), _pump(proc.stderr, err_chunks, err_batch), proc.wait()),
             timeout=timeout,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         out_batch.flush()
         err_batch.flush()
@@ -644,15 +693,28 @@ async def _glob_files(ctx: ToolContext, args: dict) -> dict:
     if pattern.startswith("/") or ".." in Path(pattern).parts:
         return {"success": False, "error": "pattern fora do projeto"}
     root = _root(ctx)
+    return await asyncio.to_thread(_glob_scan, root, pattern)
+
+
+def _glob_scan(root: Path, pattern: str) -> dict:
+    """Varredura da `glob_files`, com teto de tempo (raiz enorme não para o servidor)."""
     matches: list[str] = []
+    started = time.monotonic()
+    partial = ""
     for path in root.glob(pattern):
+        if time.monotonic() - started > SCAN_SECONDS:
+            partial = f"glob interrompido em {SCAN_SECONDS:.0f} s; use um padrão mais específico"
+            break
         rel = path.relative_to(root)
         if _skipped(rel):
             continue
         matches.append(str(rel))
         if len(matches) >= LIST_CAP:
             break
-    return {"success": True, "matches": matches, "truncated": len(matches) >= LIST_CAP}
+    out: dict = {"success": True, "matches": matches, "truncated": len(matches) >= LIST_CAP}
+    if partial:
+        out["partial"] = partial
+    return out
 
 
 async def _edit_file(ctx: ToolContext, args: dict) -> dict:
@@ -681,20 +743,42 @@ async def _edit_file(ctx: ToolContext, args: dict) -> dict:
         new = args.get("replacement")
     if not isinstance(old, str) or not isinstance(new, str):
         return {"success": False, "error": "old_string e new_string são obrigatórios"}
-    if old == "":
-        return {"success": False, "error": "old_string vazio"}
     full, err = _resolve(ctx, str(raw))
     if err:
         return err
     if full is None or not full.is_file():
-        return {"success": False, "error": "arquivo não encontrado"}
+        hint = "; para criar um arquivo novo use write_file" if old == "" else ""
+        return {"success": False, "error": f"arquivo não encontrado{hint}"}
     content = full.read_text(encoding="utf-8", errors="replace")
+    if old == "":
+        # Trecho antigo vazio = acrescentar ao fim. O conteúdo existente é preservado.
+        updated = append_block(content, new)
+        full.write_text(updated, encoding="utf-8")
+        _drop_stale_bytecode(full)
+        diff = unified_diff_text(str(raw), content, updated)
+        _file_event("file.changed", str(raw), diff)
+        return {"success": True, "path": str(raw), "replacements": 0, "appended": True, **diff}
     count = content.count(old)
+    is_python = full.suffix == ".py"
+    reindented = False
     if count == 0:
-        return {"success": False, "error": "trecho não encontrado", "path": str(raw)}
-    if count > 1 and not args.get("replace_all"):
+        # Modelo pequeno manda o trecho sem a indentação: acha as mesmas linhas ignorando os
+        # espaços (ocorrência única) e só aceita se o arquivo continuar válido.
+        repaired = repair_edit(content, old, new) if is_python else None
+        if repaired is None:
+            return {"success": False, "error": "trecho não encontrado", "path": str(raw)}
+        updated, reindented = repaired, True
+    elif count > 1 and not args.get("replace_all"):
         return {"success": False, "error": f"trecho ambíguo ({count} vezes); use replace_all ou um trecho único"}
-    updated = content.replace(old, new) if args.get("replace_all") else content.replace(old, new, 1)
+    else:
+        updated = content.replace(old, new) if args.get("replace_all") else content.replace(old, new, 1)
+        if is_python and count == 1 and python_ok(content) and not python_ok(updated):
+            # A troca literal deixou o arquivo inválido (o texto novo veio sem a indentação do
+            # lugar): tenta com a indentação certa; sem reparo válido, grava como veio e a
+            # verificação aponta o erro.
+            repaired = repair_edit(content, old, new)
+            if repaired is not None:
+                updated, reindented = repaired, True
     full.write_text(updated, encoding="utf-8")
     _drop_stale_bytecode(full)
     diff = unified_diff_text(str(raw), content, updated)
@@ -704,6 +788,7 @@ async def _edit_file(ctx: ToolContext, args: dict) -> dict:
         "success": True,
         "path": str(raw),
         "replacements": count if args.get("replace_all") else 1,
+        **({"reindented": True} if reindented else {}),
         **diff,
     }
 
@@ -830,6 +915,17 @@ async def _run_script(ctx: ToolContext, args: dict) -> dict:
     cwd = script.parent.parent if script.parent.name == "tests" else script.parent
     env = os.environ.copy()
     env["PYTHONPATH"] = str(cwd) + os.pathsep + env.get("PYTHONPATH", "")
+    if is_gui_script(script):
+        # Programa de janela não termina sozinho: a prova é abrir e continuar vivo sem erro,
+        # com um Python que tenha o toolkit (o do Homebrew pode não ter Tkinter).
+        python, missing = interpreter_for(script, python_for(ctx.project_root))
+        if python is None:
+            return missing_toolkit_result(missing, [python_for(ctx.project_root), str(script)])
+        # Tkinter: a prova aciona os botões (um callback quebrado só aparece no clique).
+        probe = tk_probe_command(python, script)
+        if probe is not None:
+            return await smoke_run(probe, cwd=str(cwd), env=env, seconds=20.0)
+        return await smoke_run([python, str(script)], cwd=str(cwd), env=env)
     return await _run_command(
         ctx,
         {
@@ -839,6 +935,33 @@ async def _run_script(ctx: ToolContext, args: dict) -> dict:
             "timeout": args.get("timeout", 90),
         },
     )
+
+
+async def _run_app(ctx: ToolContext, args: dict) -> dict:
+    """Abre um programa Python do projeto em segundo plano e o deixa aberto para o usuário.
+
+    Args:
+        ctx: contexto da ferramenta.
+        args: argumentos da chamada (`path`).
+
+    Returns:
+        `success`, `pid` e `running`; se o programa cai ao abrir, `success` falso com o erro.
+    """
+    raw = args.get("path")
+    if not raw or not isinstance(raw, str):
+        return {"success": False, "error": "path obrigatório"}
+    try:
+        script = resolve_under_root(ctx.project_root, raw)
+    except PathSecurityError as exc:
+        return {"success": False, "error": str(exc)}
+    if not script.is_file():
+        return {"success": False, "error": f"arquivo inexistente: {script}"}
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(script.parent) + os.pathsep + env.get("PYTHONPATH", "")
+    python, missing = interpreter_for(script, python_for(ctx.project_root))
+    if python is None:
+        return missing_toolkit_result(missing, [python_for(ctx.project_root), str(script)])
+    return await launch_detached([python, str(script)], cwd=str(script.parent), env=env)
 
 
 async def _run_pytest(ctx: ToolContext, args: dict) -> dict:
@@ -935,11 +1058,22 @@ def register_all(registry: ToolRegistry) -> None:
             permissions=["process.spawn"],
             side_effects=True,
         ),
+        ToolSpec(
+            id="run_app",
+            description="Abre um programa do projeto (ex.: a janela de uma calculadora) e o deixa aberto para o usuário ver",
+            input_schema={"path": "str"},
+            requires_approval=True,
+            timeout_seconds=30,
+            family=ToolFamily.COMMAND.value,
+            risk=ToolRisk.EXECUTE.value,
+            permissions=["process.spawn"],
+            side_effects=True,
+        ),
         ToolSpec(id="list_dir", description="Lista arquivos do projeto", input_schema={"path": "str?"}),
         ToolSpec(id="glob_files", description="Encontra arquivos por glob", input_schema={"pattern": "str"}),
         ToolSpec(
             id="edit_file",
-            description="Substitui um trecho único do arquivo",
+            description="Substitui um trecho único do arquivo; com old_string vazio, acrescenta new_string ao fim",
             input_schema={"path": "str", "old_string": "str", "new_string": "str"},
             family=ToolFamily.FILE.value,
             risk=ToolRisk.WRITE.value,
@@ -1006,6 +1140,7 @@ def register_all(registry: ToolRegistry) -> None:
         "git_diff": _git_diff,
         "run_pytest": _run_pytest,
         "run_script": _run_script,
+        "run_app": _run_app,
         "list_dir": _list_dir,
         "glob_files": _glob_files,
         "edit_file": _edit_file,

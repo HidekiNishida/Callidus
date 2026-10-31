@@ -166,6 +166,28 @@ async def _list_apps(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+def _project_script(ctx: ToolContext, target: str) -> bool:
+    """Diz se o alvo é um script Python do projeto (rodá-lo, não abri-lo no editor).
+
+    `open main.py` no macOS abre o código num editor; quem pede "abra a calculadora" quer a janela.
+    """
+    if not target or not target.lower().endswith(".py"):
+        return False
+    from agent.security.paths import PathSecurityError, resolve_under_root
+
+    try:
+        return resolve_under_root(ctx.project_root, target).is_file()
+    except (PathSecurityError, ValueError, OSError):
+        return False
+
+
+async def _run_project_script(ctx: ToolContext, target: str) -> dict:
+    """Abre o script do projeto como programa (a ferramenta `run_app`)."""
+    from agent.tools.builtins import _run_app
+
+    return await _run_app(ctx, {"path": target})
+
+
 async def _launch_app(ctx: ToolContext, args: dict) -> dict:
     """Abre um aplicativo, com argumentos, diretório de trabalho e ambiente controlados.
 
@@ -177,6 +199,8 @@ async def _launch_app(ctx: ToolContext, args: dict) -> dict:
         Um dicionário com o modo de lançamento e o estado do processo.
     """
     name = str(args.get("name") or args.get("app") or "")
+    if _project_script(ctx, name):
+        return await _run_project_script(ctx, name)
     command_args = args.get("args")
     if isinstance(command_args, str):
         command_args = command_args.split()
@@ -207,6 +231,8 @@ async def _open_path(ctx: ToolContext, args: dict) -> dict:
         Um dicionário com o resultado da abertura.
     """
     target = str(args.get("path") or args.get("url") or "")
+    if _project_script(ctx, target):
+        return await _run_project_script(ctx, target)
     return open_path(target)
 
 

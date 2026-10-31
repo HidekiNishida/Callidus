@@ -11,7 +11,7 @@ Observações: o estado canônico é o SQLite; a verificação é independente d
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -27,7 +27,11 @@ from agent.orchestrator.consolidation import (
     verification_spec,
 )
 from agent.orchestrator.execution.journal import remember_failure
-from agent.orchestrator.requirements import MANDATORY, load_requirements, requirement_status
+from agent.orchestrator.requirements import (
+    MANDATORY,
+    load_requirements,
+    requirement_status,
+)
 from agent.persistence.models import EvidenceModel, TaskModel
 from agent.services.task_service import TaskService
 from agent.verification.fingerprint import is_current
@@ -151,7 +155,7 @@ def _gap_failure(session: Session, task: TaskModel) -> Failure:
     last = evs[-1] if evs else None
     detail = (last or {}).get("detail") or {}
     if last and last.get("passed") is True and (detail.get("state") == "desatualizado" or not is_current(detail.get("artifacts"))):
-        paths = ", ".join(((detail.get("artifacts") or {}).get("paths") or []))
+        paths = ", ".join((detail.get("artifacts") or {}).get("paths") or [])
         return Failure(
             FailureCategory.RECOVERABLE,
             FailureCause.STALE_EVIDENCE,
@@ -175,7 +179,7 @@ def invalidate_latest(session: Session, task_id: uuid.UUID, reason: str) -> None
     detail.update(
         state="desatualizado",
         previous_state=detail.get("state") or "aprovado",
-        invalidated_at=datetime.now(timezone.utc).isoformat(),
+        invalidated_at=datetime.now(UTC).isoformat(),
         invalidated_reason=reason[:300],
     )
     row.detail_json = detail

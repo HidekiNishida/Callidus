@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent.context.budget import ContextBudgetError
+from agent.context.budget import ContextBudgetError, fit_window
 from agent.context.operation_builder import OperationContextBuilder
 from agent.domain.enums import AttemptKind, TaskStatus
 from agent.domain.failures import (
@@ -39,13 +39,18 @@ from agent.orchestrator.execution.providers import (
     select_provider,
     supports_tool_loop,
 )
-from agent.orchestrator.execution.writes import implicit_spec, model_refusal_result, write_tool_from_payload
+from agent.orchestrator.execution.writes import (
+    WriteJournal,
+    implicit_spec,
+    model_refusal_result,
+    write_tool_from_payload,
+)
 from agent.orchestrator.tool_loop import ToolLoopOutcome, run_tool_loop
 from agent.persistence.models import ExecutionRunModel, ProjectModel, TaskModel
 from agent.providers.base import ChatCompletionRequest, ProviderError
 from agent.providers.observed import observed_chat
 from agent.services.attempt_service import AttemptService
-from agent.util.json_parse import parse_json_object
+from agent.util.json_parse import parse_json_object, pick_write_payload, write_payloads
 
 
 class ModelOperation:
@@ -101,6 +106,10 @@ class ModelOperation:
         tools = self._runtime.tools
         meta = task.metadata_json or {}
 
+        rechecked = await self._recheck_stale(run, project, task, root_path)
+        if rechecked is not None:
+            return rechecked
+
         factory = self._runtime.provider_factory or select_provider
         provider = factory(settings, config)
         profile = profile_from_config(config, settings, provider)
@@ -135,6 +144,9 @@ class ModelOperation:
                 }
             )
 
+        # A reserva de saída pode ter crescido acima: a janela cresce junto, senão a entrada
+        # fica sem espaço (orçamento negativo) e o run quebra em vez de tentar de novo.
+        profile = fit_window(profile)
         builder = OperationContextBuilder(session, settings)
         build = dict(project_id=project.id, root_path=root_path, task=task, profile=profile, run_id=run.id)
         try:
@@ -185,6 +197,8 @@ class ModelOperation:
             return {"action": "blocked_loop", "task_id": str(task.id), "failure": noted}
         tool_log: list[dict[str, Any]] = []
         inspections: list[dict[str, Any]] = []
+        # Escritas desta etapa: reprovada a verificação, o projeto volta ao que era.
+        journal = WriteJournal(root_path)
         used_tokens = 0
 
         async def _chat_model(provider_obj, request, *, purpose: str, stream: bool):
@@ -270,7 +284,8 @@ class ModelOperation:
                             objective=task.objective or "",
                         ),
                         payload_ok=payload_is_usable,
-                        tool_guard=lambda name, args: write_refusal_reason(meta, name, args.get("path")),
+                        tool_guard=lambda name, args: journal.remember(name, args.get("path"))
+                        or write_refusal_reason(meta, name, args.get("path")),
                         deliverable_hint=(
                             "Entregue agora a alteração. Responda só com JSON: "
                             '{"path":"arquivo","content":"conteúdo inteiro"} ou '
@@ -390,6 +405,7 @@ class ModelOperation:
                 done = await self._executor.finalize_verification(
                     run, project, task, root_path, implicit_spec=implicit_spec(path, written)
                 )
+                await self._after_verification(run, task, journal, done, root_path, path)
                 if excerpt:
                     done["thought"] = excerpt
                 return done
@@ -402,6 +418,13 @@ class ModelOperation:
                 "failure": noted,
             }
         data, err = parse_json_object(content)
+        if data is None or "path" not in data:
+            # Vários objetos seguidos ("Extra data") ou a escrita embrulhada como chamada
+            # (`{"name": "write_file", "arguments": {...}}`): o formato do qwen3-vl:8b sem
+            # raciocínio. Vale a escrita do arquivo que a etapa cita.
+            chosen = pick_write_payload(write_payloads(content), f"{task.title}\n{task.objective or ''}")
+            if chosen is not None:
+                data, err = chosen, None
         missing = ["path"] if data is not None and "path" not in data else None
         if data is None and meta.get("read_only") and content.strip():
             # Etapa somente leitura: a entrega é o relatório em texto, não uma escrita.
@@ -489,6 +512,7 @@ class ModelOperation:
             done = await self._executor.finalize_verification(run, project, task, root_path)
             done["thought"] = excerpt
             return done
+        journal.remember(tool_name, payload.get("path"))
         out = await tools.execute(tool_name, ctx, payload, approved=bool(config.get("approve_risky_tools") or meta.get("approved")))
         task.consolidated_result_json = {
             "model_operation": True,
@@ -504,6 +528,7 @@ class ModelOperation:
             done = await self._executor.finalize_verification(
                 run, project, task, root_path, implicit_spec=implicit_spec(payload.get("path"), written)
             )
+            await self._after_verification(run, task, journal, done, root_path, payload.get("path"))
             if excerpt:
                 done["thought"] = excerpt
             return done
@@ -515,6 +540,96 @@ class ModelOperation:
             "thought": excerpt,
             "failure": noted,
         }
+
+    async def _recheck_stale(self, run, project, task, root_path: str) -> dict[str, Any] | None:
+        """Etapa reaberta só porque a evidência ficou desatualizada: reconfere, não refaz.
+
+        Visto com o `qwen3-vl:8b`: duas etapas irmãs alteravam o mesmo `main.py`; a escrita de uma
+        desatualizava a evidência da outra, a consolidação a reabria, o modelo era chamado de novo
+        sem saber o que faltava e fazia uma edição qualquer (`delete` → `deletee` → `deleteee`),
+        o que desatualizava a primeira — em ciclo, até o limite de passos.
+
+        Returns:
+            O desfecho da reconferência quando a última evidência da etapa **passou** e só deixou de
+            valer porque o arquivo mudou; `None` quando é trabalho de verdade a fazer (sem evidência,
+            evidência reprovada, sem critério gravado).
+        """
+        from agent.orchestrator.consolidation import (
+            collect_evidences,
+            verification_evidence_ok,
+        )
+
+        meta = task.metadata_json or {}
+        spec = meta.get("verification") or meta.get("implicit_verification")
+        if not isinstance(spec, dict) or not spec or meta.get("final_answer"):
+            return None
+        evidences = collect_evidences(self._runtime.session, task.id)
+        if not evidences:
+            return None
+        last = evidences[-1]
+        overwritten = last.get("passed") is False and bool((last.get("detail") or {}).get("refreshed_after"))
+        if overwritten:
+            # Uma etapa posterior reescreveu as mesmas linhas (a reconferência dela reprovou esta).
+            # Refaz uma vez; sobrescrita de novo, a posterior prevalece — sem isso as duas se
+            # desfaziam uma à outra até o limite de passos.
+            if not meta.get("overwritten_redone"):
+                task.metadata_json = {**meta, "overwritten_redone": True}
+                return None
+        elif last.get("passed") is not True or verification_evidence_ok(self._runtime.session, task):
+            return None
+        relaxed = None
+        if spec.get("implicit") and not meta.get("verification"):
+            # O trecho literal da escrita pode ter sido mudado de propósito por uma etapa irmã;
+            # depois da etapa, o que precisa continuar valendo é a integridade do projeto.
+            relaxed = {**spec, "contains": ""}
+            self._runtime.tasks.get_task(task.id).metadata_json = {
+                k: v for k, v in meta.items() if k != "implicit_verification"
+            }
+        self._runtime.tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+        done = await self._executor.finalize_verification(run, project, task, root_path, implicit_spec=relaxed)
+        self._executor.note_thought(
+            run,
+            task,
+            ("Uma etapa posterior já reescreveu este trecho; mantive a versão dela e conferi o projeto: "
+             if overwritten else
+             "O arquivo mudou depois da minha verificação; reconferi no estado atual em vez de refazer a etapa: ")
+            + ("continua valendo." if done.get("action") == "verified_ok" else "reprovou, vou corrigir."),
+            phase="verify",
+        )
+        done["rechecked"] = True
+        return done
+
+    async def _after_verification(self, run, task, journal: WriteJournal, done: dict[str, Any], root_path: str, path: Any) -> None:
+        """Escrita aprovada: reverifica as etapas que ela desatualizou. Reprovada: desfaz a escrita."""
+        if done.get("action") == "verified_ok" and isinstance(path, str):
+            from agent.orchestrator.execution.evidence_refresh import (
+                refresh_stale_evidence,
+            )
+
+            approved = bool((run.config_json or {}).get("approve_risky_tools"))
+            titles = await refresh_stale_evidence(
+                self._runtime.session, task=task, path=path, root_path=root_path, approved=approved
+            )
+            if titles:
+                done["refreshed"] = titles
+            return
+        self._undo_if_rejected(run, task, journal, done)
+
+    def _undo_if_rejected(self, run, task, journal: WriteJournal, done: dict[str, Any]) -> None:
+        """Desfaz as escritas da etapa quando a verificação não aprovou.
+
+        A causa da reprovação fica na falha da etapa (a próxima tentativa a recebe); o disco volta
+        ao estado de antes, que funcionava.
+        """
+        if done.get("action") == "verified_ok" or not journal.originals:
+            return
+        restored = journal.restore()
+        if restored:
+            names = ", ".join(sorted({path.rsplit("/", 1)[-1] for path in restored}))
+            self._executor.note_thought(
+                run, task, f"A verificação reprovou a alteração; desfiz a escrita em {names} para o projeto continuar funcionando.", phase="recover"
+            )
+            done["undone"] = restored
 
     def _context_overflow(
         self,

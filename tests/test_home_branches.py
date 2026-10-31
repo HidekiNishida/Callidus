@@ -15,7 +15,12 @@ from sqlalchemy import select
 
 from agent.config import Settings
 from agent.domain.enums import MemoryKind
-from agent.domain.schemas import ConversationCreate, MemoryCreate, ProjectCreate, TaskCreate
+from agent.domain.schemas import (
+    ConversationCreate,
+    MemoryCreate,
+    ProjectCreate,
+    TaskCreate,
+)
 from agent.persistence.database import build_session_factory, init_db
 from agent.persistence.models import MemoryRecordModel
 from agent.services.branches import memory_visible

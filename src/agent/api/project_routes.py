@@ -21,10 +21,21 @@ from sqlalchemy.orm import Session
 from agent.api.deps import db_session
 from agent.api.live_view import ACTION_COPY, how_for_task, thought_trace
 from agent.domain.enums import MemoryKind
-from agent.domain.schemas import EventRead, MemoryCreate, MemoryRead, ProjectCreate, ProjectRead, ProjectUpdate
+from agent.domain.schemas import (
+    EventRead,
+    MemoryCreate,
+    MemoryRead,
+    ProjectCreate,
+    ProjectRead,
+    ProjectUpdate,
+)
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.persistence.models import EventLogModel
-from agent.services.fs_browse import browse_directories, create_directory, pick_folder_native
+from agent.services.fs_browse import (
+    browse_directories,
+    create_directory,
+    pick_folder_native,
+)
 from agent.services.metrics_service import MetricsService
 from agent.services.project_service import ProjectService
 from agent.services.run_service import RunService

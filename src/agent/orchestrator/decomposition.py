@@ -24,6 +24,11 @@ from agent.domain.enums import TaskKind, TaskStatus
 from agent.domain.schemas import TaskCreate, TaskDependencyCreate, TaskStatusUpdate
 from agent.guides.discover import capability_line, guide_digest
 from agent.i18n.locale import detect_language, language_instruction
+from agent.orchestrator.gap_analysis import (
+    analyze_gaps,
+    gap_requirements,
+    wants_completion,
+)
 from agent.orchestrator.plan_contract import normalize_plan_payload
 from agent.providers.base import ChatCompletionRequest, LLMProvider, ModelProfile
 from agent.providers.registry import build_provider_by_name
@@ -66,6 +71,9 @@ class DecompositionResult(BaseModel):
     # dependência inválida). Ficam registrados: o plano é utilizável, mas a diagnóstico
     # mostra que o modelo não seguiu o formato.
     warnings: list[str] = Field(default_factory=list)
+    # Requisitos novos da análise de lacunas (pedido vago de conclusão): `apply_decomposition`
+    # os grava no contrato da raiz antes de criar as etapas que os cobrem.
+    added_requirements: list[dict[str, Any]] = Field(default_factory=list)
 
 
 BUILTIN_E2E_PLAN = DecompositionResult(
@@ -119,6 +127,9 @@ GENERIC_TEMPLATE = DecompositionResult(
 )
 
 
+# Teto de subtarefas pedido ao modelo: plano curto cabe na saída e não se perde em etapas de conferência.
+PLAN_MAX_STEPS = 8
+
 async def plan_with_model(
     provider: LLMProvider,
     profile: ModelProfile,
@@ -150,6 +161,15 @@ async def plan_with_model(
         f"Objetivo: {objective}\n\nContexto do projeto:\n{context_snippet}\n\n"
         f"{requirements_block(requirements)}"
         "Decomponha TODAS as etapas, do entendimento do pedido até a verificação e a conclusão.\n"
+        # Limite de tamanho: com o qwen3-vl:8b, "todas as etapas" virou 15 etapas de "verificar"
+        # com objetivos longos; o JSON passou de 2 048 tokens e o plano voltou cortado.
+        f"Use no máximo {PLAN_MAX_STEPS} subtarefas, com título curto (até 8 palavras) e objetivo em uma frase. "
+        "Não crie uma etapa de verificação para cada detalhe: uma verificação concreta basta. "
+        "Quando o pedido é terminar, melhorar ou corrigir algo que já existe, inclua ao menos uma "
+        "subtarefa que altere o código (metadata.model_operation=true) com o que falta. "
+        # Etapas diferentes editando o mesmo arquivo se desfaziam e desatualizavam umas às outras.
+        "Todas as mudanças num mesmo arquivo ficam numa única subtarefa, que cobre todos os "
+        "requisitos daquele arquivo; arquivo pequeno é reescrito inteiro de uma vez.\n"
         "A última subtarefa deve ser a resposta final ao usuário "
         '(metadata.final_answer=true e metadata.model_operation=true). '
         "Antes dela, inclua uma verificação concreta (pytest, script, command ou file_contains).\n"
@@ -449,7 +469,7 @@ def align_verification(objective: str, plan: DecompositionResult) -> Decompositi
         if touched:
             changed = True
         subtasks.append(spec.model_copy(update={"metadata": meta}) if touched else spec)
-    return DecompositionResult(subtasks=subtasks, warnings=list(plan.warnings)) if changed else plan
+    return DecompositionResult(subtasks=subtasks, warnings=list(plan.warnings), added_requirements=list(plan.added_requirements)) if changed else plan
 
 
 def fallback_plan(objective: str) -> tuple[DecompositionResult, str]:
@@ -515,6 +535,100 @@ def automation_plan(objective: str) -> DecompositionResult:
     )
 
 
+def _target_file(spec: SubTaskSpec) -> str | None:
+    """O único arquivo que uma operação de modelo cita no título/objetivo, ou `None`."""
+    from agent.orchestrator.requirements import named_files
+
+    meta = spec.metadata or {}
+    if not meta.get("model_operation") or meta.get("final_answer") or meta.get("tool") or meta.get("verification"):
+        return None
+    files = named_files(f"{spec.title}\n{spec.objective}")
+    return next(iter(files)) if len(files) == 1 else None
+
+
+def merge_same_file_operations(plan: DecompositionResult) -> DecompositionResult:
+    """Funde as operações de modelo que alteram o mesmo arquivo numa única etapa.
+
+    Visto com o `qwen3-vl:8b`: seis lacunas de `main.py` viravam seis etapas; cada escrita
+    desfazia parte da anterior e desatualizava a evidência dela. A instrução no pedido do plano
+    não bastou — o modelo pequeno a ignorou —, então a regra "um arquivo, uma etapa" é aplicada
+    aqui, de forma determinística.
+
+    Args:
+        plan: plano do modelo.
+
+    Returns:
+        O plano com uma etapa por arquivo (objetivos em lista, cobertura somada, dependências
+        remapeadas); o próprio plano quando nada se repete.
+    """
+    first_of: dict[str, int] = {}
+    groups: dict[int, list[int]] = {}
+    for index, spec in enumerate(plan.subtasks):
+        target = _target_file(spec)
+        if target is None:
+            continue
+        if target in first_of:
+            groups[first_of[target]].append(index)
+        else:
+            first_of[target] = index
+            groups[index] = [index]
+    merged = {i for members in groups.values() if len(members) > 1 for i in members[1:]}
+    if not merged:
+        return plan
+    owner = {i: lead for lead, members in groups.items() for i in members}
+    new_index: dict[int, int] = {}
+    kept: list[int] = []
+    for index in range(len(plan.subtasks)):
+        if index in merged:
+            continue
+        new_index[index] = len(kept)
+        kept.append(index)
+    for index in merged:
+        new_index[index] = new_index[owner[index]]
+    subtasks: list[SubTaskSpec] = []
+    for index in kept:
+        spec = plan.subtasks[index]
+        members = groups.get(index, [index])
+        if len(members) > 1:
+            target = _target_file(spec)
+            parts = [plan.subtasks[m] for m in members]
+            covers: list[Any] = []
+            for part in parts:
+                for cover in (part.metadata or {}).get("covers") or []:
+                    if cover not in covers:
+                        covers.append(cover)
+            meta = dict(spec.metadata or {})
+            if covers:
+                meta["covers"] = covers
+            deps = {new_index[d] for part in parts for d in part.depends_on_indices if d in new_index}
+            spec = spec.model_copy(
+                update={
+                    "title": f"Alterar {target}"[:120],
+                    "objective": f"Em {target}, faça todas estas mudanças de uma vez:\n"
+                    + "\n".join(f"- {part.objective.strip()}" for part in parts),
+                    "metadata": meta,
+                    "depends_on_indices": sorted(d for d in deps if d != new_index[index]),
+                }
+            )
+        else:
+            deps = {new_index[d] for d in spec.depends_on_indices if d in new_index}
+            spec = spec.model_copy(update={"depends_on_indices": sorted(d for d in deps if d != new_index[index])})
+        subtasks.append(spec)
+    return DecompositionResult(
+        subtasks=subtasks,
+        warnings=[*plan.warnings, f"{len(merged)} etapa(s) fundida(s): um arquivo, uma etapa"],
+        added_requirements=list(plan.added_requirements),
+    )
+
+
+def _is_root_request(objective: str, requirements: list[dict[str, Any]] | None) -> bool:
+    """Diz se o plano pedido é o da raiz: único requisito, que é o próprio pedido."""
+    if not requirements or len(requirements) != 1:
+        return False
+    whole = " ".join((objective or "").split())[:500]
+    return str(requirements[0].get("description") or "").strip() == whole
+
+
 async def resolve_decomposition_plan(
     *,
     settings: Settings,
@@ -542,10 +656,18 @@ async def resolve_decomposition_plan(
     provider_name = str(run_config.get("provider") or settings.default_provider)
     profile = profile_from_run_config(run_config, settings, provider=provider)
     model_plan_error = ""
+    added: list[dict[str, Any]] = []
     if provider_name != "mock":
         model = provider
         if model is None:
             model = build_provider_by_name(provider_name, settings)
+        if model is not None and _is_root_request(objective, requirements) and wants_completion(objective):
+            # Pedido vago de conclusão sobre projeto existente: as lacunas viram requisitos
+            # antes do plano, e o plano precisa cobrir cada uma.
+            gaps = await analyze_gaps(model, profile, objective, project_root)
+            if gaps:
+                added = gap_requirements(gaps, start=len(requirements or []) + 1)
+                requirements = [*(requirements or []), *added]
         if model is not None:
             digest = guide_digest(project_root, objective)
             language = str(run_config.get("locale") or detect_language(objective))
@@ -562,7 +684,9 @@ async def resolve_decomposition_plan(
                     operational_frame=str(run_config.get("language_frame") or ""),
                 )
                 if plan:
-                    return ensure_closing_stages(align_verification(objective, plan)), provider_name
+                    final = ensure_closing_stages(align_verification(objective, merge_same_file_operations(plan)))
+                    final.added_requirements = added
+                    return final, provider_name
                 model_plan_error = "o modelo não devolveu um plano"
             except Exception as exc:
                 # A falha do plano do modelo é informação, não ruído: fica na origem do plano
@@ -573,7 +697,9 @@ async def resolve_decomposition_plan(
         plan, source = fallback_plan(objective)
         if model_plan_error:
             source = f"{source} (plano do modelo indisponível: {model_plan_error[:160]})"
-        return ensure_closing_stages(align_verification(objective, plan)), source
+        final = ensure_closing_stages(align_verification(objective, plan))
+        final.added_requirements = added
+        return final, source
 
     if run_config.get("provider") == "mock" or settings.allow_mock_fallback:
         if "e2e" in objective.lower():
@@ -654,7 +780,7 @@ def seal_repeated_steps(parent_title: str, plan: DecompositionResult) -> Decompo
         subtasks.append(spec)
     if not changed:
         return plan
-    return DecompositionResult(subtasks=subtasks)
+    return DecompositionResult(subtasks=subtasks, warnings=list(plan.warnings), added_requirements=list(plan.added_requirements))
 
 
 def plan_copies_siblings(sibling_titles: list[str], plan_titles: list[str], current_title: str) -> bool:
@@ -675,6 +801,23 @@ def plan_copies_siblings(sibling_titles: list[str], plan_titles: list[str], curr
     planned = norm(plan_titles)
     current = (current_title or "").strip().casefold()
     return len(planned) >= 2 and current in planned and planned == siblings
+
+
+def _store_added_requirements(session: Session, root: Any, added: list[dict[str, Any]]) -> None:
+    """Grava no contrato da raiz os requisitos da análise de lacunas (sem repetir descrição)."""
+    from agent.orchestrator.requirements import ensure_requirements
+    from agent.services.contract_service import ContractService
+
+    current = ensure_requirements(session, root)
+    known = {r["description"].lower() for r in current}
+    extra = [r for r in added if r["description"].lower() not in known]
+    if not extra:
+        return
+    contracts = ContractService(session)
+    row = contracts.get(root.id)
+    acceptance = dict((row.acceptance_json if row else None) or {})
+    contracts.upsert(root.id, acceptance={**acceptance, "requirements": [*current, *extra]})
+    session.flush()
 
 
 def apply_decomposition(
@@ -699,7 +842,10 @@ def apply_decomposition(
     """
     ts = TaskService(session)
     parent = ts.get_task(parent_id)
+    added = list(plan.added_requirements or [])
     plan = seal_repeated_steps(parent.title, plan)
+    if added and parent.parent_id is None:
+        _store_added_requirements(session, parent, added)
     if parent.status == TaskStatus.PENDING.value:
         ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.PLANNING))
 

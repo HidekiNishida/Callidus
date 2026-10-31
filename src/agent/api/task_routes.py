@@ -20,12 +20,22 @@ from sqlalchemy.orm import Session
 from agent.api.deps import db_session
 from agent.api.presenters import present_task
 from agent.domain.enums import MemoryKind
-from agent.domain.schemas import MemoryCreate, TaskCreate, TaskDependencyCreate, TaskRead, TaskStatusUpdate
+from agent.domain.schemas import (
+    MemoryCreate,
+    TaskCreate,
+    TaskDependencyCreate,
+    TaskRead,
+    TaskStatusUpdate,
+)
 from agent.domain.state_machine import InvalidTransitionError
 from agent.i18n.locale import detect_language
 from agent.memory.store import extract_memory_request
 from agent.orchestrator.resume import resume_root
-from agent.persistence.models import ContextSnapshotModel, EvidenceModel, OperationAttemptModel
+from agent.persistence.models import (
+    ContextSnapshotModel,
+    EvidenceModel,
+    OperationAttemptModel,
+)
 from agent.services.attachments import attachment_note, materialize_attachments
 from agent.services.contract_service import ContractService
 from agent.services.conversation_service import ConversationService

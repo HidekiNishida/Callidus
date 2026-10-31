@@ -20,8 +20,9 @@ Novos tipos entram por registro, sem tocar na lógica central:
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from agent.automation.contracts import TriggerSpec
 from agent.automation.enums import TriggerKind

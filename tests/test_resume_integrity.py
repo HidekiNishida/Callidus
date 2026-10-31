@@ -16,9 +16,17 @@ import pytest
 
 from agent.config import Settings
 from agent.domain.enums import RunStatus, TaskStatus
-from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate, TaskStatusUpdate
+from agent.domain.schemas import (
+    ExecutionRunCreate,
+    ProjectCreate,
+    TaskCreate,
+    TaskStatusUpdate,
+)
 from agent.orchestrator.consolidation import collect_evidences, verification_evidence_ok
-from agent.orchestrator.global_verify import evaluate_global_acceptance, reopen_verification_gaps
+from agent.orchestrator.global_verify import (
+    evaluate_global_acceptance,
+    reopen_verification_gaps,
+)
 from agent.orchestrator.runner import RunOrchestrator
 from agent.persistence.database import build_session_factory, init_db
 from agent.persistence.models import EvidenceModel, ExecutionRunModel

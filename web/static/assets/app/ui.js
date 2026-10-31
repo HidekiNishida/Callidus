@@ -4,7 +4,7 @@
  * Propósito: ícones, markdown leve e formatadores compartilhados pelos componentes.
  * Responsabilidade: frontend/apresentação — funções puras de formatação e tradução de eventos.
  * Componentes: ICONS, icon(), escapeHtml(), renderMarkdown(), describeActivity(), integrateNarrative(),
- *   mergeActivity(), summarizeActivity(), diffLines(), helpers de rótulo e tempo.
+ *   mergeActivity(), summarizeActivity(), diffLines(), brandSrc(), visibleFinalAnswer(), helpers de rótulo e tempo.
  * Dependências: nenhuma (módulo puro, sem DOM e sem API).
  * Observações: o HTML do markdown é escapado antes de qualquer marcação — o conteúdo do modelo
  * nunca vira HTML cru.
@@ -1045,6 +1045,53 @@ export function budgetAlert(level) {
   if (level === "reduce") return "Consumo alto: o contexto das próximas chamadas será reduzido.";
   if (level === "stop") return "Orçamento operacional esgotado. A reserva de conclusão permanece protegida.";
   return "";
+}
+
+/** Símbolo e lockup: o tema claro usa tinta escura; o escuro, tinta clara. A estrela permanece azul. */
+const BRAND_SRC = {
+  mark: {
+    dark: "/assets/brand/callidus-mark.svg",
+    light: "/assets/brand/callidus-mark-light.svg",
+  },
+  lockup: {
+    dark: "/assets/brand/callidus-lockup.svg",
+    light: "/assets/brand/callidus-lockup-light.svg",
+  },
+};
+
+/**
+ * Caminho do asset de marca para o tema ativo.
+ *
+ * @param {string} kind `"mark"` (símbolo) ou `"lockup"` (símbolo + nome).
+ * @param {string} theme `"light"` ou `"dark"`.
+ * @returns {string} URL servida em `/assets/brand/`.
+ * Observações: `<img>` não herda `currentColor`; cada tema tem o seu SVG.
+ */
+export function brandSrc(kind, theme) {
+  const pair = BRAND_SRC[kind] || BRAND_SRC.mark;
+  return theme === "light" ? pair.light : pair.dark;
+}
+
+/**
+ * Texto da resposta final visível na conversa.
+ *
+ * @param {object} root Tarefa raiz da mensagem.
+ * @param {Array<object>} [children] Subtarefas diretas da raiz.
+ * @returns {string} Markdown da resposta, ou string vazia quando ainda não há uma.
+ * Observações: a raiz guarda o texto em `final_answer`. Se o run parou antes de
+ * copiar, a etapa concluída de resposta final ainda tem o texto em `markdown`.
+ */
+export function visibleFinalAnswer(root, children = []) {
+  const direct = root?.consolidated_result_json?.final_answer;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  const ready = (children || []).filter((task) => {
+    if (task?.status !== "COMPLETED") return false;
+    if (!task.metadata_json?.final_answer) return false;
+    const markdown = task.consolidated_result_json?.markdown;
+    return typeof markdown === "string" && markdown.trim();
+  });
+  ready.sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+  return ready.length ? ready[0].consolidated_result_json.markdown.trim() : "";
 }
 
 export function diffLines(text) {

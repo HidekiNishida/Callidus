@@ -14,10 +14,19 @@ import pytest
 from agent.config import Settings
 from agent.context.budget import compact_for_pressure, estimate_tokens
 from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate
-from agent.memory.operational import child_summary, recall, render_for_prompt, upsert_operational
+from agent.memory.operational import (
+    child_summary,
+    recall,
+    render_for_prompt,
+    upsert_operational,
+)
 from agent.observability.emitter import observe
 from agent.orchestrator.atomizer import should_decompose_further
-from agent.orchestrator.budget_gate import assess_inference, grant_budget, use_budget_settings
+from agent.orchestrator.budget_gate import (
+    assess_inference,
+    grant_budget,
+    use_budget_settings,
+)
 from agent.orchestrator.execution.providers import apply_provider_usage
 from agent.orchestrator.inference_usage import fold_usage, usage_from_response
 from agent.orchestrator.ledger import record_inference, run_spend

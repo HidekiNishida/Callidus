@@ -12,9 +12,14 @@ from pathlib import Path
 
 from agent.config import Settings
 from agent.context.operation_builder import OperationContextBuilder
-from agent.domain.enums import MemoryKind
-from agent.domain.schemas import ConversationCreate, MemoryCreate, ProjectCreate, TaskCreate, TaskStatusUpdate
-from agent.domain.enums import TaskStatus
+from agent.domain.enums import MemoryKind, TaskStatus
+from agent.domain.schemas import (
+    ConversationCreate,
+    MemoryCreate,
+    ProjectCreate,
+    TaskCreate,
+    TaskStatusUpdate,
+)
 from agent.memory.store import choose_memory_index, structure_memory
 from agent.orchestrator.replan import replan_parent
 from agent.persistence.database import build_session_factory, init_db

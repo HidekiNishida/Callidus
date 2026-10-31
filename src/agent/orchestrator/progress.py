@@ -16,7 +16,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from agent.domain.enums import TaskStatus
-from agent.orchestrator.consolidation import settled, superseded, verification_evidence_ok
+from agent.orchestrator.consolidation import (
+    settled,
+    superseded,
+    verification_evidence_ok,
+)
 from agent.persistence.models import TaskModel
 
 

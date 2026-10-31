@@ -20,7 +20,7 @@ Regras que este módulo garante:
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
@@ -65,8 +65,8 @@ def to_utc(value: datetime) -> datetime:
         O mesmo instante, em UTC.
     """
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def localize(naive_local: datetime, tz_name: str) -> datetime:
@@ -88,15 +88,15 @@ def localize(naive_local: datetime, tz_name: str) -> datetime:
     """
     tz = ZoneInfo(resolve_timezone(tz_name))
     candidate = naive_local.replace(tzinfo=tz, fold=0)
-    roundtrip = candidate.astimezone(timezone.utc).astimezone(tz).replace(tzinfo=None)
+    roundtrip = candidate.astimezone(UTC).astimezone(tz).replace(tzinfo=None)
     if roundtrip != naive_local:
         # O horário local não existe: calcula o buraco e avança.
         off_before = naive_local.replace(tzinfo=tz, fold=0).utcoffset()
         off_after = naive_local.replace(tzinfo=tz, fold=1).utcoffset()
         gap = (off_after or off_before) - (off_before or off_after)
         shifted = naive_local + gap
-        return shifted.replace(tzinfo=tz, fold=0).astimezone(timezone.utc)
-    return candidate.astimezone(timezone.utc)
+        return shifted.replace(tzinfo=tz, fold=0).astimezone(UTC)
+    return candidate.astimezone(UTC)
 
 
 def next_cron_occurrence(

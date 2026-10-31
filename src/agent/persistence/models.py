@@ -10,14 +10,23 @@ Observações: o SQLite é a fonte da verdade; o formato das evidências e do hi
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from agent.domain.agent_enums import AgentStatus, ExecutionStatus, QueryStatus
-from agent.domain.enums import MemoryKind, RunStatus, TaskKind, TaskStatus
+from agent.domain.enums import RunStatus, TaskKind, TaskStatus
 
 
 def utcnow() -> datetime:
@@ -26,7 +35,7 @@ def utcnow() -> datetime:
     Returns:
         O datetime atual com fuso horário UTC.
     """
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Base(DeclarativeBase):

@@ -7,11 +7,15 @@ Componentes: Settings (modelo BaseSettings), get_settings().
 Dependências: pydantic, pydantic-settings.
 Observações: em testes, o banco é redirecionado para um SQLite temporário para não tocar o agent.db real.
 """
+import logging
 import os
 from pathlib import Path
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Esquemas de URL não SQLite já avisados: o aviso sai uma vez por processo, não a cada conexão.
+_WARNED_SCHEMES: set[str] = set()
 
 
 class Settings(BaseSettings):
@@ -37,7 +41,12 @@ class Settings(BaseSettings):
     )
 
     data_dir: Path = Path("data")
-    database_url: str | None = None
+    # `CALLIDUS_DATABASE_URL` vem primeiro: `DATABASE_URL` é um nome genérico que outros projetos
+    # (Postgres, Heroku, Railway) exportam no terminal, e a variável do ambiente vence o `.env`.
+    database_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("CALLIDUS_DATABASE_URL", "DATABASE_URL", "database_url"),
+    )
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_timeout_sec: float = 600.0
     llamacpp_base_url: str = "http://127.0.0.1:8080"
@@ -78,6 +87,9 @@ class Settings(BaseSettings):
     agent_operation_timeout_sec: float = 300.0
     api_host: str = "127.0.0.1"
     api_port: int = 8765
+    # Recarrega a API quando o código em src/ muda (desenvolvimento). O estado está no SQLite:
+    # um passo interrompido pela recarga é retomado pelo modo autônomo.
+    api_reload: bool = False
     max_attempts_per_task: int = 8
     max_orchestrator_steps: int = 100
     # Proteção contra recursão, não critério de decomposição: só para árvores que crescem sem fim.
@@ -188,8 +200,21 @@ class Settings(BaseSettings):
                 return f"sqlite:///{(base / 'agent-test.db').resolve()}"
             data_dir.mkdir(parents=True, exist_ok=True)
             return f"sqlite:///{(data_dir / 'agent.db').resolve()}"
-        if self.database_url:
+        if self.database_url and self.database_url.strip().lower().startswith("sqlite"):
             return self.database_url
+        if self.database_url:
+            # O estado canônico do Callidus é SQLite (a conexão usa opção exclusiva do SQLite).
+            # Uma URL de outro banco — quase sempre o DATABASE_URL de outro projeto exportado no
+            # terminal — derrubava o servidor na subida. O Callidus usa o banco padrão e avisa.
+            scheme = self.database_url.split(":", 1)[0]
+            if scheme not in _WARNED_SCHEMES:
+                _WARNED_SCHEMES.add(scheme)
+                logging.getLogger("agent.config").warning(
+                    "DATABASE_URL aponta para %s, que o Callidus não usa (só SQLite); usando %s. "
+                    "Para escolher o banco do Callidus, use CALLIDUS_DATABASE_URL=sqlite:///caminho/agent.db.",
+                    scheme,
+                    (self.data_dir / "agent.db").resolve(),
+                )
         self.data_dir.mkdir(parents=True, exist_ok=True)
         db_path = self.data_dir / "agent.db"
         return f"sqlite:///{db_path.resolve()}"

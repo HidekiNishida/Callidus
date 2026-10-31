@@ -17,8 +17,13 @@ import pytest
 from sqlalchemy import select
 
 from agent.config import Settings
-from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate, TaskStatusUpdate
 from agent.domain.enums import TaskStatus
+from agent.domain.schemas import (
+    ExecutionRunCreate,
+    ProjectCreate,
+    TaskCreate,
+    TaskStatusUpdate,
+)
 from agent.observability import emit, get_bus, observe
 from agent.observability.bus import RESYNC, EventBus
 from agent.observability.contracts import InvalidEventPayload, UnknownEventType

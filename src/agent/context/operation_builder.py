@@ -15,28 +15,37 @@ import re
 import uuid
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from agent.context.assembler import build_operation_context
 from agent.context.budget import BudgetResult, ContextBudgetError, group_categories
 from agent.domain.enums import MemoryKind
 from agent.domain.failures import describe_failures
+from agent.guides.discover import guide_digest
 from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.knowledge.indexer import grep_symbols_in_objective
+from agent.memory.operational import child_summary, remember_artifact, render_for_prompt
+from agent.memory.store import (
+    choose_memory_index,
+    fragments_for_prompt,
+    structure_memory,
+)
 from agent.orchestrator.approach import render_approach
-from agent.persistence.models import ContextSnapshotModel, MemoryRecordModel, TaskDependencyModel, TaskModel
-from agent.services.contract_service import ContractService
+from agent.orchestrator.strategy import ProfessionalStrategy
+from agent.persistence.models import (
+    BranchModel,
+    ContextSnapshotModel,
+    MemoryRecordModel,
+    TaskDependencyModel,
+    TaskModel,
+)
 from agent.providers.base import ModelProfile
 from agent.security.paths import PathSecurityError, resolve_under_root
-from agent.guides.discover import guide_digest
-from agent.memory.operational import child_summary, remember_artifact, render_for_prompt
-from agent.memory.store import choose_memory_index, fragments_for_prompt, structure_memory
-from agent.persistence.models import BranchModel
 from agent.services.branches import memory_visible
-from agent.orchestrator.strategy import ProfessionalStrategy
+from agent.services.contract_service import ContractService
 from agent.skills import SkillMatch, SkillSelector, get_skill_registry
 from agent.tools.builtins import TOOL_CATALOG
-from sqlalchemy import select
 
 # Registros de estado por tarefa: ficam fora do índice de regras do projeto.
 _TASK_STATE_KINDS = (
@@ -107,6 +116,12 @@ class OperationContextBuilder:
         capability = self._capability_summary(root_path, task)
         if capability:
             tools_summary = f"{tools_summary}\n{capability}"
+        from agent.orchestrator.gap_analysis import environment_note
+
+        environment = environment_note(root_path)
+        if environment:
+            # Fato da máquina que muda como o código deve ser escrito (ex.: Tk 8.5 do macOS).
+            tools_summary = f"{tools_summary}\n{environment}"
         page = (task.metadata_json or {}).get("prompt_key") == "page"
         read_only = bool((task.metadata_json or {}).get("read_only"))
         if read_only:
@@ -123,6 +138,7 @@ class OperationContextBuilder:
                 if page
                 else (
                     "Inspecione o projeto com as ferramentas e faça a alteração com write_file ou edit_file. "
+                    "Para um arquivo de até 200 linhas, prefira write_file com o arquivo inteiro já com todas as mudanças. "
                     f"Você pode pedir no máximo {self._inspection_budget()} leituras; depois disso, faça a alteração. "
                     'Se preferir responder em JSON: criar {"path":"...","content":"..."}, '
                     'editar {"path":"...","old_string":"...","new_string":"..."}. '
@@ -256,7 +272,9 @@ class OperationContextBuilder:
         if quality:
             body = f"{body}\n\n{quality}".strip()
         try:
-            from agent.orchestrator.language_strategy import render_operational_for_prompt
+            from agent.orchestrator.language_strategy import (
+                render_operational_for_prompt,
+            )
 
             language = render_operational_for_prompt(task.metadata_json)
         except Exception:

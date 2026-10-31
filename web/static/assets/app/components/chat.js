@@ -1,4 +1,13 @@
-// web/static/assets/app/components/chat.js
+/**
+ * Arquivo: web/static/assets/app/components/chat.js
+ * Nome: chat.js
+ * Propósito: conversa — pedido, atividade e resposta final.
+ * Responsabilidade: frontend/componente — monta as mensagens e envia o pedido.
+ * Componentes: ChatView (componente Vue).
+ * Dependências: `../store.js` (estado e ações), `../ui.js` (`brandSrc`, `visibleFinalAnswer`, markdown).
+ * Observações: o avatar e o estado vazio usam o símbolo do tema ativo; a resposta
+ * visível vem da raiz ou, se a cópia não chegou, da etapa de resposta final concluída.
+ */
 import {
   state,
   roots,
@@ -31,6 +40,8 @@ import {
   activityIsOpen,
   toggleActivity,
   thoughtsOutsideNarration,
+  brandSrc,
+  visibleFinalAnswer,
 } from "../ui.js";
 import { filesList, currentTask } from "../live-state.js";
 import { createScrollFollow } from "../chat-scroll.js";
@@ -42,7 +53,7 @@ export const ChatView = {
     const messages = Vue.computed(() => {
       return roots().map((root) => {
         const kids = childrenOf(root.id);
-        const answer = root.consolidated_result_json?.final_answer || null;
+        const answer = visibleFinalAnswer(root, kids) || null;
         const reply = answer ? renderMarkdown(answer) : "";
         const busy = BUSY_STATUSES.includes(root.status) || kids.some((task) => BUSY_STATUSES.includes(task.status));
         const meta = root.metadata_json || {};
@@ -340,6 +351,7 @@ export const ChatView = {
       cancelQueued,
       icon,
       stamp,
+      brandSrc,
     };
   },
   template: `
@@ -370,7 +382,7 @@ export const ChatView = {
 
           <div class="bubble agent" :class="{ live: message.busy }">
             <div class="bubble-meta">
-              <img class="avatar avatar-mark" src="/assets/brand/callidus-mark.svg" alt="" width="20" height="20" />
+              <img class="avatar avatar-mark" :src="brandSrc('mark', state.theme)" alt="" width="20" height="20" />
               <span class="agent-name">Callidus</span>
               <span class="muted" v-if="message.model">{{ message.model }}</span>
               <span class="status-pill" :class="'status-' + message.status">{{ message.statusText }}</span>
@@ -486,7 +498,7 @@ export const ChatView = {
       </div>
 
       <div class="chat-empty" v-else>
-        <img class="brand-mark-img brand-mark-lg" src="/assets/brand/callidus-mark.svg" alt="" width="52" height="52" />
+        <img class="brand-mark-img brand-mark-lg" :src="brandSrc('mark', state.theme)" alt="" width="52" height="52" />
         <h2>O que vamos construir?</h2>
         <p>Escreva embaixo como no chat. O Callidus divide o trabalho, edita arquivos e mostra cada passo aqui.</p>
       </div>

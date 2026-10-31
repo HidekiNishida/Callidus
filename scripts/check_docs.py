@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import re
 import sys
-from urllib.parse import unquote
 from pathlib import Path
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")

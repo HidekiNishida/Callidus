@@ -7,6 +7,11 @@ Componentes: decompose_for_use, extract_memory_request, fragments_for_prompt, su
 Dependências: agent.memory.store.
 Observações: as funções devolvem texto pronto para o prompt, não persistem nada.
 """
-from agent.memory.store import decompose_for_use, extract_memory_request, fragments_for_prompt, summarize_text
+from agent.memory.store import (
+    decompose_for_use,
+    extract_memory_request,
+    fragments_for_prompt,
+    summarize_text,
+)
 
 __all__ = ["decompose_for_use", "extract_memory_request", "fragments_for_prompt", "summarize_text"]

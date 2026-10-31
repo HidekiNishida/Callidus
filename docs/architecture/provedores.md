@@ -101,7 +101,8 @@ configuração sempre vence**.
 
 | Família | Quem | O que a política faz |
 |---------|------|----------------------|
-| `qwen3` | `qwen3:8b`, `qwen3-vl:8b`, `qwen3:*` | janela, saída e amostragem por finalidade |
+| `qwen3` | `qwen3:8b`, `qwen3-vl:8b-instruct`, `qwen3:*` | janela, saída e amostragem por finalidade |
+| `qwen3_thinking` | `qwen3-vl:8b` (= `8b-thinking` no Ollama), toda tag com `thinking` | janela e saída com a reserva de raciocínio (+4 096) mesmo com `think: false`, que essas variantes ignoram; amostragem do Modelfile (a de raciocínio do fabricante) |
 | genérica | `llama3.2`, `mistral`, qualquer outro | janela e saída; amostragem do Modelfile |
 | `always_reasoning` | `gpt-oss`, `deepseek-r1` | nada muda — o raciocínio consome `num_predict`, e o `gpt-oss:20b` é o modelo de referência da avaliação |
 

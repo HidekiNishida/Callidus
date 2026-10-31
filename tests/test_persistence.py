@@ -9,16 +9,20 @@ Observações: banco SQLite temporário por teste (tmp_path); o agent.db real nu
 
 persistência e recuperação
 """
-import uuid
 from pathlib import Path
 
 import pytest
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
-from agent.domain.enums import TaskStatus
-from agent.domain.schemas import ProjectCreate, TaskCreate, TaskDependencyCreate, TaskStatusUpdate
-from agent.persistence.database import build_session_factory, init_db
 from agent.config import Settings
+from agent.domain.enums import TaskStatus
+from agent.domain.schemas import (
+    ProjectCreate,
+    TaskCreate,
+    TaskDependencyCreate,
+    TaskStatusUpdate,
+)
+from agent.persistence.database import build_session_factory, init_db
 from agent.services.project_service import ProjectService
 from agent.services.task_service import DependencyError, TaskService
 

@@ -11,7 +11,7 @@ automações: `src/agent/tools/automations.py`
 | `glob_files` | Encontra arquivos por glob | Não |
 | `read_file` | Leitura dentro do `root_path`, com `offset`/`limit` | Não |
 | `search_grep` | Busca regex (limite 100 hits, com `path`) | Não |
-| `edit_file` | Troca um trecho único (`old_string`/`new_string`) | Não |
+| `edit_file` | Troca um trecho único (`old_string`/`new_string`); `old_string` vazio acrescenta `new_string` ao fim de um arquivo existente | Não |
 | `write_file` | Gravação controlada | Não |
 | `make_dir` | Cria diretório | Não |
 | `delete_file` | Apaga um arquivo | **Sim** |

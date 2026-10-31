@@ -20,7 +20,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from agent.observability import emit
-from agent.tools.arguments import validate_arguments
+from agent.tools.arguments import normalize_arguments, validate_arguments
 from agent.tools.availability import check_tool
 from agent.tools.contracts import ExecutionMode, ToolFamily, ToolRisk
 from agent.tools.policy import PermissionPolicy, redact
@@ -115,6 +115,10 @@ ToolHandler = Callable[[ToolContext, dict[str, Any]], Awaitable[dict[str, Any]]]
 # Nomes que o modelo costuma inventar → ferramenta real.
 TOOL_ALIASES: dict[str, str] = {
     "ls": "list_dir",
+    "open_app": "run_app",
+    "start_app": "run_app",
+    "run_application": "run_app",
+    "launch_program": "run_app",
     "list_files": "list_dir",
     "list_directory": "list_dir",
     "dir": "list_dir",
@@ -353,6 +357,7 @@ class ToolRegistry:
             )
             return {"success": False, "error": f"ferramenta desconhecida: {tool_id}", "known": known}
         spec = self.get_spec(tool_id)
+        args = normalize_arguments(spec.input_schema, args)
         argument_error = validate_arguments(spec.input_schema, args)
         if argument_error:
             emit(
@@ -464,7 +469,7 @@ class ToolRegistry:
                 )
             else:
                 result = await handler(ctx, args)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             emit(
                 "tool.failed",
                 {

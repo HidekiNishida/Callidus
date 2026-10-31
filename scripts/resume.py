@@ -42,7 +42,7 @@ STATE = ROOT / ".cursor" / "resume-inventario.json"
 COLLAPSED = ("media/icons/", "internal/tarefas/", "tests/fixtures/", ".planning/")
 # Arquivos cujas classes/funções precisam ser descritas uma a uma.
 SYMBOL_PREFIXES = ("src/", "scripts/", "web/static/assets/")
-JS_FUNC = re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)", re.M)
+JS_FUNC = re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)", re.MULTILINE)
 HEADING = re.compile(r"^(#{1,6})\s")
 
 

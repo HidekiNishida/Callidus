@@ -12,26 +12,23 @@ Observações: banco SQLite em memória por teste; nenhum arquivo real é tocado
 Unit 1 tests for observabilidade-tempo-real: contrato, barramento, emissor, migração
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 import pytest
-
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from agent.persistence.models import Base, EventLogModel, TaskModel
-from agent.persistence.database import init_db, build_session_factory
-from agent.observability.contracts import (
-    EVENT_SPECS,
-    SCHEMA_VERSION,
-    UnknownEventType,
-    InvalidEventPayload,
-    validate_payload,
-    spec_for,
-    envelope_from_row,
-)
-from agent.observability.emitter import observe, emit, _CURRENT
 from agent.observability.bus import get_bus
-from agent.observability.sanitize import sanitize
+from agent.observability.contracts import (
+    SCHEMA_VERSION,
+    InvalidEventPayload,
+    UnknownEventType,
+    envelope_from_row,
+    spec_for,
+    validate_payload,
+)
+from agent.observability.emitter import emit, observe
+from agent.persistence.database import build_session_factory, init_db
+from agent.persistence.models import EventLogModel, TaskModel
 
 
 def setup_function():
@@ -84,7 +81,7 @@ def test_envelope_from_row():
             event_type="test.event",
             payload_json={"foo": "bar"},
             agent="test-agent",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             seq=5,
             parent_task_id=uuid.uuid4(),
             schema_version=SCHEMA_VERSION,
@@ -100,7 +97,7 @@ def test_envelope_from_row():
         assert env["type"] == row.event_type
         assert env["seq"] == row.seq
         # ts is a string in ISO format with Z suffix
-        expected_ts = row.created_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        expected_ts = row.created_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         assert env["ts"] == expected_ts
         assert env["data"] == row.payload_json
         assert env["persisted"] is True
@@ -191,7 +188,7 @@ def test_sequence_allocation():
             event_type="test.existing",
             payload_json={},
             agent="test",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             seq=10,
         )
         session.add(existing)
@@ -326,7 +323,7 @@ def test_migration_columns_exist():
             event_type="test.migration",
             payload_json={},
             agent="test",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             seq=1,
             parent_task_id=uuid.uuid4(),
             schema_version=99,

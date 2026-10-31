@@ -197,7 +197,7 @@ class ScriptActionRunner:
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             try:
                 await proc.wait()

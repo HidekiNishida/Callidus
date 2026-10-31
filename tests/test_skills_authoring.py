@@ -92,7 +92,7 @@ def test_validacao_reprova_arquivo_referenciado_inexistente(service):
     service.create_draft("skill-quebrada", "Faz algo")
     manifest = service.store.read_manifest("skill-quebrada")
     manifest["scripts"] = ["scripts/ausente.py"]
-    service.store._write_manifest("skill-quebrada", manifest)  # noqa: SLF001 - teste do próprio pacote
+    service.store._write_manifest("skill-quebrada", manifest)
     result = service.validate("skill-quebrada")
     assert result["valid"] is False
     assert any("ausente.py" in item for item in result["errors"])
@@ -103,7 +103,7 @@ def test_ativacao_exige_validacao(service):
     service.create_draft("skill-invalida", "x")
     manifest = service.store.read_manifest("skill-invalida")
     manifest["scripts"] = ["scripts/ausente.py"]
-    service.store._write_manifest("skill-invalida", manifest)  # noqa: SLF001 - teste do próprio pacote
+    service.store._write_manifest("skill-invalida", manifest)
     out = service.store.activate("skill-invalida")
     assert out["success"] is False
     assert out["validation"]["errors"]

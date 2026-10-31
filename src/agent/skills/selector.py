@@ -10,7 +10,7 @@ Observações: critérios de não-ativação têm precedência: uma skill proibi
 from __future__ import annotations
 
 import re
-from typing import Sequence
+from collections.abc import Sequence
 
 from agent.skills.discovery import SkillRegistry, get_skill_registry
 from agent.skills.models import SkillMatch, SkillSpec

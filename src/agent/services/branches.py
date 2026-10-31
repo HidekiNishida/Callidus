@@ -10,7 +10,7 @@ Observações: memória do projeto vale para todos; a da conversa segue o ramo e
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from agent.persistence.models import BranchModel, TaskModel
 
@@ -27,7 +27,7 @@ def _aware(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
+        return value.replace(tzinfo=UTC)
     return value
 
 

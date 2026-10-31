@@ -22,13 +22,19 @@ que mantém uma só origem para a mutação do disco.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable
-
 import json
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from typing import Any
 
-from agent.providers.base import ChatCompletionRequest, ChatMessage, LLMProvider, ModelProfile, estimate_text_tokens
 from agent.observability import emit
+from agent.providers.base import (
+    ChatCompletionRequest,
+    ChatMessage,
+    LLMProvider,
+    ModelProfile,
+    estimate_text_tokens,
+)
 from agent.tools.registry import ToolContext, ToolRegistry
 
 # Ferramentas de leitura oferecidas durante a operação.

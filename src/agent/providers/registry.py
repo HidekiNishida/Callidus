@@ -18,15 +18,15 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agent.config import Settings
+from agent.providers.anthropic import AnthropicProvider
 from agent.providers.base import ProviderConfigError
+from agent.providers.gemini import GeminiProvider
+from agent.providers.http import validate_base_url
 from agent.providers.llamacpp import LlamaCppProvider, read_api_key_file
 from agent.providers.mock import MockProvider
 from agent.providers.ollama import OllamaProvider
 from agent.providers.openai_compatible import OpenAICompatibleProvider
 from agent.providers.openrouter import OpenRouterProvider
-from agent.providers.anthropic import AnthropicProvider
-from agent.providers.gemini import GeminiProvider
-from agent.providers.http import validate_base_url
 
 # Tipos aceitos na configuração. `openai` é um caso de `openai_compatible` com URL padrão.
 PROVIDER_TYPES = {

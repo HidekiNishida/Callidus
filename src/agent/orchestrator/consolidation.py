@@ -3,7 +3,7 @@ Arquivo: src/agent/orchestrator/consolidation.py
 Nome: consolidation.py
 Propósito: consolidação bottom-up.
 Responsabilidade: camada de aplicação.
-Componentes: verification_spec, latest_verification_failed, verification_evidence_ok, superseded, is_optional, inherits_read_only….
+Componentes: verification_spec, latest_verification_failed, verification_evidence_ok, superseded, is_optional, inherits_read_only, remember_final_answer, surface_final_answer.
 Dependências: agent.domain.enums, agent.domain.schemas, agent.persistence.models, agent.services.agent_service, agent.services.task_service, agent.verification.fingerprint….
 Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
 """
@@ -19,8 +19,8 @@ from sqlalchemy.orm import Session
 from agent.domain.enums import TaskStatus
 from agent.domain.schemas import TaskStatusUpdate
 from agent.persistence.models import EvidenceModel, TaskDependencyModel, TaskModel
-from agent.services.task_service import TaskService
 from agent.services.agent_service import AgentNotFoundError, AgentService
+from agent.services.task_service import TaskService
 from agent.verification.fingerprint import is_current
 
 
@@ -303,3 +303,124 @@ def collect_evidences(session: Session, task_id: uuid.UUID) -> list[dict[str, An
         }
         for r in rows
     ]
+
+
+def _root_of(session: Session, task: TaskModel) -> TaskModel:
+    """Sobe a árvore até a tarefa sem pai.
+
+    Args:
+        session: sessão usada para carregar os pais.
+        task: tarefa de partida.
+
+    Returns:
+        A raiz da árvore que contém a tarefa.
+    """
+    seen: set[uuid.UUID] = set()
+    current = task
+    while current.parent_id and current.id not in seen:
+        seen.add(current.id)
+        parent = session.get(TaskModel, current.parent_id)
+        if parent is None:
+            break
+        current = parent
+    return current
+
+
+def _answer_markdown(task: TaskModel) -> str:
+    """Markdown da resposta, quando a tarefa o gravou.
+
+    Args:
+        task: etapa consultada.
+
+    Returns:
+        O texto sem espaços nas pontas, ou string vazia.
+    """
+    result = task.consolidated_result_json or {}
+    markdown = result.get("markdown")
+    if isinstance(markdown, str) and markdown.strip():
+        return markdown.strip()
+    return ""
+
+
+def remember_final_answer(session: Session, task: TaskModel) -> bool:
+    """Copia o markdown da etapa de resposta final para a raiz, sem mudar estados.
+
+    A interface lê `consolidated_result_json.final_answer` na raiz. A etapa guarda
+    o texto em `markdown`. Se o run parar antes da consolidação completar, a
+    resposta já escrita precisa estar na raiz para aparecer na conversa.
+
+    Args:
+        session: sessão do banco.
+        task: etapa que acabou de escrever a resposta.
+
+    Returns:
+        `True` quando a raiz passou a exibir o texto desta etapa.
+
+    Observações:
+        Não conclui a tarefa nem o run. Um texto vazio não apaga uma resposta anterior.
+    """
+    if not (task.metadata_json or {}).get("final_answer"):
+        return False
+    markdown = _answer_markdown(task)
+    if not markdown:
+        return False
+    root = _root_of(session, task)
+    report = dict(root.consolidated_result_json or {})
+    report["final_answer"] = markdown
+    sources = (task.consolidated_result_json or {}).get("sources")
+    if sources:
+        report["sources"] = sources
+    root.consolidated_result_json = report
+    return True
+
+
+def surface_final_answer(session: Session, root: TaskModel) -> bool:
+    """Publica na raiz a resposta final já concluída, se a raiz ainda não tiver texto.
+
+    Args:
+        session: sessão do banco.
+        root: tarefa raiz da conversa.
+
+    Returns:
+        `True` quando um markdown de descendente foi copiado para a raiz.
+
+    Observações:
+        Não muda o estado da raiz nem do run. A etapa mais recente concluída vence.
+        Serve ao passo que encontra a execução já encerrada: a resposta escrita
+        continua visível mesmo que a consolidação não tenha rodado.
+    """
+    report = dict(root.consolidated_result_json or {})
+    current = report.get("final_answer")
+    if isinstance(current, str) and current.strip():
+        return False
+    tasks = list(session.scalars(select(TaskModel).where(TaskModel.project_id == root.project_id)).all())
+    ids = {root.id}
+    changed = True
+    while changed:
+        changed = False
+        for item in tasks:
+            if item.parent_id in ids and item.id not in ids:
+                ids.add(item.id)
+                changed = True
+    best: TaskModel | None = None
+    for item in tasks:
+        if item.id not in ids or item.id == root.id:
+            continue
+        if item.status != TaskStatus.COMPLETED.value:
+            continue
+        if not (item.metadata_json or {}).get("final_answer"):
+            continue
+        if not _answer_markdown(item):
+            continue
+        stamp = item.updated_at or item.created_at
+        best_stamp = (best.updated_at or best.created_at) if best is not None else None
+        if best is None or (stamp is not None and (best_stamp is None or stamp >= best_stamp)):
+            best = item
+    if best is None:
+        return False
+    report["final_answer"] = _answer_markdown(best)
+    sources = (best.consolidated_result_json or {}).get("sources")
+    if sources:
+        report["sources"] = sources
+    root.consolidated_result_json = report
+    return True

@@ -132,7 +132,7 @@ def _funcoes_js(caminho: Path) -> list[tuple[str, str, str]]:
     encontrados: list[tuple[str, str, str]] = []
     padrao = re.compile(
         r"(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)|export\s+const\s+(\w+)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>",
-        re.M,
+        re.MULTILINE,
     )
     for achado in padrao.finditer(texto):
         nome = achado.group(1) or achado.group(3)

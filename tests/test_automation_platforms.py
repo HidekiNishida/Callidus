@@ -21,7 +21,6 @@ from __future__ import annotations
 import plistlib
 from pathlib import Path
 
-
 from agent.automation.service import (
     LaunchdAdapter,
     ServiceOptions,
@@ -31,7 +30,6 @@ from agent.automation.service import (
     current_adapter,
     default_options,
 )
-
 
 # ─────────────────────────────────────────────────────────── macOS
 

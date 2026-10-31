@@ -9,7 +9,6 @@ Observações: sem mocks — o teste abre um processo real, roda a suíte real e
 """
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -222,7 +221,7 @@ async def test_fluxo_de_skill_nao_ativa_sem_validacao(tmp_path):
     service.create_draft("skill-quebrada", "Faz algo")
     manifest = store.read_manifest("skill-quebrada")
     manifest["scripts"] = ["scripts/inexistente.py"]
-    store._write_manifest("skill-quebrada", manifest)  # noqa: SLF001 - teste do próprio pacote
+    store._write_manifest("skill-quebrada", manifest)
     out = store.activate("skill-quebrada")
     assert out["success"] is False
     assert out["validation"]["valid"] is False

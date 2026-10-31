@@ -10,7 +10,7 @@ Observações: o snapshot vem do banco e do processo, nunca do navegador.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -20,7 +20,13 @@ from agent.domain.enums import RunStatus, TaskStatus
 from agent.observability.bus import EventBus, get_bus
 from agent.observability.contracts import as_utc, envelope_from_row
 from agent.orchestrator.progress import progress_state, subtree
-from agent.persistence.models import EventLogModel, EvidenceModel, ExecutionRunModel, OperationAttemptModel, TaskModel
+from agent.persistence.models import (
+    EventLogModel,
+    EvidenceModel,
+    ExecutionRunModel,
+    OperationAttemptModel,
+    TaskModel,
+)
 
 MAX_PAGE = 1_000
 TERMINAL_RUN_STATUSES = {RunStatus.COMPLETED.value, RunStatus.FAILED.value, RunStatus.CANCELLED.value}
@@ -220,12 +226,12 @@ def run_snapshot(session: Session, run_id: uuid.UUID, *, bus: EventBus | None = 
     ).first()
     root = session.get(TaskModel, run.root_task_id)
     config = run.config_json or {}
-    end = as_utc(run.updated_at) if run.status in TERMINAL_RUN_STATUSES and run.updated_at else datetime.now(timezone.utc)
+    end = as_utc(run.updated_at) if run.status in TERMINAL_RUN_STATUSES and run.updated_at else datetime.now(UTC)
     current = next(
         (t for st in ("RUNNING", "VERIFYING", "READY", "RETRY_PENDING", "PLANNING") for t in tasks if t.status == st and t.id != run.root_task_id),
         None,
     )
-    meta_of = lambda t: t.metadata_json or {}  # noqa: E731
+    meta_of = lambda t: t.metadata_json or {}
     task_rows = []
     for t in tasks:
         ev = evidence.get(t.id)

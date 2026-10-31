@@ -16,6 +16,7 @@ dependencies = [
     "mcp>=1.0.0",
     "apscheduler>=3.10.0",
     "croniter>=2.0.0",
+    "networkx>=3.3",
 ]
 
 [project.optional-dependencies]

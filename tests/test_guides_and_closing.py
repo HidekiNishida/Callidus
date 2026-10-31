@@ -16,8 +16,16 @@ from agent.config import Settings
 from agent.domain.enums import TaskStatus
 from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate
 from agent.guides.discover import discover_guides, reply_capabilities
-from agent.orchestrator.closing import compose_final_markdown, ensure_closing_stages, usable_markdown
-from agent.orchestrator.decomposition import GENERIC_TEMPLATE, direct_answer_plan, resolve_decomposition_plan
+from agent.orchestrator.closing import (
+    compose_final_markdown,
+    ensure_closing_stages,
+    usable_markdown,
+)
+from agent.orchestrator.decomposition import (
+    GENERIC_TEMPLATE,
+    direct_answer_plan,
+    resolve_decomposition_plan,
+)
 from agent.orchestrator.runner import RunOrchestrator
 from agent.persistence.database import build_session_factory, init_db
 from agent.services.project_service import ProjectService

@@ -3,7 +3,7 @@ Arquivo: src/agent/brand.py
 Nome: brand.py
 Propósito: definir a identidade do produto (nome, símbolo, aliases legados).
 Responsabilidade: camada de apresentação — constantes de marca consumidas pela interface e pelas rotas.
-Componentes: BRAND_NAME, BRAND_TAGLINE, caminhos dos assets de marca, aliases legados, is_attachments_dir().
+Componentes: BRAND_NAME, BRAND_TAGLINE, caminhos dos assets de marca (tema claro e escuro), aliases legados, is_attachments_dir().
 Dependências: nenhuma.
 Observações: os aliases legados (`.agente`, `agente-inbox://local`) são mantidos por compatibilidade de leitura.
 """
@@ -17,7 +17,9 @@ BRAND_TAGLINE = "Agente de desenvolvimento otimizado para modelos locais pequeno
 
 # Símbolo: "C" hexagonal com estrela azul ao centro.
 BRAND_MARK_PATH = "/assets/brand/callidus-mark.svg"
+BRAND_MARK_LIGHT_PATH = "/assets/brand/callidus-mark-light.svg"
 BRAND_LOCKUP_PATH = "/assets/brand/callidus-lockup.svg"
+BRAND_LOCKUP_LIGHT_PATH = "/assets/brand/callidus-lockup-light.svg"
 BRAND_LOCKUP_VERTICAL_PATH = "/assets/brand/callidus-lockup-vertical.svg"
 BRAND_WORDMARK_PATH = "/assets/brand/callidus-wordmark.svg"
 BRAND_FAVICON_PATH = "/assets/brand/favicon.svg"

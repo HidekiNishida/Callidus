@@ -14,7 +14,12 @@ import json
 import httpx
 import pytest
 
-from agent.providers.base import ChatCompletionRequest, ChatMessage, ModelProfile, estimate_text_tokens
+from agent.providers.base import (
+    ChatCompletionRequest,
+    ChatMessage,
+    ModelProfile,
+    estimate_text_tokens,
+)
 from agent.providers.ollama import OllamaProvider, chat_body
 from agent.providers.ollama_policy import (
     apply_request_policy,
@@ -242,3 +247,139 @@ async def test_observed_chat_tells_the_provider_the_purpose():
 
     await observed_chat(_Provider(), _request(), purpose="plan")
     assert seen["purpose"] == "plan"
+
+
+def test_thinking_only_variants_get_the_reasoning_allowance():
+    """Regressão (qwen3-vl:8b): a variante só de raciocínio ignora `think: false`; sem a reserva, o
+    plano gastava os 2 048 tokens raciocinando e voltava vazio."""
+    assert family_for("qwen3-vl:8b").always_thinks is True
+    assert family_for("qwen3:4b-thinking-2507").always_thinks is True
+    assert family_for("qwen3-vl:8b-instruct").always_thinks is False
+    assert family_for("qwen3:8b").always_thinks is False
+
+    direct = chat_body(_request("qwen3:8b", purpose="plan"))["options"]
+    # Raciocínio pedido na configuração: a saída reserva o raciocínio e a amostragem é a do Modelfile.
+    thinking = chat_body(_request("qwen3-vl:8b", purpose="plan", generation={"think": True}))["options"]
+    assert thinking["num_predict"] >= direct["num_predict"] + 4096
+    assert thinking["num_ctx"] >= thinking["num_predict"]
+    assert "temperature" not in thinking
+
+
+def test_thinking_only_variant_answers_directly_with_an_empty_thinking_block():
+    """Sem `think` na configuração, a variante só de raciocínio recebe o bloco vazio no fim da conversa:
+    responde direto, sem a reserva de raciocínio e com a amostragem do modo direto."""
+    from agent.providers.ollama_policy import EMPTY_THINK
+
+    body = chat_body(_request("qwen3-vl:8b", purpose="plan"))
+    assert body["messages"][-1] == {"role": "assistant", "content": EMPTY_THINK}
+    assert body["think"] is False
+    direct = chat_body(_request("qwen3:8b", purpose="plan"))["options"]
+    assert body["options"]["num_predict"] == direct["num_predict"]
+    assert body["options"]["temperature"] == direct["temperature"]
+
+    pensando = chat_body(_request("qwen3-vl:8b", purpose="plan", generation={"think": True}))
+    assert pensando["messages"][-1]["role"] == "user"
+    assert pensando["options"]["num_predict"] >= direct["num_predict"] + 4096
+    assert "temperature" not in pensando["options"]
+
+    assert chat_body(_request("qwen3:8b"))["messages"][-1]["role"] == "user"
+
+
+def test_bare_json_tool_calls_in_text_become_calls():
+    """Regressão (qwen3-vl:8b sem raciocínio): chamadas escritas como objetos JSON em linhas seguidas
+    viravam "Extra data" / "faltam campos: path"; agora são chamadas de ferramenta."""
+    text = (
+        '{"name": "read_file", "arguments": {"path": "a.py"}}\n'
+        '{"name": "edit_file", "arguments": {"path": "a.py", "old_string": "", "new_string": "x = 1"}}\n'
+        '{"name": "edit_file", "arguments": {"path": "b.py", "old_str'
+    )
+    calls, rest = tool_calls_from_text(text, {"read_file", "edit_file"})
+    assert [c.name for c in calls] == ["read_file", "edit_file"]
+    assert calls[1].arguments["new_string"] == "x = 1"
+    assert rest.startswith('{"name": "edit_file"')
+
+    escrita = '{"path": "a.py", "content": "x = 1"}'
+    assert tool_calls_from_text(escrita, {"write_file"}) == ([], escrita)
+    assert tool_calls_from_text('{"name": "apaga_tudo", "arguments": {}}', {"read_file"})[0] == []
+
+
+def test_repetition_cut_keeps_one_copy_of_the_repeated_block():
+    """Regressão (qwen3-vl:8b): a mesma sequência de chamadas repetida até o limite (até 833 s);
+    a terceira cópia corta o texto e preserva uma cópia."""
+    from agent.providers.ollama_policy import repetition_cut
+
+    ciclo = '{"name": "read_file", "arguments": {"path": "a.py"}}\n{"name": "write_file", "arguments": {"path": "a.py", "content": "x"}}\n'
+    texto = '{"name": "list_dir", "arguments": {}}\n' + ciclo * 3 + '{"name": "read_f'
+    cortado = repetition_cut(texto)
+    assert cortado == ('{"name": "list_dir", "arguments": {}}\n' + ciclo).rstrip("\n")
+    assert repetition_cut(ciclo * 2) is None
+    assert repetition_cut("x\nx\nx\nx\n") is None  # linhas curtas (ex.: código com linhas iguais) não contam
+    codigo = "def a():\n    return 1\n\n\ndef b():\n    return 2\n"
+    assert repetition_cut(codigo) is None
+
+
+@pytest.mark.asyncio
+async def test_streaming_stops_on_endless_repetition_and_keeps_the_calls(mock_http):
+    """No streaming, a repetição sem fim é cortada na terceira cópia e as chamadas da primeira valem."""
+    linha = '{"name": "read_file", "arguments": {"path": "a.py"}}\n'
+    pecas = [linha] * 50  # o servidor continuaria por muito tempo
+    lines = "".join(json.dumps({"message": {"content": p}, "done": False}) + "\n" for p in pecas).encode("utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Servidor falso que repete a mesma linha."""
+        return httpx.Response(200, content=lines)
+
+    mock_http("ollama", handler)
+    provider = OllamaProvider("http://127.0.0.1:11434")
+    request = _request("qwen3-vl:8b", purpose="operation").model_copy(update={"tools": TOOLS})
+    response = await provider.chat_streaming(request, lambda _piece: None)
+    assert response.finish_reason == "repetition"
+    assert [(c.name, c.arguments) for c in response.tool_calls] == [("read_file", {"path": "a.py"})]
+    assert "repetition_cut" in response.raw["callidus"]["normalized"]
+
+
+def test_code_calls_get_room_for_a_whole_file():
+    """Regressão (qwen3-vl:8b): prompt de ~5 600 tokens na janela de 8 192 deixava 2 574 de saída e a
+    reescrita do main.py voltava cortada; código agora tem ao menos 4 096 de saída."""
+    texto = "x" * (3 * 5600)
+    codigo = chat_body(_request("qwen3-vl:8b", text=texto, purpose="operation", context_limit=8192, output_reserve=1024))["options"]
+    assert codigo["num_predict"] >= 4096
+    assert codigo["num_ctx"] == 12288
+    plano = chat_body(_request("qwen3-vl:8b", text=texto, purpose="plan", context_limit=8192, output_reserve=1024))["options"]
+    assert plano["num_ctx"] == 8192  # plano curto não muda a janela (o Ollama não recarrega o modelo)
+
+
+def test_repetition_inside_a_single_line_is_cut():
+    """Regressão (qwen3-vl:8b): o `new_string` de um edit_file em JSON (código com "\\n" escapado) se
+    repetiu numa linha só até 7 585 tokens (278 s); a trava por linhas não via."""
+    from agent.providers.ollama_policy import repetition_cut
+
+    trecho = "        self.result.grid(row=2, column=0, columnspan=2)\\n        self.result.focus()\\n"
+    inicio = '{"name": "edit_file", "arguments": {"path": "main.py", "new_string": "'
+    cortado = repetition_cut(inicio + trecho * 5)
+    assert cortado is not None and cortado.startswith(inicio)
+    assert cortado.count("self.result.focus()") <= 3
+    normal = inicio + "".join(f"        self.b{i} = Button(text='{i}')\\n" for i in range(30))
+    assert repetition_cut(normal) is None
+
+
+def test_window_does_not_shrink_after_growing_on_the_same_server():
+    """A janela que cresceu não volta a encolher no mesmo servidor e modelo: trocar `num_ctx` recarrega o modelo."""
+    from agent.providers.ollama import _WINDOW_FLOOR, build_chat_body, keep_window
+
+    _WINDOW_FLOOR.clear()
+    grande = _request("qwen3-vl:8b", text="x" * 30_000, purpose="operation", context_limit=8192, output_reserve=1024)
+    pequena = _request("qwen3-vl:8b", text="oi", purpose="operation", context_limit=8192, output_reserve=1024)
+    body, policy = build_chat_body(grande)
+    keep_window("http://ollama", grande, body, policy)
+    cresceu = body["options"]["num_ctx"]
+    assert cresceu > 8192
+
+    body, policy = build_chat_body(pequena)
+    keep_window("http://ollama", pequena, body, policy)
+    assert body["options"]["num_ctx"] == cresceu and policy["window_kept"] is True
+
+    body, policy = build_chat_body(pequena)
+    keep_window("http://outro", pequena, body, policy)
+    assert body["options"]["num_ctx"] == 8192
+    _WINDOW_FLOOR.clear()

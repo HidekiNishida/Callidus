@@ -23,7 +23,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from agent.api.deps import db_session, get_session_factory
 from agent.observability.bus import RESYNC, EventBus, get_bus
-from agent.observability.snapshot import TERMINAL_RUN_STATUSES, events_page, run_snapshot
+from agent.observability.snapshot import (
+    TERMINAL_RUN_STATUSES,
+    events_page,
+    run_snapshot,
+)
 from agent.persistence.models import ExecutionRunModel
 
 router = APIRouter()
@@ -223,7 +227,7 @@ async def sse_stream(
                     return
             try:
                 env = await asyncio.wait_for(sub.queue.get(), timeout=remaining_heartbeat)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 if max_age is not None and time.monotonic() - started_at >= max_age:
                     yield _sse({"run_id": rid, "last_seq": cursor}, event="rotate")
                     return

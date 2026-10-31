@@ -43,7 +43,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-import httpx  # noqa: E402
+import httpx
 
 FIXED = 'def add(a: int, b: int) -> int:\n    """Soma dois inteiros."""\n    return a + b\n'
 PLAN = {

@@ -16,8 +16,17 @@ from sqlalchemy import select
 
 from agent.config import Settings
 from agent.domain.enums import TaskKind, TaskStatus
-from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate, TaskDependencyCreate
-from agent.orchestrator.decomposition import DecompositionResult, SubTaskSpec, apply_decomposition
+from agent.domain.schemas import (
+    ExecutionRunCreate,
+    ProjectCreate,
+    TaskCreate,
+    TaskDependencyCreate,
+)
+from agent.orchestrator.decomposition import (
+    DecompositionResult,
+    SubTaskSpec,
+    apply_decomposition,
+)
 from agent.orchestrator.plan_validation import (
     PlanVerdict,
     active_children,

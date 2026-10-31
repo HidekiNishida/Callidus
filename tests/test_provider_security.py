@@ -10,12 +10,18 @@ Observações: chaves fictícias usadas apenas nos testes e HTTP simulado pela f
 credenciais, TLS e ausência de fallback silencioso
 """
 from __future__ import annotations
+
 import httpx
 import pytest
 
 from agent.config import Settings
 from agent.orchestrator.runner import _select_provider
-from agent.providers.base import ChatCompletionRequest, ChatMessage, ModelProfile, ProviderConfigError
+from agent.providers.base import (
+    ChatCompletionRequest,
+    ChatMessage,
+    ModelProfile,
+    ProviderConfigError,
+)
 from agent.providers.openai_compatible import OpenAICompatibleProvider
 from agent.providers.registry import ProviderCatalog
 

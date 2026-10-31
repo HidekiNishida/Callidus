@@ -18,13 +18,18 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from agent.api import deps
 from agent.api.observe_routes import sse_stream
 from agent.config import Settings
 from agent.domain.enums import RunStatus, TaskStatus
-from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate, TaskStatusUpdate
+from agent.domain.schemas import (
+    ExecutionRunCreate,
+    ProjectCreate,
+    TaskCreate,
+    TaskStatusUpdate,
+)
 from agent.observability import emit, get_bus, observe
 from agent.observability.bus import EventBus
 from agent.observability.snapshot import run_snapshot
@@ -245,7 +250,7 @@ async def test_slow_consumer_resyncs_from_the_database_without_losing_persisted_
     # Lê o histórico e o `live`, depois para de consumir enquanto a run produz.
     for _ in range(2):
         got.extend(_parse_sse(await gen.__anext__()))
-    import agent.observability.emitter as emitter
+    from agent.observability import emitter
 
     real = emitter.get_bus
     emitter.get_bus = lambda: bus

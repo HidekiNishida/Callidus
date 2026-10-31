@@ -17,12 +17,17 @@ from sqlalchemy import select
 from agent.config import Settings
 from agent.domain.enums import RunStatus, TaskStatus
 from agent.domain.failures import Failure, FailureCategory, FailureCause
+from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate
 from agent.orchestrator.replan import replan_decision
 from agent.orchestrator.runner import RunOrchestrator
-from agent.orchestrator.stagnation import error_signature, limits_for, normalize_error, repeated_failures
-from agent.persistence.models import EventLogModel, ExecutionRunModel
-from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate
+from agent.orchestrator.stagnation import (
+    error_signature,
+    limits_for,
+    normalize_error,
+    repeated_failures,
+)
 from agent.persistence.database import build_session_factory, init_db
+from agent.persistence.models import EventLogModel, ExecutionRunModel
 from agent.services.project_service import ProjectService
 from agent.services.run_service import RunService
 from agent.services.task_service import TaskService

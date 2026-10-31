@@ -22,8 +22,9 @@ Novos tipos de ação entram por registro:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from sqlalchemy.orm import Session
 

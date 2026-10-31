@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -59,7 +59,6 @@ from agent.persistence.models import (
     ScheduledRunModel,
     TaskModel,
 )
-
 
 # ─────────────────────────────────────────────────────���───── fixtures
 
@@ -113,7 +112,7 @@ def test_disparo_em_data_hora_especifica(db, project):
     """1. Execução em data e hora específicas."""
     engine, factory, _settings = db
     session = factory()
-    target = datetime(2030, 5, 4, 12, 30, tzinfo=timezone.utc)
+    target = datetime(2030, 5, 4, 12, 30, tzinfo=UTC)
     definition = _definition(
         project,
         trigger=TriggerSpec(kind=TriggerKind.ONCE, run_at=target),
@@ -140,7 +139,7 @@ def test_recorrencia_cron_e_intervalo(db, project):
     service = AutomationService(session)
 
     service.create(_definition(project))
-    base = datetime(2026, 3, 1, 8, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 3, 1, 8, 0, tzinfo=UTC)
     occurrences = next_cron_occurrence("*/15 * * * *", "UTC", base, limit=4)
     assert [o.minute for o in occurrences] == [15, 30, 45, 0]
     assert all(o > base for o in occurrences)
@@ -172,10 +171,10 @@ def test_cron_respeita_fuso_e_horario_de_verao(db, project):
     )
     trigger = service.trigger_of(row)
     # Antes da virada (março): 09:00 local = 12:00 UTC (UTC-3).
-    antes = trigger.next_occurrence(datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc))
+    antes = trigger.next_occurrence(datetime(2026, 3, 1, 0, 0, tzinfo=UTC))
     assert antes.hour == 12
     # Depois da virada (outubro): 09:00 local = 12:00 UTC (UTC-3, sem mudança em 2026).
-    depois = trigger.next_occurrence(datetime(2026, 10, 20, 0, 0, tzinfo=timezone.utc))
+    depois = trigger.next_occurrence(datetime(2026, 10, 20, 0, 0, tzinfo=UTC))
     assert depois.hour == 12
     session.close()
 
@@ -186,7 +185,7 @@ def test_hora_inexistente_no_horario_de_verao():
     instante = localize(datetime(2026, 3, 8, 2, 30), "America/New_York")
     assert instante.tzinfo is not None
     # O instante existe: converter de volta não muda o horário local.
-    de_volta = instante.astimezone(timezone.utc).astimezone(
+    de_volta = instante.astimezone(UTC).astimezone(
         __import__("zoneinfo").ZoneInfo("America/New_York")
     )
     assert de_volta.hour == 3 and de_volta.minute == 30
@@ -318,11 +317,11 @@ def test_politica_de_horarios_perdidos(db, project, policy, expected_created, ex
         _definition(project, trigger=TriggerSpec(kind=TriggerKind.CRON, cron="* * * * *"))
     )
     row.missed_policy = str(policy)
-    row.last_run_at = datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc)
+    row.last_run_at = datetime(2026, 3, 1, 0, 0, tzinfo=UTC)
     session.commit()
 
     dispatcher = Dispatcher(session)
-    now = datetime(2026, 3, 1, 0, 3, tzinfo=timezone.utc)  # três janelas de 1 minuto
+    now = datetime(2026, 3, 1, 0, 3, tzinfo=UTC)  # três janelas de 1 minuto
     result = dispatcher.dispatch_due(row, now=now)
     assert len(result.created) == expected_created
     assert result.created[0].state == expected_state
@@ -645,6 +644,7 @@ def test_execucao_remota_usa_o_destino_configurado(db, project, monkeypatch):
         ScriptAction(kind="script", command=["python3", "alvo.py"], cwd="sub/pasta")
     )
     import asyncio
+
     from agent.automation.actions.base import ActionContext
 
     ctx = ActionContext(
@@ -698,19 +698,19 @@ def test_protecao_contra_execucao_duplicada(db, project):
     row = AutomationService(session).create(
         _definition(project, trigger=TriggerSpec(kind=TriggerKind.CRON, cron="* * * * *"))
     )
-    row.last_run_at = datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc)
+    row.last_run_at = datetime(2026, 3, 1, 0, 0, tzinfo=UTC)
     session.commit()
     dispatcher = Dispatcher(session)
     first = dispatcher.dispatch_due(
-        row, now=datetime(2026, 3, 1, 0, 6, tzinfo=timezone.utc)
+        row, now=datetime(2026, 3, 1, 0, 6, tzinfo=UTC)
     )
     assert len(first.created) == 1
     session.commit()
     # Reprocessa a **mesma** janela: a chave de idempotência impede o segundo disparo.
-    row.last_run_at = datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc)
+    row.last_run_at = datetime(2026, 3, 1, 0, 0, tzinfo=UTC)
     session.commit()
     second = dispatcher.dispatch_due(
-        row, now=datetime(2026, 3, 1, 0, 6, tzinfo=timezone.utc)
+        row, now=datetime(2026, 3, 1, 0, 6, tzinfo=UTC)
     )
     assert second.created == []
     assert second.duplicates == 1
@@ -723,9 +723,9 @@ def test_chave_de_idempotencia_unica_no_banco(db, project):
     session = factory()
     row = AutomationService(session).create(_definition(project))
     dispatcher = Dispatcher(session)
-    row.last_run_at = datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc)
+    row.last_run_at = datetime(2026, 3, 1, 0, 0, tzinfo=UTC)
     session.commit()
-    result = dispatcher.dispatch_due(row, now=datetime(2026, 3, 1, 0, 6, tzinfo=timezone.utc))
+    result = dispatcher.dispatch_due(row, now=datetime(2026, 3, 1, 0, 6, tzinfo=UTC))
     session.commit()
     firing = result.created[0]
     from sqlalchemy.exc import IntegrityError
@@ -736,7 +736,7 @@ def test_chave_de_idempotencia_unica_no_banco(db, project):
                 automation_id=row.id,
                 project_id=project.id,
                 idempotency_key=firing.idempotency_key,
-                scheduled_for=datetime.now(timezone.utc),
+                scheduled_for=datetime.now(UTC),
             )
         )
         session.commit()
@@ -855,8 +855,8 @@ def test_supervisor_despara_e_executa_uma_automacao_vencida(db, project, tmp_pat
         )
     )
     # Simula o momento do disparo: o intervalo já passou.
-    row.last_run_at = datetime.now(timezone.utc) - timedelta(seconds=120)
-    row.next_run_at = datetime.now(timezone.utc) - timedelta(seconds=60)
+    row.last_run_at = datetime.now(UTC) - timedelta(seconds=120)
+    row.next_run_at = datetime.now(UTC) - timedelta(seconds=60)
     session.commit()
     session.close()
 

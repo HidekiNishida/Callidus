@@ -11,7 +11,7 @@ Observações: banco temporário por teste; a ação é de script, então nenhum
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -87,8 +87,8 @@ async def test_automacao_do_chat_dispara_uma_vez_e_recupera_apos_reinicio(db, pr
     )
     # O horário do disparo já passou: o runtime tem de recolhê-lo.
     row = session.get(AutomationModel, uuid.UUID(automation_id))
-    row.last_run_at = datetime.now(timezone.utc) - timedelta(seconds=600)
-    row.next_run_at = datetime.now(timezone.utc) - timedelta(seconds=300)
+    row.last_run_at = datetime.now(UTC) - timedelta(seconds=600)
+    row.next_run_at = datetime.now(UTC) - timedelta(seconds=300)
     session.commit()
     session.close()
 
@@ -196,8 +196,8 @@ async def test_dependencia_ausente_nao_produz_sucesso(db, project, tmp_path):
     )
     row = session.get(AutomationModel, uuid.UUID(created["automation"]["id"]))
     row.state = AutomationState.ENABLED.value
-    row.last_run_at = datetime.now(timezone.utc) - timedelta(seconds=600)
-    row.next_run_at = datetime.now(timezone.utc) - timedelta(seconds=300)
+    row.last_run_at = datetime.now(UTC) - timedelta(seconds=600)
+    row.next_run_at = datetime.now(UTC) - timedelta(seconds=300)
     session.commit()
     session.close()
 

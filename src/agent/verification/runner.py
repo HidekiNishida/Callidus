@@ -4,7 +4,7 @@ Nome: runner.py
 Propósito: executar as verificações determinísticas do contrato de uma tarefa.
 Responsabilidade: camada de aplicação — execução dos verificadores e emissão dos eventos correspondentes.
 Componentes: run_verification, VerificationResult, VERIFIER_TYPES, syntax_problem.
-Dependências: agent.observability, agent.security.paths, agent.tools.registry.
+Dependências: agent.observability, agent.security.paths, agent.tools.registry, agent.verification.integrity.
 Observações: o contrato de verificadores é fechado; um verificador inexistente falha na execução, não depois.
 """
 from __future__ import annotations
@@ -18,6 +18,12 @@ from typing import Any
 from agent.observability import emit
 from agent.security.paths import PathSecurityError, resolve_under_root
 from agent.tools.registry import ToolContext, build_default_registry
+from agent.verification.integrity import (
+    dependents_problems,
+    entry_is_gui,
+    local_import_problems,
+    project_has_tests,
+)
 
 _SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", "node_modules"}
 _DELIVERABLE = {".html", ".htm", ".css", ".js", ".md", ".tsx", ".jsx", ".vue", ".svg"}
@@ -141,6 +147,18 @@ async def _verify(
                 "não há testes Python; a entrega do projeto está presente",
                 out,
             )
+        if _no_tests_collected(out):
+            # Projeto Python sem testes: "nenhum teste coletado" não é reprovação do trabalho —
+            # nenhuma mudança no código faria o pytest passar. Antes, a etapa reprovava para
+            # sempre e o run replanejava até o limite de passos (visto com o qwen3-vl:8b).
+            # A checagem que sobra é a sintaxe de todos os .py; com erro, reprova com a causa.
+            checked, problems = _python_syntax(project_root)
+            if checked and not problems:
+                return VerificationResult(
+                    "pytest", True, f"não há testes Python; a sintaxe dos {checked} arquivo(s) .py é válida", out
+                )
+            if problems:
+                return VerificationResult("pytest", False, "não há testes; sintaxe inválida: " + "; ".join(problems[:3]), out)
         return VerificationResult("pytest", False, "pytest falhou", out)
 
     if vtype in {"script", "run_script"}:
@@ -181,6 +199,10 @@ async def _verify(
             problem = syntax_problem(path, content)
             if problem:
                 return VerificationResult("file_contains", False, f"sintaxe inválida em {path}: {problem}", {"needle": needle, "syntax_error": problem})
+            if str(path).endswith(".py"):
+                broken = await _python_integrity(project_root, path, tools, ctx, approved)
+                if broken is not None:
+                    return VerificationResult("file_contains", False, broken["summary"], {"needle": needle, **broken})
         return VerificationResult(
             "file_contains",
             ok,
@@ -249,6 +271,36 @@ async def _verify(
     return VerificationResult("unknown", False, f"verificador desconhecido: {vtype}", spec)
 
 
+async def _python_integrity(project_root: str, path: str, tools, ctx, approved: bool) -> dict[str, Any] | None:
+    """Confere que a escrita em Python não quebrou o projeto (ver `agent.verification.integrity`).
+
+    Ordem, do mais barato ao mais caro: imports locais do arquivo, arquivos que dependem dele, os
+    testes que já existiam e, se o arquivo é um programa de janela, a prova de que ele abre.
+
+    Returns:
+        `None` quando está íntegro; senão um dicionário com `summary` (a causa, para a próxima
+        tentativa corrigir) e o detalhe.
+    """
+    problems = local_import_problems(project_root, path) + dependents_problems(project_root, path)
+    if problems:
+        return {"summary": "a escrita quebra o projeto: " + "; ".join(problems[:4]), "integrity": problems}
+    if project_has_tests(project_root):
+        out = await tools.execute("run_pytest", ctx, {"path": "."}, approved=approved)
+        if not out.get("success") and not _no_tests_collected(out):
+            tail = (str(out.get("stdout") or "") + str(out.get("stderr") or ""))[-1500:]
+            return {"summary": "os testes que já existiam deixaram de passar", "regression": tail, **out}
+    if entry_is_gui(project_root, path):
+        out = await tools.execute("run_script", ctx, {"path": path}, approved=approved)
+        if not out.get("success"):
+            tail = str(out.get("stderr") or out.get("error") or "")[-1500:]
+            broken = {"summary": f"o programa {path} não abre: {tail.strip().splitlines()[-1] if tail.strip() else 'erro'}", "run": tail}
+            if out.get("category"):
+                # Falta do ambiente (ex.: nenhum Python com Tkinter): o orquestrador para com a ação a tomar.
+                broken["category"] = out["category"]
+            return broken
+    return None
+
+
 def _read_whole(project_root: str, path: str) -> dict[str, Any]:
     """Arquivo inteiro, como gravado: `read_file` pagina e corta a quebra final, o que faria um trecho
     gravado falhar na conferência."""
@@ -289,6 +341,31 @@ def _no_tests_collected(out: dict[str, Any]) -> bool:
         return True
     text = f"{out.get('stdout') or ''}\n{out.get('stderr') or ''}".lower()
     return "no tests ran" in text or "collected 0 items" in text
+
+
+def _python_syntax(root: str) -> tuple[int, list[str]]:
+    """Confere a sintaxe de todos os `.py` do projeto (fora das pastas ignoradas).
+
+    Args:
+        root: raiz do projeto.
+
+    Returns:
+        `(arquivos conferidos, problemas no formato "caminho: linha N: mensagem")`.
+    """
+    base = Path(root)
+    if not base.is_dir():
+        return 0, []
+    checked = 0
+    problems: list[str] = []
+    for path in sorted(base.rglob("*.py")):
+        if not path.is_file() or any(part in _SKIP_DIRS for part in path.parts):
+            continue
+        checked += 1
+        rel = str(path.relative_to(base))
+        problem = syntax_problem(rel, path.read_text(encoding="utf-8", errors="replace"))
+        if problem:
+            problems.append(f"{rel}: {problem}")
+    return checked, problems
 
 
 def _has_non_python_deliverable(root: str) -> bool:

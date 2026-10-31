@@ -31,7 +31,7 @@ import logging
 import os
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -163,7 +163,7 @@ class AutomationSupervisor:
                 logger.warning("tique do supervisor falhou: %s", exc)
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval_sec)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
         logger.info("supervisor de automações parado")
 
@@ -180,7 +180,7 @@ class AutomationSupervisor:
             summary = await self._tick_with(session)
             session.commit()
             self.stats.ticks += 1
-            self.stats.last_tick_at = datetime.now(timezone.utc)
+            self.stats.last_tick_at = datetime.now(UTC)
             self.stats.last_error = None
             self.stats.history.append(summary)
             self.stats.history = self.stats.history[-50:]
@@ -201,7 +201,7 @@ class AutomationSupervisor:
             session: sessão usada para gravar o fato.
         """
         self.stats.ticks += 0  # mantém o contador explícito
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if self._last_heartbeat and (now - self._last_heartbeat).total_seconds() < 30:
             return
         self._last_heartbeat = now
@@ -236,7 +236,7 @@ class AutomationSupervisor:
         service = AutomationService(session)
         dispatcher = Dispatcher(session)
         executor = AutomationExecutor(session, self._settings)
-        now = to_utc(datetime.now(timezone.utc))
+        now = to_utc(datetime.now(UTC))
 
         recovered = self._recover(session, service, executor)
         dispatched = self._dispatch(session, service, dispatcher, now)
@@ -491,7 +491,7 @@ class AutomationSupervisor:
         session = session or self._session_factory()
         try:
             service = AutomationService(session)
-            now = to_utc(datetime.now(timezone.utc))
+            now = to_utc(datetime.now(UTC))
             automations = []
             for automation in service.list():
                 next_run = service.next_occurrence(automation, after=now)

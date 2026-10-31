@@ -8,8 +8,20 @@ Dependências: agent.observability.bus, agent.observability.contracts, agent.obs
 Observações: o envelope dos eventos é um contrato público; mudá-lo quebra os assinantes SSE.
 """
 from agent.observability.bus import RESYNC, EventBus, get_bus
-from agent.observability.contracts import EVENT_SPECS, SCHEMA_VERSION, EventEnvelope, envelope_from_row
-from agent.observability.emitter import current, emit, install, observe, scoped, set_task
+from agent.observability.contracts import (
+    EVENT_SPECS,
+    SCHEMA_VERSION,
+    EventEnvelope,
+    envelope_from_row,
+)
+from agent.observability.emitter import (
+    current,
+    emit,
+    install,
+    observe,
+    scoped,
+    set_task,
+)
 
 __all__ = [
     "EVENT_SPECS",

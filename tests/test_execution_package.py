@@ -25,9 +25,11 @@ from agent.orchestrator.execution import (
     operation_tools_for,
     payload_is_usable,
     select_provider,
-    test_summary as summarize_tests,
     work_root,
     write_refusal_reason,
+)
+from agent.orchestrator.execution import (
+    test_summary as summarize_tests,
 )
 from agent.orchestrator.execution.guards import evidence_state
 from agent.orchestrator.execution.writes import (
@@ -225,3 +227,37 @@ def test_raiz_de_trabalho_usa_a_conversa_da_etapa(session, tmp_path: Path):
         project.id, TaskCreate(title="T", objective="o", kind="operation")
     )
     assert work_root(session, project, task) == str(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_edicao_pronta_do_plano_que_quebra_a_sintaxe_e_desfeita(session, tmp_path: Path):
+    """Regressão (qwen3-vl:8b): a edição pronta do plano deixou `def def clear_fields` no main.py e a
+    etapa concluiu "sem verificação". Agora a escrita do plano é verificada e, reprovada, desfeita."""
+    original = "class Calc:\n    def clear_fields(self):\n        return 0\n"
+    (tmp_path / "main.py").write_text(original, encoding="utf-8")
+    project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
+    task = TaskService(session).create_task(
+        project.id,
+        TaskCreate(
+            title="Corrigir clear_fields",
+            objective="corrigir",
+            kind="operation",
+            metadata={
+                "tool": "edit_file",
+                "tool_args": {
+                    "path": "main.py",
+                    "old_string": "clear_fields(self)",
+                    "new_string": "def clear_fields(self):\n    self.a = 1",
+                },
+            },
+        ),
+    )
+    run = RunService(session).start_run(project.id, ExecutionRunCreate(root_task_id=task.id))
+    _promove(session, task)
+    executor = TaskExecutor(ExecutionRuntime.build(session, Settings(data_dir=tmp_path / "data")))
+
+    result = await executor.execute(run, project, task, {"approve_risky_tools": True}, str(tmp_path))
+
+    assert result["action"] != "verified_ok" and result["action"] != "completed_without_verification"
+    assert (tmp_path / "main.py").read_text(encoding="utf-8") == original
+    assert TaskStatus(task.status) != TaskStatus.COMPLETED

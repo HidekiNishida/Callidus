@@ -17,7 +17,12 @@ from fastapi.testclient import TestClient
 
 from agent.config import Settings
 from agent.domain.enums import RunStatus, TaskStatus
-from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate, TaskDependencyCreate
+from agent.domain.schemas import (
+    ExecutionRunCreate,
+    ProjectCreate,
+    TaskCreate,
+    TaskDependencyCreate,
+)
 from agent.orchestrator.progress import made_progress
 from agent.orchestrator.runner import RunOrchestrator
 from agent.persistence.database import build_session_factory, init_db
@@ -99,8 +104,8 @@ async def test_multi_step_objective_end_to_end_with_metrics(tmp_path: Path):
     assert metrics["progress"]["steps_since_progress"] <= 1
     assert metrics["time"]["elapsed_sec"] >= 0
 
-    from agent.api.main import app
     from agent.api import deps
+    from agent.api.main import app
 
     app.dependency_overrides[deps.db_session] = lambda: session
     try:

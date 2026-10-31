@@ -332,7 +332,8 @@ sequenceDiagram
 | Variável | Descrição | Valor Padrão | Obrigatória |
 |----------|-----------|--------------|-------------|
 | `AGENT_DATA_DIR` | Pasta de dados (SQLite, mcp.json) | `./data` | Não |
-| `DATABASE_URL` | URL SQLite customizada | `sqlite:///data/agent.db` | Não |
+| `CALLIDUS_DATABASE_URL` | URL SQLite do banco do Callidus; vence o `DATABASE_URL` | — | Não |
+| `DATABASE_URL` | URL SQLite customizada; uma URL de outro banco (ex.: `postgres://` de outro projeto exportado no terminal) é ignorada com aviso e o Callidus usa `data/agent.db` | `sqlite:///data/agent.db` | Não |
 | `OLLAMA_BASE_URL` | Endpoint HTTP do Ollama | `http://127.0.0.1:11434` | Não |
 | `OLLAMA_TIMEOUT_SEC` | Timeout de inferência (seg) | `600` | Não |
 | `LLAMACPP_BASE_URL` | Endpoint llama.cpp (OpenAI compat) | `http://127.0.0.1:8080` | Não |
@@ -351,6 +352,7 @@ sequenceDiagram
 | `ALLOW_MOCK_FALLBACK` | Permitir fallback para mock | `false` | Não |
 | `API_HOST` | Host da API | `127.0.0.1` | Não |
 | `API_PORT` | Porta da API | `8765` | Não |
+| `API_RELOAD` | `1` recarrega a API quando o código em `src/` muda (desenvolvimento); runs autônomos continuam depois da recarga | `0` | Não |
 | `MAX_ATTEMPTS_PER_TASK` | Tentativas máximas por tarefa | `8` | Não |
 | `MAX_ORCHESTRATOR_STEPS` | Passos máximos do orquestrador por run | `100` | Não |
 | `MAX_TREE_DEPTH` | Proteção recursão: profundidade máx da árvore | `16` | Não |

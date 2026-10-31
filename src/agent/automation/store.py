@@ -17,7 +17,7 @@ gatilho.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -33,7 +33,12 @@ from agent.automation.contracts import (
     dump_action,
     parse_action,
 )
-from agent.automation.enums import AutomationState, MissedPolicy, ObjectiveMode, TargetKind
+from agent.automation.enums import (
+    AutomationState,
+    MissedPolicy,
+    ObjectiveMode,
+    TargetKind,
+)
 from agent.automation.timezones import to_utc
 from agent.automation.triggers import build_trigger
 from agent.persistence.models import AutomationModel, EventLogModel
@@ -312,7 +317,7 @@ class AutomationService:
             O próximo instante, ou `None` quando a definição é inválida.
         """
         trigger = self.trigger_of(row)
-        reference = after or datetime.now(timezone.utc)
+        reference = after or datetime.now(UTC)
         try:
             return trigger.next_occurrence(reference)
         except Exception:  # noqa: BLE001 — definição inválida não derruba o runtime
@@ -351,7 +356,7 @@ class AutomationService:
         if objective is None:
             objective = getattr(definition.action, "objective", None)
         if objective:
-            return {"objective": str(objective), "frozen_at": datetime.now(timezone.utc).isoformat()}
+            return {"objective": str(objective), "frozen_at": datetime.now(UTC).isoformat()}
         if task_id:
             from agent.persistence.models import TaskModel
 
@@ -360,7 +365,7 @@ class AutomationService:
             except (ValueError, AttributeError):
                 task = None
             if task is not None and task.objective:
-                return {"objective": task.objective, "frozen_at": datetime.now(timezone.utc).isoformat()}
+                return {"objective": task.objective, "frozen_at": datetime.now(UTC).isoformat()}
         return None
 
     def _log(self, row: AutomationModel, event_type: str, payload: dict) -> None:

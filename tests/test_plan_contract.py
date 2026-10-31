@@ -24,7 +24,7 @@ import pytest
 from agent.config import Settings
 from agent.domain.enums import TaskKind, TaskStatus
 from agent.domain.schemas import ProjectCreate, TaskCreate
-from agent.orchestrator.decomposition import DecompositionResult, SubTaskSpec
+from agent.orchestrator.decomposition import DecompositionResult
 from agent.orchestrator.plan_contract import (
     normalize_covers,
     normalize_depends,
@@ -231,3 +231,27 @@ def test_edicao_com_trecho_presente_e_preservada(session, tmp_path):
 
     assert "edit_anchor_missing" not in {i.code for i in result.issues}
     assert kid.metadata_json.get("tool") == "edit_file"
+
+
+def test_edicao_com_trecho_ambiguo_vira_operacao_do_modelo(session, tmp_path):
+    """Regressão (qwen3-vl:8b): o plano trocava `tk.Button(` que aparecia 5 vezes; a edição era recusada
+    ("trecho ambíguo") e o plano refeito. Trecho repetido vira operação do modelo, que lê o arquivo."""
+    (tmp_path / "main.py").write_text("a = tk.Button(\nb = tk.Button(\n", encoding="utf-8")
+    project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(tmp_path)))
+    root = TaskService(session).create_task(project.id, TaskCreate(title="Raiz", objective="trocar botões"))
+    root.status = TaskStatus.PLANNING.value
+    session.flush()
+    kid = TaskService(session).create_task(
+        project.id,
+        TaskCreate(
+            title="Trocar",
+            objective="trocar",
+            parent_id=root.id,
+            metadata={"tool": "edit_file", "tool_args": {"path": "main.py", "old_string": "tk.Button(", "new_string": "tk.Label("}},
+        ),
+    )
+    session.flush()
+
+    validate_and_repair(session, root, project_root=str(tmp_path), run_config=None, max_tasks=None, run_id=None)
+
+    assert kid.metadata_json.get("tool") is None and kid.metadata_json.get("model_operation") is True

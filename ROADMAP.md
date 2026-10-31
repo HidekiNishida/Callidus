@@ -41,6 +41,7 @@ Detalhes: [docs/progresso/](/docs/progresso/README.md) · Fila: [gaps.md](/docs/
 
 | Data | O que entrou |
 |------|--------------|
+| 2026-10-27 | `qwen3-vl:8b` real na tarefa média: o run deixou de quebrar (antes: 3 de 3 com exceção) e passou a escrever o código certo; plano de 2 048 tokens vazios para ~500 tokens úteis, operação concluída de 15–295 s para 6–27 s (bloco de raciocínio vazio, janela que acompanha a reserva, prova por arquivo, `pytest` sem testes, chamadas em JSON solto); conclusão comprovada ainda pendente ([avaliacao.md](/docs/architecture/avaliacao.md)) |
 | 2026-10-22 | Adaptação ao `qwen3:8b`: janela e saída explícitas no Ollama, estimativa de tokens calibrada (real/estimado era 1,30), conversa do ciclo de ferramentas dentro da janela, reparo único do plano com esquema, estado de tarefas irmãs fora das regras do projeto; medição com servidor simulado ([avaliacao.md](/docs/architecture/avaliacao.md#-qwen38b--servidor-ollama-simulado)) |
 | 2026-10-21 | Documentos de progresso, comando único de verificação (`python scripts/ci.py`), ritual de sessão e decisões do dono no [AGENTS.md](/AGENTS.md) |
 | 2026-10-21 | Automação de sistema/desktop, tarefas agendadas pela conversa, piso de qualidade, feed com narração |

@@ -10,13 +10,18 @@ Observações: banco temporário por teste; o modelo é substituído por um fals
 resposta vazia por corte de tokens não trava o run
 """
 from __future__ import annotations
+
 from pathlib import Path
 
 import pytest
 
 from agent.config import Settings
 from agent.domain.enums import TaskStatus
-from agent.domain.failures import Failure, FailureCategory, FailureCause, classify_model_output
+from agent.domain.failures import (
+    FailureCategory,
+    FailureCause,
+    classify_model_output,
+)
 from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate
 from agent.orchestrator.runner import RunOrchestrator
 from agent.persistence.database import build_session_factory, init_db

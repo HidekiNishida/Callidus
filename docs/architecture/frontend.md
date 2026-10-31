@@ -100,7 +100,9 @@ tarefa (que abre os detalhes ao lado).
 
 **Resposta final em markdown**: títulos, ênfase, código, listas (com aninhamento), tabelas,
 citações, linhas horizontais, links e imagens — o HTML do modelo é escapado antes de qualquer
-marcação.
+marcação. O texto vem de `consolidated_result_json.final_answer` da raiz. Se o run parou
+antes dessa cópia, a conversa usa o markdown da etapa de resposta final já concluída
+(`visibleFinalAnswer`).
 
 ## 💡 Layout responsivo
 
@@ -154,8 +156,8 @@ servidores com variáveis de ambiente.
 
 | Peça | Arquivo | Onde aparece |
 |------|---------|--------------|
-| Símbolo | [`web/static/assets/brand/callidus-mark.svg`](/web/static/assets/brand/callidus-mark.svg) | Bolhas de mensagem do agente, estado vazio do chat |
-| Lockup horizontal | [`web/static/assets/brand/callidus-lockup.svg`](/web/static/assets/brand/callidus-lockup.svg) | Cabeçalho da sidebar (símbolo + "CALLIDUS") |
+| Símbolo | [`callidus-mark.svg`](/web/static/assets/brand/callidus-mark.svg) e [`callidus-mark-light.svg`](/web/static/assets/brand/callidus-mark-light.svg) | Bolhas de mensagem do agente e estado vazio. O tema claro usa a variante de tinta escura; a estrela permanece `#668DF7` |
+| Lockup horizontal | [`callidus-lockup.svg`](/web/static/assets/brand/callidus-lockup.svg) e [`callidus-lockup-light.svg`](/web/static/assets/brand/callidus-lockup-light.svg) | Cabeçalho da sidebar. `brandSrc` troca o arquivo quando o tema muda, sem filtro CSS |
 | Lockup vertical | [`web/static/assets/brand/callidus-lockup-vertical.svg`](/web/static/assets/brand/callidus-lockup-vertical.svg) | Cabeçalhos de doc |
 | Wordmark | [`web/static/assets/brand/callidus-wordmark.svg`](/web/static/assets/brand/callidus-wordmark.svg) | Só o nome "CALLIDUS" |
 | Favicon | [`web/static/assets/brand/favicon.svg`](/web/static/assets/brand/favicon.svg) | Aba do navegador (`<link rel="icon">`) |

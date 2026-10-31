@@ -98,7 +98,7 @@ class EventTrigger:
         self._filter = dict(spec.event_filter or {})
         self._project_id: str | None = None
 
-    def with_project(self, project_id: str | None) -> "EventTrigger":
+    def with_project(self, project_id: str | None) -> EventTrigger:
         """Restringe o gatilho aos eventos de um projeto.
 
         Args:

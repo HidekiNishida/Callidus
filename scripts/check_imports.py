@@ -82,9 +82,7 @@ def _defined(tree: ast.AST) -> set[str]:
     """
     names: set[str] = set()
     for node in tree.body:
-        if isinstance(node, ast.ClassDef):
-            names.add(node.name)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(node, ast.ClassDef) or isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             names.add(node.name)
         elif isinstance(node, ast.Assign):
             for target in node.targets:
@@ -187,8 +185,7 @@ def compare() -> list[str]:
         # Um import removido cujo símbolo continua definido em outro módulo é uma
         # movimentação — não uma perda. Só é perda quando o símbolo sumiu do projeto.
         modulo = path[:-3].replace("/", ".")
-        if modulo.startswith("src."):
-            modulo = modulo[4:]
+        modulo = modulo.removeprefix("src.")
         perdidos_import = {
             item
             for item in lost_imports

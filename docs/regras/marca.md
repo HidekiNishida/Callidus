@@ -11,7 +11,7 @@
 | Nome + símbolo (horizontal) | [`media/Callidus Name + Logo Horizontal.svg`](/media/Callidus%20Name%20%2B%20Logo%20Horizontal.svg) | Cabeçalhos de README e da sidebar |
 | Nome + símbolo (vertical) | [`media/Callidus Name + Logo Vertical.svg`](/media/Callidus%20Name%20%2B%20Logo%20Vertical.svg) | Cabeçalhos de docs |
 
-Cores do símbolo: "C" em `#F6F4F4` (herda `currentColor` no SVG inline da UI), estrela em `#668DF7`.
+Cores do símbolo: "C" em `#F6F4F4` no tema escuro e `#5c6578` no tema claro (o SVG inline usa `currentColor`), estrela em `#668DF7` nos dois temas. `<img>` não herda a cor da página: a interface escolhe o arquivo pelo tema (`brandSrc` em `ui.js`).
 
 Os arquivos em `media/` são a **fonte de verdade** da marca. As versões web em `web/static/assets/brand/` são geradas por [`scripts/build_brand_assets.py`](/scripts/build_brand_assets.py) — rode o script depois de trocar qualquer SVG em `media/`:
 
@@ -21,10 +21,12 @@ python scripts/build_brand_assets.py
 
 | Gerado | Conteúdo |
 |--------|----------|
-| `callidus-mark.svg` | Só o símbolo, cor fixa (para `<img>`) |
+| `callidus-mark.svg` | Só o símbolo, tinta clara `#F6F4F4` (tema escuro, `<img>`) |
+| `callidus-mark-light.svg` | Só o símbolo, tinta `#5c6578` (tema claro, `<img>`) |
 | `callidus-mark-current.svg` | Só o símbolo com `currentColor` (para SVG inline) |
 | `callidus-wordmark.svg` | Só o nome "CALLIDUS" |
-| `callidus-lockup.svg` | Símbolo + nome, horizontal (sidebar) |
+| `callidus-lockup.svg` | Símbolo + nome, horizontal, tinta clara (sidebar no tema escuro) |
+| `callidus-lockup-light.svg` | Símbolo + nome, horizontal, tinta escura (sidebar no tema claro) |
 | `callidus-lockup-vertical.svg` | Símbolo + nome, vertical (docs) |
 | `favicon.svg` | Símbolo sobre fundo escuro quadrado |
 

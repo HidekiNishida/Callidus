@@ -10,10 +10,11 @@ Observações: diretório de skills temporário por teste; as skills embutidas s
 Testes do sistema de Skills (descoberta, validação, seleção sob demanda)
 """
 from pathlib import Path
+
 import pytest
 
 from agent.skills.builtins import get_builtin_skills
-from agent.skills.discovery import SkillRegistry, get_skill_registry
+from agent.skills.discovery import SkillRegistry
 from agent.skills.models import SkillSpec
 from agent.skills.selector import SkillSelector
 

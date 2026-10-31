@@ -4,7 +4,7 @@ Arquivo: scripts/build_brand_assets.py
 Nome: build_brand_assets.py
 Propósito: gerar os assets web da marca Callidus a partir dos SVG de media/.
 Responsabilidade: camada de script — extrai as formas dos SVG de origem e escreve versões normalizadas em web/static/assets/brand/.
-Componentes: extração de formas do SVG, conversão de polígono em caminho, escrita do SVG final, símbolo, wordmark, lockups e favicon.
+Componentes: extração de formas do SVG, conversão de polígono em caminho, escrita do SVG final, símbolo (claro e escuro), wordmark, lockups e favicon.
 Dependências: os SVG de media/ e a biblioteca padrão do Python (re, pathlib).
 Observações: escreve apenas em web/static/assets/brand/ e não altera os arquivos de origem.
 
@@ -29,6 +29,9 @@ MEDIA = ROOT / "media"
 OUT = ROOT / "web" / "static" / "assets" / "brand"
 
 INK = "#F6F4F4"
+# Tinta do tema claro: cinza do texto secundário, legível sobre superfície branca.
+# A estrela permanece no azul da marca. `<img>` não herda `currentColor` do tema.
+LIGHT_INK = "#5c6578"
 ACCENT = "#668DF7"
 
 # Formas do símbolo, na ordem em que aparecem no arquivo de logo.
@@ -51,6 +54,11 @@ def to_path(tag: str, cls: str, data: str) -> str:
     return data
 
 
+def ink_of(cls: str, ink: str) -> str:
+    """Cor da forma: a estrela (`fil1`) fica no azul; o restante usa a tinta do tema."""
+    return ACCENT if cls == "fil1" else ink
+
+
 def write_svg(name: str, view_box: tuple[float, float, float, float], body: str, title: str = "Callidus") -> None:
     """Grava o SVG final com o viewBox, o tamanho e o título informados."""
     x, y, w, h = view_box
@@ -71,19 +79,18 @@ def main() -> None:
     vert = shapes((MEDIA / "Callidus Name + Logo Vertical.svg").read_text(encoding="utf-8"))
 
     # --- símbolo: "C" hexagonal + estrela azul ---------------------------------
-    # A versão com `<img>` usa cor fixa (a interface é dark-only); a versão
-    # `currentColor` serve para o SVG inline em `app.js`, que herda a cor do tema.
-    mark_fixed = "".join(
-        f'<path d="{to_path(t, c, d)}" fill="{ACCENT if c == "fil1" else INK}"/>'
-        for t, c, d in logo
-    )
-    mark_current = "".join(
-        f'<path d="{to_path(t, c, d)}" fill="{ACCENT if c == "fil1" else "currentColor"}"/>'
-        for t, c, d in logo
-    )
-    # O símbolo ocupa de x≈3116 a x≈18050 e y≈2054 a y≈18266 no viewBox original.
-    write_svg("callidus-mark.svg", (3116, 2054, 14935, 16212), mark_fixed)
-    write_svg("callidus-mark-current.svg", (3116, 2054, 14935, 16212), mark_current)
+    # `<img>` não herda a cor da página: o tema escuro usa tinta clara e o tema
+    # claro usa tinta escura. `currentColor` fica para o SVG inline.
+    def mark_paths(ink: str) -> str:
+        """Caminhos do símbolo com a tinta informada e a estrela azul."""
+        return "".join(
+            f'<path d="{to_path(t, c, d)}" fill="{ink_of(c, ink)}"/>' for t, c, d in logo
+        )
+
+    mark_box = (3116, 2054, 14935, 16212)
+    write_svg("callidus-mark.svg", mark_box, mark_paths(INK))
+    write_svg("callidus-mark-light.svg", mark_box, mark_paths(LIGHT_INK))
+    write_svg("callidus-mark-current.svg", mark_box, mark_paths("currentColor"))
 
     # --- wordmark "Callidus" (só o nome) ---------------------------------------
     # Glifos de "Callidus" vão de x≈1397 a x≈19760, y≈495 a y≈2150.
@@ -96,13 +103,19 @@ def main() -> None:
     logo_w = 9703 - 2928
     name_w = 52634 - 12811
     total_w = logo_w + gap + name_w
-    body = "".join(
-        f'<g transform="translate({-2928 if i < 2 else -12811 + logo_w + gap},0)">'
-        f'<path d="{to_path(t, c, d)}" fill="{ACCENT if c == "fil1" else INK}"/>'
-        f"</g>"
-        for i, (t, c, d) in enumerate(horiz)
-    )
-    write_svg("callidus-lockup.svg", (0, 2937, total_w, 7355), body)
+
+    def lockup_body(ink: str) -> str:
+        """Lockup horizontal com a tinta informada e a estrela azul."""
+        return "".join(
+            f'<g transform="translate({-2928 if i < 2 else -12811 + logo_w + gap},0)">'
+            f'<path d="{to_path(t, c, d)}" fill="{ink_of(c, ink)}"/>'
+            f"</g>"
+            for i, (t, c, d) in enumerate(horiz)
+        )
+
+    lockup_box = (0, 2937, total_w, 7355)
+    write_svg("callidus-lockup.svg", lockup_box, lockup_body(INK))
+    write_svg("callidus-lockup-light.svg", lockup_box, lockup_body(LIGHT_INK))
 
     # --- lockup vertical -------------------------------------------------------
     # No arquivo vertical o símbolo fica em y≈1309..8664 e o nome em y≈10266..10877.
@@ -116,7 +129,7 @@ def main() -> None:
     v_total_h = v_logo_h + v_gap + v_name_h
     body = "".join(
         f'<g transform="translate({-7317 if i < 2 else -1398},{-1309 if i < 2 else v_logo_h + v_gap - v_name_top})">'
-        f'<path d="{to_path(t, c, d)}" fill="{ACCENT if c == "fil1" else INK}"/>'
+        f'<path d="{to_path(t, c, d)}" fill="{ink_of(c, INK)}"/>'
         f"</g>"
         for i, (t, c, d) in enumerate(vert)
     )
@@ -127,7 +140,7 @@ def main() -> None:
         f'<rect width="{14935}" height="{16212}" rx="3200" fill="#14161c"/>\n'
         f'<g transform="translate(2100,2600) scale(0.72)">\n'
         + "".join(
-            f'<path d="{to_path(t, c, d)}" fill="{ACCENT if c == "fil1" else INK}"/>'
+            f'<path d="{to_path(t, c, d)}" fill="{ink_of(c, INK)}"/>'
             for t, c, d in logo
         )
         + "\n</g>"

@@ -26,6 +26,7 @@ from agent.knowledge.graph_service import KnowledgeGraphService
 from agent.orchestrator.consolidation import (
     children_of,
     consolidate_parent,
+    remember_final_answer,
     settled,
     stages_outcome,
 )
@@ -44,7 +45,11 @@ from agent.orchestrator.execution.tool_results import (
     test_summary,
 )
 from agent.orchestrator.execution.workspace import work_root
-from agent.orchestrator.execution.writes import tool_refusal_result
+from agent.orchestrator.execution.writes import (
+    WriteJournal,
+    implicit_spec,
+    tool_refusal_result,
+)
 from agent.orchestrator.requirements import effective_covers
 from agent.persistence.models import (
     EvidenceModel,
@@ -54,7 +59,7 @@ from agent.persistence.models import (
 )
 from agent.services.attempt_service import AttemptService
 from agent.services.project_service import ProjectService
-from agent.tools.policy import PermissionPolicy, tool_policy
+from agent.tools.policy import tool_policy
 from agent.tools.registry import ToolContext, canonical_tool_id
 from agent.verification.fingerprint import snapshot as artifact_snapshot
 from agent.verification.runner import VerificationResult, run_verification
@@ -342,6 +347,11 @@ class TaskExecutor:
                 done["tool"] = tool_id
                 return done
             self.note_thought(run, task, f"Usando {tool_id}{where}.", phase="tool")
+            # Escrita pronta vinda do plano: guarda o original para desfazer se a verificação
+            # reprovar (visto com o qwen3-vl:8b: `def def clear_fields` concluído "sem verificação").
+            plan_write_journal = WriteJournal(root_path) if tool_id in {"write_file", "edit_file"} else None
+            if plan_write_journal is not None:
+                plan_write_journal.remember(tool_id, args.get("path"))
             out = await self._tools.execute(tool_id, ctx, args, approved=approved)
             fp = AttemptService.fingerprint({"tool": tool_id, "result": out})
             if self._attempts.repeated_output_detected(task.id, fp, kind=AttemptKind.TOOL):
@@ -381,7 +391,22 @@ class TaskExecutor:
                     KnowledgeGraphService(self._session).touch_file(project.id, root_path, p)
             if failure is None:
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
-                return await self.finalize_verification(run, project, task, root_path)
+                if plan_write_journal is None or meta.get("verification"):
+                    return await self.finalize_verification(run, project, task, root_path)
+                # Escrita sem verificação declarada: a mesma régua das escritas do modelo
+                # (o trecho gravado, a sintaxe e a integridade do projeto); reprovada, desfeita.
+                written = args.get("new_string") if tool_id == "edit_file" else args.get("content")
+                done = await self.finalize_verification(
+                    run, project, task, root_path, implicit_spec=implicit_spec(args.get("path"), str(written or ""))
+                )
+                if done.get("action") != "verified_ok" and plan_write_journal.originals:
+                    restored = plan_write_journal.restore()
+                    if restored:
+                        self.note_thought(
+                            run, task, "A verificação reprovou a edição do plano; desfiz a escrita.", phase="recover"
+                        )
+                        done["undone"] = restored
+                return done
             if is_informative_test_result(tool_id, out):
                 # Rodar a suíte e ver os testes falharem **é o resultado**, não uma ferramenta
                 # quebrada: repetir a mesma chamada devolve a mesma falha. A etapa registra o
@@ -572,6 +597,10 @@ class TaskExecutor:
             markdown = f"{markdown.rstrip()}\n\n{footer}"
         sources = extract_sources(markdown, *[str(stage.get("sources")) for stage in stages])
         task.consolidated_result_json = {"final_answer": True, "markdown": markdown, "sources": sources}
+        # A conversa lê a raiz. A consolidação só copia o texto quando todos os
+        # irmãos já terminaram; sem esta cópia, um cancelamento no meio deixa a
+        # resposta escrita e invisível.
+        remember_final_answer(self._session, task)
         self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
         spec = (task.metadata_json or {}).get("verification")
         if isinstance(spec, dict) and spec:

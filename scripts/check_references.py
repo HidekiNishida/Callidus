@@ -83,9 +83,7 @@ def _candidatos(texto: str) -> list[tuple[str, str]]:
         Lista de tuplas ("arquivo" ou "simbolo", valor).
     """
     found: list[tuple[str, str]] = []
-    if "/" in texto and not texto.startswith(("/", "http", "@")) and " " not in texto:
-        found.append(("arquivo", texto))
-    elif texto.endswith(".py") and " " not in texto:
+    if "/" in texto and not texto.startswith(("/", "http", "@")) and " " not in texto or texto.endswith(".py") and " " not in texto:
         found.append(("arquivo", texto))
     if "(" in texto and ")" in texto and "." in texto and " " not in texto:
         found.append(("simbolo", texto.split("(", 1)[0]))

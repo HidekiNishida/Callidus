@@ -3,7 +3,7 @@ Arquivo: src/agent/orchestrator/plan_validation.py
 Nome: plan_validation.py
 Propósito: validação determinística do plano antes da execução.
 Responsabilidade: camada de aplicação.
-Componentes: PlanVerdict, Issue, PlanValidation, sanitize_spec, active_children, plan_fingerprint….
+Componentes: PlanVerdict, Issue, PlanValidation, sanitize_spec, active_children, plan_fingerprint, repair_plan (duplicatas religadas à original)….
 Dependências: agent.domain.enums, agent.domain.schemas, agent.orchestrator.consolidation, agent.orchestrator.decomposition, agent.orchestrator.requirements, agent.persistence.models….
 Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
 """
@@ -23,8 +23,8 @@ from sqlalchemy.orm import Session
 
 from agent.domain.enums import TaskKind, TaskStatus
 from agent.domain.schemas import TaskCreate, TaskDependencyCreate, TaskStatusUpdate
-from agent.orchestrator.decomposition import DecompositionResult
 from agent.orchestrator.consolidation import inherits_flag
+from agent.orchestrator.decomposition import DecompositionResult
 from agent.orchestrator.requirements import (
     MANDATORY,
     effective_covers,
@@ -152,7 +152,7 @@ def sanitize_spec(plan: DecompositionResult) -> tuple[DecompositionResult, list[
     subtasks = [
         spec.model_copy(update={"depends_on_indices": sorted(graph[i])}) for i, spec in enumerate(plan.subtasks)
     ]
-    return DecompositionResult(subtasks=subtasks, warnings=list(plan.warnings)), issues
+    return DecompositionResult(subtasks=subtasks, warnings=list(plan.warnings), added_requirements=list(plan.added_requirements)), issues
 
 
 def _reaches(graph: dict[int, set[int]], start: int, target: int) -> bool:
@@ -307,12 +307,24 @@ def validate_children(
                 # não existe no arquivo, a etapa falha de certeza: melhor virar operação do
                 # modelo (que inspeciona e aplica) do que executar uma edição impossível.
                 anchor = (meta.get("tool_args") or {}).get("old_string")
-                if isinstance(anchor, str) and anchor and not _anchor_present(project_root, path, anchor):
+                count = _anchor_count(project_root, path, anchor) if isinstance(anchor, str) and anchor else None
+                if count == 0:
                     issues.append(
                         Issue(
                             "edit_anchor_missing",
                             PlanVerdict.WARNINGS,
                             f"«{kid.title}» edita {path} com um trecho que não está no arquivo",
+                            str(kid.id),
+                        )
+                    )
+                elif count is not None and count > 1 and not (meta.get("tool_args") or {}).get("replace_all"):
+                    # Trecho que aparece várias vezes: a edição é recusada ("trecho ambíguo") e o
+                    # plano era refeito (visto com o qwen3-vl:8b: tk.Button 5 vezes no main.py).
+                    issues.append(
+                        Issue(
+                            "edit_anchor_missing",
+                            PlanVerdict.WARNINGS,
+                            f"«{kid.title}» edita {path} com um trecho que aparece {count} vezes",
                             str(kid.id),
                         )
                     )
@@ -383,16 +395,30 @@ def validate_children(
 
 def _anchor_present(project_root: str, path: str, anchor: str) -> bool:
     """O trecho que a edição pretende substituir existe no arquivo?"""
+    return _anchor_count(project_root, path, anchor) != 0
+
+
+def _anchor_count(project_root: str, path: str, anchor: str) -> int | None:
+    """Quantas vezes o trecho da edição aparece no arquivo; `None` quando não dá para saber.
+
+    Args:
+        project_root: raiz do projeto.
+        path: arquivo editado.
+        anchor: trecho antigo (`old_string`).
+
+    Returns:
+        O número de ocorrências, ou `None` se o arquivo ainda não existe ou não pode ser lido.
+    """
     try:
         full = Path(project_root) / path
     except (TypeError, ValueError):  # pragma: no cover - caminho inválido
-        return True
+        return None
     if not full.is_file():
-        return True  # o arquivo ainda não existe: nada a conferir
+        return None  # o arquivo ainda não existe: nada a conferir
     try:
-        return anchor in full.read_text(encoding="utf-8", errors="replace")
+        return full.read_text(encoding="utf-8", errors="replace").count(anchor)
     except OSError:  # pragma: no cover - arquivo ilegível
-        return True
+        return None
 
 
 def _produced_before(session: Session, task: TaskModel, path: str) -> bool:
@@ -470,6 +496,64 @@ def _reaches_ids(graph: dict[uuid.UUID, set[uuid.UUID]], start: uuid.UUID, targe
     return False
 
 
+def _exact_key(kid: TaskModel) -> tuple:
+    """Chave de etapa idêntica: mesmo título, objetivo, ferramenta e argumentos.
+
+    Args:
+        kid: etapa do plano.
+
+    Returns:
+        A tupla que identifica a etapa para a detecção de duplicatas.
+    """
+    meta = kid.metadata_json or {}
+    return (_norm(kid.title), _norm(kid.objective), str(meta.get("tool")), json.dumps(meta.get("tool_args"), sort_keys=True, default=str))
+
+
+def _redirect_to_original(
+    session: Session, parent: TaskModel, duplicate: TaskModel, flagged: set[str]
+) -> TaskModel | None:
+    """Faz quem dependia da etapa duplicada depender da original que fica no plano.
+
+    Sem isso, cancelar a duplicata deixava as dependentes apontando para uma etapa cancelada:
+    a revalidação acusava `dependency_cancelled`, o plano inteiro era declarado inválido e o
+    run parava no primeiro passo (visto com o qwen3:8b no cenário multirequisito).
+
+    Args:
+        session: sessão do banco.
+        parent: tarefa dona do plano.
+        duplicate: etapa que será cancelada por repetir outra.
+        flagged: ids das etapas apontadas como duplicadas (nenhuma delas serve de original).
+
+    Returns:
+        A etapa original, ou `None` quando nenhuma etapa anterior tem a mesma chave.
+    """
+    key = _exact_key(duplicate)
+    original = next(
+        (
+            k
+            for k in active_children(session, parent.id)
+            if str(k.id) not in flagged and k.status != TaskStatus.CANCELLED.value and _exact_key(k) == key
+        ),
+        None,
+    )
+    if original is None:
+        return None
+    deps = session.scalars(select(TaskDependencyModel).where(TaskDependencyModel.depends_on_task_id == duplicate.id)).all()
+    for dep in deps:
+        already = session.scalars(
+            select(TaskDependencyModel).where(
+                TaskDependencyModel.task_id == dep.task_id,
+                TaskDependencyModel.depends_on_task_id == original.id,
+            )
+        ).first()
+        if dep.task_id == original.id or already is not None:
+            session.delete(dep)
+        else:
+            dep.depends_on_task_id = original.id
+    session.flush()
+    return original
+
+
 def _duplicate_issues(kids: list[TaskModel]) -> list[Issue]:
     """Procura etapas repetidas ou com o mesmo título dentro do plano.
 
@@ -483,8 +567,7 @@ def _duplicate_issues(kids: list[TaskModel]) -> list[Issue]:
     seen_exact: dict[tuple, TaskModel] = {}
     seen_title: dict[str, TaskModel] = {}
     for kid in kids:
-        meta = kid.metadata_json or {}
-        exact = (_norm(kid.title), _norm(kid.objective), str(meta.get("tool")), json.dumps(meta.get("tool_args"), sort_keys=True, default=str))
+        exact = _exact_key(kid)
         if exact in seen_exact:
             issues.append(Issue("duplicate_task", PlanVerdict.INCONSISTENT, f"«{kid.title}» repete outra etapa do plano", str(kid.id)))
         elif _norm(kid.title) in seen_title:
@@ -568,11 +651,14 @@ def repair_plan(session: Session, parent: TaskModel, validation: PlanValidation)
     fixes: list[str] = repair_steps(session, parent, validation)
     kids = {str(k.id): k for k in active_children(session, parent.id)}
     reqs = {r["id"]: r for r in ensure_requirements(session, root_of(session, parent))}
+    flagged = {i.task_id for i in validation.issues if i.code == "duplicate_task" and i.task_id}
     for issue in validation.issues:
         kid = kids.get(issue.task_id or "")
         if issue.code == "duplicate_task" and kid and kid.status != TaskStatus.CANCELLED.value:
+            original = _redirect_to_original(session, parent, kid, flagged)
             _cancel(ts, kid, "etapa duplicada no plano", "duplicate")
-            fixes.append(f"cancelada a duplicada «{kid.title}»")
+            moved = " (dependências passaram para a original)" if original is not None else ""
+            fixes.append(f"cancelada a duplicada «{kid.title}»{moved}")
         elif issue.code == "dependency_cancelled" and kid:
             for dep in session.scalars(select(TaskDependencyModel).where(TaskDependencyModel.task_id == kid.id)).all():
                 other = session.get(TaskModel, dep.depends_on_task_id)

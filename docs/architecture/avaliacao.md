@@ -236,6 +236,45 @@ O modelo de referência da avaliação continua `gpt-oss:20b` (decisão do dono,
 avaliação acima com o `qwen3:8b` ainda **não foi feita**. Rode três rodadas por lado antes de
 afirmar ganho de aceite.
 
+## 🎯 qwen3-vl:8b — modelo real, tarefa média (26–27/10/2026)
+
+Medição com o modelo real no Mac do dono: `qwen3-vl:8b` (Q4_K_M, 8,8 B; no Ollama 0.40.3 essa tag
+**é** a variante `8b-thinking`), cenário `multirequisito` (criar `soma` em `a.py` e `sub` em `b.py`,
+os dois comprovados), banco e pasta isolados, 120 passos no máximo. Roteiro:
+[`scripts/medir-multirequisito.sh`](/scripts/medir-multirequisito.sh); bancos de cada rodada em
+`lab/out/qwen3vl*/`.
+
+| Lado | Rodadas | Desfecho | Código certo (aceite independente) |
+|------|---------|----------|-------------------------------------|
+| Antes (`422a0e0`) | 3 | **3 de 3 quebraram com `ValueError`** (orçamento de contexto negativo) | — |
+| 1ª correção (prova por arquivo, duplicata, `edit_file`, reserva de raciocínio) | 2 | 1 quebrou com o mesmo `ValueError`; 1 escreveu as duas funções e não fechou em 120 passos (2,3 h) | 1 de 1 que terminou |
+| + bloco de raciocínio vazio, janela que acompanha a reserva, `pytest` sem testes | 1 | pausou no limite de tentativas: 0 de 2 requisitos comprovados, 43 min | sim |
+
+Por chamada ao modelo (mesma tarefa, mesmo Mac):
+
+| | Antes | Com o bloco de raciocínio vazio |
+|---|---|---|
+| Plano | 2 048 tokens de raciocínio e conteúdo **vazio** (4 de 4 cortados, 76–115 s cada) | 482–890 tokens, 37–63 s, 0 de 3 cortados |
+| Operação concluída | 400–4 424 tokens, 15–295 s | 35–264 tokens, 6–27 s |
+| Operações cortadas | 5 de 14 (133–548 s cada) | 6 de 30 (127–833 s cada: repetição até o limite de saída) |
+
+O que cada achado mudou:
+
+- **O modelo raciocina sempre.** A variante só de raciocínio ignora `think: false`; o plano gastava a
+  saída inteira pensando. Agora o adaptador preenche um bloco `<think></think>` vazio e o modelo
+  responde direto ([provedores.md](/docs/architecture/provedores.md)).
+- **Quebra do run.** Três cortes dobravam a reserva de saída até ocupar a janela inteira; o
+  orçamento de entrada ficava negativo e o processo caía com exceção. A janela agora cresce junto.
+- **`pytest` sem testes.** Num projeto Python sem testes, "no tests ran" reprovava para sempre e o
+  run replanejava até o limite. Agora vale a sintaxe dos `.py`.
+- **Formato sem raciocínio.** Respondendo direto, o modelo escreve as chamadas de ferramenta como
+  objetos JSON em linhas seguidas — era a causa das 15 falhas da última rodada ("Extra data",
+  "faltam campos: path"). O adaptador e a operação passaram a ler esse formato; **essa última
+  correção ainda não foi medida com o modelo real**.
+
+Pendente: rodar `TAG=qwen3vl-final2 LADOS=depois ROUNDS=3 scripts/medir-multirequisito.sh` com o
+código atual. O modelo de referência da avaliação continua `gpt-oss:20b` (decisão do dono).
+
 ## 🧪 Testes determinísticos
 
 A avaliação real depende do Ollama. Os testes de unidade cobrem os mesmos comportamentos sem

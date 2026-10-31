@@ -10,7 +10,7 @@ Observações: banco temporário por teste; nenhuma chamada HTTP — o modelo fa
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -415,7 +415,7 @@ async def test_cancelar_disparos_pendentes(env):
     # Um disparo agendado para o futuro fica pendente até o runtime recolhê-lo.
     row = env["session"].query(AutomationModel).one()
     firing = Dispatcher(env["session"]).dispatch_manual(
-        row, tag="futuro", scheduled_for=datetime.now(timezone.utc) + timedelta(days=1)
+        row, tag="futuro", scheduled_for=datetime.now(UTC) + timedelta(days=1)
     )
     env["session"].flush()
     assert firing is not None and firing.state == "pending"

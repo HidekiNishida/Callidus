@@ -29,12 +29,13 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from agent.config import Settings, get_settings
 
-__all__ = ["AgentScheduler", "SchedulerOperation", "OperationResult"]
+__all__ = ["AgentScheduler", "OperationResult", "SchedulerOperation"]
 
 
 @dataclass
@@ -253,7 +254,7 @@ class AgentScheduler:
             return result
         try:
             outcome = await asyncio.wait_for(handler(operation), timeout=self._timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._stats["timeouts"] += 1
             result = OperationResult(
                 operation_id=operation.id,
@@ -342,7 +343,7 @@ class AgentScheduler:
         try:
             await asyncio.wait_for(self._idle.wait(), timeout=timeout)
             return True
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return False
 
     def stop(self) -> None:

@@ -13,7 +13,9 @@ from pathlib import Path
 from agent.brand import (
     ATTACHMENTS_DIR,
     BRAND_FAVICON_PATH,
+    BRAND_LOCKUP_LIGHT_PATH,
     BRAND_LOCKUP_PATH,
+    BRAND_MARK_LIGHT_PATH,
     BRAND_MARK_PATH,
     BRAND_NAME,
     BRAND_TAGLINE,
@@ -81,7 +83,13 @@ def test_user_agent_is_branded():
 
 def test_brand_assets_exist_on_disk():
     """Os ativos de marca referenciados pela interface existem no disco."""
-    for url in (BRAND_MARK_PATH, BRAND_LOCKUP_PATH, BRAND_FAVICON_PATH):
+    for url in (
+        BRAND_MARK_PATH,
+        BRAND_MARK_LIGHT_PATH,
+        BRAND_LOCKUP_PATH,
+        BRAND_LOCKUP_LIGHT_PATH,
+        BRAND_FAVICON_PATH,
+    ):
         assert url.startswith("/assets/brand/")
         assert (WEB_STATIC / url.removeprefix("/")).is_file()
 
@@ -90,9 +98,11 @@ def test_brand_assets_are_valid_svg():
     """Os ativos de marca são SVG válidos com viewBox."""
     for name in (
         "callidus-mark.svg",
+        "callidus-mark-light.svg",
         "callidus-mark-current.svg",
         "callidus-wordmark.svg",
         "callidus-lockup.svg",
+        "callidus-lockup-light.svg",
         "callidus-lockup-vertical.svg",
         "favicon.svg",
     ):
@@ -100,6 +110,27 @@ def test_brand_assets_are_valid_svg():
         assert text.startswith("<svg") or text.startswith("<?xml")
         assert 'viewBox="' in text
         assert "</svg>" in text
+
+
+def test_light_brand_assets_darken_ink_and_keep_the_star():
+    """No tema claro a tinta do símbolo é escura e a estrela continua azul.
+
+    O tema escuro mantém a tinta clara. Um filtro não é o mecanismo: cada tema
+    tem o SVG correspondente, e a estrela não é recolorida junto com o "C".
+    """
+    light_ink = 'fill="#5c6578"'
+    star = 'fill="#668DF7"'
+    dark_ink = 'fill="#F6F4F4"'
+    for name in ("callidus-mark-light.svg", "callidus-lockup-light.svg"):
+        text = (WEB_STATIC / "assets" / "brand" / name).read_text(encoding="utf-8")
+        assert light_ink in text
+        assert star in text
+        assert dark_ink not in text
+    for name in ("callidus-mark.svg", "callidus-lockup.svg"):
+        text = (WEB_STATIC / "assets" / "brand" / name).read_text(encoding="utf-8")
+        assert dark_ink in text
+        assert star in text
+        assert light_ink not in text
 
 
 def test_source_brand_files_exist():

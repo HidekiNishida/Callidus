@@ -28,11 +28,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from agent.config import Settings
 from agent.domain.agent_enums import AgentStatus, ExecutionStatus, QueryStatus
-from agent.domain.enums import TaskStatus
 from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate
 from agent.orchestrator.runner import RunOrchestrator
 from agent.persistence.database import build_session_factory, init_db
-from agent.persistence.models import AgentModel, EvidenceModel, TaskModel
+from agent.persistence.models import EvidenceModel, TaskModel
 from agent.services.agent_service import AgentService
 from agent.services.project_service import ProjectService
 from agent.services.query_service import QueryService

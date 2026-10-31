@@ -18,7 +18,12 @@ from agent.api import deps
 from agent.config import Settings
 from agent.context.operation_builder import OperationContextBuilder
 from agent.domain.enums import MemoryKind
-from agent.domain.schemas import ConversationCreate, MemoryCreate, ProjectCreate, TaskCreate
+from agent.domain.schemas import (
+    ConversationCreate,
+    MemoryCreate,
+    ProjectCreate,
+    TaskCreate,
+)
 from agent.i18n.locale import detect_language, translate
 from agent.memory.store import decompose_for_use, extract_memory_request, summarize_text
 from agent.persistence.database import build_session_factory, init_db

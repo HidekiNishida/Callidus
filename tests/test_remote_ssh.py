@@ -11,7 +11,6 @@ execução remota por SSH (com binário ssh falso)
 """
 from __future__ import annotations
 
-import os
 import stat
 from pathlib import Path
 

@@ -9,8 +9,6 @@ Observações: imagens fora da raiz do projeto ou de formato desconhecido são d
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from pydantic import BaseModel, Field
 
 from agent.security.paths import PathSecurityError, resolve_under_root

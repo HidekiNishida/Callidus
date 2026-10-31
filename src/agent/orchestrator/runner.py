@@ -9,8 +9,9 @@ Observações: o SQLite é a fonte da verdade; a verificação é independente d
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -33,6 +34,7 @@ from agent.orchestrator.consolidation import (
     children_of,
     pending_reason,
     settled,
+    surface_final_answer,
     verification_evidence_ok,
 )
 from agent.orchestrator.decomposition import (
@@ -98,6 +100,27 @@ from agent.services.task_service import TaskService
 from agent.tools.registry import build_default_registry
 from agent.verification.fingerprint import workspace_state
 
+# Um passo por run. O worker autônomo e POST /execute compartilham o processo;
+# sem este cadeado os dois atravessam o planejamento e aplicam dois planos.
+_RUN_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _run_lock(run_id: uuid.UUID) -> asyncio.Lock:
+    """Cadeado do run, criado na primeira disputa.
+
+    Args:
+        run_id: identificador da execução.
+
+    Returns:
+        O lock asyncio deste run no processo.
+    """
+    key = str(run_id)
+    lock = _RUN_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _RUN_LOCKS[key] = lock
+    return lock
+
 
 def _select_provider(settings: Settings, run_config: dict) -> LLMProvider:
     """Provedor do run — a escolha vive em `agent.orchestrator.execution.providers`.
@@ -138,7 +161,6 @@ class RunBlockedError(RuntimeError):
     Observações:
         Distingue um bloqueio de negócio de uma falha inesperada, para que o chamador saiba que é preciso ação de fora.
     """
-    pass
 
 
 _ACTION_KEYS = ("mcp_tool", "final_answer", "model_operation", "tool", "verification")
@@ -261,6 +283,30 @@ class RunOrchestrator:
             run_id=run.id,
             extra_issues=spec_issues,
         )
+
+    async def _final_review(
+        self, run: ExecutionRunModel, root: TaskModel, config: dict[str, Any], provider: Any, work_root: str
+    ) -> dict[str, Any] | None:
+        """Revisão final de pedido de conclusão: defeito achado vira requisito e etapa de correção.
+
+        Roda uma vez por raiz (ver `agent.orchestrator.final_review`). Sem defeito, devolve `None` e
+        o aceite segue.
+        """
+        from agent.orchestrator.decomposition import profile_from_run_config
+        from agent.orchestrator.final_review import final_review
+
+        if str(config.get("provider") or "") == "mock":
+            return None
+        profile = profile_from_run_config(config, self._settings, provider=provider)
+        defects = await final_review(self._session, root, provider=provider, profile=profile, project_root=work_root)
+        if not defects:
+            return None
+        created = correct_requirement_gaps(self._session, root)
+        if not created:
+            return None
+        items = "; ".join(d["description"] for d in defects)
+        self._note_thought(run, root, f"A revisão final achou defeitos: {items}. Vou corrigir antes de concluir.")
+        return {"action": "final_review_reopen", "created": [str(x) for x in created], "defects": [d["description"] for d in defects]}
 
     def _block_invalid_plan(self, parent: TaskModel, validation: PlanValidation) -> dict[str, Any]:
         """Plano que não pôde ser corrigido: nada dele executa; o pai fica BLOCKED (recuperável) com o motivo,
@@ -471,6 +517,22 @@ class RunOrchestrator:
 
         Observações:
             O passo é o mesmo executado pelo worker autônomo: quem executa não muda o que é verificado.
+            O cadeado do run impede que o worker e `POST /execute` planejem ao mesmo tempo.
+        """
+        async with _run_lock(run_id):
+            return await self._step_locked(run_id)
+
+    async def _step_locked(self, run_id: uuid.UUID) -> dict[str, Any]:
+        """Corpo do passo, já com a exclusividade do run.
+
+        Args:
+            run_id: identificador da run.
+
+        Returns:
+            A ação realizada no passo.
+
+        Raises:
+            LookupError: quando a run não existe.
         """
         run = self._session.get(ExecutionRunModel, run_id)
         if run is None:
@@ -589,7 +651,7 @@ class RunOrchestrator:
             "failure_criterion": approach.get("failure_criterion") or "",
             "attempts": int(approach.get("attempts") or count),
             "changed": bool(problem.get("changed")),
-            "at": datetime.now(timezone.utc).isoformat(),
+            "at": datetime.now(UTC).isoformat(),
         }
         category = FailureCategory.CHANGE_STRATEGY if diag["automatic"] else FailureCategory.CONFIGURATION
         reason = f"estagnação ({diag['kind']}): {diag['probable_cause']}"
@@ -708,7 +770,7 @@ class RunOrchestrator:
             **hit,
             "reason": reason,
             "next_action": next_action,
-            "at": datetime.now(timezone.utc).isoformat(),
+            "at": datetime.now(UTC).isoformat(),
             "progress": progress_state(self._session, root.id),
             "pending": pending,
             "requirements": requirements,
@@ -836,7 +898,10 @@ class RunOrchestrator:
         A falha desta camada deixa o pedido original intacto. Não há chamada ao modelo.
         """
         try:
-            from agent.orchestrator.language_strategy import build_language_contract, explain_language
+            from agent.orchestrator.language_strategy import (
+                build_language_contract,
+                explain_language,
+            )
 
             config = self._run_config(run)
             mode = str(config.get("language_mode") or self._settings.language_mode or "auto")
@@ -1052,6 +1117,7 @@ class RunOrchestrator:
         if run is None:
             raise LookupError(str(run_id))
         if run.status in {RunStatus.COMPLETED.value, RunStatus.CANCELLED.value, RunStatus.FAILED.value}:
+            self._surface_final_answer(run)
             return {"action": "run_terminal", "status": run.status}
         if run.status == RunStatus.PAUSED.value:
             return {"action": "run_paused", "run_id": str(run.id), "status": run.status}
@@ -1100,6 +1166,9 @@ class RunOrchestrator:
             if self._all_terminal_under(root.id) and TaskStatus(root.status) == TaskStatus.COMPLETED:
                 ok, reason = evaluate_global_acceptance(self._session, root.id)
                 if ok:
+                    reviewed = await self._final_review(run, root, config, provider, work_root)
+                    if reviewed:
+                        return reviewed
                     root.consolidated_result_json = {
                         **(root.consolidated_result_json or {}),
                         "requirements": requirements_report(self._session, root),
@@ -1207,7 +1276,10 @@ class RunOrchestrator:
                     max_depth=self._settings.max_tree_depth,
                 )
                 if atomize_now:
-                    from agent.orchestrator.disposition import decide_disposition, investigation_plan
+                    from agent.orchestrator.disposition import (
+                        decide_disposition,
+                        investigation_plan,
+                    )
 
                     decision = decide_disposition(
                         objective=task.objective,
@@ -1228,7 +1300,9 @@ class RunOrchestrator:
                         task.metadata_json = {**meta, "investigated": True}
                         self._note_thought(run, task, decision.reason, phase="investigate", category="decision")
                     else:
-                        from agent.orchestrator.atomizer import adaptive_decompose_operation
+                        from agent.orchestrator.atomizer import (
+                            adaptive_decompose_operation,
+                        )
 
                         strat_meta = meta.get("professional_strategy") or {}
                         lead_spec = strat_meta.get("lead_specialty") or meta.get("lead_specialty")
@@ -1279,6 +1353,9 @@ class RunOrchestrator:
                         requirements=self._task_requirements(task),
                         previous_objectives=self._conversation_objectives(task),
                     )
+                    stale = self._abandon_stale_plan(run, task)
+                    if stale:
+                        return stale
                 apply_provider_usage(task, provider)
                 if plan is None or not plan.subtasks:
                     self._tasks.update_status(
@@ -1484,6 +1561,51 @@ class RunOrchestrator:
             }:
                 return False
         return True
+
+    def _surface_final_answer(self, run: ExecutionRunModel) -> None:
+        """Copia para a raiz a resposta final já escrita, sem alterar o estado do run.
+
+        Args:
+            run: execução que já está em estado terminal.
+        """
+        root = self._session.get(TaskModel, run.root_task_id)
+        if root is None:
+            return
+        surface_final_answer(self._session, root)
+
+    def _abandon_stale_plan(self, run: ExecutionRunModel, task: TaskModel) -> dict[str, Any] | None:
+        """Descarta o plano se o run saiu de ativo ou se outro passo já criou filhos.
+
+        A sessão pode ter começado antes do cancelamento. O commit fecha o snapshot
+        para a leitura seguinte enxergar o que outra conexão gravou durante a espera
+        do modelo.
+
+        Args:
+            run: execução cujo plano acabou de voltar do modelo.
+            task: etapa que seria decomposta.
+
+        Returns:
+            A ação de descarte, ou `None` quando o plano ainda pode ser aplicado.
+        """
+        self._session.commit()
+        self._session.refresh(run)
+        if run.status == RunStatus.PAUSED.value:
+            return {
+                "action": "run_paused",
+                "run_id": str(run.id),
+                "status": run.status,
+                "discarded": "decomposition",
+            }
+        if run.status != RunStatus.ACTIVE.value:
+            self._surface_final_answer(run)
+            return {"action": "run_terminal", "status": run.status, "discarded": "decomposition"}
+        if children_of(self._session, task.id):
+            return {
+                "action": "decomposition_discarded",
+                "task_id": str(task.id),
+                "reason": "plano já aplicado",
+            }
+        return None
 
     def _ensure_final_message(self, root: TaskModel) -> None:
         """Garante que a raiz tenha uma resposta final para o usuário.

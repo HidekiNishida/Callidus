@@ -350,7 +350,10 @@ class DependencyResolver:
         """Verifica o provedor de modelo exigido pela automação."""
         name = str(spec.params.get("name") or self._settings.default_provider or "")
         try:
-            from agent.providers.registry import catalog_for_settings, build_provider_by_name
+            from agent.providers.registry import (
+                build_provider_by_name,
+                catalog_for_settings,
+            )
 
             catalog = catalog_for_settings(self._settings)
             if catalog.names() and name not in catalog.names():
@@ -551,7 +554,7 @@ class DependencyResolver:
             return False, f"não foi possível executar o comando de inicialização: {exc}"
         try:
             await asyncio.wait_for(proc.communicate(), timeout=strategy.timeout_sec)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             return False, f"tempo esgotado na inicialização ({strategy.timeout_sec:.0f}s)"
         code = proc.returncode or 0
@@ -584,7 +587,7 @@ class DependencyResolver:
             return False, f"gerenciador de serviços indisponível: {exc}"
         try:
             await asyncio.wait_for(proc.communicate(), timeout=strategy.timeout_sec)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             return False, f"tempo esgotado reiniciando o serviço ({strategy.timeout_sec:.0f}s)"
         code = proc.returncode or 0

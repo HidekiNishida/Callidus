@@ -22,7 +22,7 @@ O fluxo de aceitação, de ponta a ponta e sem inferência.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -90,7 +90,7 @@ def test_fluxo_completo_sobrevive_ao_encerramento_do_processo(db_url, tmp_path):
         state="enabled",
     )
     automation = AutomationService(session).create(definition)
-    automation.last_run_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    automation.last_run_at = datetime.now(UTC) - timedelta(minutes=5)
     session.commit()
     automation_id = automation.id
     session.close()
@@ -202,7 +202,7 @@ def test_automacao_de_script_nao_depende_de_inferencia(db_url, tmp_path):
             state="enabled",
         )
     )
-    automation.last_run_at = datetime.now(timezone.utc) - timedelta(seconds=7200)
+    automation.last_run_at = datetime.now(UTC) - timedelta(seconds=7200)
     session.commit()
 
     # Nenhum provedor é configurado: um script não pode depender do modelo.

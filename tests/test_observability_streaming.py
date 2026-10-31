@@ -22,7 +22,14 @@ from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate
 from agent.observability import get_bus, observe
 from agent.persistence.database import build_session_factory, init_db
 from agent.persistence.models import EventLogModel
-from agent.providers.base import ChatCompletionRequest, ChatCompletionResponse, ChatMessage, LLMProvider, ModelProfile, ProviderError
+from agent.providers.base import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatMessage,
+    LLMProvider,
+    ModelProfile,
+    ProviderError,
+)
 from agent.providers.llamacpp import LlamaCppProvider
 from agent.providers.mock import MockProvider
 from agent.providers.observed import observed_chat

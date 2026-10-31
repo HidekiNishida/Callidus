@@ -16,7 +16,12 @@ from sqlalchemy import select
 
 from agent.config import Settings
 from agent.domain.enums import TaskStatus
-from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate, TaskDependencyCreate
+from agent.domain.schemas import (
+    ExecutionRunCreate,
+    ProjectCreate,
+    TaskCreate,
+    TaskDependencyCreate,
+)
 from agent.orchestrator.consolidation import children_of, verification_evidence_ok
 from agent.orchestrator.global_verify import (
     ensure_global_verification_task,

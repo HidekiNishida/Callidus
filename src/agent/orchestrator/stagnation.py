@@ -26,7 +26,7 @@ import hashlib
 import json
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -34,7 +34,12 @@ from sqlalchemy.orm import Session
 
 from agent.config import Settings
 from agent.orchestrator.progress import made_progress
-from agent.persistence.models import ContextSnapshotModel, EventLogModel, ExecutionRunModel, OperationAttemptModel
+from agent.persistence.models import (
+    ContextSnapshotModel,
+    EventLogModel,
+    ExecutionRunModel,
+    OperationAttemptModel,
+)
 
 _UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b")
 _HEX = re.compile(r"\b0x[0-9a-f]+\b|\b[0-9a-f]{12,}\b")
@@ -167,7 +172,7 @@ def problem_attempts(
         "category": failure.get("category"),
         "workspace": workspace,
         "changed": material,
-        "at": datetime.now(timezone.utc).isoformat(),
+        "at": datetime.now(UTC).isoformat(),
     }
     ledger = {**ledger, key: record}
     meta["problem_ledger"] = {k: v for k, v in list(ledger.items())[-12:]}
@@ -304,7 +309,7 @@ def _naive(value: datetime | None) -> datetime | None:
     """
     if value is None:
         return None
-    return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
+    return value.astimezone(UTC).replace(tzinfo=None) if value.tzinfo else value
 
 
 def segment_start(session: Session, run: ExecutionRunModel) -> datetime:
@@ -314,7 +319,7 @@ def segment_start(session: Session, run: ExecutionRunModel) -> datetime:
         .where(EventLogModel.run_id == run.id, EventLogModel.event_type == "run.resumed")
         .order_by(EventLogModel.created_at.desc())
     ).first()
-    return _naive(resumed or run.created_at) or datetime.now(timezone.utc).replace(tzinfo=None)
+    return _naive(resumed or run.created_at) or datetime.now(UTC).replace(tzinfo=None)
 
 
 def resume_count(session: Session, run: ExecutionRunModel) -> int:
@@ -377,8 +382,8 @@ def usage_since(session: Session, run: ExecutionRunModel) -> dict[str, Any]:
         steps = 0 if last is not None and made_progress(last, state) else steps + 1
         last = state
     actions = [(e.payload_json or {}).get("action") for e in events]
-    started = _naive(run.created_at) or datetime.now(timezone.utc).replace(tzinfo=None)
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    started = _naive(run.created_at) or datetime.now(UTC).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
     from agent.orchestrator.ledger import run_spend
 
     accounted, source = run_spend(session, run.id)

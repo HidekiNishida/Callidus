@@ -11,11 +11,12 @@ A retomada não aumenta o teto de tokens; isso exige uma autorização gravada.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Iterator
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -23,7 +24,11 @@ from agent.config import Settings, get_settings
 from agent.orchestrator.inference_usage import estimate_cost
 from agent.orchestrator.ledger import records_for, run_spend
 from agent.orchestrator.stagnation import effective_cap, limits_for, resume_count
-from agent.persistence.models import EventLogModel, ExecutionRunModel, InferenceRecordModel
+from agent.persistence.models import (
+    EventLogModel,
+    ExecutionRunModel,
+    InferenceRecordModel,
+)
 
 _SETTINGS: ContextVar[Settings | None] = ContextVar("budget_settings", default=None)
 
@@ -234,8 +239,8 @@ def assess_inference(
     seconds_cap = effective_cap(limits, "seconds", resumes, allowance)
     started = run.created_at if run is not None else None
     if started is not None and started.tzinfo is None:
-        started = started.replace(tzinfo=timezone.utc)
-    elapsed = int((datetime.now(timezone.utc) - started).total_seconds()) if started else 0
+        started = started.replace(tzinfo=UTC)
+    elapsed = int((datetime.now(UTC) - started).total_seconds()) if started else 0
     prices = config.get("prices") if isinstance(config.get("prices"), dict) else {}
     known_cost = 0.0
     cost_known = False
@@ -377,7 +382,7 @@ def grant_budget(session: Session, run: ExecutionRunModel, *, tokens: int, reaso
     entry = {
         "tokens": amount,
         "reason": motive,
-        "at": datetime.now(timezone.utc).isoformat(),
+        "at": datetime.now(UTC).isoformat(),
     }
     grants.append(entry)
     config["budget_grants"] = grants

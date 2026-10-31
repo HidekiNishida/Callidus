@@ -85,7 +85,7 @@ def scan_project(root_path: str, *, max_files: int = 500) -> tuple[list[dict], l
             break
         if not path.is_file():
             continue
-        if any(p in path.parts for p in {".git", ".venv", "node_modules", "__pycache__"}):
+        if any(p in path.parts for p in (".git", ".venv", "node_modules", "__pycache__")):
             continue
         rel = str(path.relative_to(root))
         if path.suffix == ".py":

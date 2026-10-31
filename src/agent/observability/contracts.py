@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -97,6 +97,9 @@ EVENT_SPECS: dict[str, EventSpec] = {
         _spec("command.output", ("call_id", "stream", "text"), persist=False, description="saída parcial"),
         _spec("command.completed", ("call_id", "exit_code"), description="comando terminou com código 0"),
         _spec("command.failed", ("call_id", "error"), description="comando falhou ou expirou"),
+        # `launch_app` emitia este tipo fora do catálogo: dentro de um run o emissor recusava o
+        # evento e o passo caía com exceção.
+        _spec("app.launched", ("app",), description="aplicativo aberto"),
         _spec("file.read", ("path",), description="arquivo lido"),
         _spec("file.created", ("path",), description="arquivo criado"),
         _spec("file.changed", ("path",), description="arquivo alterado"),
@@ -213,7 +216,7 @@ def as_utc(value: datetime | None) -> datetime | None:
     """O SQLite devolve datas sem fuso; elas foram gravadas em UTC."""
     if value is None or value.tzinfo is not None:
         return value
-    return value.replace(tzinfo=timezone.utc)
+    return value.replace(tzinfo=UTC)
 
 
 def envelope_from_row(row: Any) -> dict[str, Any]:

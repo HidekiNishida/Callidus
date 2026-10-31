@@ -173,7 +173,7 @@ async def test_streaming_events_are_translated(mock_http):
         'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Ol"}}\n\n'
         'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"á"}}\n\n'
         'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}\n\n'
-    ).encode("utf-8")
+    ).encode()
 
     def handler(request: httpx.Request) -> httpx.Response:
         """Handler que confirma o modo stream e devolve os eventos SSE da Anthropic."""

@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from agent.remote.ssh import RemoteConfig, RemoteError, SshTransport
-from agent.tools.diffing import unified_diff_text
+from agent.tools.diffing import append_block, unified_diff_text
 
 
 def transport(ctx: Any) -> SshTransport:
@@ -148,8 +148,6 @@ async def edit_file(ctx: Any, args: dict) -> dict:
     new = args.get("new_string", args.get("new"))
     if not isinstance(old, str) or not isinstance(new, str):
         return {"success": False, "error": "old_string e new_string são obrigatórios"}
-    if old == "":
-        return {"success": False, "error": "old_string vazio"}
     bad = _guard(ctx, path)
     if bad:
         return bad
@@ -158,6 +156,15 @@ async def edit_file(ctx: Any, args: dict) -> dict:
         content = await ssh.read_text(path)
     except RemoteError as exc:
         return {"success": False, "error": str(exc), "path": path}
+    if old == "":
+        # Mesmo contrato da ferramenta local: trecho antigo vazio acrescenta ao fim.
+        updated = append_block(content, new)
+        try:
+            await ssh.write_text(path, updated)
+        except RemoteError as exc:
+            return {"success": False, "error": str(exc), "path": path}
+        diff = unified_diff_text(path, content, updated)
+        return {"success": True, "path": path, "replacements": 0, "appended": True, "remote": True, **diff}
     count = content.count(old)
     if count == 0:
         return {"success": False, "error": "trecho não encontrado", "path": path}

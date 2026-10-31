@@ -3,7 +3,7 @@ Arquivo: src/agent/orchestrator/requirements.py
 Nome: requirements.py
 Propósito: requisitos do objetivo original, cobertura por tarefa e estado por evidência.
 Responsabilidade: camada de aplicação.
-Componentes: evidence_kind, derive_requirements, normalize_requirement, root_of, ensure_requirements, load_requirements….
+Componentes: evidence_kind, derive_requirements, normalize_requirement, root_of, ensure_requirements, load_requirements, named_files, evidence_touches….
 Dependências: agent.domain.enums, agent.orchestrator.consolidation, agent.persistence.models, agent.services.contract_service, agent.verification.fingerprint, __future__….
 Observações: o estado canônico é o SQLite; a verificação é independente de quem executa.
 """
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from pathlib import PurePosixPath
 from typing import Any
 
 from sqlalchemy import select
@@ -38,6 +39,17 @@ _CHANGE = re.compile(
 )
 # Trecho negado ("não altere nenhum arquivo") não conta como pedido de mudança: ele restringe.
 _NEGATED_CLAUSE = re.compile(r"\b(?:n[ãa]o|sem|nunca)\b[^.;,]{0,40}", re.IGNORECASE)
+# Arquivo citado num requisito ("em b.py, crie ..."): nome com extensão curta, sem ser parte de
+# outra palavra. Serve para ligar a evidência ao arquivo que o requisito pede.
+_FILE_REF = re.compile(r"(?<![\w/.-])((?:[\w-]+/)*[\w-]+\.[A-Za-z][A-Za-z0-9]{0,7})(?![\w/])")
+# Abreviações que a regex confundiria com arquivo ("e.g.", "i.e.", "p.ex.").
+_NOT_FILES = {"e.g", "i.e", "p.ex", "n.b"}
+# Verificadores que só olham o arquivo em si (conteúdo, existência, sintaxe). Os que executam
+# código (pytest, script, comando) exercitam o projeto além dos caminhos que registram: rodar
+# `tests/` comprova a correção de `calc.py`. Só os primeiros precisam ter tocado o arquivo citado.
+_FILE_SCOPED = {"file_contains", "file_exists", "syntax"}
+# Caminhos que representam o projeto inteiro (pytest na raiz, por exemplo).
+_WHOLE_PROJECT = {"", ".", "./"}
 
 
 def _items(text: str | None) -> list[str]:
@@ -310,6 +322,49 @@ def _unproven_by_superseded(
     return False
 
 
+def named_files(text: str | None) -> set[str]:
+    """Arquivos citados por nome num texto de requisito.
+
+    Args:
+        text: descrição do requisito.
+
+    Returns:
+        Os nomes citados, em minúsculas e sem `./` inicial (`{"b.py"}` para "em b.py, crie ...").
+    """
+    found = {m.group(1).lower().removeprefix("./") for m in _FILE_REF.finditer(text or "")}
+    return found - _NOT_FILES
+
+
+def evidence_touches(evidence: EvidenceModel, files: set[str]) -> bool:
+    """Diz se a evidência examinou algum dos arquivos que o requisito cita.
+
+    Uma evidência de `a.py` não comprova um requisito que pede mudança em `b.py`: com a
+    cobertura implícita (toda etapa herda todos os requisitos), sem essa checagem a escrita de
+    um arquivo "provava" os requisitos dos outros e o run concluía com trabalho faltando.
+
+    Args:
+        evidence: evidência aprovada de uma etapa que cobre o requisito.
+        files: arquivos citados pelo requisito (vazio quando ele não cita nenhum).
+
+    Returns:
+        Verdadeiro quando o requisito não cita arquivo, quando o verificador executa código
+        (pytest, script, comando), quando a evidência não diz o que examinou ou examinou o projeto
+        inteiro, ou quando algum caminho examinado é um dos citados.
+    """
+    if not files or evidence.verifier not in _FILE_SCOPED:
+        return True
+    paths = ((evidence.detail_json or {}).get("artifacts") or {}).get("paths") or []
+    if not paths:
+        return True
+    seen: set[str] = set()
+    for raw in paths:
+        path = str(raw).strip().replace("\\", "/").lower().removeprefix("./")
+        if path in _WHOLE_PROJECT:
+            return True
+        seen.update({path, PurePosixPath(path).name})
+    return any(f in seen or PurePosixPath(f).name in seen for f in files)
+
+
 def requirement_status(session: Session, root: TaskModel) -> list[dict[str, Any]]:
     """Estado de cada requisito pelas folhas que o cobrem (canceladas e substituídas não contam; raiz
     sem filhas é a própria folha):
@@ -363,7 +418,9 @@ def requirement_status(session: Session, root: TaskModel) -> list[dict[str, Any]
         else:
             evidence = [e for t in coverers for e in _passed_current(session, t.id)]
             if req["evidence"] == "change":
-                evidence = [e for e in evidence if e.verifier != "final_answer"]
+                # Mudança exige verificador, e verificador do arquivo que o requisito pede.
+                files = named_files(req.get("description"))
+                evidence = [e for e in evidence if e.verifier != "final_answer" and evidence_touches(e, files)]
                 ok = bool(evidence)
             else:
                 ok = bool(evidence) or any(_answered(t) for t in coverers)

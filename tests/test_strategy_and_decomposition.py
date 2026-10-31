@@ -10,19 +10,27 @@ Observações: banco e workspace temporários por teste; o modelo não é chamad
 Testes da camada estratégica, decomposição adaptativa e integridade
 """
 from pathlib import Path
-import pytest
-import uuid
 
-from agent.orchestrator.strategy import ProfessionalStrategist
-from agent.orchestrator.atomizer import adaptive_decompose_operation, should_decompose_further
-from agent.orchestrator.consolidation import consolidate_parent, is_optional
-from agent.verification.runner import run_verification
+import pytest
+
+from agent.config import Settings
 from agent.domain.enums import TaskStatus
-from agent.domain.schemas import ProjectCreate, TaskCreate, TaskDependencyCreate, TaskStatusUpdate
+from agent.domain.schemas import (
+    ProjectCreate,
+    TaskCreate,
+    TaskDependencyCreate,
+    TaskStatusUpdate,
+)
+from agent.orchestrator.atomizer import (
+    adaptive_decompose_operation,
+    should_decompose_further,
+)
+from agent.orchestrator.consolidation import consolidate_parent, is_optional
+from agent.orchestrator.strategy import ProfessionalStrategist
 from agent.persistence.database import build_session_factory, init_db
 from agent.services.project_service import ProjectService
 from agent.services.task_service import TaskService
-from agent.config import Settings
+from agent.verification.runner import run_verification
 
 
 def test_professional_strategist_preserves_intention_and_selects_specialties():

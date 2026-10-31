@@ -20,7 +20,12 @@ from agent.orchestrator.budget_gate import active_settings, policy_ratios
 from agent.orchestrator.inference_usage import fold_usage
 from agent.orchestrator.ledger import consistency_report, records_for
 from agent.orchestrator.stagnation import limits_for, resume_count
-from agent.persistence.models import ContextSnapshotModel, ExecutionRunModel, InferenceRecordModel, TaskModel
+from agent.persistence.models import (
+    ContextSnapshotModel,
+    ExecutionRunModel,
+    InferenceRecordModel,
+    TaskModel,
+)
 
 CATEGORY_LABELS = {
     "instructions": "Instruções globais e do agente",

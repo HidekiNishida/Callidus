@@ -21,6 +21,7 @@ from agent.api.agent_routes import router as agent_router
 from agent.api.automation_routes import router as automation_router
 from agent.api.conversation_routes import router as conversation_router
 from agent.api.deps import get_engine, read_settings
+
 # Reexportado por compatibilidade: o import histórico `from agent.api.main import
 # _mark_repeated_thought` continua funcionando depois da extração da visão ao vivo.
 from agent.api.live_view import mark_repeated_thought as _mark_repeated_thought  # noqa: F401
@@ -32,7 +33,10 @@ from agent.api.system_routes import router as system_router
 from agent.api.task_routes import router as task_router
 from agent.brand import BRAND_NAME, BRAND_TAGLINE
 from agent.config import Settings
-from agent.services.autonomous_worker import start_background_worker, stop_background_worker
+from agent.services.autonomous_worker import (
+    start_background_worker,
+    stop_background_worker,
+)
 from agent.services.scheduler import start_scheduler, stop_scheduler
 
 __all__ = ["app", "run"]
@@ -154,11 +158,13 @@ def run() -> None:
 
     settings = read_settings()
     _mount_web(settings)
+    src_dir = str(Path(__file__).resolve().parents[2])
     uvicorn.run(
         "agent.api.main:app",
         host=settings.api_host,
         port=settings.api_port,
-        reload=False,
+        reload=settings.api_reload,
+        reload_dirs=[src_dir] if settings.api_reload else None,
         timeout_graceful_shutdown=settings.shutdown_grace_seconds,
     )
 

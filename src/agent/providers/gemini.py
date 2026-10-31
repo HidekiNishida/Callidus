@@ -22,10 +22,16 @@ from agent.providers.base import (
     LLMProvider,
     ProviderCapabilities,
     ProviderError,
-    ProviderHealth,
     ToolCall,
 )
-from agent.providers.http import HttpClientConfig, client_kwargs, get_json, post_json, sse_payloads, stream_lines
+from agent.providers.http import (
+    HttpClientConfig,
+    client_kwargs,
+    get_json,
+    post_json,
+    sse_payloads,
+    stream_lines,
+)
 
 
 def _media_type(encoded: str) -> str:

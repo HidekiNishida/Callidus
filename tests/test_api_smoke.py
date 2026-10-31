@@ -268,4 +268,4 @@ def test_unknown_ids_return_404(client: TestClient):
     assert client.delete(f"/projects/{missing}").status_code == 404
     assert client.get(f"/tasks/{missing}").status_code == 404
     assert client.delete(f"/conversations/{missing}").status_code == 404
-    assert client.get(f"/providers/inexistente/models").status_code in (404, 502, 503)
+    assert client.get("/providers/inexistente/models").status_code in (404, 502, 503)

@@ -177,7 +177,7 @@ async def test_streaming_uses_sse_and_collects_fragments(mock_http):
     body = (
         'data: {"candidates":[{"content":{"parts":[{"text":"Ol"}]}}]}\n\n'
         'data: {"candidates":[{"content":{"parts":[{"text":"á"}]}}],"usageMetadata":{"promptTokenCount":3}}\n\n'
-    ).encode("utf-8")
+    ).encode()
 
     def handler(request: httpx.Request) -> httpx.Response:
         """Handler que confirma a URL de streaming e devolve os fragmentos SSE do Gemini."""

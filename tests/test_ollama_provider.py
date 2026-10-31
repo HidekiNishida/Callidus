@@ -127,7 +127,7 @@ async def test_streaming_collects_fragments_and_usage(mock_http):
     body = (
         '{"message":{"content":"Ol"},"done":false}\n'
         '{"message":{"content":"á"},"done":true,"eval_count":2}\n'
-    ).encode("utf-8")
+    ).encode()
 
     def handler(request: httpx.Request) -> httpx.Response:
         """Handler HTTP falso: devolve a resposta programada e registra a requisição."""

@@ -16,7 +16,13 @@ import pytest
 from agent.config import Settings
 from agent.domain.schemas import ProjectCreate, TaskCreate
 from agent.orchestrator.tool_loop import fit_history, history_tokens, run_tool_loop
-from agent.providers.base import ChatCompletionRequest, ChatMessage, ModelProfile, ProviderCapabilities, ToolCall
+from agent.providers.base import (
+    ChatCompletionRequest,
+    ChatMessage,
+    ModelProfile,
+    ProviderCapabilities,
+    ToolCall,
+)
 from agent.tools.registry import ToolContext, build_default_registry
 
 

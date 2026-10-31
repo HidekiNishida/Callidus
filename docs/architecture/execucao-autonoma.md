@@ -26,6 +26,19 @@ A evidência de verificação guarda em `detail_json.artifacts` a impressão dig
 
 Na retomada, se um arquivo mudou depois da verificação, a aceitação global recusa ("evidência ausente ou desatualizada") e `reopen_verification_gaps` devolve a tarefa a `VERIFYING` com `last_failure.cause = stale_evidence`: o estado atual é verificado de novo antes de repetir qualquer operação, e só se reprovar a operação é refeita, com o motivo no contexto. Evidência antiga nunca é apagada. Ao refazer, o contexto lê os arquivos-alvo do disco naquele momento.
 
+## 🔒 Um passo por vez
+
+O worker autônomo e `POST /runs/{id}/execute` (o modo automático da interface) podem pedir um
+passo do mesmo run ao mesmo tempo. `RunOrchestrator.step` segura um cadeado por run no
+processo: o segundo passo espera o primeiro sair. Sem isso, os dois viam a raiz sem filhos,
+pediam dois planos ao modelo e os dois planos eram aplicados.
+
+O plano só é gravado se, ao voltar do modelo, o run ainda está `ACTIVE` e a etapa ainda não
+tem filhos. Um cancelamento durante a espera do modelo descarta o plano. A resposta final já
+escrita numa etapa concluída é copiada para `consolidated_result_json.final_answer` da raiz
+(`remember_final_answer` / `surface_final_answer`) sem marcar o run como concluído. A
+interface também lê o markdown da etapa quando a raiz ainda não recebeu a cópia.
+
 ## 🔄 Término do run
 
 Quando nenhuma tarefa pode avançar (e o replanejamento não tem mais o que fazer), o run nunca fica em espera infinita:

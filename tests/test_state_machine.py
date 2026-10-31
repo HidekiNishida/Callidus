@@ -10,7 +10,11 @@ Observações: caso puramente determinístico, sem banco, disco ou rede.
 import pytest
 
 from agent.domain.enums import TaskStatus
-from agent.domain.state_machine import InvalidTransitionError, can_transition, transition
+from agent.domain.state_machine import (
+    InvalidTransitionError,
+    can_transition,
+    transition,
+)
 
 
 @pytest.mark.parametrize(

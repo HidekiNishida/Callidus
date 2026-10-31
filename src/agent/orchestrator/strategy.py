@@ -126,7 +126,7 @@ class ProfessionalStrategy:
         return "\n".join(lines)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> "ProfessionalStrategy | None":
+    def from_dict(cls, data: dict[str, Any] | None) -> ProfessionalStrategy | None:
         """Reconstrói a estratégia a partir do dicionário gravado nos metadados da tarefa."""
         if not data:
             return None

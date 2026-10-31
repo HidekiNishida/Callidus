@@ -304,8 +304,8 @@ def _skill_meta(raw: str, fallback: str) -> tuple[str, str]:
     if raw.startswith("---"):
         end = raw.find("\n---", 3)
         block = raw[3:end] if end != -1 else raw
-    found_name = re.search(r"^name:\s*(.+)$", block, re.M)
-    found_desc = re.search(r"^description:\s*(.+)$", block, re.M)
+    found_name = re.search(r"^name:\s*(.+)$", block, re.MULTILINE)
+    found_desc = re.search(r"^description:\s*(.+)$", block, re.MULTILINE)
     if found_name:
         name = found_name.group(1).strip().strip("\"'")
     if found_desc:

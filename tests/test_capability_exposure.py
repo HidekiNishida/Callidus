@@ -7,7 +7,6 @@ Componentes: exposed_tools, capability_summary, families_for_objective, enabled_
 Dependências: agent.tools.catalog, agent.tools.registry, pytest.
 Observações: os testes verificam a regra de exposição, não a execução das ferramentas.
 """
-import pytest
 
 from agent.tools.catalog import (
     DISCOVERY_TOOLS,

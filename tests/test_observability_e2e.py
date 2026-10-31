@@ -17,14 +17,21 @@ from pathlib import Path
 
 import pytest
 
+from agent.api.observe_routes import sse_stream
 from agent.config import Settings
 from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate
-from agent.api.observe_routes import sse_stream
 from agent.observability import emit, get_bus, observe
 from agent.observability.snapshot import run_snapshot
 from agent.orchestrator.runner import RunOrchestrator
 from agent.persistence.database import build_session_factory, init_db
-from agent.providers.base import ChatCompletionRequest, ChatCompletionResponse, ChatMessage, LLMProvider, ModelProfile, ProviderError
+from agent.providers.base import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatMessage,
+    LLMProvider,
+    ModelProfile,
+    ProviderError,
+)
 from agent.providers.observed import observed_chat
 from agent.services.project_service import ProjectService
 from agent.services.run_service import RunService

@@ -345,6 +345,10 @@ async def run_scenario(
     proved = [r for r in reqs if r["status"] == "satisfied"]
     unmet = [r for r in reqs if r["status"] not in {"satisfied", "não_aplicável", "informativo"}]
     premature = run.status == "completed" and bool(unmet)
+    accept_ok = all(accept.values())
+    # Conclusão falsa: o run disse "concluído" e o aceite independente reprovou. É a métrica que
+    # não depende do relatório de requisitos do próprio Callidus (que pode ter se enganado).
+    false_completion = run.status == "completed" and not accept_ok
     finished = run.status in {"completed", "failed", "cancelled", "paused"}
 
     report = {
@@ -355,6 +359,7 @@ async def run_scenario(
         "run_status": run.status,
         "run_terminou": finished,
         "conclusao_prematura": premature,
+        "conclusao_falsa": false_completion,
         "tarefas": len(tasks),
         "profundidade": _depth(tasks),
         "model_calls": sum(1 for a in attempts if a.kind == "model"),
@@ -376,7 +381,7 @@ async def run_scenario(
         "tokens_prompt": prompt_tokens,
         "tokens_completion": completion_tokens,
         "aceite": accept,
-        "aceite_ok": all(accept.values()),
+        "aceite_ok": accept_ok,
         "estado_tarefas": {t.title: t.status for t in tasks},
     }
     session.close()
@@ -433,7 +438,7 @@ async def main() -> None:
         )
         reports.append(report)
         print(
-            f"   run={report['run_status']} aceite={report['aceite_ok']} "
+            f"   run={report['run_status']} aceite={report['aceite_ok']} falsa={report['conclusao_falsa']} "
             f"tarefas={report['tarefas']} reqs={report['requisitos_comprovados']}/{report['requisitos']} "
             f"model_calls={report['model_calls']} estagn={report['estagnacoes']} "
             f"replan={report['replanejamentos']} {report['segundos']}s",
@@ -449,10 +454,12 @@ async def main() -> None:
         "runs_completos": sum(1 for r in reports if r["run_status"] == "completed"),
         "runs_terminados": sum(1 for r in reports if r["run_terminou"]),
         "conclusoes_prematuras": sum(1 for r in reports if r["conclusao_prematura"]),
+        "conclusoes_falsas": sum(1 for r in reports if r["conclusao_falsa"]),
         "requisitos_comprovados": sum(r["requisitos_comprovados"] for r in reports),
         "requisitos_total": sum(r["requisitos"] for r in reports),
         "tarefas": sum(r["tarefas"] for r in reports),
         "model_calls": sum(r["model_calls"] for r in reports),
+        "tool_calls": sum(r["tool_calls"] for r in reports),
         "falhas_modelo": sum(r["falhas_modelo"] for r in reports),
         "estagnacoes": sum(r["estagnacoes"] for r in reports),
         "replanejamentos": sum(r["replanejamentos"] for r in reports),

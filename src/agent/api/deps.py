@@ -15,7 +15,7 @@ from collections.abc import Generator
 from sqlalchemy.orm import Session, sessionmaker
 
 from agent.config import Settings, get_settings
-from agent.persistence.database import build_session_factory, create_db_engine, init_db
+from agent.persistence.database import build_session_factory, init_db
 
 _engine = None
 _session_factory: sessionmaker[Session] | None = None

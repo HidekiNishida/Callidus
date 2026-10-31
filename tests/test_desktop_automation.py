@@ -14,7 +14,14 @@ import pytest
 from agent.desktop.capabilities import screen_info
 from agent.desktop.input import click
 from agent.desktop.windows import list_windows
-from agent.system.adapters import MacAdapter, SystemAdapter, WindowsAdapter, current_os, get_adapter, session_kind
+from agent.system.adapters import (
+    MacAdapter,
+    SystemAdapter,
+    WindowsAdapter,
+    current_os,
+    get_adapter,
+    session_kind,
+)
 from agent.tools.registry import ToolContext, build_default_registry
 
 

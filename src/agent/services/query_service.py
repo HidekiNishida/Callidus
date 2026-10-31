@@ -37,7 +37,7 @@ from __future__ import annotations
 import re
 import unicodedata
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -46,26 +46,25 @@ from sqlalchemy.orm import Session
 from agent.config import Settings, get_settings
 from agent.domain.agent_enums import ExecutionStatus, QueryStatus
 from agent.persistence.models import AgentModel, AgentQueryModel
-from agent.services.agent_service import AgentNotFoundError, AgentService
 from agent.providers.base import (
     ChatCompletionRequest,
     ChatMessage,
     LLMProvider,
     ModelProfile,
 )
+from agent.services.agent_service import AgentNotFoundError, AgentService
 
-__all__ = ["QueryService", "QueryRejectedError", "QUESTION_STOPWORDS"]
+__all__ = ["QUESTION_STOPWORDS", "QueryRejectedError", "QueryService"]
 
 #: Palavras vazias em português: não carregam tema e não devem contar como evidência.
 QUESTION_STOPWORDS = frozenset(
     {
         "a", "o", "as", "os", "um", "uma", "uns", "umas", "de", "da", "do", "das", "dos",
         "e", "ou", "que", "qual", "quais", "quem", "como", "quando", "onde", "por", "para",
-        "com", "sem", "no", "na", "nos", "nas", "em", "foi", "foi", "era", "e", "se",
-        "isso", "isto", "este", "esta", "esse", "essa", "aquele", "aquela", "o", "ao",
-        "aos", "da", "pelo", "pela", "sobre", "entre", "ainda", "mais", "menos", "seu",
-        "sua", "meu", "minha", "nos", "ele", "ela", "eles", "elas", "está", "esta",
-        "foram", "tem", "têm", "fazer", "feito", "passou", "ficou", "deve", "deveria",
+        "com", "sem", "no", "na", "nos", "nas", "em", "foi", "era", "se",
+        "isso", "isto", "este", "esta", "esse", "essa", "aquele", "aquela", "ao",
+        "aos", "pelo", "pela", "sobre", "entre", "ainda", "mais", "menos", "seu",
+        "sua", "meu", "minha", "ele", "ela", "eles", "elas", "está", "foram", "tem", "têm", "fazer", "feito", "passou", "ficou", "deve", "deveria",
         "existe", "há", "so", "só",
     }
 )
@@ -525,7 +524,7 @@ class QueryService:
         query.answer = str(answer.get("answer", ""))
         query.answer_json = answer
         query.status = QueryStatus.ANSWERED.value
-        query.answered_at = datetime.now(timezone.utc)
+        query.answered_at = datetime.now(UTC)
         query.answered_by_agent_id = uuid.UUID(answer["source_agent_id"]) if answer.get("source_agent_id") else None
         self._session.flush()
         return query
@@ -600,15 +599,14 @@ class QueryService:
             return await observed_chat(provider, request, purpose="agent_query", stream=False)
 
         if current() is None and execution is not None and execution.run_id:
-            with use_budget_settings(self._settings):
-                with observe(
-                    self._session,
-                    run_id=execution.run_id,
-                    project_id=agent.project_id,
-                    task_id=agent.task_id,
-                    agent=agent.role,
-                ):
-                    response = await _ask()
+            with use_budget_settings(self._settings), observe(
+                self._session,
+                run_id=execution.run_id,
+                project_id=agent.project_id,
+                task_id=agent.task_id,
+                agent=agent.role,
+            ):
+                response = await _ask()
         else:
             response = await _ask()
         content = (response.content or "").strip()
@@ -706,7 +704,7 @@ class QueryService:
         query.answer = answer
         query.answer_json = payload
         query.status = QueryStatus.ANSWERED.value
-        query.answered_at = datetime.now(timezone.utc)
+        query.answered_at = datetime.now(UTC)
         if answered_by_agent_id is not None:
             query.answered_by_agent_id = answered_by_agent_id
         self._session.flush()

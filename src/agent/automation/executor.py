@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -357,7 +357,7 @@ class AutomationExecutor:
             float(policy.backoff_multiplier or 2.0) ** max(0, attempt - 1)
         )
         delay = min(delay, float(policy.max_backoff_sec or 900.0))
-        return datetime.now(timezone.utc).replace(tzinfo=timezone.utc) + _seconds(delay)
+        return datetime.now(UTC).replace(tzinfo=UTC) + _seconds(delay)
 
     def _log(
         self,

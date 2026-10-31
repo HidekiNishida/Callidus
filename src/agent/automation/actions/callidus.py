@@ -27,7 +27,6 @@ import asyncio
 import uuid
 from typing import Any
 
-
 from agent.automation.actions.base import ActionContext, ActionResult
 from agent.automation.contracts import CallidusAction
 from agent.automation.enums import ActionKind, ObjectiveMode

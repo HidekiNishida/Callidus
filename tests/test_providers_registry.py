@@ -10,13 +10,21 @@ Observações: arquivos de configuração temporários e variáveis de ambiente 
 configuração declarativa de provedores
 """
 from __future__ import annotations
+
 import json
 from pathlib import Path
 
 import pytest
 
 from agent.config import Settings
+from agent.providers.anthropic import AnthropicProvider
 from agent.providers.base import ProviderConfigError
+from agent.providers.gemini import GeminiProvider
+from agent.providers.llamacpp import LlamaCppProvider
+from agent.providers.mock import MockProvider
+from agent.providers.ollama import OllamaProvider
+from agent.providers.openai_compatible import OpenAICompatibleProvider
+from agent.providers.openrouter import OpenRouterProvider
 from agent.providers.registry import (
     ProviderCatalog,
     build_provider,
@@ -24,13 +32,6 @@ from agent.providers.registry import (
     interpolate_text,
     load_catalog,
 )
-from agent.providers.anthropic import AnthropicProvider
-from agent.providers.gemini import GeminiProvider
-from agent.providers.llamacpp import LlamaCppProvider
-from agent.providers.mock import MockProvider
-from agent.providers.ollama import OllamaProvider
-from agent.providers.openai_compatible import OpenAICompatibleProvider
-from agent.providers.openrouter import OpenRouterProvider
 
 YAML_CONFIG = """
 default_provider: ollama_remote

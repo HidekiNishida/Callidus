@@ -22,7 +22,6 @@ import pytest
 
 from agent.config import Settings
 from agent.context.assembler import build_operation_context
-from agent.context.budget import ContextBudgetError
 from agent.domain.enums import TaskStatus
 from agent.domain.schemas import ProjectCreate, TaskCreate
 from agent.orchestrator.requirements import ensure_requirements

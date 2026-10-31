@@ -31,7 +31,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -1361,8 +1361,8 @@ def _heartbeat_is_fresh(heartbeat: dict[str, Any]) -> bool:
     except ValueError:
         return False
     if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    age = (datetime.now(timezone.utc) - moment.astimezone(timezone.utc)).total_seconds()
+        moment = moment.replace(tzinfo=UTC)
+    age = (datetime.now(UTC) - moment.astimezone(UTC)).total_seconds()
     return 0 <= age < 120
 
 

@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any
 
@@ -199,7 +199,7 @@ def emit(
             agent=who,
             type=event_type,
             seq=bus.allocate_seq(str(obs.run_id), lambda: _max_seq(obs.session, obs.run_id)),
-            ts=datetime.now(timezone.utc),
+            ts=datetime.now(UTC),
             data=payload,
             persisted=False,
         ).model_dump(mode="json")
@@ -257,7 +257,7 @@ def _before_flush(session: Session, _ctx: Any, _instances: Any) -> None:
         if row.id is None:
             row.id = uuid.uuid4()
         if row.created_at is None:
-            row.created_at = datetime.now(timezone.utc)
+            row.created_at = datetime.now(UTC)
         row.schema_version = SCHEMA_VERSION
         if row.payload_json is not None:
             row.payload_json = sanitize(row.payload_json, limit=_limit_for(row.event_type))

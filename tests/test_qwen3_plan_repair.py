@@ -14,7 +14,11 @@ import json
 import pytest
 
 from agent.orchestrator.decomposition import PLAN_SCHEMA, plan_with_model
-from agent.providers.base import ChatCompletionRequest, ModelProfile, ProviderCapabilities
+from agent.providers.base import (
+    ChatCompletionRequest,
+    ModelProfile,
+    ProviderCapabilities,
+)
 
 GOOD_PLAN = json.dumps(
     {

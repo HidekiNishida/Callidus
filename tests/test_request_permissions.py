@@ -24,7 +24,6 @@ from pathlib import Path
 import pytest
 
 from agent.config import Settings
-from agent.domain.enums import TaskStatus
 from agent.domain.schemas import ProjectCreate, TaskCreate
 from agent.orchestrator.consolidation import inherits_flag
 from agent.orchestrator.strategy import (

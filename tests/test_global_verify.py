@@ -15,7 +15,10 @@ import pytest
 from agent.config import Settings
 from agent.domain.enums import TaskStatus
 from agent.domain.schemas import ProjectCreate, TaskCreate
-from agent.orchestrator.global_verify import evaluate_global_acceptance, reopen_verification_gaps
+from agent.orchestrator.global_verify import (
+    evaluate_global_acceptance,
+    reopen_verification_gaps,
+)
 from agent.persistence.database import build_session_factory, init_db
 from agent.persistence.models import EvidenceModel
 from agent.services.project_service import ProjectService

@@ -15,7 +15,11 @@ import uuid
 
 from agent.observability import current, emit
 from agent.observability.batching import DeltaBatcher
-from agent.providers.base import ChatCompletionRequest, ChatCompletionResponse, LLMProvider
+from agent.providers.base import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    LLMProvider,
+)
 
 _PARTIAL_KEEP = 4_000
 
@@ -55,7 +59,10 @@ async def observed_chat(
         assess_inference,
         mark_pressure,
     )
-    from agent.orchestrator.inference_usage import estimate_messages, usage_from_response
+    from agent.orchestrator.inference_usage import (
+        estimate_messages,
+        usage_from_response,
+    )
     from agent.orchestrator.ledger import record_inference
 
     estimated_prompt = estimate_messages(request.messages)

@@ -3,7 +3,7 @@ Arquivo: src/agent/context/budget.py
 Nome: budget.py
 Propósito: aplicar o orçamento de contexto por chamada, definindo o que entra no prompt do modelo.
 Responsabilidade: camada de aplicação — seleção e ordem dos componentes sob um limite de tokens.
-Componentes: ContextComponent, BudgetResult, ContextBudgetError, estimate_tokens, compact_text, assemble_messages.
+Componentes: ContextComponent, BudgetResult, ContextBudgetError, estimate_tokens, compact_text, fit_window, assemble_messages.
 Dependências: agent.providers.base.
 Observações: componentes obrigatórios nunca são descartados; se não couberem, o erro manda decompor a tarefa.
 """
@@ -163,6 +163,35 @@ def compact_text(text: str) -> str:
             continue
         lines.append(line)
     return _BLANK_RUNS.sub("\n\n", "\n".join(lines)).strip()
+
+
+# Degrau e teto da janela ampliada (os mesmos da política do Ollama: trocar a janela recarrega o
+# modelo, então ela cresce em degraus estáveis; acima do teto, só por configuração explícita).
+_WINDOW_STEP = 4096
+_WINDOW_CEILING = 32768
+
+
+def fit_window(profile: ModelProfile, *, safety_margin: int = 256) -> ModelProfile:
+    """Faz a janela acompanhar uma reserva de saída ampliada.
+
+    Quando a resposta vem cortada, a operação dobra a reserva de saída para a próxima tentativa.
+    Sem ampliar a janela junto, a terceira dobra (8 192) ocupava a janela inteira de 8 192, o
+    orçamento de entrada ficava negativo e o run quebrava com exceção — visto com o `qwen3-vl:8b`,
+    que raciocina sempre e corta com frequência.
+
+    Args:
+        profile: perfil já com a reserva de saída desta tentativa.
+        safety_margin: a mesma margem que `assemble_messages` desconta.
+
+    Returns:
+        O mesmo perfil quando a entrada já cabe; senão, uma cópia com `context_limit` no menor
+        degrau de 4 096 que comporta entrada + reserva + margem, até 32 768.
+    """
+    needed = int(profile.input_budget) + int(profile.output_reserve) + safety_margin
+    if needed <= int(profile.context_limit):
+        return profile
+    grown = ((needed + _WINDOW_STEP - 1) // _WINDOW_STEP) * _WINDOW_STEP
+    return profile.model_copy(update={"context_limit": max(int(profile.context_limit), min(_WINDOW_CEILING, grown))})
 
 
 def assemble_messages(

@@ -23,8 +23,8 @@ import pytest
 from agent.config import Settings
 from agent.providers.base import (
     ChatCompletionRequest,
-    ChatMessage,
     ChatCompletionResponse,
+    ChatMessage,
     LLMProvider,
     ModelProfile,
 )

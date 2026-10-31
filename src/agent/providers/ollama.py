@@ -3,7 +3,7 @@ Arquivo: src/agent/providers/ollama.py
 Nome: ollama.py
 Propósito: integrar o agente com o Ollama local ou remoto pela API nativa.
 Responsabilidade: camada de infraestrutura — inferência, streaming e listagem de modelos no Ollama.
-Componentes: OllamaProvider, chat_body, build_chat_body, normalize_reply, inference_failure_text.
+Componentes: OllamaProvider, chat_body, build_chat_body, keep_window, normalize_reply, inference_failure_text.
 Dependências: agent.providers.base, agent.providers.http, httpx.
 Observações: a API nativa do Ollama é usada (`/api/tags` e `/api/chat`), não a compatível com OpenAI; a política por família de modelo vive em `ollama_policy.py`.
 """
@@ -20,14 +20,22 @@ from agent.providers.base import (
     LLMProvider,
     ProviderCapabilities,
     ProviderError,
-    ProviderHealth,
     ToolCall,
+    estimate_text_tokens,
 )
-from agent.providers.http import HttpClientConfig, client_kwargs, get_json, post_json, stream_lines
+from agent.providers.http import (
+    HttpClientConfig,
+    client_kwargs,
+    get_json,
+    post_json,
+    stream_lines,
+)
 from agent.providers.ollama_policy import (
     apply_request_policy,
     context_saturated,
     offered_tool_names,
+    prefill_empty_thinking,
+    repetition_cut,
     split_reasoning,
     tool_calls_from_text,
 )
@@ -122,6 +130,9 @@ def build_chat_body(request: ChatCompletionRequest) -> tuple[dict, dict]:
     }
     if _reasoning_model(request.profile.model_id):
         body["think"] = bool(think)
+    # Variante só de raciocínio (`qwen3-vl:8b`) ignora `think: false`: o bloco de raciocínio
+    # vazio no começo da resposta faz o modelo responder direto.
+    prefill_empty_thinking(body)
     # `keep_alive` é a capacidade real do Ollama para manter o modelo residente. Numa
     # hierarquia de agentes os intervalos entre inferências podem ser longos: manter o
     # modelo carregado evita recarregar pesos a cada pergunta. Só é enviado quando
@@ -171,6 +182,38 @@ def normalize_reply(
             fixes.append("tool_call_in_content")
             calls, text = recovered, rest
     return text, reasoning, calls, fixes
+
+
+# Maior janela já pedida por (servidor, modelo) neste processo. Trocar `num_ctx` faz o Ollama
+# recarregar o modelo; com o qwen3-vl:8b a janela ia e voltava entre 8 192 e 12 288 a cada chamada
+# (o histórico do ciclo de ferramentas cresce e encolhe), e cada ida e volta era uma recarga.
+_WINDOW_FLOOR: dict[tuple[str, str], int] = {}
+
+
+def keep_window(base_url: str, request: ChatCompletionRequest, body: dict, policy: dict) -> None:
+    """Não deixa a janela encolher depois de crescer: a mesma janela evita recarregar o modelo.
+
+    Args:
+        base_url: servidor Ollama.
+        request: requisição (a configuração explícita de `num_ctx` vence sempre).
+        body: corpo já montado; `options.num_ctx` pode subir até o maior valor já usado.
+        policy: metadados da política; registram a janela final.
+    """
+    if "num_ctx" in (request.profile.generation or {}):
+        return
+    options = body.get("options") or {}
+    window = int(options.get("num_ctx") or 0)
+    if window <= 0:
+        return
+    key = (base_url, request.profile.model_id)
+    floor = _WINDOW_FLOOR.get(key, 0)
+    if window < floor:
+        options["num_ctx"] = floor
+        body["options"] = options
+        policy["num_ctx"] = floor
+        policy["window_kept"] = True
+    else:
+        _WINDOW_FLOOR[key] = window
 
 
 def _callidus_meta(policy: dict, data: dict, fixes: list[str]) -> dict:
@@ -323,6 +366,7 @@ class OllamaProvider(LLMProvider):
         """
         url = f"{self._base_url}/api/chat"
         body, policy = build_chat_body(request)
+        keep_window(self._base_url, request, body, policy)
 
         try:
             async with self._client() as client:
@@ -375,11 +419,15 @@ class OllamaProvider(LLMProvider):
         """
         url = f"{self._base_url}/api/chat"
         body, policy = build_chat_body(request)
+        keep_window(self._base_url, request, body, policy)
         body["stream"] = True
         parts: list[str] = []
         thoughts: list[str] = []
         streamed_calls: list[dict] = []
         final: dict = {}
+        cut: str | None = None
+        received = 0
+        checked = 0
         try:
             async with self._client() as client:
                 async for line in stream_lines(
@@ -404,6 +452,22 @@ class OllamaProvider(LLMProvider):
                     if piece:
                         parts.append(piece)
                         on_delta(piece)
+                        received += len(piece)
+                        if "\n" in piece or received - checked >= 400:
+                            # Confere a cada linha nova ou a cada ~400 caracteres (repetição numa
+                            # linha só, como um JSON com o código escapado): barato e suficiente.
+                            checked = received
+                            cut = repetition_cut("".join(parts))
+                            if cut is not None:
+                                # Fechar o stream faz o Ollama parar de gerar.
+                                final = {
+                                    "done": True,
+                                    "done_reason": "repetition",
+                                    "model": data.get("model"),
+                                    "eval_count": estimate_text_tokens("".join(parts)),
+                                    "message": {"role": "assistant", "content": ""},
+                                }
+                                break
                     thought = message.get("thinking") or ""
                     if thought:
                         thoughts.append(thought)
@@ -418,7 +482,10 @@ class OllamaProvider(LLMProvider):
             raise ProviderError("Falha na inferência Ollama: a transmissão terminou sem a mensagem final")
         message = final.get("message") or {}
         calls = _tool_calls(message) or _tool_calls({"tool_calls": streamed_calls})
-        content, reasoning, calls, fixes = normalize_reply("".join(parts), "".join(thoughts) or None, calls, request)
+        text = cut if cut is not None else "".join(parts)
+        content, reasoning, calls, fixes = normalize_reply(text, "".join(thoughts) or None, calls, request)
+        if cut is not None:
+            fixes.append("repetition_cut")
         response = ChatCompletionResponse(
             content=content,
             raw={

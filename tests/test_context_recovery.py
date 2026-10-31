@@ -14,7 +14,12 @@ import pytest
 from sqlalchemy import select
 
 from agent.config import Settings
-from agent.context.budget import ContextBudgetError, ContextComponent, assemble_messages, compact_text
+from agent.context.budget import (
+    ContextBudgetError,
+    ContextComponent,
+    assemble_messages,
+    compact_text,
+)
 from agent.domain.enums import TaskStatus
 from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate
 from agent.domain.state_machine import can_transition

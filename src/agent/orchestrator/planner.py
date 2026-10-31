@@ -16,8 +16,8 @@ from sqlalchemy.orm import Session
 
 from agent.domain.enums import MemoryKind
 from agent.domain.schemas import MemoryCreate
-from agent.services.project_service import ProjectService
 from agent.persistence.models import TaskModel
+from agent.services.project_service import ProjectService
 
 
 def ensure_canonical_memory_for_objective(

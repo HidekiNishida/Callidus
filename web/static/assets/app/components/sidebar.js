@@ -4,12 +4,12 @@
  * Propósito: barra lateral com a lista de conversas e projetos.
  * Responsabilidade: frontend/componente — navega entre conversas e projetos e permite removê-los.
  * Componentes: Sidebar (componente Vue), STATUS_DOT.
- * Dependências: `../store.js` (estado e ações), `../ui.js` (ícones e tempo relativo).
+ * Dependências: `../store.js` (estado e ações), `../ui.js` (ícones, tempo relativo e `brandSrc`).
  * Observações: a busca filtra projetos e conversas por nome; a cor do ponto indica o estado
  * da conversa.
  */
 import { state, selectProject, selectConversation, deleteConversation, deleteProject, conversationStatus, toast } from "../store.js";
-import { icon, ago } from "../ui.js";
+import { icon, ago, brandSrc } from "../ui.js";
 
 /** Classe CSS do ponto de estado de cada conversa. */
 const STATUS_DOT = {
@@ -59,12 +59,13 @@ export const Sidebar = {
       toast,
       icon,
       ago,
+      brandSrc,
     };
   },
   template: `
     <aside class="sidebar" :class="{ open: state.railOpen }">
       <div class="sidebar-head">
-        <img class="brand-lockup" src="/assets/brand/callidus-lockup.svg" alt="Callidus" width="132" height="34" />
+        <img class="brand-lockup" :src="brandSrc('lockup', state.theme)" alt="Callidus" width="132" height="34" />
         <button type="button" class="icon-btn" title="Novo projeto" aria-label="Novo projeto" @click="$emit('new-project')" v-html="icon('plus')"></button>
       </div>
 

@@ -230,7 +230,11 @@ def system_diagnose() -> dict:
     Returns:
         O diagnóstico completo, com as verificações que falharam.
     """
-    from agent.system.platform_info import describe_system, diagnose_permissions, platform_summary
+    from agent.system.platform_info import (
+        describe_system,
+        diagnose_permissions,
+        platform_summary,
+    )
     from agent.tools.availability import environment_report
 
     return {

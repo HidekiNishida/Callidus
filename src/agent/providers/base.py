@@ -15,7 +15,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-
 # Caracteres por token da estimativa local. Medido contra a contagem real do Ollama
 # (`prompt_eval_count`) em 24 inferências reais de planejamento e operação: com 4 caracteres por
 # token a estimativa ficava abaixo do real em todas (real/estimado de 1,12 a 1,56, mediana 1,30).
@@ -340,4 +339,4 @@ class LLMProvider(ABC):
 
     async def close(self) -> None:
         """Libera recursos do provedor (nenhum por padrão)."""
-        return None
+        return

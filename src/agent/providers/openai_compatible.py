@@ -22,10 +22,16 @@ from agent.providers.base import (
     LLMProvider,
     ProviderCapabilities,
     ProviderError,
-    ProviderHealth,
     ToolCall,
 )
-from agent.providers.http import HttpClientConfig, client_kwargs, get_json, post_json, sse_payloads, stream_lines
+from agent.providers.http import (
+    HttpClientConfig,
+    client_kwargs,
+    get_json,
+    post_json,
+    sse_payloads,
+    stream_lines,
+)
 
 # Parâmetros de geração com equivalente direto na API compatível com OpenAI.
 _GENERATION_KEYS = {

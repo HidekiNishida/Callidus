@@ -13,7 +13,6 @@ testar, cancelar e remover — e o que a interface precisa ver.
 
 from __future__ import annotations
 
-
 import pytest
 from fastapi.testclient import TestClient
 

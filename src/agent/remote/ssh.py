@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 
 
 class RemoteConfig(BaseModel):
@@ -246,7 +246,7 @@ class SshTransport:
                 ),
                 timeout=timeout or self.config.timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             raise RemoteError(f"tempo esgotado no comando remoto ({timeout or self.config.timeout}s)")
         return CommandResult(

@@ -25,12 +25,15 @@ from agent.domain.failures import Failure, FailureCategory
 from agent.domain.schemas import TaskStatusUpdate
 from agent.observability import emit
 from agent.orchestrator.approach import approach_of
-from agent.orchestrator.recovery_policy import INVESTIGATE_CHANGE, alternative_continuance
 from agent.orchestrator.consolidation import children_of, pending_reason, superseded
 from agent.orchestrator.decomposition import (
     DecompositionResult,
     SubTaskSpec,
     apply_decomposition,
+)
+from agent.orchestrator.recovery_policy import (
+    INVESTIGATE_CHANGE,
+    alternative_continuance,
 )
 from agent.orchestrator.requirements import effective_covers, normalize_covers
 from agent.orchestrator.stagnation import normalize_error

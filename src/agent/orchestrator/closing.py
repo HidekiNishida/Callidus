@@ -96,7 +96,7 @@ def ensure_closing_stages(plan: DecompositionResult) -> DecompositionResult:
                 depends_on_indices=[last] if last >= 0 else [],
             )
         )
-    return DecompositionResult(subtasks=subtasks, warnings=list(plan.warnings))
+    return DecompositionResult(subtasks=subtasks, warnings=list(plan.warnings), added_requirements=list(plan.added_requirements))
 
 
 def compose_final_markdown(*, objective: str, stages: list[dict], model_text: str = "") -> str:

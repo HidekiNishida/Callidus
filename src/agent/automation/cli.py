@@ -216,8 +216,12 @@ def cmd_list(args: argparse.Namespace) -> int:
         O código de saída do processo.
     """
     from agent.automation.store import AutomationService
-    from agent.persistence.database import build_session_factory, create_db_engine, init_db
     from agent.config import get_settings
+    from agent.persistence.database import (
+        build_session_factory,
+        create_db_engine,
+        init_db,
+    )
 
     settings = get_settings()
     engine = init_db(create_db_engine(settings), settings)

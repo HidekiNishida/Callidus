@@ -11,14 +11,13 @@ Observações: o histórico de falhas é a entrada da estagnação e do replanej
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from agent.domain.failures import Failure
 from agent.orchestrator.approach import record_attempt
 from agent.orchestrator.stagnation import error_signature, strategy_signature
 from agent.persistence.models import EventLogModel, ExecutionRunModel, TaskModel
-
 
 _PHASE_CATEGORY = {
     "quality": "decision",
@@ -131,4 +130,4 @@ def failure_timestamp() -> str:
     Returns:
         A marca de tempo no formato ISO-8601 com sufixo UTC.
     """
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

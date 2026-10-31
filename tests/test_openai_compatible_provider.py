@@ -181,7 +181,7 @@ async def test_streaming_delivers_fragments_and_final_usage(mock_http):
         'data: {"choices":[{"delta":{"content":"á"},"finish_reason":"stop"}]}\n\n'
         'data: {"usage":{"prompt_tokens":4,"completion_tokens":2}}\n\n'
         "data: [DONE]\n\n"
-    ).encode("utf-8")
+    ).encode()
 
     def handler(request: httpx.Request) -> httpx.Response:
         """Handler HTTP falso: devolve a resposta programada e registra a requisição."""

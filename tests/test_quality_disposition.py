@@ -17,7 +17,11 @@ from agent.domain.enums import TaskStatus
 from agent.domain.schemas import ExecutionRunCreate, ProjectCreate, TaskCreate
 from agent.observability import get_bus
 from agent.orchestrator.disposition import decide_disposition, investigation_plan
-from agent.orchestrator.narration import explain_quality, explanation_event, safe_explanation
+from agent.orchestrator.narration import (
+    explain_quality,
+    explanation_event,
+    safe_explanation,
+)
 from agent.orchestrator.quality_contract import (
     attach_quality_contract,
     build_quality_contract,
