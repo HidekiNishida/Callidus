@@ -782,3 +782,169 @@ class KnowledgeVersionModel(Base):
 
     item: Mapped[KnowledgeItemModel] = relationship(back_populates="versions")
 
+
+class BenchmarkScenarioModel(Base):
+    """Cenário versionado de benchmark: objetivo, critérios de aceite e restrições de execução."""
+
+    __tablename__ = "benchmark_scenarios"
+    __table_args__ = (
+        Index("ix_benchmark_scenarios_category", "category"),
+        Index("ix_benchmark_scenarios_difficulty", "difficulty"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    scenario_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(32), nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    context_initial_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    tools_allowed_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    token_budget: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    time_limit_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    acceptance_criteria_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    validation_tests_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    expected_result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        Index("ix_benchmark_scenarios_id_version", "scenario_id", "version", unique=True),
+    )
+
+
+class BenchmarkExecutionModel(Base):
+    """Execução de um benchmark: uma passagem de um cenário com um modelo/configuração."""
+
+    __tablename__ = "benchmark_executions"
+    __table_args__ = (
+        Index("ix_benchmark_executions_scenario", "scenario_id"),
+        Index("ix_benchmark_executions_model", "provider", "model_id"),
+        Index("ix_benchmark_executions_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    execution_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    scenario_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("benchmark_scenarios.id"), nullable=False
+    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("execution_runs.id"), nullable=True
+    )
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    config_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    duration_sec: Mapped[float | None] = mapped_column(nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BenchmarkResultModel(Base):
+    """Resultado de uma execução de benchmark: métricas, pontuação e evidências."""
+
+    __tablename__ = "benchmark_results"
+    __table_args__ = (
+        Index("ix_benchmark_results_execution", "execution_id"),
+        Index("ix_benchmark_results_scenario", "scenario_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    execution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("benchmark_executions.id"), nullable=False
+    )
+    scenario_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("benchmark_scenarios.id"), nullable=False
+    )
+    task_completed: Mapped[bool] = mapped_column(default=False, nullable=False)
+    requirements_satisfied: Mapped[int] = mapped_column(default=0, nullable=False)
+    requirements_total: Mapped[int] = mapped_column(default=0, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(default=0, nullable=False)
+    inference_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    total_time_seconds: Mapped[float] = mapped_column(default=0.0, nullable=False)
+    latency_p50_ms: Mapped[float] = mapped_column(default=0.0, nullable=False)
+    latency_p95_ms: Mapped[float] = mapped_column(default=0.0, nullable=False)
+    tool_calls: Mapped[int] = mapped_column(default=0, nullable=False)
+    recovery_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    peak_memory_mb: Mapped[float | None] = mapped_column(nullable=True)
+    peak_vram_mb: Mapped[float | None] = mapped_column(nullable=True)
+    scores_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    metrics_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    evidence_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DiagnosticModel(Base):
+    """Diagnóstico gerado a partir de evidências: gargalo, anomalia ou oportunidade de otimização."""
+
+    __tablename__ = "diagnostics"
+    __table_args__ = (
+        Index("ix_diagnostics_category", "category"),
+        Index("ix_diagnostics_severity", "severity"),
+        Index("ix_diagnostics_state", "state"),
+        Index("ix_diagnostics_run", "run_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    diagnostic_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("execution_runs.id"), nullable=True
+    )
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("tasks.id"), nullable=True
+    )
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    severity: Mapped[str] = mapped_column(String(32), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), default="open", nullable=False)
+    evidence_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    metric_affected: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    observed_period_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    probable_cause: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence_level: Mapped[str] = mapped_column(String(32), nullable=True)
+    recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recommendation_state: Mapped[str] = mapped_column(String(32), nullable=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class TelemetryAggregateModel(Base):
+    """Agregação temporal de métricas: preserva métricas calculadas com retenção distinta do histórico detalhado."""
+
+    __tablename__ = "telemetry_aggregates"
+    __table_args__ = (
+        Index("ix_telemetry_aggregates_run_period", "run_id", "period_start"),
+        Index("ix_telemetry_aggregates_metric", "metric_name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("execution_runs.id"), nullable=True
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id"), nullable=True
+    )
+    metric_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    value: Mapped[float | None] = mapped_column(nullable=True)
+    p50: Mapped[float | None] = mapped_column(nullable=True)
+    p95: Mapped[float | None] = mapped_column(nullable=True)
+    p99: Mapped[float | None] = mapped_column(nullable=True)
+    min_value: Mapped[float | None] = mapped_column(nullable=True)
+    max_value: Mapped[float | None] = mapped_column(nullable=True)
+    count: Mapped[int] = mapped_column(default=0, nullable=False)
+    measurement_quality: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+

@@ -27,6 +27,7 @@ from agent.domain.failures import (
 )
 from agent.domain.schemas import MemoryCreate, TaskStatusUpdate
 from agent.i18n.locale import detect_language
+from agent.intelligence.telemetry import TelemetryService
 from agent.observability import emit, get_bus, observe, set_task
 from agent.orchestrator.approach import approach_of, approach_signature
 from agent.orchestrator.atomizer import should_decompose_further
@@ -195,6 +196,7 @@ class RunOrchestrator:
             provider_factory=lambda settings, config: _select_provider(settings, config),
         )
         self._executor = TaskExecutor(self._runtime)
+        self._telemetry = TelemetryService(session)
 
     def _run_config(self, run: ExecutionRunModel) -> dict:
         """Devolve a configuração gravada do run.
@@ -542,9 +544,15 @@ class RunOrchestrator:
         from agent.orchestrator.budget_gate import BudgetExhausted, use_budget_settings
         from agent.orchestrator.ledger import note_budget_pause
 
+        step_started_at = None
         try:
             with use_budget_settings(self._settings):
                 with observe(self._session, run_id=run.id, project_id=run.project_id):
+                    step_started_at = datetime.now(UTC)
+                    self._telemetry.step_started(
+                        step_index=bus.active_steps(str(run.id)),
+                        parent_event_id=None,
+                    )
                     try:
                         out = await self._step_body(run_id)
                     except BudgetExhausted as exc:
@@ -555,6 +563,13 @@ class RunOrchestrator:
                     self._record_action(run_id, out)
         finally:
             bus.step_finished(str(run.id))
+            if step_started_at is not None:
+                duration_ms = int((datetime.now(UTC) - step_started_at).total_seconds() * 1000)
+                self._telemetry.step_completed(
+                    step_index=bus.active_steps(str(run.id)) + 1,
+                    action=out.get("action", "noop"),
+                    duration_ms=duration_ms,
+                )
         return out
 
     def _check_stagnation(self, run_id: uuid.UUID, out: dict[str, Any]) -> dict[str, Any] | None:
@@ -1213,7 +1228,14 @@ class RunOrchestrator:
         status = TaskStatus(task.status)
 
         if status == TaskStatus.PENDING:
+            previous = task.status
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.PLANNING))
+            self._telemetry.state_transitioned(
+                task_id=task.id,
+                from_status=previous,
+                to_status=TaskStatus.PLANNING.value,
+                reason="iniciou planejamento",
+            )
             if task.id == run.root_task_id:
                 ensure_canonical_memory_for_objective(self._session, project.id, task)
                 ensure_requirements(self._session, task)
@@ -1241,7 +1263,14 @@ class RunOrchestrator:
             meta = task.metadata_json or {}
             if not kids and meta.get("final_answer"):
                 if self._tasks.dependencies_satisfied(task.id):
+                    previous = task.status
                     self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.READY))
+                    self._telemetry.state_transitioned(
+                        task_id=task.id,
+                        from_status=previous,
+                        to_status=TaskStatus.READY.value,
+                        reason="plano aprovado com resposta final",
+                    )
                     return {"action": "operation_ready", "task_id": str(task.id)}
                 return {"action": "operation_wait_deps", "task_id": str(task.id)}
             if not kids and executable_leaf(meta):
@@ -1249,6 +1278,13 @@ class RunOrchestrator:
                     blocked = self._promote_ready_or_block(task.id)
                     if blocked:
                         return blocked
+                    previous = task.status
+                    self._telemetry.state_transitioned(
+                        task_id=task.id,
+                        from_status=previous,
+                        to_status=TaskStatus.READY.value,
+                        reason="plano aprovado e contrato válido",
+                    )
                     return {"action": "operation_ready", "task_id": str(task.id)}
                 return {"action": "operation_wait_deps", "task_id": str(task.id)}
             guard = self._recursion_guard(run, task) if not kids else None
@@ -1423,15 +1459,36 @@ class RunOrchestrator:
         if promoted:
             ok, errs = ContractService(self._session).validate_for_run(task.id)
             if not ok:
+                previous = task.status
                 self._tasks.update_status(
                     task.id,
                     TaskStatusUpdate(status=TaskStatus.BLOCKED, reason="; ".join(errs)),
                 )
+                self._telemetry.state_transitioned(
+                    task_id=task.id,
+                    from_status=previous,
+                    to_status=TaskStatus.BLOCKED.value,
+                    reason="contrato inválido: " + "; ".join(errs),
+                )
                 return {"action": "blocked_contract", "task_id": str(task.id), "errors": errs}
+            previous = task.status
+            self._telemetry.state_transitioned(
+                task_id=task.id,
+                from_status=previous,
+                to_status=TaskStatus.READY.value,
+                reason="dependências satisfeitas e contrato válido",
+            )
             return {"action": "promoted_ready", "task_id": str(task.id)}
 
         if status == TaskStatus.READY:
+            previous = task.status
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RUNNING))
+            self._telemetry.state_transitioned(
+                task_id=task.id,
+                from_status=previous,
+                to_status=TaskStatus.RUNNING.value,
+                reason="iniciou execução",
+            )
             status = TaskStatus.RUNNING
 
         if status == TaskStatus.RUNNING:
@@ -1443,7 +1500,14 @@ class RunOrchestrator:
             return await self._executor.finalize_verification(run, project, task, work_root)
 
         if status == TaskStatus.RETRY_PENDING:
+            previous = task.status
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.READY))
+            self._telemetry.state_transitioned(
+                task_id=task.id,
+                from_status=previous,
+                to_status=TaskStatus.READY.value,
+                reason="nova tentativa após verificação",
+            )
             return {"action": "retry_ready", "task_id": str(task.id)}
 
         return {"action": "noop", "task_id": str(task.id), "status": task.status}

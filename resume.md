@@ -331,6 +331,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** Documentação técnica do projeto (arquitetura, regras e contexto).
 
 - Subpasta: [docs/architecture/](/docs/architecture/)
+- Subpasta: [docs/intelligence/](/docs/intelligence/)
 - Subpasta: [docs/regras/](/docs/regras/)
 - Arquivo: [README.md](/docs/README.md)
 - Arquivo: [project-context.md](/docs/project-context.md)
@@ -441,6 +442,66 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `docs/architecture/visao-geral.md`
 
 **Propósito:** Visão macro da arquitetura (camadas, fases, ADRs, stack).
+
+## `docs/intelligence/`
+
+**Propósito:** Documentação do sistema de inteligência operacional e observabilidade — telemetria, analytics, grafo cognitivo, benchmarks, diagnósticos, API e frontend.
+
+- Arquivo: [README.md](/docs/intelligence/README.md)
+- Arquivo: [architecture.md](/docs/intelligence/architecture.md)
+- Arquivo: [auditoria.md](/docs/intelligence/auditoria.md)
+- Arquivo: [telemetry.md](/docs/intelligence/telemetry.md)
+- Arquivo: [metrics.md](/docs/intelligence/metrics.md)
+- Arquivo: [cognitive-graph.md](/docs/intelligence/cognitive-graph.md)
+- Arquivo: [benchmarks.md](/docs/intelligence/benchmarks.md)
+- Arquivo: [diagnostics.md](/docs/intelligence/diagnostics.md)
+- Arquivo: [api.md](/docs/intelligence/api.md)
+- Arquivo: [frontend.md](/docs/intelligence/frontend.md)
+- Arquivo: [testing.md](/docs/intelligence/testing.md)
+
+### `docs/intelligence/README.md`
+
+**Propósito:** Índice da pasta `intelligence/` com sumário dos subsistemas e princípios.
+
+### `docs/intelligence/architecture.md`
+
+**Propósito:** Visão geral da arquitetura de inteligência, camadas, fluxo de dados e modelos de persistência.
+
+### `docs/intelligence/auditoria.md`
+
+**Propósito:** Diagnóstico do estado atual do Callidus, recursos existentes, lacunas, riscos, dependências e plano de implementação por fases.
+
+### `docs/intelligence/telemetry.md`
+
+**Propósito:** Contrato tipado e versionado de eventos de telemetria, tipos de evento, correlação e TelemetryService.
+
+### `docs/intelligence/metrics.md`
+
+**Propósito:** Agregação de métricas de tokens, contexto, inferência, recursos e eficiência com qualidade de medição explícita.
+
+### `docs/intelligence/cognitive-graph.md`
+
+**Propósito:** Grafo visual dinâmico da arquitetura percorrida pelo agente, topologia, estados, arestas percorridas e mapeamento de eventos.
+
+### `docs/intelligence/benchmarks.md`
+
+**Propósito:** Engine de benchmarking, cenários versionados, pontuação por dimensão, execução isolada e comparação.
+
+### `docs/intelligence/diagnostics.md`
+
+**Propósito:** Motor de diagnóstico determinístico, categorias, severidades, tipos de diagnóstico e detecção automática de gargalos.
+
+### `docs/intelligence/api.md`
+
+**Propósito:** Endpoints unificados de inteligência (métricas, telemetria, grafo, benchmarks, diagnósticos) com exemplos de uso.
+
+### `docs/intelligence/frontend.md`
+
+**Propósito:** Páginas da interface (Overview, Live Architecture, Performance, Benchmarks, Diagnostics) e integração com a API.
+
+### `docs/intelligence/testing.md`
+
+**Propósito:** Testes de backend para telemetria, analytics, grafo, benchmarks e diagnósticos.
 
 ## `docs/regras/`
 
@@ -1808,6 +1869,147 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `open_operations(session: Session, run_id: uuid.UUID) -> list[dict[str, Any]]` — Lista chamadas ao modelo, ferramentas, comandos e testes que começaram (`*.started`) e não têm evento de conclusão gravado.
 - `run_snapshot(session: Session, run_id: uuid.UUID, *, bus: EventBus | None=None, recent: int=300) -> dict[str, Any]` — Monta o retrato completo da run (run, header com modo replay/paused/live/interrupted, tarefas com evidências e tentativas, saídas em memória, operações interrompidas, eventos recentes e estatísticas); levanta `LookupError` se a run não existir.
 
+## `src/agent/intelligence/`
+
+**Propósito:** Subsistemas de inteligência operacional e observabilidade — telemetria, analytics, grafo cognitivo, benchmarks, diagnósticos — todos determinísticos e sem dependência de modelo de linguagem para cálculos.
+
+- Arquivo: [__init__.py](/src/agent/intelligence/__init__.py)
+- Arquivo: [telemetry.py](/src/agent/intelligence/telemetry.py)
+- Arquivo: [analytics.py](/src/agent/intelligence/analytics.py)
+- Arquivo: [graph.py](/src/agent/intelligence/graph.py)
+- Arquivo: [benchmarks.py](/src/agent/intelligence/benchmarks.py)
+- Arquivo: [diagnostics.py](/src/agent/intelligence/diagnostics.py)
+
+### `src/agent/intelligence/__init__.py`
+
+**Propósito:** Re-exporta `AnalyticsService`, `BenchmarkEngine`, `CognitiveGraph`, `DiagnosticEngine`, `TelemetryService`.
+
+### `src/agent/intelligence/telemetry.py`
+
+**Propósito:** Serviço de telemetria centralizada com contrato tipado e versionado. **Quando/onde:** Chamado pelo orquestrador, provedores, contexto, ferramentas e verificação para gravar eventos com correlação consistente entre run, tarefa, tentativa e evento pai.
+
+- `TelemetryService` — Símbolo da classe — ver a descrição do arquivo.
+- `TelemetryEvent` — Dados de um evento de telemetria (event_type, data, run_id, task_id, attempt_id, parent_event_id, component, operation, status, duration_ms, measurement_quality, commit).
+- `TelemetryEvent.to_emit_data() -> dict[str, Any]` — Converte o evento no dicionário de dados para `emit`, adicionando component, operation, status, schema_version.
+- `TelemetryService.__init__(session: Session) -> None` — Cria o serviço ligado a uma sessão SQLAlchemy.
+- `TelemetryService.step_started(*, step_index: int, run_id: uuid.UUID | None=None, parent_event_id: uuid.UUID | None=None) -> Any` — Emite `orchestrator.step.started` com o índice do passo.
+- `TelemetryService.step_completed(*, step_index: int, action: str, duration_ms: int, parent_event_id: uuid.UUID | None=None) -> Any` — Emite `orchestrator.step.completed` com ação e duração.
+- `TelemetryService.state_transitioned(*, task_id: uuid.UUID, from_status: str, to_status: str, reason: str | None=None, parent_event_id: uuid.UUID | None=None) -> Any` — Emite `task.state.transitioned` com origem, destino e motivo.
+- `TelemetryService.context_compacted(*, before_tokens: int, after_tokens: int, purpose: str, task_id: uuid.UUID | None=None, parent_event_id: uuid.UUID | None=None) -> Any` — Emite `context.compacted` com antes/depois de tokens.
+- `TelemetryService.memory_recovered(*, skills: list[str] | None=None, sources: list[str] | None=None, tokens: int | None=None, task_id: uuid.UUID | None=None, parent_event_id: uuid.UUID | None=None) -> Any` — Emite `memory.recovered` com skills, fontes e tokens.
+- `TelemetryService.provider_inference_started(*, provider: str, model: str, purpose: str, task_id: uuid.UUID | None=None, parent_event_id: uuid.UUID | None=None) -> Any` — Emite `provider.inference.started`.
+- `TelemetryService.provider_inference_completed(*, provider: str, model: str, duration_ms: int, prompt_tokens: int | None=None, completion_tokens: int | None=None, measurement_quality: str="unavailable", task_id: uuid.UUID | None=None, parent_event_id: uuid.UUID | None=None) -> Any` — Emite `provider.inference.completed` com métricas de tokens.
+- `TelemetryService.resources_sampled(*, cpu_percent: float | None=None, ram_mb: float | None=None, vram_mb: float | None=None, run_id: uuid.UUID | None=None) -> Any` — Emite `resources.sampled` com consumo de hardware.
+- `TelemetryService.verification_attempt_started(*, verifier: str, task_id: uuid.UUID | None=None, parent_event_id: uuid.UUID | None=None) -> Any` — Emite `verification.attempt.started`.
+- `TelemetryService.verification_attempt_completed(*, verifier: str, passed: bool | None, duration_ms: int, task_id: uuid.UUID | None=None, parent_event_id: uuid.UUID | None=None) -> Any` — Emite `verification.attempt.completed`.
+- `TelemetryService._emit_telemetry(event_type, data, *, task_id, run_id, component, operation, status, duration_ms, measurement_quality, parent_event_id, attempt_id, commit) -> Any` — Emite o evento através do emissor existente; quando não há contexto de observação, grava diretamente o `EventLogModel`.
+
+### `src/agent/intelligence/analytics.py`
+
+**Propósito:** Agregação de métricas de desempenho e consumo a partir de registros persistidos. **Quando/onde:** Usado pela API para responder endpoints de métricas e pelo frontend para dashboards.
+
+- `AnalyticsService` — Símbolo da classe — ver a descrição do arquivo.
+- `AnalyticsService.__init__(session: Session) -> None` — Cria o serviço ligado a uma sessão.
+- `AnalyticsService.token_metrics(*, run_id, task_id, project_id) -> dict` — Consumo de tokens com qualidade de medição (exact/estimate/partial/unavailable).
+- `AnalyticsService.context_metrics(*, run_id, task_id, project_id) -> dict` — Orçamento, ocupação e compactação de contexto.
+- `AnalyticsService.inference_metrics(*, run_id, task_id, project_id) -> dict` — Latência, taxa de erro, timeout, retry, duração por percentil.
+- `AnalyticsService.resource_metrics(*, run_id, project_id) -> dict` — CPU, RAM, VRAM amostrados.
+- `AnalyticsService.efficiency_metrics(*, run_id, task_id, project_id) -> dict` — Tokens por tarefa, chamadas por tarefa, progresso, recuperações.
+- `AnalyticsService.overview(*, project_id) -> dict` — Visão geral agregada para dashboard.
+- `_percentile(values: list[float], p: int) -> float | None` — Calcula o percentil `p` (ex.: 95) de uma lista de valores.
+
+### `src/agent/intelligence/graph.py`
+
+**Propósito:** Grafo cognitivo dinâmico que representa a arquitetura percorrida pelo agente durante a execução. **Quando/onde:** Consumido pelo frontend para visualizar o fluxo de execução real, separado do KnowledgeGraphService.
+
+- `CognitiveGraph` — Símbolo da classe — ver a descrição do arquivo.
+- `CognitiveGraph.__init__(session: Session, run_id: uuid.UUID | None=None) -> None` — Constrói a topologia e carrega o estado de uma run.
+- `CognitiveGraph.to_dict() -> dict` — Exporta o grafo (schema_version, run_id, nodes, edges, event_history).
+- `CognitiveGraph.get_active_nodes() -> list[CognitiveGraphNode]` — Nós no estado ativo.
+- `CognitiveGraph.get_failed_nodes() -> list[CognitiveGraphNode]` — Nós com falha.
+- `CognitiveGraph.get_blocked_nodes() -> list[CognitiveGraphNode]` — Nós bloqueados.
+- `CognitiveGraphNode` — Dados de um nó (id, name, type, category, state, activations, total_duration_ms, error_count, last_event_at, metadata).
+- `CognitiveGraphEdge` — Dados de uma aresta (source, target, traversed, traversal_count, last_traversed_at, failure_count).
+- `CognitiveGraph._event_to_node(event_type, data) -> str | None` — Mapeia um tipo de evento para o nó do grafo correspondente.
+- `CognitiveGraph._apply_event(event_type, data, occurred_at, seq) -> None` — Aplica um evento ao estado do grafo: atualiza nó, aresta e métricas; rastreia o nó ativo anterior para marcar arestas percorridas.
+- `CognitiveGraph._load_state() -> None` — Carrega o estado dos nós a partir dos eventos persistidos da run.
+- `CognitiveGraph._build_topology() -> None` — Constrói nós e arestas a partir da topologia da arquitetura real (`ARCHITECTURE_NODES`, `ARCHITECTURE_EDGES`).
+- `CognitiveGraph._mark_edge_traversed(source, target, timestamp) -> None` — Marca uma aresta como percorrida, atualizando contagem e timestamp.
+- `CognitiveGraph.get_node(node_id: str) -> CognitiveGraphNode | None` — Devolve um nó pelo identificador.
+- `CognitiveGraph.get_edges_for_node(node_id: str) -> list[CognitiveGraphEdge]` — Devolve as arestas de saída de um nó.
+
+### `src/agent/intelligence/benchmarks.py`
+
+**Propósito:** Engine de benchmarking isolado para comparar modelos, arquiteturas e configurações. **Quando/onde:** Usado pelo frontend para o laboratório de testes comparativos.
+
+- `BenchmarkEngine` — Símbolo da classe — ver a descrição do arquivo.
+- `BenchmarkEngine.__init__(session: Session, settings: Settings | None=None) -> None` — Cria o engine ligado a uma sessão.
+- `BenchmarkEngine.list_scenarios(active_only: bool=True) -> list[BenchmarkScenario]` — Lista cenários disponíveis.
+- `BenchmarkEngine.get_scenario(scenario_id, version=None) -> BenchmarkScenario | None` — Devolve um cenário por id e versão.
+- `BenchmarkEngine.create_scenario(scenario: BenchmarkScenario) -> BenchmarkScenario` — Cria ou atualiza um cenário.
+- `BenchmarkEngine.list_executions(scenario_id=None) -> list[BenchmarkExecution]` — Lista execuções.
+- `BenchmarkEngine.create_execution(*, scenario_id, provider, model_id, config, run_id) -> BenchmarkExecution` — Cria uma execução.
+- `BenchmarkEngine.complete_execution(execution_id, *, status, duration_sec, error) -> BenchmarkExecution | None` — Marca execução como concluída ou falhada.
+- `BenchmarkEngine.get_result(execution_id) -> BenchmarkResult | None` — Devolve o resultado de uma execução.
+- `BenchmarkEngine.save_result(execution_id, result) -> BenchmarkResult` — Salva o resultado de uma execução.
+- `BenchmarkEngine.compare(*, scenario_id, execution_ids=None) -> dict` — Compara execuções de um mesmo cenário.
+- `BenchmarkEngine.run_scenario(*, scenario_id, provider, model_id, config, run_id) -> BenchmarkResult` — Executa um cenário de forma assíncrona.
+- `BenchmarkEngine.export_results(execution_ids=None) -> list[dict]` — Exporta resultados serializáveis.
+- `BenchmarkScenario` — Dados de um cenário versionado (id, version, name, category, difficulty, prompt, etc.).
+- `BenchmarkExecution` — Dados de uma execução (id, scenario_id, provider, model_id, status, started_at, completed_at, etc.).
+- `BenchmarkResult` — Resultado completo com pontuações por dimensão.
+- `BenchmarkScore` — Pontuação de uma dimensão (dimension, score, criteria, evidence, subjective).
+- `BenchmarkScore.to_dict() -> dict[str, Any]` — Exporta a pontuação como dicionário.
+- `BenchmarkEngine._score_scenario(*, scenario, token_metrics, inference_metrics, context_metrics, efficiency_metrics) -> list[BenchmarkScore]` — Calcula pontuação por dimensão com critérios explícitos e determinísticos.
+- `BenchmarkResult.to_dict() -> dict[str, Any]` — Exporta o resultado completo como dicionário.
+
+### `src/agent/intelligence/diagnostics.py`
+
+**Propósito:** Motor de diagnóstico determinístico que identifica gargalos, anomalias e oportunidades de otimização a partir de evidências. **Quando/onde:** Usado pela API para gerar diagnósticos de runs e pelo frontend para a página de diagnósticos.
+
+- `DiagnosticEngine` — Símbolo da classe — ver a descrição do arquivo.
+- `DiagnosticEngine.__init__(session: Session) -> None` — Cria o motor ligado a uma sessão.
+- `DiagnosticEngine.list_diagnostics(*, run_id, category, severity, state) -> list[Diagnostic]` — Lista diagnósticos com filtros.
+- `DiagnosticEngine.get_diagnostic(diagnostic_id) -> Diagnostic | None` — Devolve um diagnóstico pelo id.
+- `DiagnosticEngine.create_diagnostic(diagnostic: Diagnostic) -> Diagnostic` — Cria um diagnóstico.
+- `DiagnosticEngine.analyze_run(run_id: uuid.UUID) -> list[Diagnostic]` — Executa diagnóstico determinístico sobre uma run.
+- `DiagnosticEngine.get_summary(run_id=None) -> dict` — Resumo agregado por categoria, severidade, estado e tipo.
+- `Diagnostic` — Dados de um diagnóstico (id, category, severity, state, evidence, recommendation, kind, etc.).
+- `Diagnostic.to_dict() -> dict[str, Any]` — Exporta todos os campos do diagnóstico como dicionário.
+
+## `src/agent/api/intelligence_routes.py`
+
+**Propósito:** Rotas unificadas de inteligência e observabilidade. **Quando/onde:** Registrada em `src/agent/api/main.py`, expõe métricas, telemetria, grafo cognitivo, benchmarks e diagnósticos por HTTP.
+
+- `metrics_overview(project_id, session) -> dict` — Visão geral agregada do workspace (`GET /metrics/overview`).
+- `metrics_run(run_id, session) -> dict` — Métricas detalhadas de uma run (`GET /metrics/runs/{run_id}`).
+- `metrics_project(project_id, session) -> dict` — Métricas agregadas de um projeto (`GET /metrics/projects/{project_id}`).
+- `metrics_models(session) -> dict` — Uso de modelos por run (`GET /metrics/models`).
+- `metrics_timeline(run_id, project_id, session) -> dict` — Linha do tempo de métricas agregadas (`GET /metrics/timeline`).
+- `telemetry_events(run_id, after, limit, types, task_id, session) -> dict` — Eventos persistidos paginados (`GET /events`).
+- `telemetry_event_detail(event_id, session) -> dict` — Detalhe de um evento (`GET /events/{event_id}`).
+- `run_snapshot_telemetry(run_id, session) -> dict` — Foto completa do estado de uma run (`GET /runs/{run_id}/snapshot`).
+- `graph_architecture(session) -> dict` — Topologia geral sem execução específica (`GET /graph/architecture`).
+- `graph_run(run_id, session) -> dict` — Grafo de uma run com estados e arestas (`GET /graph/runs/{run_id}`).
+- `graph_run_history(run_id, session) -> dict` — Histórico de eventos do grafo (`GET /graph/runs/{run_id}/history`).
+- `benchmarks_list(active_only, session) -> dict` — Lista cenários (`GET /benchmarks`).
+- `benchmarks_create(payload, session) -> dict` — Cria cenário (`POST /benchmarks`).
+- `benchmarks_get(benchmark_id, session) -> dict` — Detalhe do cenário (`GET /benchmarks/{id}`).
+- `benchmarks_run(benchmark_id, payload, session) -> dict` — Executa cenário (`POST /benchmarks/{id}/run`).
+- `benchmarks_results(benchmark_id, session) -> dict` — Resultados do cenário (`GET /benchmarks/{id}/results`).
+- `benchmarks_compare(scenario_id, execution_ids, session) -> dict` — Compara execuções (`GET /benchmarks/compare`).
+- `diagnostics_list(run_id, category, severity, state, session) -> dict` — Lista diagnósticos (`GET /diagnostics`).
+- `diagnostics_get(diagnostic_id, session) -> dict` — Detalhe de um diagnóstico (`GET /diagnostics/{id}`).
+- `diagnostics_create(payload, session) -> dict` — Cria diagnóstico (`POST /diagnostics`).
+- `diagnostics_analyze_run(run_id, session) -> dict` — Diagnóstico determinístico sobre uma run (`POST /diagnostics/runs/{run_id}/analyze`).
+- `diagnostics_summary(run_id, session) -> dict` — Resumo agregado (`GET /diagnostics/summary`).
+- `BenchmarkScenarioIn` — Schema Pydantic de entrada para criação de cenário (id, version, name, category, difficulty, prompt, etc.).
+- `BenchmarkRunIn` — Schema Pydantic de entrada para execução de benchmark (scenario_id, provider, model_id, config).
+- `DiagnosticIn` — Schema Pydantic de entrada para criação de diagnóstico (run_id, category, severity, evidence, recommendation, kind, etc.).
+- `_run_or_404(session, run_id) -> ExecutionRunModel` — Devolve a run ou levanta HTTP 404.
+- `_scenario_or_404(session, scenario_id) -> BenchmarkScenarioModel` — Devolve o cenário ou levanta HTTP 404.
+
+
 ## `src/agent/orchestrator/execution/`
 
 **Propósito:** Execução de uma tarefa — despacho (MCP, modelo, ferramenta, verificação), contexto da operação, escrita do arquivo e evidência.
@@ -2535,6 +2737,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `EventLogModel(Base)` — `event_logs` (id, project_id, run_id, task_id, event_type, payload_json, created_at, seq, parent_task_id, agent, schema_version, index `ix_event_logs_run_seq`).
 - `EvidenceModel(Base)` — `evidences` (id, task_id, attempt_id, verifier, passed, summary, detail_json, created_at).
 - `ExecutionRunModel(Base)` — `execution_runs` (id, project_id, root_task_id, status, config_json, timestamps).
+- `BenchmarkScenarioModel(Base)` — `benchmark_scenarios` (id, scenario_id, version, name, description, category, difficulty, prompt, context_initial_json, tools_allowed_json, token_budget, time_limit_sec, acceptance_criteria_json, validation_tests_json, expected_result_json, is_active, timestamps).
+- `BenchmarkExecutionModel(Base)` — `benchmark_executions` (id, execution_id, scenario_id, run_id, provider, model_id, config_json, status, started_at, completed_at, duration_sec, error, timestamps).
+- `BenchmarkResultModel(Base)` — `benchmark_results` (id, execution_id, scenario_id, task_completed, requirements_satisfied, requirements_total, total_tokens, inference_count, total_time_seconds, latency_p50_ms, latency_p95_ms, tool_calls, recovery_count, peak_memory_mb, peak_vram_mb, scores_json, metrics_json, evidence_json, error, timestamps).
+- `DiagnosticModel(Base)` — `diagnostics` (id, diagnostic_id, run_id, task_id, category, severity, state, evidence_json, metric_affected, observed_period_json, probable_cause, confidence_level, recommendation, recommendation_state, kind, timestamps).
+- `TelemetryAggregateModel(Base)` — `telemetry_aggregates` (id, run_id, project_id, metric_name, period_start, period_end, value, p50, p95, p99, min_value, max_value, count, measurement_quality, metadata_json, timestamps).
 - `KgEdgeModel(Base)` — `kg_edges` (id, project_id, src_id, dst_id, rel, unique `uq_kg_edge`).
 - `KgNodeModel(Base)` — `kg_nodes` (id, project_id, kind, ref, label, meta_json, updated_at, unique `uq_kg_node_ref`).
 - `MemoryRecordModel(Base)` — `memory_records` (id, project_id, conversation_id, branch_id, task_id, kind, title, content, summary, outline_json, version, source_refs_json, created_at).
@@ -3489,6 +3696,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [test_hierarchical_decompose.py](/tests/test_hierarchical_decompose.py)
 - Arquivo: [test_home_branches.py](/tests/test_home_branches.py)
 - Arquivo: [test_independent_verification.py](/tests/test_independent_verification.py)
+- Arquivo: [test_intelligence_analytics.py](/tests/test_intelligence_analytics.py)
+- Arquivo: [test_intelligence_benchmarks.py](/tests/test_intelligence_benchmarks.py)
+- Arquivo: [test_intelligence_diagnostics.py](/tests/test_intelligence_diagnostics.py)
+- Arquivo: [test_intelligence_graph.py](/tests/test_intelligence_graph.py)
+- Arquivo: [test_intelligence_telemetry.py](/tests/test_intelligence_telemetry.py)
 - Arquivo: [test_knowledge_graph.py](/tests/test_knowledge_graph.py)
 - Arquivo: [test_knowledge_imports.py](/tests/test_knowledge_imports.py)
 - Arquivo: [test_llamacpp_provider.py](/tests/test_llamacpp_provider.py)
@@ -3780,6 +3992,26 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `tests/test_independent_verification.py`
 
 **Propósito:** Testes de verificação independente (quem executa não aprova).
+
+### `tests/test_intelligence_analytics.py`
+
+**Propósito:** Testes unitários do AnalyticsService: métricas de tokens, contexto, inferência, recursos e eficiência.
+
+### `tests/test_intelligence_benchmarks.py`
+
+**Propósito:** Testes unitários do BenchmarkEngine: cenários, execuções, resultados, comparação e pontuação.
+
+### `tests/test_intelligence_diagnostics.py`
+
+**Propósito:** Testes unitários do DiagnosticEngine: categorias, severidades, tipos e detecção automática de gargalos.
+
+### `tests/test_intelligence_graph.py`
+
+**Propósito:** Testes unitários do CognitiveGraph: topologia, estados, arestas percorridas e aplicação de eventos.
+
+### `tests/test_intelligence_telemetry.py`
+
+**Propósito:** Testes unitários do TelemetryService: eventos tipados, correlação e emissão fora de contexto.
 
 ### `tests/test_knowledge_graph.py`
 
@@ -5314,6 +5546,46 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `automationAction`
 - `deleteAutomation`
 - `loadSupervisorStatus`
+- `loadIntelligenceOverview()` — Carrega métricas agregadas do workspace via `/api/intelligence/metrics/overview?project_id=...` e armazena em `state.intelligenceOverview`.
+- `loadRunMetrics(runId)` — Carrega métricas detalhadas de uma run via `/api/intelligence/metrics/runs/{runId}` e armazena em `state.runMetrics`.
+- `loadArchitectureGraph()` — Carrega o grafo da arquitetura via `/api/intelligence/graph/architecture` e armazena em `state.architectureGraph`.
+- `loadRunGraph(runId)` — Carrega o grafo de uma run via `/api/intelligence/graph/runs/{runId}` e o histórico via `/graph/runs/{runId}/history`, armazenando em `state.runGraph` e `state.runGraphHistory`.
+- `loadRunGraphHistory(runId)` — Carrega o histórico de eventos do grafo de uma run via `/api/intelligence/graph/runs/{runId}/history` e armazena em `state.runGraphHistory`.
+- `loadBenchmarkScenarios()` — Carrega o catálogo de cenários via `/api/intelligence/benchmarks?active_only=true` e armazena em `state.benchmarkScenarios`.
+- `runBenchmark(scenarioId, config)` — Executa um cenário via `POST /api/intelligence/benchmarks/{scenarioId}/run` e armazena o resultado em `state.lastBenchmarkResult`.
+- `loadBenchmarkResults(scenarioId)` — Carrega resultados de um cenário via `/api/intelligence/benchmarks/{scenarioId}/results` e armazena em `state.benchmarkResults`.
+- `compareBenchmarks(scenarioId, executionIds)` — Compara execuções via `/api/intelligence/benchmarks/compare` e armazena em `state.benchmarkComparison`.
+- `loadDiagnostics(runId)` — Carrega diagnósticos via `/api/intelligence/diagnostics?run_id=...` e armazena em `state.diagnostics`.
+- `analyzeRunDiagnostics(runId)` — Executa diagnóstico determinístico via `POST /api/intelligence/diagnostics/runs/{runId}/analyze` e armazena em `state.diagnosticAnalysis`.
+- `loadDiagnosticsSummary(runId)` — Carrega resumo de diagnósticos via `/api/intelligence/diagnostics/summary?run_id=...` e armazena em `state.diagnosticsSummary`.
+
+### `web/static/assets/app/components/intelligence-graph.js`
+
+**Propósito:** Grafo cognitivo animado em SVG. **Quando/onde:** Usado na página de Live Architecture da área Callidus Intelligence.
+
+- `CognitiveGraphView` — Componente Vue que renderiza nós e arestas do grafo, com estados visuais, painel lateral de detalhes e reprodução histórica.
+- `CognitiveGraphView.props.runId` — Id da run opcional; quando ausente, mostra a topologia geral.
+- `CognitiveGraphView.nodeColor(node)` — Devolve a cor do nó com base no estado e hover.
+- `CognitiveGraphView.selectNode(nodeId)` — Seleciona/deseleciona um nó para mostrar detalhes no painel lateral.
+- `CognitiveGraphView.formatDuration(ms)` — Formata milissegundos em string legível (ex.: `2m 30s`).
+- `CognitiveGraphView.togglePlayback()` — Inicia ou pausa a reprodução do histórico de eventos.
+- `CognitiveGraphView.startPlayback()` / `CognitiveGraphView.stopPlayback()` — Controla o intervalo de reprodução dos eventos históricos.
+- `CognitiveGraphView.computeLayout(graph)` — Posiciona nós em camadas por categoria; devolve nós indexados por id com x, y, layer.
+- `CognitiveGraphView.loadGraph()` — Carrega o grafo da arquitetura ou de uma run e recomputa o layout.
+
+### `web/static/assets/app/components/intelligence-pages.js`
+
+**Propósito:** Páginas da área Callidus Intelligence (Overview, Performance, Benchmarks, Diagnostics). **Quando/onde:** Registradas em `main.js` e acessíveis pela barra de navegação inferior.
+
+- `IntelligenceOverview` — Página de visão geral com cards de métrica (runs, conclusão, tokens, chamadas) e gráficos de modelos/provedores.
+- `IntelligencePerformance` — Página de desempenho com métricas de tokens, latência, erro por provedor e consumo de recurso.
+- `IntelligenceBenchmarks` — Página de laboratório de benchmarks com catálogo de cenários, execução, resultado e histórico.
+- `IntelligenceDiagnostics` — Página de diagnósticos com cards resumidos, gráficos por categoria/severidade e tabela de detalhes.
+- `IntelligenceBenchmarks.runSelected()` — Executa o cenário selecionado com a configuração informada e carrega os resultados.
+- `IntelligenceOverview.load()` — Carrega métricas de overview via `/api/intelligence/metrics/overview`.
+- `IntelligencePerformance.load()` — Carrega métricas de uma run via `/api/intelligence/metrics/runs/{runId}`.
+- `IntelligenceDiagnostics.load()` — Carrega diagnósticos via `/api/intelligence/diagnostics`.
+- `IntelligenceDiagnostics.analyze()` — Executa diagnóstico de uma run via `POST /api/intelligence/diagnostics/runs/{runId}/analyze`.
 
 ### `web/static/assets/app/ui.js`
 

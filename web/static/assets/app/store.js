@@ -81,6 +81,19 @@ export const state = reactive({
   automations: [],
   automationDetail: null,
   supervisor: null,
+
+  intelligenceOverview: null,
+  runMetrics: null,
+  architectureGraph: null,
+  runGraph: null,
+  runGraphHistory: null,
+  benchmarkScenarios: [],
+  benchmarkResults: [],
+  benchmarkComparison: null,
+  lastBenchmarkResult: null,
+  diagnostics: [],
+  diagnosticAnalysis: null,
+  diagnosticsSummary: null,
 });
 
 let stream = null;
@@ -1000,6 +1013,148 @@ export async function loadMetrics() {
   if (!workspace) return;
   const metrics = await api(`/projects/${workspace}/metrics`).catch(() => null);
   state.metricsText = JSON.stringify(metrics, null, 2);
+}
+
+/**
+ * Carrega métricas de observabilidade unificadas (overview do workspace).
+ *
+ * @returns {Promise<void>}
+ */
+export async function loadIntelligenceOverview() {
+  const workspace = workspaceId();
+  if (!workspace) return;
+  const data = await api(`/api/intelligence/metrics/overview?project_id=${encodeURIComponent(workspace)}`).catch(() => null);
+  state.intelligenceOverview = data || null;
+}
+
+/**
+ * Carrega métricas detalhadas de uma run.
+ *
+ * @param {string} runId Id da run.
+ * @returns {Promise<void>}
+ */
+export async function loadRunMetrics(runId) {
+  const data = await api(`/api/intelligence/metrics/runs/${encodeURIComponent(runId)}`).catch(() => null);
+  state.runMetrics = data || null;
+}
+
+/**
+ * Carrega o grafo cognitivo da arquitetura (sem execução específica).
+ *
+ * @returns {Promise<void>}
+ */
+export async function loadArchitectureGraph() {
+  const data = await api(`/api/intelligence/graph/architecture`).catch(() => null);
+  state.architectureGraph = data || null;
+}
+
+/**
+ * Carrega o grafo cognitivo de uma run específica.
+ *
+ * @param {string} runId Id da run.
+ * @returns {Promise<void>}
+ */
+export async function loadRunGraph(runId) {
+  const data = await api(`/api/intelligence/graph/runs/${encodeURIComponent(runId)}`).catch(() => null);
+  state.runGraph = data || null;
+}
+
+/**
+ * Carrega o histórico de eventos do grafo de uma run.
+ *
+ * @param {string} runId Id da run.
+ * @returns {Promise<void>}
+ */
+export async function loadRunGraphHistory(runId) {
+  const data = await api(`/api/intelligence/graph/runs/${encodeURIComponent(runId)}/history`).catch(() => null);
+  state.runGraphHistory = data || null;
+}
+
+/**
+ * Carrega o catálogo de cenários de benchmark.
+ *
+ * @returns {Promise<void>}
+ */
+export async function loadBenchmarkScenarios() {
+  const data = await api(`/api/intelligence/benchmarks?active_only=true`).catch(() => null);
+  state.benchmarkScenarios = data?.scenarios || [];
+}
+
+/**
+ * Executa um cenário de benchmark.
+ *
+ * @param {string} scenarioId Id do cenário.
+ * @param {object} config Configuração (provider, model_id, config).
+ * @returns {Promise<object|null>}
+ */
+export async function runBenchmark(scenarioId, config) {
+  const data = await api(`/api/intelligence/benchmarks/${encodeURIComponent(scenarioId)}/run`, {
+    method: "POST",
+    body: JSON.stringify(config),
+  }).catch((err) => ({ error: err.message }));
+  state.lastBenchmarkResult = data || null;
+  return data;
+}
+
+/**
+ * Carrega os resultados de benchmark de um cenário.
+ *
+ * @param {string} scenarioId Id do cenário.
+ * @returns {Promise<void>}
+ */
+export async function loadBenchmarkResults(scenarioId) {
+  const data = await api(`/api/intelligence/benchmarks/${encodeURIComponent(scenarioId)}/results`).catch(() => null);
+  state.benchmarkResults = data?.executions || [];
+}
+
+/**
+ * Compara execuções de benchmark de um cenário.
+ *
+ * @param {string} scenarioId Id do cenário.
+ * @param {string[]} [executionIds] IDs das execuções a comparar.
+ * @returns {Promise<void>}
+ */
+export async function compareBenchmarks(scenarioId, executionIds) {
+  const query = executionIds ? `?execution_ids=${encodeURIComponent(executionIds.join(","))}` : "";
+  const data = await api(`/api/intelligence/benchmarks/compare?scenario_id=${encodeURIComponent(scenarioId)}${query}`).catch(() => null);
+  state.benchmarkComparison = data || null;
+}
+
+/**
+ * Carrega diagnósticos, opcionalmente filtrados por run.
+ *
+ * @param {string} [runId] Id da run para filtrar.
+ * @returns {Promise<void>}
+ */
+export async function loadDiagnostics(runId) {
+  const query = runId ? `?run_id=${encodeURIComponent(runId)}` : "";
+  const data = await api(`/api/intelligence/diagnostics${query}`).catch(() => null);
+  state.diagnostics = data?.diagnostics || [];
+}
+
+/**
+ * Executa diagnóstico determinístico sobre uma run.
+ *
+ * @param {string} runId Id da run.
+ * @returns {Promise<void>}
+ */
+export async function analyzeRunDiagnostics(runId) {
+  const data = await api(`/api/intelligence/diagnostics/runs/${encodeURIComponent(run_id || runId)}/analyze`, {
+    method: "POST",
+  }).catch((err) => ({ error: err.message }));
+  state.diagnosticAnalysis = data || null;
+}
+
+/**
+ * Carrega o resumo dos diagnósticos.
+ *
+ * @param {string} [runId] Id da run para filtrar.
+ * @returns {Promise<void>}
+ */
+export async function loadDiagnosticsSummary(runId) {
+  const query = runId ? `?run_id=${encodeURIComponent(runId)}` : "";
+  const data = await api(`/api/intelligence/diagnostics/summary${query}`).catch(() => null);
+  state.diagnosticsSummary = data || null;
 }
 
 /**

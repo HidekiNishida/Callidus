@@ -37,6 +37,11 @@ import { SettingsView } from "./components/settings.js";
 import { LivePanel } from "./components/live.js";
 import { CommandPalette } from "./components/palette.js";
 import { AutomationsView } from "./components/automations.js";
+import { CognitiveGraphView } from "./components/intelligence-graph.js";
+import { IntelligenceOverview } from "./components/intelligence-pages.js";
+import { IntelligencePerformance } from "./components/intelligence-pages.js";
+import { IntelligenceBenchmarks } from "./components/intelligence-pages.js";
+import { IntelligenceDiagnostics } from "./components/intelligence-pages.js";
 
 const { createApp, reactive, ref, computed, onMounted, onBeforeUnmount } = Vue;
 
@@ -44,6 +49,10 @@ const { createApp, reactive, ref, computed, onMounted, onBeforeUnmount } = Vue;
 const NAV_ITEMS = [
   { id: "chat", label: "Conversa", icon: "chat" },
   { id: "live", label: "Execução", icon: "chart" },
+  { id: "intelligence-overview", label: "Inteligência", icon: "layout" },
+  { id: "intelligence-performance", label: "Desempenho", icon: "activity" },
+  { id: "intelligence-benchmarks", label: "Benchmarks", icon: "bar-chart" },
+  { id: "intelligence-diagnostics", label: "Diagnósticos", icon: "alert-circle" },
   { id: "providers", label: "Provedores", icon: "server" },
   { id: "automations", label: "Automações", icon: "clock" },
   { id: "settings", label: "Ajustes", icon: "cog" },
@@ -67,6 +76,11 @@ const App = {
     LivePanel,
     CommandPalette,
     AutomationsView,
+    CognitiveGraphView,
+    IntelligenceOverview,
+    IntelligencePerformance,
+    IntelligenceBenchmarks,
+    IntelligenceDiagnostics,
   },
   setup() {
     const modal = reactive({
@@ -487,6 +501,10 @@ const App = {
           <Transition v-else name="view" mode="out-in">
             <ChatView v-if="state.view === 'chat'" key="chat" />
             <LivePanel v-else-if="state.view === 'live'" key="live" />
+            <CognitiveGraphView v-else-if="state.view === 'intelligence-overview'" key="intelligence-overview" :run-id="state.currentRun?.id" />
+            <IntelligencePerformance v-else-if="state.view === 'intelligence-performance'" key="intelligence-performance" :run-id="state.currentRun?.id" />
+            <IntelligenceBenchmarks v-else-if="state.view === 'intelligence-benchmarks'" key="intelligence-benchmarks" />
+            <IntelligenceDiagnostics v-else-if="state.view === 'intelligence-diagnostics'" key="intelligence-diagnostics" :run-id="state.currentRun?.id" />
             <ProvidersView v-else-if="state.view === 'providers'" key="providers" />
             <AutomationsView v-else-if="state.view === 'automations'" key="automations" />
             <SettingsView

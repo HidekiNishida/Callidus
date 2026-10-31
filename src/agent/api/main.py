@@ -21,6 +21,7 @@ from agent.api.agent_routes import router as agent_router
 from agent.api.automation_routes import router as automation_router
 from agent.api.conversation_routes import router as conversation_router
 from agent.api.deps import get_engine, read_settings
+from agent.api.intelligence_routes import router as intelligence_router
 
 # Reexportado por compatibilidade: o import histórico `from agent.api.main import
 # _mark_repeated_thought` continua funcionando depois da extração da visão ao vivo.
@@ -94,6 +95,7 @@ app = FastAPI(
 # A ordem importa: cada roteador responde pelo seu prefixo; o resto (rotas com
 # caminho variável) fica depois, para não capturar o caminho de outro grupo.
 app.include_router(observe_router)
+app.include_router(intelligence_router)
 app.include_router(agent_router)
 app.include_router(provider_router)
 app.include_router(automation_router)

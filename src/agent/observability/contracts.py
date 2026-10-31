@@ -126,6 +126,59 @@ EVENT_SPECS: dict[str, EventSpec] = {
             ("purpose", "results"),
             description="resultados antigos do ciclo de ferramentas resumidos para a conversa caber na janela do modelo",
         ),
+        # Telemetria de transições do orquestrador (etapa do ciclo).
+        _spec("orchestrator.step.started", description="início de um passo do orquestrador"),
+        _spec(
+            "orchestrator.step.completed",
+            ("action", "duration_ms"),
+            description="término de um passo do orquestrador com a ação executada",
+        ),
+        # Transição de estado de tarefa (distinta de task.started/task.completed).
+        _spec(
+            "task.state.transitioned",
+            ("from", "to", "reason"),
+            description="mudança de estado de uma tarefa com motivo",
+        ),
+        # Compactação de contexto com antes/depois de tokens.
+        _spec(
+            "context.compacted",
+            ("before_tokens", "after_tokens", "purpose"),
+            description="compactação do contexto com redução de tokens",
+        ),
+        # Recuperação de memória e skills selecionadas.
+        _spec(
+            "memory.recovered",
+            ("skills", "sources", "tokens"),
+            description="informações recuperadas da memória e skills para o contexto",
+        ),
+        # Amostra de consumo de recursos do hardware.
+        _spec(
+            "resources.sampled",
+            ("cpu_percent", "ram_mb", "vram_mb"),
+            description="amostra de consumo de CPU, RAM e VRAM",
+        ),
+        # Tentativa de verificação (distinta de verification.passed/failed).
+        _spec(
+            "verification.attempt.started",
+            ("verifier",),
+            description="início de uma tentativa de verificação",
+        ),
+        _spec(
+            "verification.attempt.completed",
+            ("verifier", "passed", "duration_ms"),
+            description="término de uma tentativa de verificação com resultado",
+        ),
+        # Chamada ao provedor com métricas detalhadas (distinta de agent.*).
+        _spec(
+            "provider.inference.started",
+            ("provider", "model", "purpose"),
+            description="início de uma chamada ao provedor de inferência",
+        ),
+        _spec(
+            "provider.inference.completed",
+            ("provider", "model", "duration_ms", "prompt_tokens", "completion_tokens"),
+            description="término de uma chamada ao provedor com métricas de tokens",
+        ),
     )
 }
 
