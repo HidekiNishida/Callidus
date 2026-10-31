@@ -715,6 +715,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [discovery.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/engineering/discovery.py)
 - Arquivo: [git.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/engineering/git.py)
 - Arquivo: [quality.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/engineering/quality.py)
+- Arquivo: [context_retrieval.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/engineering/context_retrieval.py)
+- Arquivo: [dependency_graph.py](/Users/hidekinishida/Documents/Projetos/Callidus/src/agent/engineering/dependency_graph.py)
 - Arquivo: [README.md](/src/agent/engineering/README.md)
 ## `src/agent/desktop/`
 
@@ -1061,6 +1063,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ContextComponent` — componente com prioridade.
 - `assemble_messages(profile: ModelProfile, components: list[ContextComponent], *, safety_margin: int=256) -> BudgetResult` — adiciona required (sempre), depois optional por prioridade até estourar input_budget; `ContextBudgetError` se required não couber. A estimativa é a das mensagens montadas, uma vez. Os componentes escolhidos ficam em `selected`.
 - `compact_text(text: str) -> str` — remove linhas duplicadas consecutivas + espaços extras (não corta conteúdo semântico).
+- `fit_window(profile: ModelProfile, *, safety_margin: int=256) -> ModelProfile` — faz a janela (`context_limit`) acompanhar a reserva de saída ampliada depois de cortes: menor degrau de 4 096 que cabe entrada + reserva + margem, até 32 768. Sem isso a terceira dobra da reserva deixava o orçamento de entrada negativo e o run quebrava com `ValueError`.
 - `compact_for_pressure(name: str, text: str, *, limit: int=900) -> str` — Sob pressão de orçamento, troca texto longo e dispensável por começo, fim e a referência do tamanho. Não altera critério, requisito, objetivo, contrato nem memória operacional.
 - `group_categories(selected: list[dict]) -> list[dict]` — Agrupa os componentes enviados por categoria, sem contar o mesmo bloco duas vezes. Saída: lista com nome, tokens estimados e componentes.
 - `estimate_tokens(text: str) -> int` — Estima o custo de um texto em tokens pela heurística conservadora de ~4 caracteres por token (texto PT/EN misto). Retorna 0 para texto vazio e no mínimo 1 para texto não vazio.
@@ -1482,6 +1485,19 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [providers.py](/src/agent/orchestrator/execution/providers.py)
 - Arquivo: [runtime.py](/src/agent/orchestrator/execution/runtime.py)
 - Arquivo: [tool_results.py](/src/agent/orchestrator/execution/tool_results.py)
+- Arquivo: [evidence_refresh.py](/src/agent/orchestrator/execution/evidence_refresh.py)
+
+### `src/agent/orchestrator/execution/evidence_refresh.py`
+
+**Propósito:** renova e valida evidências de verificação após mudanças de arquivo. **Quando/onde:** chamado pelo orquestrador quando uma evidência pode estar desatualizada.
+
+- `refresh_evidence(session: Session, task: TaskModel, evidence: EvidenceModel) -> EvidenceModel | None` — Reexecuta o verificador da evidência contra o estado atual dos arquivos e devolve a evidência atualizada ou `None` quando não há verificador associado.
+- `evidence_stale(evidence: EvidenceModel, root_path: str) -> bool` — Indica se a evidência está desatualizada comparando hashes de arquivos registrados com o disco.
+- `refresh_stale_evidence(session: Session, *, task: TaskModel, path: str, root_path: str, approved: bool) -> list[str]` — Reexecuta verificações de evidências desatualizadas para uma tarefa/caminho e devolve a lista de arquivos atualizados.
+- `_tree(session: Session, root: TaskModel) -> list[TaskModel]` — Devolve a subárvore de tarefas a partir da raiz.
+- `_same_file(paths: list[Any], target: str) -> bool` — Verifica se um caminho está na lista de caminhos.
+- `_root_id(session: Session, task: TaskModel)` — Devolve o id da tarefa-raiz da tarefa informada.
+
 - Arquivo: [workspace.py](/src/agent/orchestrator/execution/workspace.py)
 - Arquivo: [writes.py](/src/agent/orchestrator/execution/writes.py)
 
@@ -1507,6 +1523,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [closing.py](/src/agent/orchestrator/closing.py)
 - Arquivo: [consolidation.py](/src/agent/orchestrator/consolidation.py)
 - Arquivo: [decomposition.py](/src/agent/orchestrator/decomposition.py)
+- Arquivo: [decomposition_policy.py](/src/agent/orchestrator/decomposition_policy.py)
 - Arquivo: [engine.py](/src/agent/orchestrator/engine.py)
 - Arquivo: [global_verify.py](/src/agent/orchestrator/global_verify.py)
 - Arquivo: [inference_usage.py](/src/agent/orchestrator/inference_usage.py)
@@ -1518,6 +1535,35 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [requirements.py](/src/agent/orchestrator/requirements.py)
 - Arquivo: [resume.py](/src/agent/orchestrator/resume.py)
 - Arquivo: [runner.py](/src/agent/orchestrator/runner.py)
+- Arquivo: [final_review.py](/src/agent/orchestrator/final_review.py)
+
+### `src/agent/orchestrator/final_review.py`
+
+**Propósito:** compõe a resposta final da tarefa e revisa a conclusão antes de marcar como completa. **Quando/onde:** chamado quando a tarefa raiz atinge VERIFYING/COMPLETED.
+
+- `compose_final_markdown(stages: list[dict], sources: list[dict]) -> str` — Monta a resposta final em Markdown a partir dos estágios concluídos e fontes consultadas.
+- `compose_incomplete_markdown(reason: str, pending: list[str]) -> str` — Monta a resposta de execução incompleta com o motivo e o que ficou pendente.
+- `ensure_final_message(task: TaskModel, session: Session) -> str` — Garante que a tarefa tenha uma mensagem final antes de ser concluída.
+- `final_review(session: Session, root: TaskModel, *, provider: LLMProvider, profile: ModelProfile, project_root: str) -> list[dict[str, Any]]` — Executa a revisão final da tarefa raiz com o modelo e devolve os achados.
+- `needs_final_review(root: TaskModel, requirements: list[dict[str, Any]]) -> bool` — Indica se a tarefa raiz precisa de revisão final com base nos requisitos.
+- `review_prompt(objective: str, done: list[str], snapshot: str) -> str` — Monta o prompt de revisão para o modelo avaliar o resultado.
+
+- Arquivo: [gap_analysis.py](/src/agent/orchestrator/gap_analysis.py)
+
+### `src/agent/orchestrator/gap_analysis.py`
+
+**Propósito:** analisa lacunas entre o objetivo e o estado atual do projeto para gerar requisitos ausentes. **Quando/onde:** usado na decomposição de pedidos vagos sobre projetos existentes.
+
+- `analyze_gaps(model: LLMProvider, profile: ModelProfile, objective: str, project_root: str) -> list[dict]` — Pergunta ao modelo quais requisitos estão faltando para cobrir o objetivo, com base no grafo de conhecimento do projeto.
+- `gap_requirements(gaps: list[dict], start: int = 1) -> list[dict]` — Converte lacunas em requisitos numerados (R1, R2, …) para o contrato da tarefa.
+- `wants_completion(objective: str) -> bool` — Indica se o objetivo é um pedido de conclusão vaga (sem ação específica de código).
+- `project_snapshot(project_root: str, *, max_files: int=4) -> str` — Resumo curto do projeto para o prompt de análise de lacunas: arquivos principais, linguagens e comandos.
+- `environment_note(project_root: str) -> str` — Resumo do ambiente do projeto (Python, ferramentas, dependências) para o prompt de análise de lacunas.
+- `_clean(items: Any) -> list[str]` — Normaliza e limpa a lista de itens devolvida pelo modelo.
+- `_prompt(objective: str, snapshot: str, environment: str) -> str` — Monta o prompt de análise de lacunas com objetivo, snapshot do grafo e ambiente.
+- `_sources(root: Path) -> list[Path]` — Lista os arquivos-fonte do projeto para varredura.
+- `_environment_note(project_root: str) -> str` — Resumo do ambiente do projeto.
+
 - Arquivo: [stagnation.py](/src/agent/orchestrator/stagnation.py)
 - Arquivo: [strategy.py](/src/agent/orchestrator/strategy.py)
 - Arquivo: [usage.py](/src/agent/orchestrator/usage.py)
@@ -1609,6 +1655,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `cancelled_expected(task) → bool` — Cancelamento previsto: outra etapa assume o trabalho, o pai pode seguir.
 - `dependencies_of(session, task_id) → list[TaskModel]` — Tarefas das quais esta depende, pela aresta `task_dependencies`.
 - `stages_outcome(session, task) → tuple[bool | None, str, dict[str, Any]]` — Conferência das etapas anteriores: o verificador `stages` não é mais uma aprovação automática.
+- `_root_of(session: Session, task: TaskModel) -> TaskModel` — Sobe `parent_id` até a tarefa sem pai. Entrada: sessão e tarefa; saída: a raiz da árvore.
+- `_answer_markdown(task: TaskModel) -> str` — Markdown gravado em `consolidated_result_json.markdown`, sem espaços nas pontas, ou string vazia.
+- `remember_final_answer(session: Session, task: TaskModel) -> bool` — Copia o markdown da etapa `final_answer` para `final_answer` da raiz, sem mudar estados. Entrada: sessão e etapa que acabou de escrever; saída: `True` quando a raiz passou a exibir o texto. Texto vazio não apaga resposta anterior.
+- `surface_final_answer(session: Session, root: TaskModel) -> bool` — Se a raiz ainda não tem texto em `final_answer`, copia o markdown da etapa `final_answer` concluída mais recente. Entrada: sessão e raiz; saída: `True` quando copiou. Não muda o estado da raiz nem do run.
 ### `src/agent/orchestrator/decomposition.py`
 
 **Propósito:** define o modelo de dados do plano (subtarefas) e resolve a decomposição hierárquica do objetivo, via modelo ou templates de fallback. **Quando/onde:** usado pelo `RunOrchestrator` no estado PLANNING para gerar o plano de subetapas de uma tarefa.
@@ -1630,6 +1680,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `automation_plan(objective: str) -> DecompositionResult` — Plano fixo de uma etapa para pedidos sobre tarefas agendadas.
 - `resolve_decomposition_plan(*, settings: Settings, run_config: dict[str, Any], objective: str, project_root: str, provider: LLMProvider | None=None, requirements: list[dict[str, Any]] | None=None, previous_objectives: list[str] | None=None) -> tuple[DecompositionResult | None, str]` — builtin e2e → automação → modelo → template genérico → mock; `previous_objectives` traz o contexto da conversa.
 - `seal_repeated_steps(parent_title: str, plan: DecompositionResult) -> DecompositionResult` — filho com mesmo título do pai vira model_operation.
+- `merge_same_file_operations(plan: DecompositionResult) -> DecompositionResult` — funde operações de modelo que alteram o mesmo arquivo numa única etapa (objetivos em lista, cobertura somada, dependências remapeadas).
+- `_target_file(spec: SubTaskSpec) -> str | None` — identifica o único arquivo citado no título/objetivo de uma operação de modelo, ou `None` quando não é aplicável.
+- `_is_root_request(objective: str, requirements: list[dict[str, Any]] | None) -> bool` — indica se o plano pedido é da raiz (único requisito, que é o próprio pedido).
+- `_store_added_requirements(session: Session, root: Any, added: list[dict[str, Any]]) -> None` — grava no contrato da raiz os requisitos da análise de lacunas (sem repetir descrição).
 
 - `norm(items) → list[str]` — Normaliza uma lista de títulos para comparação.
 
@@ -1722,6 +1776,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_cancel(ts: TaskService, task: TaskModel, reason: str) -> None` — Cancela a tarefa com o motivo quando ela está em PENDING, PLANNING, READY, RETRY_PENDING ou BLOCKED. Entrada: serviço de tarefas, tarefa e motivo; saída: `None`.
 - `_dependency_issues(session: Session, kids: list[TaskModel]) -> list[Issue]` — Analisa as dependências entre as etapas do plano e aponta dependência inexistente, de outro projeto, de tarefa cancelada ou circular. Entrada: sessão e filhos; saída: lista de `Issue`.
 - `_duplicate_issues(kids: list[TaskModel]) -> list[Issue]` — Deteta etapas repetidas exatamente (título, objetivo, ferramenta e args) ou com o mesmo título. Entrada: filhos; saída: lista de `Issue`.
+- `_exact_key(kid: TaskModel) -> tuple` — Chave de etapa idêntica (título, objetivo, ferramenta e argumentos normalizados), usada para achar duplicatas e a original de cada uma.
+- `_redirect_to_original(session: Session, parent: TaskModel, duplicate: TaskModel, flagged: set[str]) -> TaskModel | None` — Antes de cancelar uma duplicata, faz quem dependia dela depender da original (que não está entre as `flagged`); sem isso a revalidação acusava dependência de tarefa cancelada e o plano inteiro era invalidado. Saída: a original ou `None`.
 - `_norm(text: str | None) -> str` — Normaliza texto para comparação: colapsa espaços e aplica `casefold`. Entrada: texto possivelmente nulo; saída: string normalizada.
 - `_produced_before(session: Session, task: TaskModel, path: str) -> bool` — Verifica se alguma dependência anterior da etapa cria o caminho lido (operação de modelo, tool_args ou objetivo). Entrada: sessão, tarefa e caminho; saída: booleano.
 - `_reaches(graph: dict[int, set[int]], start: int, target: int) -> bool` — Percorre em profundidade o grafo de dependências por índice para detectar ciclos. Entrada: grafo e nós; saída: booleano de alcançabilidade.
@@ -1731,15 +1787,31 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `active_children(session: Session, parent_id: uuid.UUID) -> list[TaskModel]` — Devolve as subtarefas ativas (não canceladas) da tarefa informada — a base das regras de validação e do plano.
 - `plan_fingerprint(session: Session, parent_id: uuid.UUID) -> str` — hash do plano (títulos, kinds, tools, covers, deps).
 - `record_validation(session: Session, parent: TaskModel, validation: PlanValidation, run_id: uuid.UUID | None) -> None` — Grava o estado atual da validação em `metadata.plan_validation` (com versão incremental) e registra um evento `plan.validated` com a versão e o plano. Entrada: sessão, pai, validação e run; saída: `None`.
-- `repair_plan(session: Session, parent: TaskModel, validation: PlanValidation) -> list[str]` — Aplica correções automáticas seguras (cancelar duplicatas, remover dependências inválidas, trocar ferramenta inexistente por operação de modelo, criar etapa para requisito sem responsável). Entrada: sessão, pai e validação; saída: lista com a descrição de cada correção aplicada.
+- `repair_plan(session: Session, parent: TaskModel, validation: PlanValidation) -> list[str]` — Aplica correções automáticas seguras (cancelar duplicatas religando as dependentes à original, remover dependências inválidas, trocar ferramenta inexistente por operação de modelo, criar etapa para requisito sem responsável). Entrada: sessão, pai e validação; saída: lista com a descrição de cada correção aplicada.
 - `sanitize_spec(plan: DecompositionResult) -> tuple[DecompositionResult, list[Issue]]` — remove deps inválidas, cancela duplicatas.
 - `summarize(validation: PlanValidation, limit: int=4) -> str` — texto para failure.
 - `validate_and_repair(session: Session, parent: TaskModel, *, project_root: str, run_config: dict[str, Any] | None, max_tasks: int | None, run_id: uuid.UUID | None, extra_issues: list[Issue] | None=None) -> PlanValidation` — Valida o plano da tarefa contra as regras determinísticas e o repara quando possível (sanitiza dependências, cancela duplicatas, corrige cobertura); devolve a `PlanValidation` com veredito e correções.
 - `validate_children(session: Session, parent: TaskModel, *, project_root: str, run_config: dict[str, Any] | None=None, max_tasks: int | None=None, extra_issues: list[Issue] | None=None) -> PlanValidation` — Aplica todas as regras estruturais do plano: objetivo e critérios, cobertura de requisitos, ferramentas inexistentes ou bloqueadas, arquivos de entrada ausentes, duplicatas, dependências e orçamento de tarefas. Entrada: sessão, tarefa pai e parâmetros de execução; saída: `PlanValidation` com veredito, issues, cobertura, etapas bloqueadas e fingerprint do plano.
+- `_anchor_count(project_root: str, path: str, anchor: str) -> int | None` — conta quantas vezes uma âncora (string de referência) aparece no caminho do projeto.
 
 - `repair_steps(session, parent, validation) → list[str]` — Correções locais de etapa: a etapa passa a fazer o que é possível fazer.
 
 - `_anchor_present(project_root, path, anchor) → bool` — O trecho que a edição pretende substituir existe no arquivo?.
+### `src/agent/orchestrator/decomposition_policy.py`
+
+**Propósito:** política de decomposição recursiva adaptativa — decidir quando dividir uma tarefa e quando executar diretamente, integrando grafo de dependências, TaskIR e limites configuráveis. **Quando/onde:** usado pelo compilador de tarefas e pelo orquestrador para decidir estratégias de decomposição sem quebrar a decomposição existente em atomizer.py.
+
+- `DecompositionDecision(StrEnum)` — Decisão de decomposição para uma tarefa (`execute_directly`, `prepare_context`, `decompose`, `investigate`, `diagnose`, `replan`).
+- `DecompositionLimits` — Limites configuráveis para impedir explosão de tarefas (profundidade, filhos, tokens, tentativas, custo total, limiar de complexidade).
+- `DecompositionLimits.__init__(*, max_depth: int=16, max_children: int=8, max_tokens_per_operation: int=6000, max_attempts: int=8, min_work_per_subtask: int=50, max_total_cost: int=5000000, complexity_threshold: int=6) -> None` — Inicializa os limites com valores padrão.
+- `DecompositionResult` — Resultado da decisão de decomposição (decisão, justificativa, specs de subtarefas, componentes de contexto, foco de investigação, dica de diagnóstico, escopo de replanejamento).
+- `DecompositionPolicy` — Política de decomposição recursiva adaptativa que usa grafo de dependências, TaskIR e métricas determinísticas.
+- `DecompositionPolicy.__init__(limits: DecompositionLimits | None=None) -> None` — Inicializa a política com limites configuráveis.
+- `DecompositionPolicy.decide(ir: TaskIR, *, graph: Any | None=None, attempt_count: int=0, has_children: bool=False, depth: int=0, previous_failures: list[str] | None=None) -> DecompositionResult` — Decide a estratégia de decomposição para uma tarefa.
+- `DecompositionPolicy._complexity_score(ir: TaskIR, *, graph: Any | None=None, attempt_count: int=0) -> int` — Calcula pontuação de complexidade usando dados determinísticos do projeto (objetivo, requisitos, arquivos, dependências, grafo, tentativas).
+- `DecompositionPolicy._generate_subtasks(ir: TaskIR, *, graph: Any | None=None) -> list[dict[str, Any]]` — Gera specs de subtarefas com base no objetivo e nos componentes afetados.
+- `decide_decomposition(ir: TaskIR, *, graph: Any | None=None, limits: DecompositionLimits | None=None, attempt_count: int=0, has_children: bool=False, depth: int=0, previous_failures: list[str] | None=None) -> DecompositionResult` — Função de conveniência para decidir a decomposição de uma tarefa.
+
 ### `src/agent/orchestrator/planner.py`
 
 **Propósito:** Memória canônica do objetivo.
@@ -1787,10 +1859,12 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `effective_covers(session: Session, task: TaskModel, reqs: list[dict[str, Any]] | None=None) -> list[dict[str, Any]]` — covers declarados ou herdados do pai.
 - `ensure_requirements(session: Session, root: TaskModel) -> list[dict[str, Any]]` — deriva do contrato/objetivo + grava no contrato.
 - `evidence_kind(text: str) -> str` — Classifica o tipo de evidência exigida: `change` quando o texto indica alteração de código/arquivo (exige verificador) e `answer` quando basta a resposta final verificada. Entrada: texto; saída: `"change"` ou `"answer"`.
+- `evidence_touches(evidence: EvidenceModel, files: set[str]) -> bool` — Diz se uma evidência pode provar um requisito que cita arquivos: verificadores de arquivo (`file_contains`, `file_exists`, `syntax`) precisam ter examinado um deles ou o projeto inteiro; verificadores que executam código (pytest, script, comando) valem sempre. Impede que a prova de `a.py` comprove o requisito de `b.py`.
 - `load_requirements(session: Session, root: TaskModel) -> list[dict[str, Any]]` — Lê puramente os requisitos gravados no contrato da raiz, sem derivar nem gravar. Entrada: sessão e raiz; saída: lista normalizada de requisitos (vazia se não houver contrato).
+- `named_files(text: str | None) -> set[str]` — Arquivos citados por nome num texto de requisito (`"em b.py, crie ..."` → `{"b.py"}`), em minúsculas, sem abreviações como `e.g.`.
 - `normalize_covers(raw: Any) -> list[dict[str, Any]] | None` — Normaliza a declaração de cobertura (`["R1", {"req": "R2", "partial": true, "part": "API"}]`) em lista uniforme de `{req, partial, part}`; devolve `None` quando nada foi declarado. Entrada: valor cru de `metadata.covers`; saída: lista normalizada ou `None`.
 - `normalize_requirement(raw: dict[str, Any], index: int) -> dict[str, Any]` — Normaliza um requisito cru: id, descrição, origem, critério, aplicabilidade, tipo de evidência e referências, com defaults seguros. Entrada: dicionário bruto e índice; saída: dicionário de requisito normalizado.
-- `requirement_status(session: Session, root: TaskModel) -> list[dict[str, Any]]` — uncovered/failed/pending/unverified/satisfied/não_aplicável.
+- `requirement_status(session: Session, root: TaskModel) -> list[dict[str, Any]]` — uncovered/failed/pending/unverified/satisfied/não_aplicável; requisito de mudança só fica `satisfied` com evidência que `evidence_touches` aceita para os arquivos que ele cita.
 - `root_of(session: Session, task: TaskModel) -> TaskModel` — sobe até raiz (parent_id=None).
 - `siblings_declare_covers(session: Session, task: TaskModel) -> bool` — Diz se alguma tarefa irmã da mesma fase declara `covers`, o que torna a tarefa sem declaração uma etapa de apoio. Entrada: sessão e tarefa; saída: booleano.
 
@@ -1835,6 +1909,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `RunOrchestrator._run_config(run: ExecutionRunModel) -> dict` — Devolve a configuração persistida do run. Entrada: modelo do run; saída: dicionário de configuração.
 - `RunOrchestrator._same_title_above(task: TaskModel) -> bool` — Verifica se algum ancestral tem o mesmo título ou o mesmo objetivo normalizado da tarefa. Entrada: modelo da tarefa; saída: booleano.
 - `RunOrchestrator._stall_run(run: ExecutionRunModel, root: TaskModel, reason: str) -> dict[str, Any]` — Encerra o run como falho quando nada pode avançar: bloqueia a raiz, salva o relatório com pendências e requisitos e emite `run.failed`. Entrada: run, raiz e motivo; saída: dicionário de ação `run_stalled`.
+- `RunOrchestrator._final_review(run: ExecutionRunModel, root: TaskModel, config: dict[str, Any], provider: Any, work_root: str) -> dict[str, Any] | None` — Executa a revisão final da raiz com o modelo, avaliando se o objetivo foi atingido com evidências. Entrada: run, raiz, configuração, provedor e raiz de trabalho; saída: dicionário de ação ou `None` quando não é hora da revisão final.
 - `RunOrchestrator._step_body(run_id: uuid.UUID) -> dict[str, Any]` — Corpo do passo: checa limites, replaneja, escolhe a tarefa, e conforme o status avança planejamento, promoção, execução ou verificação, fechando o run quando o aceite global é aprovado. Entrada: id do run; saída: dicionário de ação do passo.
 - `RunOrchestrator._subtree_ids(root_id: uuid.UUID, tasks: list[TaskModel]) -> set[uuid.UUID]` — Devolve os ids de todas as descendentes da raiz, fechando a relação `parent_id` iterativamente sobre a lista de tarefas dada. Entrada: id da raiz e lista de tarefas; saída: conjunto de UUIDs.
 - `RunOrchestrator._conversation_objectives(task: TaskModel, limit: int=5) -> list[str]` — Pedidos anteriores da mesma conversa, do mais recente ao mais antigo; é o que permite reconhecer uma confirmação como resposta a um pedido de automação.
@@ -1842,7 +1917,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `RunOrchestrator._validate_plan(run: ExecutionRunModel, parent: TaskModel, config: dict[str, Any], work_root: str, spec_issues: list | None=None) -> PlanValidation` — Valida o plano do pai e o repara quando possível, usando o limite de tarefas das configurações. Entrada: run, pai, configuração, raiz de trabalho e issues extras da spec; saída: `PlanValidation`.
 - `RunOrchestrator._work_root(project: ProjectModel, task: TaskModel | None) -> str` — Calcula a raiz de trabalho efetiva do projeto, considerando a conversa da tarefa. Entrada: projeto e tarefa opcional; saída: caminho da raiz de trabalho.
 - `RunOrchestrator.run_until_idle(run_id: uuid.UUID, max_steps: int=50) -> list[dict]` — Avança o run em sequência até alcançar um estado terminal, pausado ou bloqueado, ou até o limite de passos, acumulando o log de ações. Entrada: id do run e número máximo de passos; saída: lista de dicionários de ação.
-- `RunOrchestrator.step(run_id: uuid.UUID) -> dict[str, Any]` — Executa um passo completo do run sob observação: chama o corpo do passo, verifica estagnação e registra a ação no log de eventos. Entrada: id do run; saída: dicionário de ação do passo.
+- `RunOrchestrator.step(run_id: uuid.UUID) -> dict[str, Any]` — Executa um passo completo do run sob o cadeado do run: o worker autônomo e `POST /execute` não planejam ao mesmo tempo. Entrada: id do run; saída: dicionário de ação do passo.
+- `RunOrchestrator._step_locked(run_id: uuid.UUID) -> dict[str, Any]` — Corpo do passo já com a exclusividade do run: observa, trata estagnação e registra a ação. Entrada: id do run; saída: dicionário de ação. Levanta `LookupError` quando o run não existe.
+- `RunOrchestrator._surface_final_answer(run: ExecutionRunModel) -> None` — Quando o passo encontra o run já terminal, copia para a raiz a resposta final já escrita, sem alterar o estado do run. Entrada: run; saída: `None`.
+- `RunOrchestrator._abandon_stale_plan(run: ExecutionRunModel, task: TaskModel) -> dict[str, Any] | None` — Depois que o modelo devolve o plano, descarta a aplicação se o run não está mais `ACTIVE` ou se a etapa já tem filhos. O commit fecha o snapshot do SQLite para enxergar um cancelamento gravado por outra conexão. Entrada: run e etapa; saída: ação de descarte ou `None` quando o plano ainda pode ser aplicado.
+- `_run_lock(run_id: uuid.UUID) -> asyncio.Lock` — Cadeado asyncio do run neste processo, criado na primeira disputa. Entrada: id do run; saída: o lock.
 - `_profile_from_config(run_config: dict, settings: Settings) -> ModelProfile` — Deriva o `ModelProfile` (modelo, limites de contexto e geração) da configuração do run e das configurações globais. Entrada: configuração do run e settings; saída: `ModelProfile`.
 - `_select_provider(settings: Settings, run_config: dict) -> LLMProvider` — Escolhe o provider LLM a partir do nome configurado (`ollama`, `llamacpp` ou `mock`), aplicando timeout e mapa de palavras-chave do mock. Entrada: settings e configuração do run; saída: instância de `LLMProvider`.
 
@@ -1851,8 +1930,23 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `RunOrchestrator._widen_output_budget(self, task, *, factor) → int` — Aumenta o orçamento de resposta da etapa (o modelo gastou tudo e devolveu nada).
 - `RunOrchestrator._sync_agent_execution(self, task, run_id) → None` — Alinha o estado do agente lógico com o estado da tarefa.
-### `src/agent/orchestrator/execution/README.md`
+### `src/agent/orchestrator/task_ir.py`
 
+**Propósito:** representação intermediária (IR) de tarefas — versão, hierarquia, dependências, requisitos rastreáveis, orçamento de contexto e contratos de entrada/saída. **Quando/onde:** usado pelo compilador de tarefas e pelo orquestrador para decompor, executar e validar unidades de trabalho, sem depender do modelo de linguagem.
+
+- `TaskIR(BaseModel)` — Representação intermediária de uma tarefa: objetivo, requisitos, restrições, aceitação, complexidade, orçamento de contexto, dependências, ferramentas autorizadas, arquivos, artefatos, entradas, saídas, estado e resultado.
+- `TaskIR.__init__(**data) -> None` — Cria uma instância do IR com validação Pydantic.
+- `IRSchema(StrEnum)` — Versão do esquema do IR (`V1`).
+- `IRSchema.V1` — Versão 1 do esquema.
+- `ArtifactRef(BaseModel)` — Referência a um artefato persistido (URI, tipo, descrição, hash opcional).
+- `RequirementLink(BaseModel)` — Ligação de rastreabilidade entre requisito e tarefa/evidência/teste.
+- `ContextBudget(BaseModel)` — Orçamento de contexto (tokens de entrada, saída, estimativa, componentes, descartados).
+- `ExecutionConstraint(BaseModel)` — Restrição de execução (tipo, valor, descrição).
+- `to_ir(task_id: uuid.UUID, task: Any, session: Any) -> TaskIR` — Converte um TaskModel do banco para um TaskIR.
+- `from_ir(ir: TaskIR, session: Any, project_id: uuid.UUID, parent_id: uuid.UUID | None=None) -> Any` — Aplica um TaskIR a um TaskModel do banco (cria ou atualiza).
+- `apply_ir_to_task(session: Any, ir: TaskIR, project_id: uuid.UUID) -> uuid.UUID` — Cria ou atualiza uma tarefa no banco a partir de um TaskIR; devolve o ID.
+
+### `src/agent/orchestrator/execution/README.md`
 **Propósito:** Índice da pasta `execution/` — como uma etapa roda (despacho, operação de modelo, escrita e verificação). **Quando/onde:** leitura inicial de quem mexe na execução de tarefa.
 
 ### `src/agent/orchestrator/execution/__init__.py`
@@ -1873,7 +1967,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `TaskExecutor` — Executor de uma etapa; usa a mesma sessão, o mesmo registro de tentativas e o mesmo registro de ferramentas do orquestrador. **Observações:** a verificação é sempre independente de quem executou.
 - `TaskExecutor.execute(run, project, task, config, work_root_path=None) -> dict[str, Any]` — Executa a etapa conforme o metadado: ferramenta MCP, resposta final, operação do modelo (com montagem de contexto, streaming e escrita/edição de arquivo) ou ferramenta determinística, com registro de tentativas e tratamento de falhas/loops. Entrada: run, projeto, tarefa, configuração e raiz de trabalho; saída: dicionário de ação (sucesso, falha ou bloqueio).
 - `TaskExecutor.finalize_verification(run, project, task, work_root_path=None, implicit_spec=None) -> dict[str, Any]` — Roda a verificação proporcional ao risco (a declarada, ou a implícita de escrita), grava a evidência com snapshot dos artefatos e decide entre concluir, bloquear, planejar recuperação ou reentrar em retry. Entrada: run, projeto, tarefa, raiz de trabalho e spec implícita opcional; saída: dicionário de ação com a evidência/falha.
-- `TaskExecutor.write_final_answer(run, project, task, config) -> dict[str, Any]` — Pede ao modelo a resposta final ao usuário (ou a compõe a partir das etapas), extrai as fontes, grava o Markdown e conclui a tarefa, consolidando o pai. Entrada: run, projeto, tarefa e configuração; saída: dicionário de ação `final_answer`.
+- `TaskExecutor.write_final_answer(run, project, task, config) -> dict[str, Any]` — Pede ao modelo a resposta final ao usuário (ou a compõe a partir das etapas), extrai as fontes, grava o Markdown, copia o texto para a raiz com `remember_final_answer` e conclui a tarefa, consolidando o pai. Entrada: run, projeto, tarefa e configuração; saída: dicionário de ação `final_answer`. A cópia na raiz acontece mesmo quando a consolidação do pai ainda não pode concluir.
 - `TaskExecutor.plan_verification_recovery(task, vresult, detail, spec) -> dict[str, Any]` — Diagnostica a reprovação da verificação e planeja a recuperação (diagnóstico → correção → re-verificação), contando as recuperações e emitindo `verification.recovery_planned`. Entrada: tarefa, resultado da verificação, detalhe e spec; saída: dicionário de plano de recuperação.
 - `TaskExecutor.criteria_of(task) -> dict[str, Any]` — Monta o critério avaliado pela verificação: requisitos cobertos pela etapa (e os parciais) e o critério de aceite dela. Entrada: modelo da tarefa; saída: dicionário com `requirements`, `partial` e `acceptance`.
 - `TaskExecutor.save_requested_memory(project, task, args) -> dict` — Executa o pedido de salvar memória feito pelo modelo, definindo escopo (projeto ou conversa) e tipo canônico/contextual. Entrada: projeto, tarefa e argumentos da ferramenta; saída: dicionário com sucesso, id e resumo da memória.
@@ -1910,6 +2004,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ModelOperation._runtime(self)` — Colaboradores da execução (sessão, settings, serviços, ferramentas).
 
 - `ModelOperation.__init__(self, executor) → None` — Guarda o executor responsável pela etapa.
+- `ModelOperation._after_verification(run, task, journal: WriteJournal, done: dict[str, Any], root_path: str, path: Any) -> None` — Registra o resultado pós-verificação: grava evidência, atualiza metadados e trata a rejeição de escrita.
+- `ModelOperation._recheck_stale(run, project, task, root_path: str) -> dict[str, Any] | None` — Reavalia evidências desatualizadas após mudanças de arquivo; devolve a ação de correção ou `None` quando não há staleness.
+- `ModelOperation._undo_if_rejected(run, task, journal: WriteJournal, done: dict[str, Any]) -> None` — Desfaz a gravação quando o modelo recusou a escrita ou o guard bloqueou a alteração.
 ### `src/agent/orchestrator/execution/providers.py`
 
 **Propósito:** Escolha do provedor do run, perfil do modelo e contabilidade de tokens. **Quando/onde:** usado pelo executor e pelo modelo.
@@ -1946,6 +2043,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `implicit_spec(path, written) -> dict[str, Any] | None` — Critério implícito de verificação de uma escrita (`file_contains` com o que foi gravado, com checagem de sintaxe).
 - `model_refusal_result(tool_name, path, reason, *, report, snapshot_id=None) -> dict[str, Any]` — Resultado consolidado de uma escrita recusada vinda do modelo.
 - `tool_refusal_result(tool_id, path, reason) -> dict[str, Any]` — Resultado consolidado de uma escrita recusada vinda do plano da etapa.
+- `WriteJournal` — Registra gravações de arquivos para permitir desfazer (undo) quando o modelo recusa ou o guard bloqueia a alteração.
+- `WriteJournal.__init__(root: str) -> None` — Inicializa o diário de gravações com a raiz do projeto.
+- `WriteJournal.remember(tool: str, path: Any) -> None` — Registra uma gravação (ferramenta e caminho) para possível reversão.
+- `WriteJournal.restore() -> list[str]` — Desfaz as gravações registradas, devolvendo os caminhos restaurados.
 
 ### `src/agent/orchestrator/execution/journal.py`
 
@@ -2253,6 +2354,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `OllamaProvider.chat_streaming(request: ChatCompletionRequest, on_delta: Callable[[str], None]) -> ChatCompletionResponse` — Faz `POST /api/chat` com `stream=true` e percorre as linhas JSON, entregando cada fragmento ao `on_delta` e devolvendo a resposta completa.
 - `OllamaProvider.list_models() -> list[str]` — Consulta `GET /api/tags` no Ollama e devolve os ids dos modelos instalados.
 - `_ollama_message(message) -> dict` — converte `ChatMessage` + images.
+- `keep_window(base_url: str, request: ChatCompletionRequest, body: dict, policy: dict) -> None` — mantém a janela de contexto do Ollama válida entre chamadas.
 - `_reasoning_model(model_id: str) -> bool` — detecta qwen3, gpt-oss, deepseek, reason.
 - `chat_body(request: ChatCompletionRequest) -> dict` — monta body (model, messages, stream, options, format, think para reasoning models).
 - `inference_failure_text(exc: Exception) -> str` — normaliza erro (timeout → "tempo esgotado").
@@ -2264,13 +2366,20 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** política por família de modelo do adaptador Ollama — janela (`num_ctx`) e saída (`num_predict`) explícitas, amostragem por finalidade, raciocínio vazado e chamada de ferramenta escrita como texto. **Quando/onde:** chamada pelo `ollama.build_chat_body` e pelo `normalize_reply`; o que vier de `generation` vence sempre.
 
-- `ModelFamily` — o que o adaptador sabe de uma família (`manage_window`, `sampling` por classe, `thinking_sampling`).
-- `family_for(model_id: str) -> ModelFamily` — `qwen3` (amostragem do modo direto), `always_reasoning` (`gpt-oss`, `deepseek-r1`: nada muda) ou genérica (só janela e saída).
+- `ModelFamily` — o que o adaptador sabe de uma família (`manage_window`, `sampling` por classe, `thinking_sampling`, `always_thinks`).
+- `family_for(model_id: str) -> ModelFamily` — `qwen3` (amostragem do modo direto), `qwen3_thinking` (variante só de raciocínio: reserva de raciocínio na saída, amostragem do Modelfile), `always_reasoning` (`gpt-oss`, `deepseek-r1`: nada muda) ou genérica (só janela e saída).
+- `thinking_only(model_id: str) -> bool` — tag `thinking` ou `qwen3-vl` sem `instruct` (no Ollama, `qwen3-vl:8b` é a variante `thinking`, que ignora `think: false`).
 - `purpose_class(purpose: str | None, *, structured: bool=False) -> str | None` — `structured` (plano, automação, `response_format`), `code` (operação) ou `prose` (resposta, chat); `None` sem padrão.
 - `_round_up(value: int, step: int) -> int` — arredonda para o próximo múltiplo (degraus de janela estáveis).
 - `apply_request_policy(body: dict[str, Any], request: ChatCompletionRequest) -> dict[str, Any]` — completa `options`: `num_predict` = reserva de saída (+4096 com raciocínio), `num_ctx` = `context_limit` ou o degrau de 4096 que cabe (teto 32768), amostragem da família; devolve os metadados da decisão.
 - `split_reasoning(content: str) -> tuple[str, str]` — separa `<think>…</think>` (e o `<think>` sem fechamento) da resposta.
-- `tool_calls_from_text(content: str, offered: set[str]) -> tuple[list[ToolCall], str]` — recupera `<tool_call>{json}</tool_call>` com nome de ferramenta oferecida.
+- `tool_calls_from_text(content: str, offered: set[str]) -> tuple[list[ToolCall], str]` — recupera `<tool_call>{json}</tool_call>` e, sem esse bloco, objetos `{"name", "arguments"}` soltos em sequência, só com nome de ferramenta oferecida.
+- `_as_call(data: Any, offered: set[str]) -> ToolCall | None` — converte `{"name": ..., "arguments": {...}}` em chamada quando o nome é de ferramenta oferecida.
+- `_bare_tool_calls(content: str, offered: set[str]) -> tuple[list[ToolCall], str]` — chamadas escritas como objetos JSON seguidos (formato do `qwen3-vl:8b` sem raciocínio); o que não é chamada fica no texto.
+- `prefill_empty_thinking(body: dict[str, Any]) -> bool` — para a variante só de raciocínio com `think: false`, acrescenta a mensagem do assistente com o bloco `<think></think>` vazio (`EMPTY_THINK`): o modelo responde direto.
+- `_prefilled(body: dict[str, Any]) -> bool` — diz se o corpo termina no bloco de raciocínio vazio (sem reserva de raciocínio na saída).
+- `_periodic_cut(text: str) -> str | None` — detecta e corta repetições periódicas no texto do modelo.
+- `repetition_cut(text: str) -> str | None` — corta repetições de palavras/frases no texto de saída do modelo.
 - `offered_tool_names(tools: list[dict[str, Any]] | None) -> set[str]` — nomes das ferramentas oferecidas (formato OpenAI).
 - `context_saturated(prompt_tokens: int | None, completion_tokens: int | None, num_ctx: int | None) -> bool` — entrada + saída ≥ 98 % da janela: sinal de corte pelo servidor.
 
@@ -2640,6 +2749,44 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [builtins.py](/src/agent/tools/builtins.py)
 - Arquivo: [diffing.py](/src/agent/tools/diffing.py)
 - Arquivo: [registry.py](/src/agent/tools/registry.py)
+- Arquivo: [app_runner.py](/src/agent/tools/app_runner.py)
+
+### `src/agent/tools/app_runner.py`
+
+**Propósito:** executa comandos de projeto (build, lint, teste) derivados da descoberta de `discover_commands`. **Quando/onde:** usado pelo verificador para rodar testes e verificações de qualidade.
+
+- `run_project_command(command: list[str], *, cwd: str | Path, timeout: float=120, env: dict[str, str] | None=None) -> dict` — Executa um comando do projeto com prazo, diretório de trabalho e ambiente controlados. Devolve `{exit_code, stdout, stderr, duration_ms}`.
+- `gui_module(path: Path) -> str | None` — Identifica o módulo de interface gráfica (Tk) de um script.
+- `interpreter_for(script: Path, preferred: str) -> tuple[str | None, str | None]` — Devolve o interpretador Python e o ambiente virtual para um script.
+- `is_gui_script(path: Path) -> bool` — Indica se o script usa Tkinter/interface gráfica.
+- `launch_detached(command: list[str], *, cwd: str, env: dict[str, str] | None, settle: float=3.0) -> dict[str, Any]` — Inicia um processo desanexado e devolve o resultado.
+- `missing_toolkit_result(toolkit: str, command: list[str]) -> dict[str, Any]` — Resultado de ferramenta ausente (Tk, PyQt etc.).
+- `smoke_run(command: list[str], *, cwd: str, env: dict[str, str] | None, seconds: float=5.0) -> dict[str, Any]` — Executa um teste rápido de fumaça de um comando.
+- `tk_probe_command(python: str, script: Path) -> list[str] | None` — Comando de sonda para verificar Tkinter.
+- `_imports_ok(python: str, module: str) -> bool` — Verifica se um módulo Python pode ser importado.
+- `_spawn(command: list[str], *, cwd: str, env: dict[str, str] | None, log_path: Path) -> subprocess.Popen` — Inicia um processo com redirecionamento de saída.
+
+- Arquivo: [arguments.py](/src/agent/tools/arguments.py)
+- Arquivo: [availability.py](/src/agent/tools/availability.py)
+- Arquivo: [contracts.py](/src/agent/tools/contracts.py)
+- Arquivo: [devtools.py](/src/agent/tools/devtools.py)
+- Arquivo: [diffing.py](/src/agent/tools/diffing.py)
+- Arquivo: [edit_repair.py](/src/agent/tools/edit_repair.py)
+
+### `src/agent/tools/edit_repair.py`
+
+**Propósito:** repara edições do modelo quando o trecho antigo não casa exatamente com o arquivo no disco. **Quando/onde:** chamado quando `edit_file` falha por `old_string` não encontrado.
+
+- `repair_edit(path: str, old_string: str, new_string: str, root_path: str) -> dict` — Tenta aplicar a edição com estratégias de fallback (normalização de espaços, correspondência flexível de linhas, remoção de trecho) e devolve `{success, applied, strategy}`.
+- `_indent_of(line: str) -> str` — Extrai a indentação inicial de uma linha.
+- `loose_span(content: str, old: str) -> tuple[int, int, str] | None` — Encontra uma correspondência tolerante (ignorando espaços em branco) de `old` em `content`, devolvendo início, fim e texto casado.
+- `python_ok(text: str) -> bool` — Verifica se o texto tem sintaxe Python válida via `ast.parse`.
+- `reindent(new: str, base: str, *, first_line_too: bool) -> str` — Reindenta o trecho `new` para casar com a indentação de `base`.
+
+- Arquivo: [policy.py](/src/agent/tools/policy.py)
+- Arquivo: [skill_tools.py](/src/agent/tools/skill_tools.py)
+- Arquivo: [system_tools.py](/src/agent/tools/system_tools.py)
+- Arquivo: [automations.py](/src/agent/tools/automations.py)
 
 ### `src/agent/tools/README.md`
 
@@ -2687,11 +2834,16 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_run_script(ctx: ToolContext, args: dict) -> dict` — executa um `.py` do projeto com o interpretador do venv local, colocando o pacote no `PYTHONPATH` (usa a raiz extra em scripts dentro de `tests/`). Entrada: `path` e `timeout`; saída: dicionário de comando com o resultado da execução.
 - `_search_grep(ctx: ToolContext, args: dict) -> dict` — busca uma regex nos arquivos do projeto (ou em `path`), pulando binários e diretórios ignorados e parando em 100 ocorrências. Entrada: `pattern`/`query` e `path`; saída: `{"success": True, "matches": [{path, line, text}], "count": n}`.
 - `_skipped(rel: Path) -> bool` — diz se um caminho relativo está dentro de um diretório ignorado (`.git`, `node_modules`, `__pycache__`, `.venv`, caches). Entrada: caminho relativo; saída: booleano. Quando listagem, glob e grep filtram resultados.
+- `_walk_files(scope: Path, root: Path)` — caminha pela árvore de arquivos dentro do escopo, respeitando pastas ignoradas e o limite de arquivos.
+
 - `_system_info(ctx: ToolContext, args: dict) -> dict` — descreve a máquina: sistema, release, arquitetura, versão do Python, usuário, pasta pessoal, hora local e raiz do workspace. Entrada: contexto; saída: dicionário com os dados do ambiente.
 - `_test_counts(stdout: str) -> dict[str, int]` — extrai do último resumo do pytest as quantidades de passed/failed/error/skipped. Entrada: stdout do pytest; saída: dicionário `{"passed": n, "failed": n, ...}`.
 - `_write_file(ctx: ToolContext, args: dict) -> dict` — grava o conteúdo no arquivo, criando diretórios quando preciso, remove o bytecode obsoleto e emite `file.created`/`file.changed` com o diff. Entrada: `path` e `content`; saída: dicionário com `bytes`, `created` e o diff.
 - `python_for(project_root: str) -> str` — escolhe o interpretador do projeto: o `python` do `.venv`/`venv` se existir, senão o `sys.executable` do agente. Entrada: raiz do projeto; saída: caminho do interpretador. Quando `_run_command`, `_run_script` e `_run_pytest` montam o argv.
 - `register_all(registry: ToolRegistry) -> None` — registra todas builtins.
+- `_glob_scan(root: Path, pattern: str) -> dict` — escaneia arquivos do projeto correspondentes a um padrão glob.
+- `_grep_scan(root: Path, scope: Path, pattern: str) -> dict` — busca por padrão regex em arquivos dentro de um escopo.
+- `_run_app(ctx: ToolContext, args: dict) -> dict` — executa um script Python como aplicação, com captura de saída e tratamento de erro.
 
 - `_run_command_remote(ctx, args, *, kind) → dict` — Comando executado no computador remoto do projeto (SSH), com saída em tempo real.
 - `_out(stream) → DeltaBatcher` — Monta a resposta da ferramenta com a saída capturada e o código de saída.
@@ -2701,6 +2853,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** Diff unificado textual (para `file_edit` emitir diff).
 
 - `unified_diff_text(path: str, before: str, after: str, *, limit: int=4000) -> dict` — `added`, `removed`, `diff` (unified diff string).
+- `append_block(before: str, addition: str) -> str` — acrescenta um bloco ao fim do conteúdo com a quebra de linha certa; é o que `edit_file` faz com `old_string` vazio (local e remoto).
 
 ### `src/agent/tools/registry.py`
 
@@ -2735,6 +2888,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** validar os argumentos de uma ferramenta contra o esquema declarado, antes da execução.
 
 - `validate_arguments(schema: dict[str, Any] | None, args: dict[str, Any] | None) -> str | None` — Confere presença e tipo; devolve a mensagem do erro ou `None`.
+- `normalize_arguments(schema: dict[str, Any] | None, args: dict[str, Any] | None) -> dict[str, Any] | None` — Normaliza os argumentos de entrada para o formato esperado pelo esquema.
 - `_validate_shorthand(schema: dict[str, str], args: dict[str, Any]) -> str | None` — Valida o atalho `nome: tipo` (`str?`, `str|list[str]`).
 - `_validate_json_schema(schema: dict[str, Any], args: dict[str, Any]) -> str | None` — Valida o JSON Schema usado pelas automações.
 - `_matches_union(body: str, value: Any) -> bool` — Indica se o valor casa com algum tipo unido por `|`.
@@ -2848,6 +3002,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_open_path(ctx: ToolContext, args: dict) -> dict` — Abre um arquivo, pasta ou URL com o manipulador padrão do sistema.
 - `_task_start(ctx: ToolContext, args: dict) -> dict` — Inicia uma tarefa longa em segundo plano e devolve o identificador.
 - `_task_status(ctx: ToolContext, args: dict) -> dict` — Consulta o estado e a saída parcial de uma tarefa em segundo plano.
+- `_project_script(ctx: ToolContext, target: str) -> bool` — Verifica se o alvo é um script de projeto executável.
+- `_run_project_script(ctx: ToolContext, target: str) -> dict` — Executa um script de projeto com o interpretador adequado.
 - `_task_cancel(ctx: ToolContext, args: dict) -> dict` — Cancela uma tarefa em segundo plano.
 - `_list_env(ctx: ToolContext, args: dict) -> dict` — Lista as variáveis de ambiente, ocultando os valores sensíveis.
 - `_system_resources(ctx: ToolContext, args: dict) -> dict` — Informa uso de disco, memória e carga da CPU.
@@ -2875,6 +3031,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** Extração tolerante de JSON de texto do modelo.
 
 - `parse_json_object(text: str) -> tuple[dict[str, Any] | None, str | None]` — encontra primeiro `{`...`}` balanceado, tenta `json.loads`, se falha tenta reparar (aspas simples, trailing commas, etc.).
+- `write_payloads(text: str) -> list[dict[str, Any]]` — escritas (`path` + `content` ou `old_string`/`new_string`) em vários objetos JSON seguidos, inclusive embrulhadas como `{"name": "write_file"|"edit_file", "arguments": {...}}`.
+- `pick_write_payload(payloads: list[dict[str, Any]], hint: str) -> dict[str, Any] | None` — a escrita do arquivo citado na etapa; sem citação, só quando todas são do mesmo arquivo (senão `None`).
 
 ## `src/agent/verification/`
 
@@ -2884,6 +3042,20 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [fingerprint.py](/src/agent/verification/fingerprint.py)
 - Arquivo: [recovery.py](/src/agent/verification/recovery.py)
 - Arquivo: [runner.py](/src/agent/verification/runner.py)
+- Arquivo: [integrity.py](/src/agent/verification/integrity.py)
+
+### `src/agent/verification/integrity.py`
+
+**Propósito:** conferir, sem executar o modelo, que uma escrita em Python não quebrou o projeto — imports locais, quem depende do arquivo e os testes que já existiam. **Quando/onde:** usado pelo orquestrador após escrita de arquivo para detecção antecipada de regressão.
+
+- `local_import_problems(project_root: str, path: str) -> list[str]` — Importações do arquivo que apontam para módulos do projeto e pedem nomes que não existem.
+- `dependents_problems(project_root: str, path: str) -> list[str]` — Outros arquivos do projeto que importam do arquivo gravado nomes que ele deixou de definir.
+- `project_has_tests(project_root: str) -> bool` — Diz se o projeto tem testes Python (`test_*.py` ou `*_test.py`).
+- `entry_is_gui(project_root: str, path: str) -> bool` — Diz se o arquivo gravado é um programa de janela com ponto de entrada (`__main__`).
+- `_defined_names(path: Path) -> set[str] | None` — Nomes definidos no topo do módulo (funções, classes, atribuições, imports); `None` se não analisável.
+- `_imports(path: Path) -> list[tuple[str, list[str], int]]` — `(módulo, nomes importados, linha)` de cada `from M import ...` absoluto do arquivo.
+- `_module_file(root: Path, near: Path, module: str) -> Path | None` — Arquivo do módulo local `module` (ao lado do arquivo que importa ou a partir da raiz).
+- `_python_files(root: Path) -> list[Path]` — Arquivos `.py` do projeto, fora das pastas de ambiente e de cache.
 
 ### `src/agent/verification/README.md`
 
@@ -2923,6 +3095,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_verify(*, project_root: str, spec: dict[str, Any], tool_args: dict[str, Any] | None, approved: bool) -> VerificationResult` — despacha por tipo, executa subprocess/validação, captura saída.
 - `run_verification(*, project_root: str, spec: dict[str, Any], tool_args: dict[str, Any] | None=None, approved: bool=False) -> VerificationResult` — Executa a verificação determinística pedida no spec (pytest, command, script, file_contains, syntax, file_exists, static_analysis) e devolve o `VerificationResult` com os eventos de verificação emitidos.
 - `syntax_problem(path: str, content: str) -> str | None` — `ast.parse` para .py, validação básica outros.
+- `_python_syntax(root: str) -> tuple[int, list[str]]` — confere a sintaxe de todos os `.py` do projeto; é o que o verificador `pytest` usa quando um projeto Python não tem testes ("no tests ran" deixa de reprovar para sempre).
+- `_python_integrity(project_root: str, path: str, tools, ctx, approved: bool) -> dict[str, Any] | None` — verifica integridade de imports locais e dependentes de um arquivo Python recém-gravado; devolve diagnóstico ou `None` quando não há problemas.
 
 ## `src/agent/vision/`
 
@@ -2957,7 +3131,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** configuração central lida de variáveis de ambiente e do arquivo `.env` (pydantic-settings). **Quando/onde:** usada pela API (`deps.read_settings`), pela persistência (URL do banco) e pelo orquestrador/provedores (URLs, modelo padrão, limites).
 
 - `Settings(BaseSettings)` — Objeto de configuração (pydantic-settings) com todas as opções do runtime: diretório de dados, URL do banco, provedores e modelos, orçamentos de contexto, limites de tentativas, recursão e run, observabilidade e caminhos da interface.
-- `Settings.resolved_database_url() -> str` — Devolve a URL final do SQLite — nos testes força `data_dir/agent.db` para não gravar no banco real; em produção usa `database_url` ou `data/agent.db`, criando o diretório quando necessário.
+- `Settings.resolved_database_url() -> str` — Devolve a URL final do SQLite — nos testes força `data_dir/agent.db` para não gravar no banco real; em produção usa `database_url` (de `CALLIDUS_DATABASE_URL` ou `DATABASE_URL`) quando é SQLite; outra URL é ignorada com um aviso único e vale `data/agent.db`, criando o diretório quando necessário.
 - `get_settings() -> Settings` — Cria uma instância de `Settings` e, se `mcp_config_path` não foi definido, preenche com `data_dir/mcp.json`. Chamada sempre que alguém precisa da configuração atual.
 
 - `resolved_provider_config_path(self) → Path` — Arquivo de provedores em uso: o configurado ou, por padrão, `data/providers.yaml`.
@@ -2988,6 +3162,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [test_conversations_memory_i18n.py](/tests/test_conversations_memory_i18n.py)
 - Arquivo: [test_decompose_loop.py](/tests/test_decompose_loop.py)
 - Arquivo: [test_decomposition.py](/tests/test_decomposition.py)
+- Arquivo: [test_decomposition_policy.py](/tests/test_decomposition_policy.py)
 - Arquivo: [test_dev_tools.py](/tests/test_dev_tools.py)
 - Arquivo: [test_diff_resume_browser.py](/tests/test_diff_resume_browser.py)
 - Arquivo: [test_e2e_orchestrator.py](/tests/test_e2e_orchestrator.py)
@@ -3019,7 +3194,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [test_plan_validation.py](/tests/test_plan_validation.py)
 - Arquivo: [test_progress_metrics.py](/tests/test_progress_metrics.py)
 - Arquivo: [test_proportional_verification.py](/tests/test_proportional_verification.py)
+- Arquivo: [test_database_url.py](/tests/test_database_url.py)
 - Arquivo: [test_requirements.py](/tests/test_requirements.py)
+- Arquivo: [test_multirequisito_regressions.py](/tests/test_multirequisito_regressions.py)
 - Arquivo: [test_resume.py](/tests/test_resume.py)
 - Arquivo: [test_resume_integrity.py](/tests/test_resume_integrity.py)
 - Arquivo: [test_retry_strategy.py](/tests/test_retry_strategy.py)
@@ -3035,6 +3212,28 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [test_sufficient_context.py](/tests/test_sufficient_context.py)
 - Arquivo: [test_token_budget.py](/tests/test_token_budget.py)
 - Arquivo: [test_tools.py](/tests/test_tools.py)
+- Arquivo: [test_task_ir.py](/tests/test_task_ir.py)
+- Arquivo: [test_app_runner.py](/tests/test_app_runner.py)
+- Arquivo: [test_final_review.py](/tests/test_final_review.py)
+- Arquivo: [test_gap_analysis.py](/tests/test_gap_analysis.py)
+- Arquivo: [test_write_integrity.py](/tests/test_write_integrity.py)
+
+### `tests/test_app_runner.py`
+
+**Propósito:** verificar a execução de comandos de projeto com prazo e captura de saída.
+
+### `tests/test_final_review.py`
+
+**Propósito:** verificar a composição da resposta final e a revisão de conclusão antes de marcar a tarefa como completa.
+
+### `tests/test_gap_analysis.py`
+
+**Propósito:** verificar a análise de lacunas entre o objetivo e o estado do projeto para geração de requisitos ausentes.
+
+### `tests/test_write_integrity.py`
+
+**Propósito:** verificar a detecção de problemas de integridade ao gravar arquivos Python (imports quebrados, dependentes afetados).
+
 
 ### `tests/test_browser_actions.py`
 
@@ -3125,6 +3324,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Verificar que a interface distingue uso informado, estimativa, parcial e ausência, e que o alerta de teto não se confunde com a janela.
 
+### `tests/web/brand-and-answer.test.mjs`
+
+**Propósito:** Confere `brandSrc` e `visibleFinalAnswer`, o uso desses helpers no chat e na sidebar, e a ausência do filtro de brilho que escurecia o lockup inteiro no tema claro.
+
 ### `tests/test_automation_chat_execution.py`
 
 **Propósito:** Verificar que a automação criada pelo chat realmente dispara, de uma vez só, e sobrevive ao reinício.
@@ -3208,6 +3411,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `tests/test_decomposition.py`
 
 **Propósito:** Testes da decomposição (modelo, builtin, page, fallback, direct_answer).
+
+### `tests/test_decomposition_policy.py`
+
+**Propósito:** Testes da política de decomposição recursiva adaptativa — decisões de executar, preparar contexto, decompor, investigar, diagnosticar e replanejar.
 
 ### `tests/test_dev_tools.py`
 
@@ -3333,9 +3540,17 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Testes de verificação proporcional ao risco (tipo de verificação por kind).
 
+### `tests/test_database_url.py`
+
+**Propósito:** verifica de onde vem a URL do banco: `CALLIDUS_DATABASE_URL` vence o `DATABASE_URL` genérico, URL SQLite é usada como veio, e um `DATABASE_URL` de outro banco (ex.: `postgres://` de outro projeto exportado no terminal) não derruba a subida — o Callidus usa `data/agent.db` e avisa uma vez.
+
 ### `tests/test_requirements.py`
 
 **Propósito:** Testes de requisitos (derivação, covers, status).
+
+### `tests/test_multirequisito_regressions.py`
+
+**Propósito:** trava as falhas que o modelo pequeno (qwen3:8b, qwen3-vl:8b) expôs no cenário de dois arquivos: prova de requisito pelo arquivo certo (evidência de `a.py` não prova `b.py`; `pytest` do projeto continua valendo), duplicata do plano religada à original e `edit_file` com `old_string` vazio que acrescenta.
 
 ### `tests/test_resume.py`
 
@@ -3396,6 +3611,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `tests/test_tools.py`
 
 **Propósito:** Testes do registro de ferramentas + builtins (execução, aprovação, timeout, aliases).
+
+### `tests/test_task_ir.py`
+
+**Propósito:** Testes da representação intermediária (IR) de tarefas — serialização, conversão para/do modelo, requisitos rastreáveis e orçamento de contexto.
 
 ## `web/`
 
@@ -4198,7 +4417,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `DailyAtTrigger.__init__(self, spec) → None` — Cria o gatilho diário a partir do horário `HH:MM` informado.
 ### `src/agent/brand.py`
 
-**Propósito:** brand — módulo do projeto.
+**Propósito:** caminhos da marca servida pela interface, inclusive as variantes de tinta escura do tema claro (`BRAND_MARK_LIGHT_PATH`, `BRAND_LOCKUP_LIGHT_PATH`).
 
 - `is_attachments_dir(rel) → bool` — True quando o caminho relativo aponta para a pasta de anexos (nova ou legada).
 
@@ -4689,8 +4908,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `shapes(svg) → list[tuple[str, str, str]]` — Devolve [(tag, classe, conteúdo do atributo d/points)] na ordem do arquivo.
 - `to_path(tag, cls, data) → str` — Converte a forma em um `<path>` com `d` equivalente.
+- `ink_of(cls: str, ink: str) -> str` — Cor da forma: a estrela (`fil1`) fica em `#668DF7`; o restante usa a tinta recebida (clara no tema escuro, `#5c6578` no tema claro).
 - `write_svg(name, view_box, body, title) → None` — Grava o SVG final com o viewBox, o tamanho e o título informados.
-- `main() → None` — Extrai as formas dos quatro SVG de origem e escreve os assets finais da marca.
+- `main() → None` — Extrai as formas dos SVG de origem e escreve os assets da marca, incluindo `callidus-mark-light.svg` e `callidus-lockup-light.svg`.
 
 ### `scripts/medir-hierarquia.py`
 
@@ -4722,6 +4942,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `scripts/medir-qwen3.sh`
 
 **Propósito:** medir com o modelo real (`qwen3:8b` no Ollama local) o Callidus antes e depois de um commit: roda `lab/avaliar.py` em rodadas alternadas, cada lado num *worktree* limpo, e guarda resumos, bancos isolados e dados do servidor em `lab/out/qwen3/`. **Quando/onde:** no Mac, com o Ollama aberto; variáveis `MODEL`, `ROUNDS`, `ANTES`, `DEPOIS`, `STEPS`, `PROVIDER`.
+
+### `scripts/medir-multirequisito.sh`
+
+**Propósito:** medir com um modelo local real (`qwen3-vl:8b` por padrão) o cenário de complexidade média (`multirequisito`) antes e depois de uma correção ainda sem commit: *worktree* "antes" = HEAD, "depois" = HEAD + só os arquivos da correção (trabalho sem commit de outras sessões fica fora), testes da correção e CI no lado depois, rodadas alternadas e resumo com aceite, conclusões falsas e medianas. Resultados em `lab/out/<TAG>/`. **Quando/onde:** no Mac, com o Ollama aberto; variáveis `MODEL`, `ROUNDS`, `STEPS`, `ONLY`, `PROVIDER`, `TAG`.
 
 ### `scripts/preencher_resume.py`
 
@@ -4781,7 +5005,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `web/static/assets/app/components/chat.js`
 
-**Propósito:** chat — módulo do projeto.
+**Propósito:** conversa: mensagens, atividade e estado vazio. O avatar e o estado vazio usam `brandSrc('mark', tema)`. A resposta final visível vem de `visibleFinalAnswer` (texto da raiz, ou o markdown da etapa concluída quando a raiz ainda não recebeu a cópia).
 
 - `isOpen`
 - `toggleEntry`
@@ -4853,7 +5077,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `web/static/assets/app/components/sidebar.js`
 
-**Propósito:** sidebar — módulo do projeto.
+**Propósito:** barra lateral. O lockup usa `brandSrc('lockup', tema)`, trocando o SVG quando o tema muda, sem filtro de brilho.
 
 ### `web/static/assets/app/components/topbar.js`
 
@@ -5057,6 +5281,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `toolArgsSummary`
 - `describeActivity`
 - `integrateNarrative(activity)` — Acopla a narração ao item operacional seguinte, dentro da seção expansível. O par imediato `agent.thought` + `work.explained` com o mesmo texto fica só na explicação; narração sem operação seguinte vira linha expansível com o texto em `narrations`. Entrada: feed descrito; saída: linhas com `narrations`.
+- `brandSrc(kind, theme)` — URL do SVG da marca para o tema. `mark` é o símbolo; `lockup` é símbolo e nome. No tema `light` devolve o arquivo `*-light.svg` (tinta `#5c6578`, estrela azul); nos demais, a tinta clara `#F6F4F4`.
+- `visibleFinalAnswer(root, children = [])` — Markdown da resposta final da conversa. Prefere `root.consolidated_result_json.final_answer` quando é texto não vazio; senão, o markdown da etapa `final_answer` concluída mais recente. Booleano na raiz não conta. Entrada: raiz e filhos; saída: texto ou string vazia.
 - `mergeActivity(feed, entry)` — Atualiza a entrada do mesmo `eventId` ou da mesma chamada; a saída de comando acumula no comando em andamento. Entrada: feed da mensagem e entrada descrita. Saída: o feed é alterado no lugar.
 - `activityStartsOpen(entry, mode)` — O item nasce aberto quando a preferência é `"aberto"` e fechado quando é `"fechado"`, inclusive o que tem diff. Entrada: entrada e modo. Saída: `true` quando a seção começa visível.
 - `activityIsOpen(entry, openIds, closedIds, mode)` — Diz se a seção do item está aberta. O clique do usuário vence a preferência. Entrada: entrada, conjuntos de ids e modo. Saída: `true` quando a narração e o detalhe estão visíveis.
@@ -5416,7 +5642,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `tests/test_brand.py`
 
-**Propósito:** Arquivo: tests/test_brand.py.
+**Propósito:** Confere os assets gerados da marca, inclusive a tinta escura do tema claro e a estrela azul preservada.
+
+### `tests/test_final_answer_delivery.py`
+
+**Propósito:** Garante que a resposta final escrita numa etapa chega à raiz mesmo com run cancelado, que um plano atrasado não cria tarefas depois do cancelamento e que dois passos do mesmo run não aplicam dois planos.
 
 ### `tests/test_context_requirements.py`
 
@@ -5456,7 +5686,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `tests/test_qwen3_ollama_policy.py`
 
-**Propósito:** verifica a política por família do adaptador Ollama: janela e saída explícitas, configuração que vence, degraus de janela estáveis, `gpt-oss` intocado, amostragem por finalidade e com raciocínio, `<think>` e `<tool_call>` no texto, saturação da janela, estimativa calibrada e a finalidade que chega ao provedor.
+**Propósito:** verifica a política por família do adaptador Ollama: janela e saída explícitas, configuração que vence, degraus de janela estáveis, `gpt-oss` intocado, amostragem por finalidade e com raciocínio, variante só de raciocínio (`qwen3-vl:8b`) com a reserva de raciocínio, `<think>` e `<tool_call>` no texto, saturação da janela, estimativa calibrada e a finalidade que chega ao provedor.
 
 ### `tests/test_qwen3_context.py`
 
@@ -5956,6 +6186,67 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `parse_generic_errors(output: str) -> dict[str, Any]` — Conta sinais de erro em uma saída de compilação ou teste.
 - `summarize_test_output(output: str, exit_code: int) -> dict[str, Any]` — Resume o resultado de uma execução de testes.
 - `run_check(command: Sequence[str], *, cwd: str | Path | None=None, timeout: float=300.0, env: dict[str, str] | None=None) -> dict[str, Any]` — Executa um comando de qualidade e devolve o resultado interpretado.
+### `src/agent/engineering/context_retrieval.py`
+
+**Propósito:** recuperação seletiva de contexto para operações do agente.. camada de aplicação — seleção, ranqueio e carregamento sob demanda de componentes de contexto.
+
+- `RetrievalQuery` — consulta de recuperação de contexto.
+- `RetrievalQuery.__init__(task: TaskModel, objective: str, *, required_files: list[str]=[], excluded_files: list[str]=[], max_tokens: int=8000, include_tests: bool=True, include_dependencies: bool=True, include_memory: bool=True, include_knowledge: bool=True, focus_symbols: list[str]=[]) -> None` — Inicializa a consulta com o objetivo da tarefa, arquivos requeridos/excluídos, orçamento de tokens e flags de inclusão.
+- `RetrievalResult` — resultado da recuperação de contexto.
+- `RetrievalResult.__init__(components: list[ContextComponent], estimated_tokens: int, dropped: list[str], coverage: dict[str, Any], retrieval_time_ms: float) -> None` — Constrói o resultado com componentes selecionados, custo estimado, componentes descartados, cobertura e tempo de recuperação.
+- `ComponentScorer` — avaliador de relevância de componentes de contexto.
+- `ComponentScorer.__init__(query: RetrievalQuery, graph: DependencyGraph | None=None) -> None` — Inicializa o avaliador com a consulta e o grafo de dependências opcional.
+- `ComponentScorer._tokenize(text: str) -> set[str]` — Tokeniza texto em palavras significativas.
+- `ComponentScorer.score_file(rel_path: str, content: str | None=None) -> float` — Avalia a relevância de um arquivo (score 0-100).
+- `ComponentScorer.score_symbol(symbol_name: str, file_path: str, symbol_kind: str) -> float` — Avalia a relevância de um símbolo.
+- `ContextRetriever` — recuperador de contexto para operações do agente.
+- `ContextRetriever.__init__(session: Session, project_root: str, graph: DependencyGraph | None=None) -> None` — Inicializa o recuperador com sessão, raiz do projeto e grafo opcional.
+- `ContextRetriever.retrieve(query: RetrievalQuery) -> RetrievalResult` — Recupera contexto para uma consulta: memória operacional, arquivos requeridos, dependências, testes, símbolos e arquivos por relevância dentro do orçamento.
+- `ContextRetriever._get_operational_memory(task: TaskModel) -> ContextComponent | None` — Recupera memória operacional da tarefa.
+- `ContextRetriever._get_file_component(rel_path: str, required: bool=False) -> ContextComponent | None` — Cria componente de contexto a partir de um arquivo.
+- `ContextRetriever._get_symbol_components(symbols: list[str], scorer: ComponentScorer) -> list[ContextComponent]` — Recupera componentes para símbolos específicos.
+- `ContextRetriever._extract_symbol_snippet(file_path: str, symbol: str, kind: str) -> str | None` — Extrai trecho do símbolo no arquivo.
+- `ContextRetriever._list_project_files(excluded: list[str]) -> list[str]` — Lista arquivos do projeto candidatos a contexto.
+- `ContextRetriever._read_file_safe(rel_path: str) -> str | None` — Lê arquivo com tratamento de erro.
+- `IncrementalContextManager` — gerenciador de contexto incremental com invalidação por dependência.
+- `IncrementalContextManager.__init__(session: Session, project_root: str, graph: DependencyGraph) -> None` — Inicializa o gerenciador com sessão, raiz do projeto e grafo de dependências.
+- `IncrementalContextManager._compute_file_hash(rel_path: str) -> str | None` — Computa o hash SHA-256 de um arquivo para detecção de mudança.
+- `IncrementalContextManager.get_reusable_components(task: TaskModel, query: RetrievalQuery) -> list[ContextComponent]` — Recupera componentes reutilizáveis do snapshot (não invalidados).
+- `IncrementalContextManager.get_snapshot(task: TaskModel) -> dict[str, Any] | None` — Recupera o snapshot de contexto de uma tarefa.
+- `IncrementalContextManager.invalidate(changed_files: list[str]) -> dict[str, list[str]]` — Invalida snapshots afetados por arquivos alterados.
+- `IncrementalContextManager.update_snapshot(task: TaskModel, components: list[ContextComponent]) -> None` — Atualiza o snapshot de contexto de uma tarefa.
+### `src/agent/engineering/dependency_graph.py`
+
+**Propósito:** grafo de dependências do projeto com análise de impacto e propagação de mudanças.. camada de infraestrutura — construção, atualização e consulta do grafo de dependências.
+
+- `DependencyGraph` — grafo de dependências do projeto com suporte a análise de impacto.
+- `DependencyGraph.__init__(project_root: str) -> None` — Inicializa o grafo para um projeto.
+- `DependencyGraph.initialize(*, max_files: int=1000, force: bool=False) -> None` — Constrói o grafo completo do projeto.
+- `DependencyGraph.update_file(rel_path: str) -> None` — Atualiza incrementalmente um arquivo no grafo.
+- `DependencyGraph.get_dependents(node_id: str, *, max_depth: int=3) -> list[str]` — Retorna nós que dependem do nó dado (transitivo até max_depth).
+- `DependencyGraph.get_dependencies(node_id: str, *, max_depth: int=3) -> list[str]` — Retorna nós dos quais o nó dado depende (transitivo até max_depth).
+- `DependencyGraph.get_affected_tests(changed_files: list[str]) -> list[str]` — Retorna arquivos de teste afetados por mudanças nos arquivos dados.
+- `DependencyGraph.compute_transitive_closure(start_nodes: list[str]) -> set[str]` — Computa o fecho transitivo a partir de nós iniciais.
+- `DependencyGraph.get_node_info(node_id: str) -> NodeInfo | None` — Retorna informações de um nó.
+- `DependencyGraph.get_file_node_id(rel_path: str) -> str` — Retorna o ID do nó de arquivo para um caminho.
+- `DependencyGraph.stats() -> dict[str, Any]` — Estatísticas do grafo.
+- `ImpactAnalyzer` — analisador de impacto de mudanças no projeto.
+- `ImpactAnalyzer.__init__(graph: DependencyGraph) -> None` — Cria o analisador com um grafo de dependências.
+- `ImpactAnalyzer.analyze(changed_files: list[str]) -> ImpactResult` — Analisa o impacto de uma lista de arquivos alterados.
+- `ImpactResult` — resultado da análise de impacto de uma mudança.
+- `NodeInfo` — informações de um nó no grafo de dependências.
+- `EdgeInfo` — informações de uma aresta no grafo de dependências.
+- `DependencyGraph._ensure_nx() -> None` — Garante que networkx está disponível.
+- `DependencyGraph._build_graph(*, max_files: int=1000) -> None` — Constrói o grafo a partir do código-fonte.
+- `DependencyGraph._add_file_node(rel_path: str, file_path: Path) -> None` — Adiciona nó de arquivo e extrai símbolos.
+- `DependencyGraph._add_cross_file_edges() -> None` — Adiciona arestas entre arquivos baseadas em imports e referências.
+- `DependencyGraph._extract_python_symbols(rel_path: str, file_path: Path) -> None` — Extrai símbolos Python (classes, funções, imports).
+- `DependencyGraph._extract_call_edges(file_id: str, rel_path: str, node: ast.Call) -> None` — Extrai arestas de chamada de função.
+- `DependencyGraph._resolve_symbol(name: str, current_file: str) -> str | None` — Resolve um símbolo para seu nó no grafo.
+- `DependencyGraph._extract_js_ts_symbols(rel_path: str, file_path: Path) -> None` — Extrai símbolos JavaScript/TypeScript (básico via regex).
+- `DependencyGraph._extract_config_symbols(rel_path: str, file_path: Path) -> None` — Extrai símbolos de arquivos de configuração.
+- `ImpactAnalyzer._detect_breaking_changes(changed_files: list[str], affected_nodes: set[str]) -> list[dict[str, Any]]` — Detecta mudanças potencialmente quebradoras de contrato.
+- `ImpactAnalyzer._calculate_risk_score(num_changed: int, num_affected: int, num_tests: int, num_breaking: int, max_depth: int) -> float` — Calcula pontuação de risco (0-100).
 ### `src/agent/skills/authoring/__init__.py`
 
 **Propósito:** expor a infraestrutura de autoria, ciclo de vida e versionamento de skills.. camada de aplicação — fachada pública do pacote `agent.skills.authoring`.

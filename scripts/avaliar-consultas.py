@@ -40,13 +40,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from agent.config import Settings  # noqa: E402
-from agent.domain.schemas import ProjectCreate, TaskCreate  # noqa: E402
-from agent.persistence.database import build_session_factory, init_db  # noqa: E402
-from agent.services.agent_service import AgentService  # noqa: E402
-from agent.services.project_service import ProjectService  # noqa: E402
-from agent.services.query_service import QueryService  # noqa: E402
-from agent.services.task_service import TaskService  # noqa: E402
+from agent.config import Settings
+from agent.domain.schemas import ProjectCreate, TaskCreate
+from agent.persistence.database import build_session_factory, init_db
+from agent.services.agent_service import AgentService
+from agent.services.project_service import ProjectService
+from agent.services.query_service import QueryService
+from agent.services.task_service import TaskService
 
 #: Descobertas persistidas no agente (o "conhecimento" disponível).
 DESCOBERTAS = [
