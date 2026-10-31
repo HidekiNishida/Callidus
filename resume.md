@@ -1280,6 +1280,337 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `grep_symbols_in_objective(objective: str) -> list[str]` — extrai do objetivo textual os identificadores de 3+ caracteres (letra inicial, resto alfanumérico/underscore) para casar com símbolos do projeto. Entrada: objetivo; saída: lista de strings candidatas. Quando se quer ligar o objetivo a símbolos indexados.
 - `scan_project(root_path: str, *, max_files: int=500) -> tuple[list[dict], list[dict]]` — varre a árvore do projeto e monta o grafo inicial: nós de projeto/arquivo/símbolo/módulo/documento e arestas `contains`, `defines`, `imports`, `documents` e `tests`, parando em `max_files`. Entrada: raiz do projeto e limite de arquivos; saída: tupla `(nodes, edges)`. Quando o `KnowledgeGraphService.reindex` indexa tudo.
 
+## `src/agent/knowledge/ucg/`
+
+**Propósito:** camada de integração e consulta do Unified Cognitive Graph — vocabulário tipado de nós e relações, provedor sobre as tabelas existentes, mecanismo de consulta seletiva e redução progressiva de contexto.
+
+## `docs/architecture/ucg/`
+
+**Propósito:** documentação da arquitetura UCG: índice, auditoria, decisões e roadmap.
+
+### `docs/architecture/ucg/README.md`
+
+**Propósito:** índice da documentação do UCG: propósito, sumário, domínios lógicos, princípios e fluxo cognitivo integrado.
+
+### `docs/architecture/ucg/auditoria.md`
+
+**Propósito:** inventário da arquitetura vigente, problemas comprovados, duplicações e evolução proposta por domínio do UCG.
+
+### `docs/architecture/ucg/decisoes.md`
+
+**Propósito:** decisões arquiteturais do UCG: modelo de nó/referência, vocabulário de relacionamentos, proveniência, tempo e validade, isolamento de escopo e integração sobre tabelas existentes.
+
+### `docs/architecture/ucg/roadmap.md`
+
+**Propósito:** ordem de implementação, critérios de conclusão e checkpoint por fase do UCG.
+
+### `src/agent/knowledge/ucg/__init__.py`
+
+**Propósito:** ponto de entrada público do UCG, exportando contrato, provedor, mecanismo de consulta e redutor de contexto.
+
+### `src/agent/knowledge/ucg/graph.py`
+
+**Propósito:** provedor do grafo unificado sobre as tabelas existentes — resolve referências de nós, consulta vizinhos/arestas, valida relacionamentos e percorre `kg_edges` e `task_dependencies` sem criar novas tabelas.
+
+- `GraphRepository` — contrato de leitura do grafo unificado: resolução de nós, vizinhos, arestas e validação de relacionamento, sem gravar dados de negócio.
+- `GraphRepository.get_edges(node_ref, *, direction=OUTGOING, relation_types=None, limit=50) -> list[GraphEdgeRef]` — devolve arestas incidentes a um nó, filtradas por direção e tipo de relação.
+- `GraphRepository.get_neighbors(node_ref, *, relation_types=None, direction=OUTGOING, limit=50) -> list[tuple[GraphEdgeRef, GraphNodeRef]]` — devolve vizinhos de um nó com a aresta que os liga, dentro do limite.
+- `GraphRepository.get_node(node_ref) -> GraphNodeRef | None` — resolve uma referência tipada para sua linha no banco, com metadados de proveniência, ou `None` quando não existe.
+- `GraphRepository.validate_relationship(source, relation, target) -> bool` — diz se o tipo de relação permite a aresta entre os tipos de origem e destino, segundo `RELATION_RULES`.
+- `UnifiedGraphService(GraphRepository)` — implementação do repositório sobre `KgNodeModel`/`KgEdgeModel` (conhecimento), `TaskDependencyModel` (tarefas), `MemoryRecordModel` (memória), `EvidenceModel` (evidências) e `AgentModel` (agentes).
+- `UnifiedGraphService.__init__(session: Session) -> None` — guarda a sessão SQLAlchemy usada nas consultas de leitura.
+- `UnifiedGraphService.get_node(node_ref) -> GraphNodeRef | None` — resolve o nó usando o resolvedor registrado para seu (domínio, tipo).
+- `UnifiedGraphService.get_neighbors(node_ref, *, relation_types=None, direction=OUTGOING, limit=50) -> list[tuple[GraphEdgeRef, GraphNodeRef]]` — expande vizinhos via `kg_edges` (conhecimento) e `task_dependencies` (tarefas), respeitando relações e direção.
+- `UnifiedGraphService.get_edges(node_ref, *, direction=OUTGOING, relation_types=None, limit=50) -> list[GraphEdgeRef]` — arestas incidentes, com os mesmos filtros de direção e tipo.
+- `UnifiedGraphService.validate_relationship(source, relation, target) -> bool` — valida a regra registrada para o tipo de relação entre os tipos dos nós.
+- `UnifiedGraphService._kg_edges(source, direction, relation_types, limit) -> list[GraphEdgeRef]` — arestas do grafo de conhecimento incidentes ao nó de origem.
+- `UnifiedGraphService._kg_neighbors(source, relation_types, direction, limit) -> list[tuple[GraphEdgeRef, GraphNodeRef]]` — vizinhos via `kg_edges`, mapeando relações legadas (`contains`, `defines`, etc.) para o vocabulário UCG.
+- `UnifiedGraphService._task_dep_edges(source, direction, relation_types, limit) -> list[GraphEdgeRef]` — arestas `DEPENDS_ON`/`BLOCKED_BY` entre tarefas.
+- `UnifiedGraphService._task_dep_neighbors(source, relation_types, direction, limit) -> list[tuple[GraphEdgeRef, GraphNodeRef]]` — vizinhos de tarefa via dependências e dependentes.
+- `UnifiedGraphService._resolve_kg_node_id(node_ref)` — id do nó em `kg_nodes` por (projeto, kind, ref), comparando kind sem diferenciar caixa.
+- `_kg_node_to_ref(node) -> GraphNodeRef` — converte uma linha `KgNodeModel` em `GraphNodeRef` do domínio knowledge, normalizando o kind com fallback para `FILE`.
+- `_register_resolver(domain, kind)` — registra um resolvedor de nó para um par (domínio, tipo) no dicionário `_NODE_RESOLVERS`.
+- `_resolve_agent_node(session, node_ref) -> GraphNodeRef | None` — resolve um agente pela linha `AgentModel` do projeto.
+- `_resolve_evidence_node(session, node_ref) -> GraphNodeRef | None` — resolve uma evidência pela linha `Evidences`, com veredito e sumário em metadados.
+- `_resolve_knowledge_node(session, node_ref) -> GraphNodeRef | None` — resolve um nó de conhecimento (`file`, `symbol`, `document`, `concept`, `function`, `class`) em `kg_nodes`.
+- `_resolve_memory_node(session, node_ref) -> GraphNodeRef | None` — resolve um registro de memória (`memory_records`), com versão e `source_refs`.
+- `_resolve_task_node(session, node_ref) -> GraphNodeRef | None` — resolve uma tarefa (`tasks`), com título, objetivo e status.
+- `_task_node_to_ref(node) -> GraphNodeRef` — converte uma linha `TaskModel` em `GraphNodeRef` do domínio task.
+
+### `src/agent/knowledge/ucg/model.py`
+
+**Propósito:** contrato de modelo do UCG — tipos de nó, tipos de relacionamento, regras de aresta e referências tipadas, sem depender de FastAPI, SQLAlchemy ou HTTP.
+
+- `GraphDirection(StrEnum)` — direção de um relacionamento: `outgoing`, `incoming` ou `undirected`.
+- `GraphDomain(StrEnum)` — domínio lógico do nó: `knowledge`, `memory`, `capability`, `research`, `task`, `agent`, `decision`, `execution`, `quality`, `strategy`.
+- `GraphEdgeRef` — referência a uma aresta do UCG entre origem, destino, tipo de relação e metadados.
+- `GraphEdgeRef.__init__(source, target, relation, metadata=None) -> None` — constrói a aresta com referência de origem e destino tipadas.
+- `GraphEdgeRef.to_dict() -> dict[str, Any]` — serializa a aresta para dicionário (origem, destino, relação, metadados).
+- `GraphNodeKind(StrEnum)` — tipo de nó registrado de forma controlada: `KNOWLEDGE`, `CONCEPT`, `FILE`, `SYMBOL`, `DOCUMENT`, `MEMORY`, `SKILL`, `MCP`, `CAPABILITY`, `TOOL`, `AGENT`, `MODEL`, `PROVIDER`, `PROJECT`, `FUNCTION`, `CLASS`, `RESEARCH_SOURCE`, `RESEARCH_FINDING`, `TASK`, `EXECUTION`, `DECISION`, `HYPOTHESIS`, `STRATEGY`, `REQUIREMENT`, `TEST`, `EVIDENCE`.
+- `GraphNodeRef` — referência tipada e isolada a um nó do UCG, apontando para a linha de origem em seu domínio.
+- `GraphNodeRef.__init__(id, domain, kind, source_system, source_id, project_id=None, scope=PROJECT, version=1, status=ACTIVE, metadata=None) -> None` — constrói a referência com identidade, domínio, tipo, sistema de origem, id, escopo, versão, status e metadados de proveniência.
+- `GraphNodeRef.from_dict(data) -> GraphNodeRef` — reconstrói a referência a partir de dicionário serializado.
+- `GraphNodeRef.to_dict() -> dict[str, Any]` — serializa a referência para dicionário.
+- `GraphRelationKind(StrEnum)` — vocabulário central de relacionamentos: `RELATED_TO`, `DEPENDS_ON`, `REQUIRES`, `SUPPORTS`, `IMPLEMENTS`, `DOCUMENTS`, `CONSUMES`, `PRODUCES`, `EXECUTED_BY`, `VALIDATES`, `EVIDENCED_BY`, `DERIVED_FROM`, `CONTRADICTS`, `SUPERSEDES`, `SIMILAR_TO`, `DISCOVERED_BY`, `USED_IN`, `APPLICABLE_TO`, `BLOCKED_BY`, mais relações legadas do indexador (`CONTAINS`, `DEFINES`, `IMPORTS`, `TESTS`).
+- `GraphRelationRule` — regra de validade de um tipo de relação: tipos de origem/destino permitidos, direção, cardinalidade, expansão recursiva e dependência obrigatória.
+- `GraphRelationRule.__init__(relation, source_kinds, target_kinds, direction=UNDIRECTED, cardinality='N:N', expansion=True, mandatory_dependency=False) -> None` — constrói a regra com os tipos e comportamentos permitidos.
+- `GraphRelationRule.allows(source_kind, target_kind) -> bool` — diz se a regra permite a aresta entre os tipos informados.
+- `GraphScope(StrEnum)` — escopo de isolamento de visibilidade: `global`, `user`, `project`, `conversation`, `task`, `execution`, `agent`.
+- `GraphStatus(StrEnum)` — status de validade do nó: `active`, `expired`, `superseded`, `blocked`.
+- `InvalidRelationshipError(ValueError)` — erro quando um relacionamento não é permitido entre os tipos informados.
+- `NodeNotFoundError(LookupError)` — erro quando um nó do UCG não é encontrado no banco.
+- `relation_rule(relation) -> GraphRelationRule` — devolve a regra registrada para o tipo de relação, ou `KeyError` quando não registrado.
+- `to_relation_kind(rel) -> GraphRelationKind | None` — converte uma string de relação (inclusive legada do indexador) para `GraphRelationKind`, ou `None` quando não é válida no UCG.
+
+### `src/agent/knowledge/ucg/query.py`
+
+**Propósito:** mecanismo de consulta seletiva do UCG — expande o grafo a partir de nós semente, respeitando limites de profundidade/nós/arestas/orçamento/tempo, com resultado rastreável e proveniência.
+
+- `GraphQuery(BaseModel)` — entrada da consulta: intenção, objetivo, projeto (escopo obrigatório), requisitos, orçamento, profundidade/máximo de nós/arestas, relações permitidas, direção, escopo e opções de memória/capacidade.
+- `GraphQueryEngine` — executa a consulta seletiva sobre `UnifiedGraphService` e `MemoryLayers`, sem gravar dados.
+- `GraphQueryEngine.__init__(session: Any) -> None` — cria o mecanismo com serviço de grafo, recuperação de memória e busca de sementes.
+- `GraphQueryEngine.execute(query) -> GraphQueryResult` — valida objetivo, identifica sementes, expande vizinhos com limites, filtra por ativo/escopo, recupera memórias, detecta lacunas e devolve cobertura/custo/confiança.
+- `GraphQueryEngine._search_seeds(query) -> list[dict[str, Any]]` — busca nós semente no grafo de conhecimento pelo objetivo.
+- `GraphQueryEngine._to_node_ref(hit, project_id) -> GraphNodeRef | None` — converte um hit de busca em `GraphNodeRef` via `kg_nodes`, normalizando kind.
+- `GraphQueryLimit(BaseModel)` — limites de expansão: `max_depth`, `max_nodes`, `max_edges`, `context_budget`, `timeout_ms`.
+- `GraphQueryResult(BaseModel)` — resultado estruturado: fatos conhecidos, arquivos, memórias, capacidades, agentes candidatos, lacunas de pesquisa, dependências, cobertura, custo estimado, confiança, proveniência, nós visitados, arestas percorridas e truncamento.
+
+### `src/agent/knowledge/ucg/reduction.py`
+
+**Propósito:** redução progressiva de contexto — seleção explicável e limitada de arquivos com base no `InspectionIndex`, respeitando orçamento de bytes e relevância, sem carregar catálogos inteiros.
+
+- `ContextReduction` — resultado da redução: selecionados, excluídos com motivo, total de bytes, tokens estimados, se o orçamento foi respeitado e explicação.
+- `ContextReduction.to_dict() -> dict[str, Any]` — serializa o resultado para dicionário.
+- `FileSelection` — seleção de um arquivo: caminho, incluído ou não, motivo, relevância, tamanho e se está estale.
+- `ProgressiveContextReducer` — redutor de contexto progressivo e explicável, integrado a `TaskStateService` e `MemoryLayers`.
+- `ProgressiveContextReducer.__init__(session: Any) -> None` — guarda a sessão e cria serviços de estado e memória.
+- `ProgressiveContextReducer.reduce(task_id, objective, *, root_path, budget_bytes=12000, max_files=12) -> ContextReduction` — seleciona arquivos inspecionados relevantes dentro do orçamento, excluindo estale, baixa relevância, limite de arquivos ou orçamento esgotado.
+- `ProgressiveContextReducer.memory_summary(task_id, *, layer_budget=480) -> str` — resumo da camada de memória imediata da tarefa, pronto para o prompt.
+- `_is_stale(insp, root_path) -> bool` — diz se o arquivo mudou desde a última inspeção comparando hashes SHA-256.
+- `_matches_objective(objective, insp) -> bool` — diz se o resumo ou snippets do arquivo casam com palavras do objetivo.
+
+### `src/agent/knowledge/ucg/agent.py`
+
+**Propósito:** Agent Graph — perfis de agente, seleção adaptativa por competência e handoff estruturado com contexto mínimo, integrado ao UCG.
+
+- `AgentProfile` — perfil de agente com competências, limitações, modelos compatíveis, custo, disponibilidade e confiabilidade.
+- `AgentProfile.__init__(agent_id, role, competencies=None, limitations=None, compatible_models=None, recommended_context=6000, allowed_tools=None, execution_requirements=None, estimated_cost='medio', availability=1.0, reliability=1.0, suitable_task_kinds=None, project_id=None, parent_id=None, depth=0, status='idle', metadata=None) -> None` — constrói o perfil com todos os atributos de seleção.
+- `AgentProfile.to_graph_node_ref() -> GraphNodeRef` — converte o perfil para nó do UCG no domínio `agent`.
+- `AgentProfile.is_available` — diz se o agente está ocioso e com confiança suficiente.
+- `AgentSelection` — resultado da seleção de agente: perfil, pontuação, motivos, cobertura, lacunas, custo e contexto estimados.
+- `AgentHandoff` — pacote de contexto mínimo para handoff: objetivo, informações essenciais, arquivos, memórias, capacidades, pré-condições, resultado esperado e orçamento.
+- `AgentHandoff.to_dict() -> dict[str, Any]` — serializa o handoff para dicionário.
+- `AgentGraphService` — serviço de seleção e handoff de agentes integrado ao UCG.
+- `AgentGraphService.__init__(session: Any, project: Any) -> None` — guarda a sessão e o projeto.
+- `AgentGraphService.discover_agents(*, required_competencies=None, suitable_task_kinds=None, limit=10) -> list[AgentProfile]` — descobre agentes disponíveis pontuados por cobertura de competências.
+- `AgentGraphService.select_agent(*, required_competencies=None, suitable_task_kinds=None, objective='', limit=10) -> AgentSelection | None` — seleciona o melhor agente para a tarefa.
+- `AgentGraphService.build_handoff(*, agent_id, task_id, objective, essential_information, files_and_references, preconditions, expected_output='', acceptance_criteria=None, budget=None, relevant_memories=None, available_capabilities=None) -> AgentHandoff` — monta o pacote de contexto mínimo.
+- `AgentGraphService.agent_to_graph_node(profile: AgentProfile) -> GraphNodeRef` — converte perfil para nó do UCG.
+- `AgentGraphService.relate_agent_to_task(profile, task_id) -> GraphEdgeRef | None` — cria aresta `EXECUTED_BY` entre tarefa e agente.
+
+### `src/agent/knowledge/ucg/capability.py`
+
+**Propósito:** Capability Graph — integra Skills, MCPs e ferramentas como nós do UCG com descoberta seletiva, dependências, permissões e disponibilidade com TTL.
+
+- `CapabilityRef` — referência leve a uma capacidade (skill, mcp, tool) com nome, descrição, metadados e TTL de disponibilidade.
+- `CapabilityRef.to_graph_node_ref() -> GraphNodeRef` — converte para nó do UCG no domínio `capability`.
+- `CapabilityRef.is_available` — diz se a capacidade está disponível segundo o TTL.
+- `CapabilityCacheEntry` — entrada de cache de disponibilidade com instante de aferição e TTL.
+- `CapabilityCacheEntry.is_stale()` — diz se a entrada expirou.
+- `CapabilityCache` — cache em memória de disponibilidade de capacidades (get/set/invalidate).
+- `CapabilityCache.get(capability_id: str) -> CapabilityCacheEntry | None` — devolve a entrada se existir e não estiver estale.
+- `CapabilityCache.set(capability_id: str, available: bool, *, ttl_seconds=DEFAULT_AVAILABILITY_TTL_SECONDS, reason='') -> CapabilityCacheEntry` — armazena ou atualiza a entrada de disponibilidade.
+- `CapabilityCache.invalidate(capability_id: str) -> bool` — remove a entrada do cache.
+- `CapabilityCache.invalidate_all() -> int` — remove todas as entradas e devolve a quantidade removida.
+- `_build_default_registry() -> Any` — constrói o registro padrão de ferramentas via `build_default_registry`.
+- `_build_default_mcp_manager() -> Any` — constrói o gerenciador MCP padrão a partir do arquivo de configuração.
+- `CapabilityResolver` — resolve nós de capacidade a partir dos catálogos existentes (skills, ferramentas, MCPs).
+- `CapabilityResolver.__init__(session, project, mcp_manager=None, tool_registry=None, cache=None) -> None` — cria o resolvedor ligado aos catálogos.
+- `CapabilityResolver.resolve_skills(*, limit=20) -> list[CapabilityRef]` — descobre skills do catálogo como capacidades.
+- `CapabilityResolver.resolve_tools(*, limit=20) -> list[CapabilityRef]` — descobre ferramentas do registro como capacidades.
+- `CapabilityResolver.resolve_mcps(*, limit=20) -> list[CapabilityRef]` — descobre servidores MCP como capacidades.
+- `CapabilityResolver.resolve_all(*, limit=20) -> list[CapabilityRef]` — descobre todas as capacidades, limitada por `limit`.
+- `CapabilityGraphService` — serviço do Capability Graph integrado ao UCG.
+- `CapabilityGraphService.__init__(session, project, mcp_manager=None, tool_registry=None, cache=None) -> None` — cria o serviço ligado a um projeto.
+- `CapabilityGraphService.discover_capabilities(*, objective='', requirements=None, limit=20) -> list[CapabilityRef]` — descobre capacidades relevantes por objetivo e requisitos.
+- `CapabilityGraphService.capability_to_graph_node(cap: CapabilityRef) -> GraphNodeRef` — converte para nó do UCG.
+- `CapabilityGraphService.capability_to_graph_node_ref(cap: CapabilityRef) -> GraphNodeRef` — alias para `capability_to_graph_node`.
+- `CapabilityGraphService.relate_capability_to_tool(capability, tool_id) -> GraphEdgeRef | None` — cria aresta `CAPABILITY_USES_TOOL`.
+- `CapabilityGraphService.refresh_availability() -> int` — invalida todo o cache de disponibilidade.
+- `CapabilityGraphService.available_capabilities(*, limit=20) -> list[CapabilityRef]` — devolve capacidades disponíveis.
+
+### `src/agent/knowledge/ucg/decision.py`
+
+**Propósito:** Decision Graph — registra decisões operacionais, hipóteses, alternativas e evidências de forma estruturada, vinculadas a tarefas.
+
+- `Hypothesis` — hipótese levantada durante a resolução de um problema, com confiança e evidências.
+- `Hypothesis.to_graph_node_ref() -> GraphNodeRef` — converte para nó do UCG no domínio `decision`.
+- `Alternative` — alternativa considerada em uma decisão, com motivo e status de aceitação.
+- `Alternative.to_graph_node_ref() -> GraphNodeRef` — converte para nó do UCG no domínio `decision`.
+- `DecisionRecord` — registro de decisão vinculado a uma tarefa, com problema, decisão, justificativa, hipóteses, alternativas, evidências e resultado.
+- `DecisionRecord.to_graph_node_ref() -> GraphNodeRef` — converte para nó do UCG no domínio `decision`.
+- `DecisionRecord.is_decided` — diz se a decisão não está mais pendente.
+- `DecisionGraphService` — serviço do Decision Graph integrado ao UCG.
+- `DecisionGraphService.__init__(session: Any) -> None` — cria o serviço ligado a uma sessão.
+- `DecisionGraphService.record_decision(*, decision_id, task_id, problem, decision, rationale='', confidence=0.5, hypotheses=None, alternatives=None, evidence_ids=None, project_id=None) -> DecisionRecord` — registra uma decisão como memória estruturada.
+- `DecisionGraphService.record_outcome(*, decision_id, outcome, evidence_ids, verified=False) -> DecisionRecord | None` — registra o resultado observado de uma decisão.
+- `DecisionGraphService.decision_to_graph_node(decision: DecisionRecord) -> GraphNodeRef` — converte para nó do UCG.
+- `DecisionGraphService.hypothesis_to_graph_node(hypothesis: Hypothesis) -> GraphNodeRef` — converte para nó do UCG.
+- `DecisionGraphService.alternative_to_graph_node(alternative: Alternative) -> GraphNodeRef` — converte para nó do UCG.
+- `DecisionGraphService.relate_decision_to_hypothesis(decision, hypothesis) -> GraphEdgeRef | None` — cria aresta `EVIDENCED_BY` entre decisão e hipótese.
+- `DecisionGraphService.relate_hypothesis_to_evidence(hypothesis, evidence_id) -> GraphEdgeRef | None` — cria aresta `EVIDENCED_BY` entre hipótese e evidência.
+- `DecisionGraphService.list_decisions_for_task(*, task_id: str) -> list[DecisionRecord]` — lista decisões de uma tarefa para retomada.
+
+### `src/agent/knowledge/ucg/execution.py`
+
+**Propósito:** Execution Graph — representa o DAG de operações e dependências de execução, detecta ciclos bloqueantes, gerencia checkpoints e habilita retomada segura e reutilização de resultados.
+
+- `ExecutionNode` — nó de execução (tarefa) com título, objetivo, status, dependências, profundidade, pronto-para-executar e fingerprint.
+- `ExecutionNode.to_graph_node_ref() -> GraphNodeRef` — converte para nó do UCG no domínio `task`.
+- `ExecutionNode.is_blocked` — diz se a tarefa está bloqueada por dependência não concluída.
+- `ExecutionEdge` — aresta de dependência entre duas tarefas.
+- `ExecutionEdge.to_graph_edge_ref(source, target) -> GraphEdgeRef` — converte para aresta do UCG.
+- `CycleError(cycle)` — erro levantado quando um ciclo é detectado no grafo de execução.
+- `CycleError.__str__() -> str` — devolve mensagem descrevendo o ciclo detectado.
+- `ExecutionGraphService` — serviço do Execution Graph integrado ao UCG.
+- `ExecutionGraphService.__init__(session: Any, project: Any) -> None` — cria o serviço ligado a um projeto.
+- `ExecutionGraphService._detect_cycles(nodes: dict[str, ExecutionNode]) -> None` — detecta ciclos nas dependências usando DFS com cores; levanta `CycleError` quando encontra um.
+- `ExecutionGraphService.build_execution_graph(*, root_task_id=None, include_completed=True) -> tuple[list[ExecutionNode], list[ExecutionEdge]]` — constrói o DAG e detecta ciclos.
+- `ExecutionGraphService.ready_tasks(*, root_task_id=None) -> list[ExecutionNode]` — devolve tarefas prontas para execução.
+- `ExecutionGraphService.next_task(*, root_task_id=None) -> ExecutionNode | None` — devolve a próxima tarefa a executar.
+- `ExecutionGraphService.has_cycle(*, root_task_id=None) -> bool` — diz se há ciclo no grafo do escopo.
+- `ExecutionGraphService.checkpoint(*, run_id, task_id, state) -> dict[str, Any]` — registra checkpoint de retomada nos metadados da tarefa.
+- `ExecutionGraphService.resume_checkpoint(*, task_id, run_id=None) -> dict[str, Any] | None` — recupera o último checkpoint de uma tarefa.
+- `ExecutionGraphService.reusable_result(*, task_id, artifact_fingerprint: str) -> bool` — verifica se há resultado reutilizável com fingerprint compatível.
+
+### `src/agent/knowledge/ucg/memory.py`
+
+**Propósito:** Memory Graph — expõe as memórias existentes (operacional, episódica, semântica, estratégica) como nós do UCG com validade temporal, confiança e promoção controlada.
+
+- `MemoryNodeRef` — referência a um nó de memória com título, resumo, conteúdo, confiança, validade e proveniência.
+- `MemoryNodeRef.to_graph_node_ref() -> GraphNodeRef` — converte para nó do UCG no domínio `memory`.
+- `MemoryNodeRef.is_valid` — diz se a memória está válida (ativa, não expirada).
+- `MemoryNodeRef.is_reusable` — diz se a memória pode ser reutilizada (válida e confiança suficiente).
+- `MemoryValidity` — janela de validade temporal com `valid_from`, `valid_until` e `max_age_days`.
+- `MemoryValidity.is_expired` — diz se a janela de validade expirou.
+- `MemoryConflict` — conflito entre duas memórias sobre o mesmo fato, com categoria e severidade.
+- `MemoryGraphService` — serviço do Memory Graph integrado ao UCG.
+- `MemoryGraphService.__init__(session: Any) -> None` — cria o serviço ligado a uma sessão.
+- `MemoryGraphService.discover_memories(*, project_id, task_id=None, objective='', kinds=None, limit=20, only_reusable=True) -> list[MemoryNodeRef]` — descobre memórias relevantes para o projeto.
+- `MemoryGraphService.memory_to_graph_node(mem: MemoryNodeRef) -> GraphNodeRef` — converte para nó do UCG.
+- `MemoryGraphService.relate_memory_to_task(memory, task_id) -> GraphEdgeRef | None` — cria aresta `USED_IN` entre memória e tarefa.
+- `MemoryGraphService.relate_memory_to_file(memory, file_path) -> GraphEdgeRef | None` — cria aresta `DOCUMENTS` entre memória e arquivo.
+- `MemoryGraphService.detect_conflicts(memories, *, fact_key='title') -> list[MemoryConflict]` — detecta conflitos entre memórias.
+- `MemoryGraphService.promote_to_semantic(memory, *, validated, evidence_id=None, confidence=None) -> MemoryNodeRef | None` — promove memória episódica para semântica somente se validado.
+- `MemoryGraphService.refresh_validity() -> int` — invalida cache interno de validade (retorna 0).
+- `MemoryGraphService._row_to_node_ref(row: MemoryRecordModel, project_id: str, *, task_id: str | None=None) -> MemoryNodeRef` — converte uma linha `MemoryRecordModel` em `MemoryNodeRef`, estimando confiança e montando validade temporal.
+- `MemoryGraphService._words(text: str) -> list[str]` — extrai palavras de um texto para pontuação de relevância.
+- `MemoryGraphService._estimate_confidence(row: MemoryRecordModel) -> float` — estima a confiança de uma memória a partir de seus metadados (outline, source_refs, summary).
+
+### `src/agent/knowledge/ucg/quality.py`
+
+**Propósito:** Quality Graph — critérios de qualidade antecipados, evidências rastreáveis, testes direcionados e verificação incremental vinculados a tarefas.
+
+- `QualityCriterion` — critério de qualidade antecipado com importância, tipo de verificação, critério de aceite e confiança.
+- `QualityCriterion.to_graph_node_ref() -> GraphNodeRef` — converte para nó do UCG no domínio `quality`.
+- `QualityCriterion.is_approved` — diz se o critério está aprovado com confiança suficiente.
+- `QualityEvidence` — evidência de qualidade vinculada a um critério e artefato, com resultado de verificação.
+- `QualityEvidence.to_graph_node_ref() -> GraphNodeRef` — converte para nó do UCG no domínio `quality`.
+- `QualityVerification` — resultado de uma verificação de qualidade executada.
+- `QualityGraphService` — serviço do Quality Graph integrado ao UCG.
+- `QualityGraphService.__init__(session: Any) -> None` — cria o serviço ligado a uma sessão.
+- `QualityGraphService.register_criterion(*, criterion_id, task_id, title, description, importance='medio', verification_type='script', acceptance_criteria='', evidence_required=None, project_id=None) -> QualityCriterion` — registra um critério de qualidade antecipado.
+- `QualityGraphService.record_evidence(*, evidence_id, criterion_id, artifact, verification_type, passed, summary='', detail=None, task_id, project_id=None) -> QualityEvidence` — registra uma evidência de qualidade.
+- `QualityGraphService.criterion_to_graph_node(criterion: QualityCriterion) -> GraphNodeRef` — converte para nó do UCG.
+- `QualityGraphService.evidence_to_graph_node(evidence: QualityEvidence) -> GraphNodeRef` — converte para nó do UCG.
+- `QualityGraphService.relate_criterion_to_task(criterion, task_id) -> GraphEdgeRef | None` — cria aresta `APPLICABLE_TO` entre critério e tarefa.
+- `QualityGraphService.list_criteria_for_task(*, task_id: str) -> list[QualityCriterion]` — lista critérios de uma tarefa.
+
+### `src/agent/knowledge/ucg/research.py`
+
+**Propósito:** Knowledge Gap Resolver e Research Graph — detecta lacunas de conhecimento e direciona pesquisa seletiva para preenchê-las, com proveniência, controle de atualidade e reutilização de descobertas.
+
+- `ResearchGap` — lacuna de conhecimento identificada em relação aos requisitos de uma tarefa.
+- `ResearchSource` — fonte de pesquisa utilizada em uma descoberta, com tipo, título, URL e credibilidade.
+- `ResearchSource.to_graph_node_ref() -> GraphNodeRef` — converte para nó do UCG no domínio `research`.
+- `ResearchFinding` — descoberta de pesquisa registrada com proveniência, pergunta, resposta, fonte, evidência, confiança e validade.
+- `ResearchFinding.to_graph_node_ref() -> GraphNodeRef` — converte para nó do UCG no domínio `research`.
+- `ResearchFinding.is_valid` — diz se a descoberta está válida (não expirada e confiança suficiente).
+- `KnowledgeGapResolver` — resolvedor de lacunas integrado ao `KnowledgeEngineService` existente.
+- `KnowledgeGapResolver.__init__(session: Any) -> None` — cria o resolvedor ligado a uma sessão.
+- `KnowledgeGapResolver._resolve_project_id(project_id: str | UUID | None, task_id: str | UUID | None) -> UUID` — resolve o UUID do projeto a partir de `project_id` ou `task_id`.
+- `KnowledgeGapResolver.identify_gaps(*, project_id, requirements, task_id=None) -> list[ResearchGap]` — identifica lacunas para requisitos sem conhecimento.
+- `KnowledgeGapResolver.resolve_gap(*, gap, answer, source, evidence, confidence=0.5, verified=False, task_id=None, project_id=None) -> ResearchFinding` — registra uma descoberta que preenche uma lacuna.
+- `KnowledgeGapResolver.find_existing_finding(*, project_id, question, max_age_days=90) -> ResearchFinding | None` — busca descoberta existente ainda válida.
+- `KnowledgeGapResolver.detect_conflicts(findings) -> list[dict[str, Any]]` — detecta conflitos entre descobertas sobre a mesma pergunta.
+- `KnowledgeGapResolver.gap_to_graph_node(gap: ResearchGap) -> GraphNodeRef` — converte para nó do UCG.
+- `KnowledgeGapResolver.finding_to_graph_node(finding: ResearchFinding) -> GraphNodeRef` — converte para nó do UCG.
+- `KnowledgeGapResolver.relate_finding_to_source(finding: ResearchFinding) -> GraphEdgeRef | None` — cria aresta `DISCOVERED_BY` entre descoberta e fonte.
+
+### `src/agent/knowledge/ucg/strategy.py`
+
+**Propósito:** Strategy Graph — estratégias de resolução, resultados históricos e aprendizado operacional com seleção adaptativa baseada em evidências.
+
+- `Strategy` — estratégia de resolução com classe de tarefa, condições, sequência, recursos, modelo, agente, orçamento, custo, risco e resultado esperado.
+- `Strategy.to_graph_node_ref() -> GraphNodeRef` — converte para nó do UCG no domínio `strategy`.
+- `StrategyResult` — resultado histórico de uma execução de estratégia com tokens, inferências, duração, ferramentas, sucesso, qualidade e custo.
+- `StrategyResult.to_graph_node_ref() -> GraphNodeRef` — converte para nó do UCG no domínio `strategy`.
+- `StrategyGraphService` — serviço do Strategy Graph integrado ao UCG.
+- `StrategyGraphService.__init__(session: Any) -> None` — cria o serviço ligado a uma sessão.
+- `StrategyGraphService.register_strategy(*, strategy_id, name, task_class, conditions, sequence, resources, model, agent, expected_budget, cost, risk, expected_result, project_id) -> Strategy` — registra uma estratégia de resolução.
+- `StrategyGraphService.record_result(*, result_id, strategy_id, task_class, tokens_in, tokens_out, inferences, duration_seconds, tools_used, success, rework, failure, quality, total_cost, evidence_id=None, executed_at=None, project_id) -> StrategyResult` — registra resultado de execução.
+- `StrategyGraphService.select_strategy(*, task_class, conditions=None, min_observations=5) -> Strategy | None` — seleciona a melhor estratégia com base em evidências suficientes.
+- `StrategyGraphService.strategy_to_graph_node(strategy: Strategy) -> GraphNodeRef` — converte para nó do UCG.
+- `StrategyGraphService.result_to_graph_node(result: StrategyResult) -> GraphNodeRef` — converte para nó do UCG.
+
+### `tests/test_ucg_agent.py`
+
+**Propósito:** verifica o Agent Graph — perfis de agente, seleção adaptativa por competência e handoff estruturado, em banco temporário isolado.
+
+### `tests/test_ucg_capability.py`
+
+**Propósito:** verifica o Capability Graph — descoberta seletiva de Skills, ferramentas e MCPs como nós do UCG, com dependências, permissões e disponibilidade com TTL.
+
+### `tests/test_ucg_decision.py`
+
+**Propósito:** verifica o Decision Graph — registros de decisão, hipóteses, alternativas e evidências vinculados a tarefas, permitindo retomada sem reconstrução integral.
+
+### `tests/test_ucg_execution.py`
+
+**Propósito:** verifica o Execution Graph — DAG de operações e dependências, detecção de ciclos bloqueantes, tarefas prontas para execução, checkpoints de retomada e reutilização de resultados.
+
+### `tests/test_ucg_memory.py`
+
+**Propósito:** verifica o Memory Graph — memórias existentes expostas como nós do UCG com validade temporal, confiança e promoção controlada.
+
+### `tests/test_ucg_quality.py`
+
+**Propósito:** verifica o Quality Graph — critérios de qualidade antecipados, evidências rastreáveis e verificações vinculadas a tarefas.
+
+### `tests/test_ucg_research.py`
+
+**Propósito:** verifica o Knowledge Gap Resolver e Research Graph — detecção de lacunas, pesquisa seletiva, registro de descobertas com proveniência e detecção de conflitos.
+
+### `tests/test_ucg_strategy.py`
+
+**Propósito:** verifica o Strategy Graph — estratégias de resolução, resultados históricos e aprendizado operacional com seleção adaptativa baseada em evidências.
+
+### `tests/test_ucg_model.py`
+
+**Propósito:** verifica o contrato de modelo do UCG: tipos de nó e relação, regras de aresta, serialização de referências e validação de compatibilidade de origem/destino.
+
+### `tests/test_ucg_query.py`
+
+**Propósito:** verifica o Graph Query Engine: consulta seletiva com limites de nós/profundidade, detecção de lacunas de pesquisa e isolamento por projeto.
+
+### `tests/test_ucg_reduction.py`
+
+**Propósito:** verifica a redução progressiva de contexto: seleção de arquivos relevantes, respeito ao orçamento, detecção de arquivos estale e comportamento com tarefa inexistente.
+
+### `tests/test_ucg_graph.py`
+
+**Propósito:** verifica o provedor do grafo unificado: resolução de nós indexados, travessia de arestas do grafo de conhecimento e validação de relacionamentos, em banco temporário isolado.
+
 ## `src/agent/mcp/`
 
 **Propósito:** Integração com servidores MCP via stdio (JSON-RPC 2.0).
