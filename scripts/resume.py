@@ -164,7 +164,12 @@ def inventory(files: list[str] | None = None) -> list[Item]:
 
 
 def file_sections(text: str) -> dict[str, str]:
-    """Mapeia cada `caminho` citado em um título ao texto da sua seção."""
+    """Mapeia cada `caminho` citado em um título ao texto da sua seção.
+
+    Quando o mesmo caminho aparece em múltiplas seções (títulos duplicados),
+    o conteúdo de todas elas é acumulado, de modo que um símbolo descrito em
+    qualquer seção do arquivo seja encontrado.
+    """
     lines = text.splitlines()
     sections: dict[str, str] = {}
     for index, line in enumerate(lines):
@@ -180,7 +185,7 @@ def file_sections(text: str) -> dict[str, str]:
                 break
         body = "\n".join(lines[index:end])
         for path in re.findall(r"`([^`]+)`", line):
-            sections.setdefault(path, body)
+            sections[path] = sections.get(path, "") + "\n" + body
     return sections
 
 

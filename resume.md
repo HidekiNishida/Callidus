@@ -136,7 +136,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `AutomationChatError(RuntimeError)` — Falha de negócio na operação de automação pedida pelo chat.
 - `__init__(message: str, **payload: Any) -> None` — Cria o erro com o detalhe da falha.
 - `AutomationChatService` — Operações de automação disponíveis ao chat.
-- `__init__(session: Session, settings: Settings | None=None, *, project_id: uuid.UUID | str | None=None, conversation_id: uuid.UUID | str | None=None) -> None` — Cria o serviço ligado a uma sessão.
 - `_await_terminal(firing_id: uuid.UUID, *, timeout: float) -> None` — Espera o disparo alcançar um estado terminal.
 - `_build_action(*, action_kind: str, objective: str, command: list[str] | None, script: str | None, conversation_id: str | None, objective_mode: str, model_id: str | None, provider: str | None, allow_scripts: bool, allowed_commands: list[str] | None, allowed_paths: list[str] | None) -> tuple[Any, PermissionSpec]` — Monta a ação e as permissões da automação.
 - `_build_dependencies(dependencies: list[dict[str, Any]] | None) -> list[DependencySpec]` — Valida as dependências pedidas.
@@ -875,7 +874,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `_mount_web(settings) → None` — Publica a interface estática e a página inicial da SPA.
 
-- `_RevalidatedStatic.file_response(self, *args, **kwargs)` — Devolve o arquivo com o cabeçalho que proíbe o cache.
 ### `src/agent/api/system_routes.py`
 
 **Propósito:** Rotas de sistema — saúde, provedores embutidos, ferramentas, MCP, preferências da interface e chat de debug. **Quando/onde:** a cada verificação de ambiente da interface ou de diagnóstico.
@@ -1002,6 +1000,13 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `present_task(session: Session, task) -> TaskRead` — Monta o `TaskRead` da tarefa, traduzindo o título para o idioma da tarefa e preenchendo `usage_tokens` e `metadata_json` com o modelo lembrado.
 - `remembered_model(session: Session, task) -> dict` — Devolve os metadados da tarefa preservando `model_id`; se a tarefa raiz não tiver modelo, procura na run mais recente que a iniciou para recuperar o `model_id` usado.
 - `usage_tokens(session: Session, task) -> int` — Tokens contabilizados da tarefa. Com livro-razão, usa a soma informada ou a estimativa guardada na linha, conforme a medição. Sem linha, usa o total legado do metadado quando ele tem qualidade. Não usa o snapshot de janela como se fosse consumo do provedor.
+
+- `present_knowledge_item(item: KnowledgeItemModel) -> dict` — Serializa um item de conhecimento para leitura pela API, incluindo conteúdo, fontes, validações e métricas de uso.
+- `present_knowledge_source(source: KnowledgeSourceModel) -> dict` — Serializa uma fonte de conhecimento para a API, incluindo origem, URL, confiança e data de indexação.
+- `present_knowledge_validation(validation: KnowledgeValidationModel) -> dict` — Serializa uma validação de item de conhecimento para a API, incluindo método, critérios, resultado e evidências.
+### `src/agent/learning/`
+
+**Propósito:** Aprendizado operacional baseado em resultados — registro e reutilização de estratégias de execução sem depender de fine-tuning.
 
 ### `src/agent/api/live_view.py`
 
@@ -1806,7 +1811,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `DecompositionLimits.__init__(*, max_depth: int=16, max_children: int=8, max_tokens_per_operation: int=6000, max_attempts: int=8, min_work_per_subtask: int=50, max_total_cost: int=5000000, complexity_threshold: int=6) -> None` — Inicializa os limites com valores padrão.
 - `DecompositionResult` — Resultado da decisão de decomposição (decisão, justificativa, specs de subtarefas, componentes de contexto, foco de investigação, dica de diagnóstico, escopo de replanejamento).
 - `DecompositionPolicy` — Política de decomposição recursiva adaptativa que usa grafo de dependências, TaskIR e métricas determinísticas.
-- `DecompositionPolicy.__init__(limits: DecompositionLimits | None=None) -> None` — Inicializa a política com limites configuráveis.
 - `DecompositionPolicy.decide(ir: TaskIR, *, graph: Any | None=None, attempt_count: int=0, has_children: bool=False, depth: int=0, previous_failures: list[str] | None=None) -> DecompositionResult` — Decide a estratégia de decomposição para uma tarefa.
 - `DecompositionPolicy._complexity_score(ir: TaskIR, *, graph: Any | None=None, attempt_count: int=0) -> int` — Calcula pontuação de complexidade usando dados determinísticos do projeto (objetivo, requisitos, arquivos, dependências, grafo, tentativas).
 - `DecompositionPolicy._generate_subtasks(ir: TaskIR, *, graph: Any | None=None) -> list[dict[str, Any]]` — Gera specs de subtarefas com base no objetivo e nos componentes afetados.
@@ -1928,8 +1932,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_widen_output_budget(self, task, *, factor) → int` — Aumenta o orçamento de resposta da etapa (o modelo gastou tudo e devolveu nada).
 - `_sync_agent_execution(self, task, run_id) → None` — Alinha o estado do agente lógico com o estado da tarefa.
 
-- `RunOrchestrator._widen_output_budget(self, task, *, factor) → int` — Aumenta o orçamento de resposta da etapa (o modelo gastou tudo e devolveu nada).
-- `RunOrchestrator._sync_agent_execution(self, task, run_id) → None` — Alinha o estado do agente lógico com o estado da tarefa.
 ### `src/agent/orchestrator/task_ir.py`
 
 **Propósito:** representação intermediária (IR) de tarefas — versão, hierarquia, dependências, requisitos rastreáveis, orçamento de contexto e contratos de entrada/saída. **Quando/onde:** usado pelo compilador de tarefas e pelo orquestrador para decompor, executar e validar unidades de trabalho, sem depender do modelo de linguagem.
@@ -1982,11 +1984,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_attempts(self)` — Registro de tentativas (contagem, dedup e fingerprint).
 - `_tools(self)` — Registro de ferramentas determinísticas.
 
-- `TaskExecutor._session(self)` — Sessão SQLAlchemy em uso.
-- `TaskExecutor._settings(self)` — Configuração do processo.
-- `TaskExecutor._tasks(self)` — Serviço de tarefas (transições de estado e dependências).
-- `TaskExecutor._attempts(self)` — Registro de tentativas (contagem, dedup e fingerprint).
-- `TaskExecutor._tools(self)` — Registro de ferramentas determinísticas.
 
 - `TaskExecutor.__init__(self, runtime) → None` — Guarda os colaboradores da execução.
 ### `src/agent/orchestrator/execution/model_operation.py`
@@ -2001,7 +1998,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_chat_model(provider_obj, request, *, purpose, stream)` — Chamada ao modelo dentro do ciclo: registra a evidência de cada iteração.
 - `_on_tool_call(entry, result) → None` — Registra a chamada de ferramenta feita pelo modelo durante o ciclo.
 
-- `ModelOperation._runtime(self)` — Colaboradores da execução (sessão, settings, serviços, ferramentas).
 
 - `ModelOperation.__init__(self, executor) → None` — Guarda o executor responsável pela etapa.
 - `ModelOperation._after_verification(run, task, journal: WriteJournal, done: dict[str, Any], root_path: str, path: Any) -> None` — Registra o resultado pós-verificação: grava evidência, atualiza metadados e trata a rejeição de escrita.
@@ -2105,7 +2101,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `_analyze(self, objective, *, context_summary) → ProfessionalStrategy` — Formula a estratégia a partir do texto do pedido.
 
-- `ProfessionalStrategist._analyze(self, objective, *, context_summary) → ProfessionalStrategy` — Formula a estratégia a partir do texto do pedido.
 ### `src/agent/orchestrator/usage.py`
 
 **Propósito:** Acúmulo de tokens por tarefa.
@@ -2219,6 +2214,13 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `TaskDependencyModel(Base)` — `task_dependencies` (id, task_id, depends_on_task_id, unique pair).
 - `TaskModel(Base)` — `tasks` (id, project_id, conversation_id, branch_id, parent_id, title, objective, scope, acceptance_criteria, status, kind, sort_order, metadata_json, consolidated_result_json, timestamps).
 - `utcnow() -> datetime` — devolve o instante atual em UTC com fuso, usado como valor padrão das colunas de data/hora. Entrada: nenhuma; saída: `datetime` timezone-aware.
+- `KnowledgeItemModel(Base)` — `knowledge_items`: item de conhecimento adquirido ou gerado pelo agente, com título, conteúdo, resumo, tecnologia, confiança e fontes.
+- `KnowledgeRelationModel(Base)` — `knowledge_relations`: relação entre dois itens de conhecimento (tipo de relação, força, anotações).
+- `KnowledgeRequestModel(Base)` — `knowledge_requests`: requisição de aquisição de conhecimento gerada por gap de contexto ou falha repetida.
+- `KnowledgeSourceModel(Base)` — `knowledge_sources`: fonte externa de conhecimento (URL, provedor, data de acesso, hash do conteúdo).
+- `KnowledgeUsageModel(Base)` — `knowledge_usage`: registro de uso de um item de conhecimento em uma tarefa ou run (resultado, sucesso, evidências).
+- `KnowledgeValidationModel(Base)` — `knowledge_validations`: validação de um item de conhecimento (método, critérios, passou, notas, validador).
+- `KnowledgeVersionModel(Base)` — `knowledge_versions`: versão de um item de conhecimento (conteúdo, resumo, confiança, motivo da mudança).
 
 ## `src/agent/providers/`
 
@@ -2278,11 +2280,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_chat(self, request) → ChatCompletionResponse` — Implementação da inferência pelo provedor. Sempre chamada por `chat`.
 - `_chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Implementação do streaming pelo provedor. Sempre chamada por `chat_streaming`.
 
-- `LLMProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor. O padrão assume apenas o que a classe implementa.
-- `LLMProvider._chat(self, request) → ChatCompletionResponse` — Implementação da inferência pelo provedor. Sempre chamada por `chat`.
-- `LLMProvider._chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Implementação do streaming pelo provedor. Sempre chamada por `chat_streaming`.
-- `LLMProvider.health_check(self) → ProviderHealth` — Verificação de conectividade barata: lista os modelos do servidor, sem inferência.
-- `LLMProvider.close(self) → None` — Libera recursos do provedor (nenhum por padrão).
 - `CHARS_PER_TOKEN` — 3 caracteres por token na estimativa local (medido contra o `prompt_eval_count` do Ollama: com 4 a estimativa ficava 12–56 % abaixo do real).
 - `estimate_text_tokens(text: str) -> int` — estimativa local de tokens, arredondada para cima; base de `context.budget.estimate_tokens`.
 - `ChatCompletionRequest.purpose` — finalidade da chamada (`plan`, `operation`, `final_answer`...), preenchida pelo `observed_chat`; o provedor escolhe padrões de geração por ela.
@@ -2308,10 +2305,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_chat_streaming(self, request, on_delta) → ChatCompletionResponse` — `stream: true` no endpoint OpenAI: eventos `data: {...}` com `choices[0].delta.content` até `[DONE]`;.
 - `_chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pelo llama-server.
 
-- `LlamaCppProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
-- `LlamaCppProvider._client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
-- `LlamaCppProvider._chat_streaming(self, request, on_delta) → ChatCompletionResponse` — `stream: true` no endpoint OpenAI: eventos `data: {...}` com `choices[0].delta.content` até `[DONE]`;.
-- `LlamaCppProvider._chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pelo llama-server.
 ### `src/agent/providers/mock.py`
 
 **Propósito:** provedor de inferência determinístico, sem rede, para testes e simulações. **Quando/onde:** usado nos testes e em execuções sem modelo real, quando o `provider` configurado é `mock`.
@@ -2326,8 +2319,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `_chat(self, request) → ChatCompletionResponse` — Devolve a resposta correspondente ao pedido, de forma determinística.
 
-- `MockProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
-- `MockProvider._chat(self, request) → ChatCompletionResponse` — Devolve a resposta correspondente ao pedido, de forma determinística.
 ### `src/agent/providers/observed.py`
 
 **Propósito:** Wrapper `observed_chat` — emite eventos streaming no EventBus.
@@ -2466,8 +2457,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `count_model_calls(self, task_id) → int` — Chamadas ao modelo da tarefa, incluindo as iterações do ciclo de ferramentas.
 - `count_tool_calls(self, task_id) → int` — Chamadas de ferramenta feitas pela tarefa.
 
-- `AttemptService.count_model_calls(self, task_id) → int` — Chamadas ao modelo da tarefa, incluindo as iterações do ciclo de ferramentas.
-- `AttemptService.count_tool_calls(self, task_id) → int` — Chamadas de ferramenta feitas pela tarefa.
 ### `src/agent/services/autonomous_worker.py`
 
 **Propósito:** Execução autônoma em segundo plano, varrendo runs ativos em loop. **Quando/onde:** usado pelo servidor da API para avançar runs marcados como `autonomous` sem intervenção do usuário.
@@ -2584,10 +2573,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `clear_remote(self, project_id) → bool` — Remove a configuração do computador remoto do projeto.
 - `delete_project(self, project_id) → dict` — Remove o projeto e tudo que pertence a ele: conversas, tarefas, execuções, eventos,.
 
-- `ProjectService.get_remote(self, project_id) → dict | None` — Configuração do computador remoto do projeto (None quando o projeto é local).
-- `ProjectService.set_remote(self, project_id, config) → dict` — Grava a configuração do computador remoto do projeto.
-- `ProjectService.clear_remote(self, project_id) → bool` — Remove a configuração do computador remoto do projeto.
-- `ProjectService.delete_project(self, project_id) → dict` — Remove o projeto e tudo que pertence a ele: conversas, tarefas, execuções, eventos,.
 ### `src/agent/services/run_service.py`
 
 **Propósito:** Controle do ciclo de vida de execuções (start, pause, resume, cancel) e registro de eventos. **Quando/onde:** usado pela API de execução e pelo orquestrador ao retomar ou cancelar runs.
@@ -2847,7 +2832,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `_run_command_remote(ctx, args, *, kind) → dict` — Comando executado no computador remoto do projeto (SSH), com saída em tempo real.
 - `_out(stream) → DeltaBatcher` — Monta a resposta da ferramenta com a saída capturada e o código de saída.
-- `_out(text) → None` — Monta a resposta da ferramenta com a saída capturada e o código de saída.
 ### `src/agent/tools/diffing.py`
 
 **Propósito:** Diff unificado textual (para `file_edit` emitir diff).
@@ -3137,8 +3121,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `resolved_provider_config_path(self) → Path` — Arquivo de provedores em uso: o configurado ou, por padrão, `data/providers.yaml`.
 - `resolved_secrets_dir(self) → Path` — Pasta das credenciais gravadas pela interface (fora do versionamento).
 
-- `Settings.resolved_provider_config_path(self) → Path` — Arquivo de provedores em uso: o configurado ou, por padrão, `data/providers.yaml`.
-- `Settings.resolved_secrets_dir(self) → Path` — Pasta das credenciais gravadas pela interface (fora do versionamento).
 ### `src/README.md`
 
 **Propósito:** índice da pasta `src/`, apontando para o pacote `agent/`. **Quando/onde:** leitura de orientação para quem navega no repositório.
@@ -3929,7 +3911,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `build_action(spec) → Action` — Instancia a ação de uma especificação.
 - `execute(self, ctx) → ActionResult` — Executa a ação aprovada e devolve o resultado (saída, código de saída e erro).
 
-- `Action.execute(self, ctx) → ActionResult` — Executa a ação aprovada e devolve o resultado (saída, código de saída e erro).
 ### `src/agent/automation/actions/callidus.py`
 
 **Propósito:** callidus — módulo do projeto.
@@ -3941,9 +3922,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_resolve_objective(self, ctx) → str | None` — Objetivo da execução, conforme a política de versão.
 - `_wait_for_run(self, ctx, run_id) → tuple[str, dict[str, Any]] | None` — Espera o run chegar a um estado terminal.
 
-- `CallidusActionRunner.execute(self, ctx) → ActionResult` — Cria a tarefa raiz, inicia o run e o entrega ao worker autônomo.
-- `CallidusActionRunner._resolve_objective(self, ctx) → str | None` — Objetivo da execução, conforme a política de versão.
-- `CallidusActionRunner._wait_for_run(self, ctx, run_id) → tuple[str, dict[str, Any]] | None` — Espera o run chegar a um estado terminal.
 
 - `CallidusActionRunner.__init__(self, spec) → None` — Cria a ação a partir da sua especificação.
 ### `src/agent/automation/actions/script.py`
@@ -3962,14 +3940,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_write_receipt(self, receipt, key) → None` — Grava o recibo da execução.
 - `_safe_command(self) → list[str]` — Comando informado na definição, sem o interpretador acrescentado.
 
-- `ScriptActionRunner._command(self) → list[str]` — Comando a executar, já com o interpretador quando informado.
-- `ScriptActionRunner.execute(self, ctx) → ActionResult` — Valida as permissões e executa o script no destino configurado.
-- `ScriptActionRunner._run_local(self, ctx, command, timeout, project_root) → ActionResult` — Executa o script na máquina local.
-- `ScriptActionRunner._run_remote(self, ctx, command, timeout) → ActionResult` — Executa o script no computador remoto do projeto.
-- `ScriptActionRunner._receipt_path(self, ctx, cwd) → Path | None` — Caminho do recibo da execução, quando a definição informa um.
-- `ScriptActionRunner._read_receipt(self, receipt) → str | None` — Conteúdo do recibo, quando existe.
-- `ScriptActionRunner._write_receipt(self, receipt, key) → None` — Grava o recibo da execução.
-- `ScriptActionRunner._safe_command(self) → list[str]` — Comando informado na definição, sem o interpretador acrescentado.
 
 - `ScriptActionRunner.__init__(self, spec) → None` — Cria a ação a partir da sua especificação.
 ### `src/agent/automation/cli.py`
@@ -4009,13 +3979,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `_fuso_valido(cls, value) → str` — Valida o fuso informado no gatilho.
 - `_comando_lista(cls, value) → list[str]` — Normaliza o comando da ação de script em uma lista de textos não vazios.
-- `_fuso_valido(cls, value) → str` — Valida o fuso informado na definição.
 
-- `TriggerSpec._fuso_valido(cls, value) → str` — Valida o fuso informado no gatilho.
-- `TriggerSpec.model_post_init(self, _context) → None` — Confere que os campos exigidos pelo tipo de gatilho estão presentes.
-- `ScriptAction._comando_lista(cls, value) → list[str]` — Normaliza o comando da ação de script em uma lista de textos não vazios.
-- `DependencySpec.label(self) → str` — Rótulo legível da dependência, para mensagens e evidências.
-- `AutomationDefinition._fuso_valido(cls, value) → str` — Valida o fuso informado na definição.
 ### `src/agent/automation/dependencies.py`
 
 **Propósito:** dependencies — módulo do projeto.
@@ -4027,7 +3991,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `as_dict(self) → dict[str, Any]` — Serializa a dependência para o registro da automação.
 - `ok(self) → bool` — Pronta quando toda dependência **crítica** está pronta.
 - `blocking(self) → list[DependencyReport]` — Indica se a dependência impede a execução quando não está satisfeita.
-- `as_dict(self) → dict[str, Any]` — Verificação agregada como dicionário serializável.
 - `check_all(self, specs) → DependencyCheck` — Verifica todas as dependências e aciona a inicialização autorizada.
 
 - `_remote_config(remote_cfg)` — Configuração do destino remoto, convertida no contrato do transporte SSH.
@@ -4051,30 +4014,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_start_mcp(self, spec, strategy) → tuple[bool, str]` — Reinicia um processo MCP gerenciado (o `McpManager` recarrega a configuração).
 - `_remote_which(self, name) → tuple[bool, str]` — Procura um executável no computador remoto.
 
-- `DependencyReport.as_dict(self) → dict[str, Any]` — Serializa a dependência para o registro da automação.
-- `DependencyCheck.ok(self) → bool` — Pronta quando toda dependência **crítica** está pronta.
-- `DependencyCheck.blocking(self) → list[DependencyReport]` — Indica se a dependência impede a execução quando não está satisfeita.
-- `DependencyCheck.as_dict(self) → dict[str, Any]` — Verificação agregada como dicionário serializável.
-- `DependencyResolver.check_all(self, specs) → DependencyCheck` — Verifica todas as dependências e aciona a inicialização autorizada.
-- `DependencyResolver._check_one(self, spec) → DependencyReport` — Verifica uma dependência conforme o seu tipo.
-- `DependencyResolver._check_project_dir(self, spec) → DependencyReport` — Verifica a pasta do projeto da automação.
-- `DependencyResolver._check_workdir(self, spec) → DependencyReport` — Verifica a pasta de trabalho declarada pela automação.
-- `DependencyResolver._check_os(self, spec) → DependencyReport` — Verifica se o sistema operacional exigido está disponível.
-- `DependencyResolver._target_os_family(self) → str` — Família de sistema do destino da automação.
-- `DependencyResolver._check_interpreter(self, spec) → DependencyReport` — Verifica o interpretador configurado para a automação.
-- `DependencyResolver._check_script(self, spec) → DependencyReport` — Verifica o script declarado pela automação.
-- `DependencyResolver._check_remote(self, spec) → DependencyReport` — Verifica o computador remoto declarado pela automação.
-- `DependencyResolver._check_provider(self, spec) → DependencyReport` — Verifica o provedor de modelo exigido pela automação.
-- `DependencyResolver._check_tool(self, spec) → DependencyReport` — Verifica a ferramenta exigida pela automação.
-- `DependencyResolver._check_mcp(self, spec) → DependencyReport` — Verifica o servidor MCP exigido pela automação.
-- `DependencyResolver._check_credential(self, spec) → DependencyReport` — Confere a existência da credencial **sem** revelar o valor.
-- `DependencyResolver._can_start(self, spec) → bool` — Indica se a dependência pode ser iniciada automaticamente.
-- `DependencyResolver._start(self, spec) → tuple[bool, str]` — Executa a estratégia de inicialização da dependência.
-- `DependencyResolver._start_command(self, strategy) → tuple[bool, str]` — Executa o comando de inicialização, local ou remoto.
-- `DependencyResolver._start_service(self, strategy) → tuple[bool, str]` — Reinicia o serviço nativo declarado na estratégia.
-- `DependencyResolver._remote_service(self, name, strategy) → tuple[bool, str]` — Reinicia o serviço no computador remoto.
-- `DependencyResolver._start_mcp(self, spec, strategy) → tuple[bool, str]` — Reinicia um processo MCP gerenciado (o `McpManager` recarrega a configuração).
-- `DependencyResolver._remote_which(self, name) → tuple[bool, str]` — Procura um executável no computador remoto.
 
 - `DependencyResolver.__init__(self, *, settings, project_root, remote, target_kind) → None` — Cria o verificador de dependências.
 ### `src/agent/automation/dispatcher.py`
@@ -4094,12 +4033,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_create(self, automation, *, key, scheduled_for, state, result) → AutomationFiringModel | None` — Cria a linha de disparo, respeitando a chave de idempotência.
 - `_advance(self, automation, last_occurrence, now) → None` — Avança o marcador de última execução e recalcula o próximo disparo.
 
-- `DispatchResult.as_dict(self) → dict` — Desfecho do despacho como dicionário serializável.
-- `Dispatcher.dispatch_due(self, automation, *, now) → DispatchResult` — Registra os disparos vencidos de uma automação temporal.
-- `Dispatcher.dispatch_event(self, automation, candidate) → AutomationFiringModel | None` — Registra o disparo de um evento interno (idempotente pelo identificador do evento).
-- `Dispatcher.dispatch_manual(self, automation, *, tag, state, result, scheduled_for) → AutomationFiringModel | None` — Disparo manual ("executar agora", "testar"). Sempre único.
-- `Dispatcher._create(self, automation, *, key, scheduled_for, state, result) → AutomationFiringModel | None` — Cria a linha de disparo, respeitando a chave de idempotência.
-- `Dispatcher._advance(self, automation, last_occurrence, now) → None` — Avança o marcador de última execução e recalcula o próximo disparo.
 
 - `Dispatcher.__init__(self, session) → None` — Cria o despachante ligado a uma sessão.
 ### `src/agent/automation/enums.py`
@@ -4130,11 +4063,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_next_attempt(self, policy, attempt) → datetime` — Instante da próxima tentativa, com backoff exponencial limitado.
 - `_log(self, automation, firing, event_type, payload) → None` — Registra um fato da automação no log de eventos.
 
-- `AutomationExecutor._target_info(self, automation) → dict[str, Any]` — Resolve o destino da automação: local ou remoto, com suas permissões.
-- `AutomationExecutor.execute(self, firing) → ExecutionOutcome` — Executa um disparo: dependências, ação, evidência e estado.
-- `AutomationExecutor.reconcile(self) → list[ExecutionOutcome]` — Fecha os disparos que ficaram rodando, olhando o estado real do run.
-- `AutomationExecutor._next_attempt(self, policy, attempt) → datetime` — Instante da próxima tentativa, com backoff exponencial limitado.
-- `AutomationExecutor._log(self, automation, firing, event_type, payload) → None` — Registra um fato da automação no log de eventos.
 
 - `AutomationExecutor.__init__(self, session, settings) → None` — Cria o executor ligado a uma sessão.
 ### `src/agent/automation/security.py`
@@ -4178,16 +4106,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_which(self, executable) → str | None` — Localiza um executável no `PATH`.
 - `_home(self) → Path` — Pasta pessoal do usuário.
 
-- `ServiceStatus.as_dict(self) → dict[str, Any]` — Situação do serviço como dicionário serializável.
-- `ServiceAdapter.available(self) → bool` — Este adaptador funciona nesta máquina?.
-- `ServiceAdapter.install(self, options) → dict[str, Any]` — Instala o serviço nativo.
-- `ServiceAdapter.uninstall(self) → dict[str, Any]` — Remove o serviço nativo.
-- `ServiceAdapter.start(self) → dict[str, Any]` — Inicia o serviço.
-- `ServiceAdapter.stop(self) → dict[str, Any]` — Para o serviço.
-- `ServiceAdapter.status(self) → ServiceStatus` — Situação do serviço.
-- `ServiceAdapter._run(self, args, *, timeout) → tuple[int, str, str]` — Executa um comando do sistema operacional.
-- `ServiceAdapter._which(self, executable) → str | None` — Localiza um executável no `PATH`.
-- `ServiceAdapter._home(self) → Path` — Pasta pessoal do usuário.
 ### `src/agent/automation/service/launchd.py`
 
 **Propósito:** launchd — módulo do projeto.
@@ -4202,13 +4120,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `_plist_path(self, label) → Path` — Caminho do arquivo `plist` do agente.
 
-- `LaunchdAdapter._plist_path(self, label) → Path` — Caminho do arquivo `plist` do agente.
-- `LaunchdAdapter.available(self) → bool` — Indica se o `launchd` pode ser usado nesta máquina.
-- `LaunchdAdapter.install(self, options) → dict[str, Any]` — Grava o `plist` e carrega o agente no `launchd`.
-- `LaunchdAdapter.uninstall(self) → dict[str, Any]` — Descarrega o agente e apaga o `plist`.
-- `LaunchdAdapter.start(self) → dict[str, Any]` — Inicia o agente do `launchd`.
-- `LaunchdAdapter.stop(self) → dict[str, Any]` — Para o agente do `launchd`.
-- `LaunchdAdapter.status(self) → ServiceStatus` — Situação do agente do `launchd`.
 ### `src/agent/automation/service/systemd.py`
 
 **Propósito:** systemd — módulo do projeto.
@@ -4227,17 +4138,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_ctl(self, args, scope) → tuple[int, str, str]` — Chama o `systemctl` no escopo pedido.
 - `_unit_content(self, options) → str` — Conteúdo do arquivo de unidade.
 
-- `SystemdAdapter._user_unit_path(self) → Path` — Caminho da unidade de usuário.
-- `SystemdAdapter._system_unit_path(self) → Path` — Caminho da unidade de sistema.
-- `SystemdAdapter._unit_path(self, scope) → Path` — Caminho da unidade conforme o escopo.
-- `SystemdAdapter._ctl(self, args, scope) → tuple[int, str, str]` — Chama o `systemctl` no escopo pedido.
-- `SystemdAdapter.available(self) → bool` — Indica se o `systemd` pode ser usado nesta máquina.
-- `SystemdAdapter._unit_content(self, options) → str` — Conteúdo do arquivo de unidade.
-- `SystemdAdapter.install(self, options) → dict[str, Any]` — Grava a unidade, recarrega o `systemd` e habilita o serviço.
-- `SystemdAdapter.uninstall(self) → dict[str, Any]` — Para, desabilita e apaga a unidade nos dois escopos.
-- `SystemdAdapter.start(self) → dict[str, Any]` — Inicia o serviço de usuário.
-- `SystemdAdapter.stop(self) → dict[str, Any]` — Para o serviço de usuário.
-- `SystemdAdapter.status(self) → ServiceStatus` — Situação do serviço, consultando o escopo de usuário e o de sistema.
 ### `src/agent/automation/service/windows.py`
 
 **Propósito:** windows — módulo do projeto.
@@ -4253,14 +4153,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_task_name(self) → str` — Nome da tarefa agendada.
 - `_is_admin(self) → bool` — Indica se o processo roda com privilégio administrativo.
 
-- `WindowsTaskAdapter.available(self) → bool` — Indica se o Agendador de Tarefas pode ser usado nesta máquina.
-- `WindowsTaskAdapter._task_name(self) → str` — Nome da tarefa agendada.
-- `WindowsTaskAdapter.install(self, options) → dict[str, Any]` — Cria a tarefa agendada, no escopo de usuário ou de sistema.
-- `WindowsTaskAdapter.uninstall(self) → dict[str, Any]` — Apaga a tarefa agendada.
-- `WindowsTaskAdapter.start(self) → dict[str, Any]` — Executa a tarefa agendada agora.
-- `WindowsTaskAdapter.stop(self) → dict[str, Any]` — Interrompe a execução da tarefa agendada.
-- `WindowsTaskAdapter.status(self) → ServiceStatus` — Situação da tarefa agendada.
-- `WindowsTaskAdapter._is_admin(self) → bool` — Indica se o processo roda com privilégio administrativo.
 ### `src/agent/automation/store.py`
 
 **Propósito:** store — módulo do projeto.
@@ -4283,19 +4175,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_objective_snapshot(self, definition, *, action) → dict | None` — Congela o objetivo no momento da aprovação (modo `frozen`).
 - `_log(self, row, event_type, payload) → None` — Registra um fato da automação no log de eventos.
 
-- `AutomationService.get(self, automation_id) → AutomationModel` — Automação por identificador.
-- `AutomationService.list(self, project_id, *, state) → list[AutomationModel]` — Automações do catálogo, filtradas por projeto e por estado.
-- `AutomationService.enabled(self) → list[AutomationModel]` — Automações habilitadas, que o supervisor deve vigiar.
-- `AutomationService.create(self, definition) → AutomationModel` — Grava a definição aprovada de uma automação.
-- `AutomationService.update(self, automation_id, changes) → AutomationModel` — Aplica alterações na definição de uma automação.
-- `AutomationService.set_state(self, automation_id, state) → AutomationModel` — Muda o estado da automação (habilitada, suspensa ou desabilitada).
-- `AutomationService.delete(self, automation_id) → bool` — Remove uma automação.
-- `AutomationService.to_definition(self, row) → AutomationDefinition` — Documento validado da automação gravada.
-- `AutomationService.trigger_of(self, row)` — Gatilho da automação, já instanciado.
-- `AutomationService.next_occurrence(self, row, *, after) → datetime | None` — Próximo instante elegível da automação.
-- `AutomationService._recompute_next_run(self, row) → None` — Recalcula o próximo disparo a partir do gatilho da definição.
-- `AutomationService._objective_snapshot(self, definition, *, action) → dict | None` — Congela o objetivo no momento da aprovação (modo `frozen`).
-- `AutomationService._log(self, row, event_type, payload) → None` — Registra um fato da automação no log de eventos.
 
 - `AutomationService.__init__(self, session) → None` — Cria o serviço ligado a uma sessão.
 ### `src/agent/automation/supervisor.py`
@@ -4320,18 +4199,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_execute(self, session, executor, now) → list[dict]` — Executa os disparos prontos e reconcilia os que ficaram rodando.
 - `_read_heartbeat(self, session) → dict[str, Any] | None` — Batimento gravado pelo runtime em execução (visível de outro processo).
 
-- `SupervisorStats.as_dict(self) → dict[str, Any]` — Contadores como dicionário serializável.
-- `AutomationSupervisor.stop(self) → None` — Pede o encerramento do laço do supervisor.
-- `AutomationSupervisor.run_forever(self, interval_sec) → None` — Laço principal do supervisor.
-- `AutomationSupervisor.tick(self) → dict[str, Any]` — Um ciclo completo: recuperação → disparo → execução.
-- `AutomationSupervisor._heartbeat(self, session) → None` — Grava o batimento do runtime — é o que `status` mostra de outro processo.
-- `AutomationSupervisor._tick_with(self, session) → dict[str, Any]` — Executa as três etapas do tique em uma sessão.
-- `AutomationSupervisor._recover(self, session, service, executor) → int` — Recupera disparos interrompidos por encerramento do processo.
-- `AutomationSupervisor._dispatch(self, session, service, dispatcher, now) → dict[str, Any]` — Registra os disparos vencidos e os eventos elegíveis.
-- `AutomationSupervisor._execute(self, session, executor, now) → list[dict]` — Executa os disparos prontos e reconcilia os que ficaram rodando.
-- `AutomationSupervisor.status(self) → dict[str, Any]` — Situação do runtime: automações, disparos e contadores.
-- `AutomationSupervisor._read_heartbeat(self, session) → dict[str, Any] | None` — Batimento gravado pelo runtime em execução (visível de outro processo).
-- `AutomationSupervisor.diagnose(self) → dict[str, Any]` — Diagnóstico detalhado: automações vencidas, dependências e disparos pendentes.
 
 - `AutomationSupervisor.__init__(self, settings, *, session_factory) → None` — Cria o supervisor.
 ### `src/agent/automation/timezones.py`
@@ -4362,8 +4229,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois de `after` (UTC).
 - `occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela (UTC) — usado para recuperar disparos perdidos.
 
-- `Trigger.next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois de `after` (UTC).
-- `Trigger.occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela (UTC) — usado para recuperar disparos perdidos.
 ### `src/agent/automation/triggers/internal.py`
 
 **Propósito:** internal — módulo do projeto.
@@ -4378,11 +4243,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `_matches_filter(payload, criteria) → bool` — Confere se o payload casa com os critérios de filtro do gatilho.
 
-- `EventTrigger.with_project(self, project_id) → 'EventTrigger'` — Restringe o gatilho aos eventos de um projeto.
-- `EventTrigger.event_types(self) → list[str]` — Tipos de evento escutados pelo gatilho.
-- `EventTrigger.next_occurrence(self, after) → datetime | None` — Eventos não têm horário próprio: o próximo disparo depende do evento.
-- `EventTrigger.occurrences(self, start, end, *, limit) → list[datetime]` — Eventos não têm horário próprio: nada a listar na janela.
-- `EventTrigger.candidate_events(self, session, *, since, limit) → list[EventCandidate]` — Eventos elegíveis, dos mais recentes para os mais antigos.
 
 - `EventTrigger.__init__(self, spec) → None` — Cria o gatilho a partir da sua especificação.
 ### `src/agent/automation/triggers/temporal.py`
@@ -4395,26 +4255,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `DailyAtTrigger` — Atalho: todo dia, no horário local informado (ex.: `09:30` no fuso da automação).
 - `next_occurrence(self, after) → datetime | None` — Instante único, quando ainda está no futuro.
 - `occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
-- `next_occurrence(self, after) → datetime | None` — Devolve a próxima ocorrência do gatilho a partir de um instante.
-- `occurrences(self, start, end, *, limit) → list[datetime]` — Devolve as próximas ocorrências do gatilho dentro de uma janela.
-- `next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois do instante informado.
-- `occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
-- `next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois do instante informado.
-- `occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
 
-- `OnceTrigger.next_occurrence(self, after) → datetime | None` — Instante único, quando ainda está no futuro.
-- `OnceTrigger.occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
-- `CronTrigger.next_occurrence(self, after) → datetime | None` — Devolve a próxima ocorrência do gatilho a partir de um instante.
-- `CronTrigger.occurrences(self, start, end, *, limit) → list[datetime]` — Devolve as próximas ocorrências do gatilho dentro de uma janela.
-- `IntervalTrigger.next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois do instante informado.
-- `IntervalTrigger.occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
-- `DailyAtTrigger.next_occurrence(self, after) → datetime | None` — Próximo instante elegível depois do instante informado.
-- `DailyAtTrigger.occurrences(self, start, end, *, limit) → list[datetime]` — Instantes elegíveis na janela.
 
 - `OnceTrigger.__init__(self, spec) → None` — Cria o gatilho de execução única.
-- `CronTrigger.__init__(self, spec) → None` — Cria o gatilho de recorrência por cron.
-- `IntervalTrigger.__init__(self, spec) → None` — Cria o gatilho de intervalo fixo.
-- `DailyAtTrigger.__init__(self, spec) → None` — Cria o gatilho diário a partir do horário `HH:MM` informado.
 ### `src/agent/brand.py`
 
 **Propósito:** caminhos da marca servida pela interface, inclusive as variantes de tinta escura do tema claro (`BRAND_MARK_LIGHT_PATH`, `BRAND_LOCKUP_LIGHT_PATH`).
@@ -4467,8 +4310,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_execute(call_item) → tuple[dict[str, Any], dict[str, Any]]` — Executa uma chamada de ferramenta pedida pelo modelo.
 - `_budget_note() → str` — Monta a nota de orçamento de chamadas de ferramenta que entra na conversa.
 
-- `ToolLoopOutcome.asked_tools(self) → list[str]` — Lista as ferramentas que o modelo pediu no ciclo.
-- `ToolLoopOutcome.applied(self) → bool` — Diz se o modelo deixou alguma alteração aplicada no disco.
 - `history_tokens(history: list[ChatMessage], tools: list[dict[str, Any]] | None=None) -> int` — tamanho estimado da conversa do ciclo, com as chamadas e os esquemas das ferramentas.
 - `fit_history(history: list[ChatMessage], profile: ModelProfile, tools: list[dict[str, Any]] | None=None) -> list[str]` — mantém a conversa dentro de `context_limit − output_reserve`: resume só resultados de ferramenta antigos (os 2 últimos, o sistema, o pedido e o assistente ficam inteiros); emite `context.history_compacted`.
 
@@ -4490,13 +4331,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela Messages API.
 - `_chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Executa uma inferência em streaming pela Messages API.
 
-- `AnthropicProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
-- `AnthropicProvider._client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
-- `AnthropicProvider.list_models(self, *, force) → list[str]` — Lista os modelos disponíveis na API, com cache curto.
-- `AnthropicProvider._body(self, request) → dict` — Monta o corpo da requisição de inferência no formato da Messages API.
-- `AnthropicProvider._parse(data) → tuple[str, list[ToolCall] | None, str | None]` — Extrai texto, chamadas de ferramenta e motivo de término da resposta da API.
-- `AnthropicProvider._chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela Messages API.
-- `AnthropicProvider._chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Executa uma inferência em streaming pela Messages API.
 
 - `AnthropicProvider.__init__(self, base_url, *, model, api_key, headers, timeout, max_retries, allow_private_hosts, verify_tls, anthropic_version, models_cache_ttl) → None` — Configura o provedor e resolve a URL base e os cabeçalhos de autenticação.
 ### `src/agent/providers/gemini.py`
@@ -4518,14 +4352,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela API do Gemini.
 - `_chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Executa uma inferência em streaming pela API do Gemini.
 
-- `GeminiProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
-- `GeminiProvider._client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
-- `GeminiProvider._model_path(self, model_id) → str` — Normaliza o identificador do modelo para o caminho da API.
-- `GeminiProvider.list_models(self, *, force) → list[str]` — Lista os modelos disponíveis na API, com cache curto.
-- `GeminiProvider._body(self, request) → dict` — Monta o corpo da requisição de inferência no formato da API do Gemini.
-- `GeminiProvider._parse(data) → tuple[str, list[ToolCall] | None, str | None]` — Extrai texto, chamadas de função e motivo de término da resposta do Gemini.
-- `GeminiProvider._chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela API do Gemini.
-- `GeminiProvider._chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Executa uma inferência em streaming pela API do Gemini.
 
 - `GeminiProvider.__init__(self, base_url, *, model, api_key, headers, timeout, max_retries, allow_private_hosts, verify_tls, models_cache_ttl) → None` — Configura o provedor e resolve a URL base e os cabeçalhos de autenticação.
 ### `src/agent/providers/http.py`
@@ -4545,16 +4371,12 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `resolved_headers(self) → dict[str, str]` — Cabeçalhos das requisições, com a credencial aplicada no cabeçalho configurado.
 - `secrets(self) → list[str]` — Credenciais conhecidas, para serem removidas das mensagens de erro.
 - `operation()` — Executa a requisição HTTP e devolve a resposta tipada do provedor.
-- `operation()` — Executa a requisição HTTP e devolve a resposta tipada do provedor.
 
 - `_is_private_address(host) → bool` — Indica se um endereço IP é interno (privado, loopback, link-local, reservado ou multicast).
 - `_response_excerpt(response, limit) → str` — Trecho inicial do corpo da resposta, para compor mensagens de erro.
 - `_retryable(exc) → bool` — Indica se o erro vale uma retentativa.
 - `_with_retry(operation, *, label, secrets, max_retries, backoff)` — Executa uma operação HTTP repetindo apenas falhas transitórias.
 
-- `HttpClientConfig.resolved_base_url(self) → str` — URL base validada segundo a política de hosts privados.
-- `HttpClientConfig.resolved_headers(self) → dict[str, str]` — Cabeçalhos das requisições, com a credencial aplicada no cabeçalho configurado.
-- `HttpClientConfig.secrets(self) → list[str]` — Credenciais conhecidas, para serem removidas das mensagens de erro.
 ### `src/agent/providers/openai_compatible.py`
 
 **Propósito:** openai_compatible — módulo do projeto.
@@ -4573,12 +4395,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela API compatível com OpenAI.
 - `_chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Executa uma inferência em streaming pela API compatível com OpenAI.
 
-- `OpenAICompatibleProvider.capabilities(self) → ProviderCapabilities` — Recursos declarados pelo provedor.
-- `OpenAICompatibleProvider._client(self) → httpx.AsyncClient` — Cliente HTTP configurado para o provedor.
-- `OpenAICompatibleProvider.list_models(self, *, force) → list[str]` — Modelos disponíveis no serviço. Com `models_cache_ttl` a lista é cacheada em memória,.
-- `OpenAICompatibleProvider._body(self, request) → dict` — Monta o corpo da requisição de inferência no formato da API compatível com OpenAI.
-- `OpenAICompatibleProvider._chat(self, request) → ChatCompletionResponse` — Executa uma inferência completa pela API compatível com OpenAI.
-- `OpenAICompatibleProvider._chat_streaming(self, request, on_delta) → ChatCompletionResponse` — Executa uma inferência em streaming pela API compatível com OpenAI.
 
 - `OpenAICompatibleProvider.__init__(self, base_url, *, model, api_key, headers, timeout, max_retries, allow_private_hosts, verify_tls, name, models_cache_ttl) → None` — Configura o provedor e resolve a URL base e os cabeçalhos de autenticação.
 ### `src/agent/providers/openrouter.py`
@@ -4616,13 +4432,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `_interpolate(value) → Any` — Aplica a interpolação de ambiente em toda a estrutura da configuração.
 
-- `ProviderSpec.kind(self) → str` — Tipo do provedor normalizado em minúsculas.
-- `ProviderCatalog.from_mapping(cls, data) → ProviderCatalog` — Constrói o catálogo a partir do mapa lido do arquivo de configuração.
-- `ProviderCatalog.default_provider(self) → str | None` — Nome do provedor padrão declarado na configuração.
-- `ProviderCatalog.names(self) → list[str]` — Nomes dos provedores do catálogo.
-- `ProviderCatalog.get(self, name) → ProviderSpec | None` — Especificação de um provedor, quando existe.
-- `ProviderCatalog.spec(self, name) → ProviderSpec` — Especificação de um provedor, com erro explícito quando o nome não existe.
-- `ProviderCatalog.build(self, name, settings) → Any` — Instancia o provedor nomeado.
 
 - `ProviderCatalog.__init__(self, providers, default_provider) → None` — Cria o catálogo a partir de especificações já validadas.
 ### `src/agent/providers/secrets.py`
@@ -4667,21 +4476,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_quote(self, value) → str` — Cita um valor para o shell do servidor (POSIX ou PowerShell).
 - `_remote_path(self, path) → str` — Junta a pasta remota do projeto com o caminho relativo.
 
-- `RemoteConfig._host_preenchido(cls, value) → str` — Valida que o host do computador remoto foi informado.
-- `RemoteConfig._shell_conhecido(cls, value) → str` — Normaliza o shell do servidor para `posix` ou `powershell`.
-- `RemoteConfig.target(self) → str` — Destino da conexão, no formato `usuario@host` quando há usuário.
-- `RemoteConfig.is_windows(self) → bool` — Indica se o servidor remoto usa PowerShell.
-- `SshTransport._base_args(self) → list[str]` — Argumentos base da chamada ao `ssh`.
-- `SshTransport._quote(self, value) → str` — Cita um valor para o shell do servidor (POSIX ou PowerShell).
-- `SshTransport._remote_path(self, path) → str` — Junta a pasta remota do projeto com o caminho relativo.
-- `SshTransport.run(self, command, *, cwd, timeout, on_output) → CommandResult` — Roda um comando no servidor remoto e devolve saída e código.
-- `SshTransport.list_dir(self, path) → list[dict[str, Any]]` — Lista o conteúdo de uma pasta remota.
-- `SshTransport.read_text(self, path) → str` — Lê um arquivo remoto como texto.
-- `SshTransport.write_text(self, path, content) → int` — Grava um arquivo remoto, enviando o conteúdo em base64.
-- `SshTransport.make_dir(self, path) → None` — Cria uma pasta remota (e os diretórios intermediários).
-- `SshTransport.remove(self, path) → None` — Remove um arquivo ou pasta remoto, recursivamente.
-- `SshTransport.move(self, source, target) → None` — Move ou renomeia um caminho no servidor remoto.
-- `SshTransport.check(self) → dict[str, Any]` — Diagnóstico: o servidor responde? Qual o sistema?.
 
 - `SshTransport.__init__(self, config) → None` — Monta o cliente SSH com a configuração do computador remoto.
 ### `src/agent/remote/tools.py`
@@ -4723,20 +4517,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_pick(self) → SchedulerOperation | None` — Retira a próxima operação, respeitando prioridade e tempo de espera.
 - `_sync_idle(self) → None` — Marca o escalonador como ocioso quando não há pendências nem operação em curso.
 
-- `SchedulerOperation.age(self) → float` — Tempo que a operação espera na fila, em segundos.
-- `OperationResult.as_dict(self) → dict[str, Any]` — Desfecho como dicionário serializável.
-- `AgentScheduler.register(self, kind, handler) → None` — Registra quem executa um tipo de operação.
-- `AgentScheduler.submit(self, kind, key, payload, *, priority) → bool` — Enfileira uma operação. `False` quando a mesma chave já está pendente.
-- `AgentScheduler.pending_keys(self) → list[str]` — Chaves das operações pendentes.
-- `AgentScheduler.stats(self) → dict[str, Any]` — Contadores da fila.
-- `AgentScheduler.history(self, limit) → list[dict[str, Any]]` — Desfechos recentes das operações executadas.
-- `AgentScheduler._pick(self) → SchedulerOperation | None` — Retira a próxima operação, respeitando prioridade e tempo de espera.
-- `AgentScheduler.execute(self, operation) → OperationResult` — Executa uma operação com tempo limite; erro não derruba a fila.
-- `AgentScheduler.run_once(self) → OperationResult | None` — Executa a próxima operação elegível. `None` quando não há nada pendente.
-- `AgentScheduler._sync_idle(self) → None` — Marca o escalonador como ocioso quando não há pendências nem operação em curso.
-- `AgentScheduler.run_forever(self) → None` — Laço principal. Dorme na fila — nenhuma inferência para procurar trabalho.
-- `AgentScheduler.wait_idle(self, timeout) → bool` — Espera a fila esvaziar — sem consumir token. `True` se esvaziou no prazo.
-- `AgentScheduler.stop(self) → None` — Interrompe o laço do escalonador.
 
 - `AgentScheduler.__init__(self, settings, *, operation_timeout_sec) → None` — Monta o escalonador com a sessão e a política de agentes.
 ### `src/agent/services/agent_service.py`
@@ -4781,36 +4561,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_set_agent_status(self, agent, target) → AgentModel` — Move o agente para um novo estado, validando a transição.
 - `_set_execution_status(self, execution, target, error) → AgentExecutionModel` — Move a execução para um novo estado, validando a transição.
 
-- `AgentService.get(self, agent_id) → AgentModel` — Agente por identificador.
-- `AgentService.find(self, agent_id) → AgentModel | None` — Agente por identificador, sem erro quando não existe.
-- `AgentService.agent_for_task(self, task_id) → AgentModel | None` — Agente associado a uma tarefa.
-- `AgentService.children(self, agent_id) → list[AgentModel]` — Delegados diretos de um agente.
-- `AgentService.descendants(self, agent_id) → list[AgentModel]` — Descendentes em ordem de profundidade (o mais perto primeiro).
-- `AgentService.ancestors(self, agent_id) → list[AgentModel]` — Cadeia de ancestrais, do mais distante para o mais próximo.
-- `AgentService.executions(self, agent_id) → list[AgentExecutionModel]` — Execuções de um agente, da mais antiga para a mais recente.
-- `AgentService.current_execution(self, agent_id) → AgentExecutionModel | None` — Execução viva ou recuperável do agente (a última em aberto).
-- `AgentService.ensure_agent(self, task_id, *, parent_agent_id, role, instructions) → AgentModel` — Agente da tarefa, criado se ainda não existir.
-- `AgentService._set_agent_status(self, agent, target) → AgentModel` — Move o agente para um novo estado, validando a transição.
-- `AgentService._set_execution_status(self, execution, target, error) → AgentExecutionModel` — Move a execução para um novo estado, validando a transição.
-- `AgentService.start_execution(self, agent_id, *, task_id, run_id, checkpoint) → AgentExecutionModel` — Abre uma execução do agente.
-- `AgentService.suspend(self, agent_id, *, reason, checkpoint) → AgentExecutionModel` — Suspende a execução: persiste o estado e libera o contexto de inferência.
-- `AgentService.resume(self, agent_id) → AgentExecutionModel` — Retoma a execução suspensa a partir do estado persistido.
-- `AgentService.wait_for_child(self, agent_id) → AgentExecutionModel` — A execução fica esperando uma resposta de descendente.
-- `AgentService.complete_execution(self, agent_id, *, result) → AgentExecutionModel` — Encerra a execução como concluída, gravando o resultado no checkpoint.
-- `AgentService.fail_execution(self, agent_id, error) → AgentExecutionModel` — Encerra a execução como falhada, guardando a causa.
-- `AgentService.cancel_execution(self, agent_id, *, reason) → AgentExecutionModel` — Cancela a execução em andamento.
-- `AgentService.save_checkpoint(self, agent_id, payload, *, merge) → AgentExecutionModel` — Grava o estado operacional da execução (etapa, plano, pendências, erros).
-- `AgentService.bound_checkpoint(self, checkpoint) → dict[str, Any]` — Mantém o checkpoint dentro do limite configurado.
-- `AgentService.checkpoint(self, agent_id) → dict[str, Any]` — Checkpoint atual do agente.
-- `AgentService.record_finding(self, agent_id, text, *, evidence, artifacts, kind) → dict[str, Any]` — Guarda uma descoberta do agente no estado persistente.
-- `AgentService.findings(self, agent_id) → list[dict[str, Any]]` — Descobertas registradas pelo agente.
-- `AgentService.record_task_result(self, task_id) → list[dict[str, Any]]` — Importa o resultado e as evidências de uma tarefa para o agente dela.
-- `AgentService.record_external_effect(self, agent_id, *, description, effect_id, resumable, verify_hint) → dict[str, Any]` — Registra um efeito externo (comando, sessão, transação) que a execução fez.
-- `AgentService.external_effects(self, agent_id) → list[dict[str, Any]]` — Efeitos externos registrados pelo agente.
-- `AgentService.effects_requiring_verification(self, agent_id) → list[dict[str, Any]]` — Efeitos externos que precisam ser verificados antes de a ação ser repetida.
-- `AgentService.mark_effect_verified(self, agent_id, effect_id) → dict[str, Any] | None` — Marca um efeito externo como verificado.
-- `AgentService.discard_checks(self, agent_id) → dict[str, Any]` — Verifica o que impede descartar o agente agora.
-- `AgentService.discard(self, agent_id, *, purge, reason, force) → dict[str, Any]` — Descarta o estado recuperável do agente.
 
 - `AgentService.__init__(self, session, settings) → None` — Cria o serviço ligado a uma sessão.
 ### `src/agent/services/cascade.py`
@@ -4841,14 +4591,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_waiter(self, loop) → asyncio.Event` — Evento de espera associado a um laço de eventos.
 - `_wake_all(self) → None` — Acorda todos os laços em espera (chamado quando um slot é devolvido).
 
-- `ExecutorMetrics.snapshot(self) → dict[str, Any]` — Métricas como dicionário, para exibição e diagnóstico.
-- `InferenceExecutor.limit(self) → int` — Limite atual de inferências simultâneas.
-- `InferenceExecutor.set_limit(self, limit) → None` — Muda o limite. A nova valer vale para as próximas aquisições.
-- `InferenceExecutor._waiter(self, loop) → asyncio.Event` — Evento de espera associado a um laço de eventos.
-- `InferenceExecutor._wake_all(self) → None` — Acorda todos os laços em espera (chamado quando um slot é devolvido).
-- `InferenceExecutor.acquire(self, *, purpose, provider, model) → ExecutionSlot` — Toma o slot de inferência. O chamador é responsável por `release()`.
-- `InferenceExecutor.release(self, *, error, slot) → None` — Devolve o slot. `error` distingue falha, cancelamento e sucesso.
-- `InferenceExecutor.metrics(self) → ExecutorMetrics` — Fotografia das métricas do executor.
 
 - `InferenceExecutor.__init__(self, limit) → None` — Cria o executor com o limite de inferências simultâneas.
 ### `src/agent/services/query_service.py`
@@ -4878,21 +4620,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_answer_with_inference(self, query, provider, profile) → dict[str, Any]` — Reativa o agente consultado e responde com uma inferência pelo executor compartilhado.
 - `_remember_inference(self, agent, content, fundamentada) → None` — Guarda a resposta sintetizada como descoberta do agente consultado.
 
-- `QueryService.ask(self, requester_agent_id, target_agent_id, question, *, task_id, correlation_id, max_attempts) → AgentQueryModel` — Registra a pergunta do solicitante ao alvo.
-- `QueryService.get(self, query_id) → AgentQueryModel` — Consulta por identificador.
-- `QueryService.pending_for(self, agent_id) → list[AgentQueryModel]` — Consultas pendentes dirigidas a um agente.
-- `QueryService.queries_of(self, agent_id) → list[AgentQueryModel]` — Consultas em que um agente participa, como solicitante ou alvo.
-- `QueryService._relevant(self, question, findings) → dict[str, Any] | None` — Descoberta persistida que responde à pergunta (busca lexical, sem inferência).
-- `QueryService.answer_from_persisted(self, query) → dict[str, Any] | None` — Responde a partir do estado já persistido, sem reativar ninguém.
-- `QueryService._context_for(self, agent, *, limit) → str` — Contexto mínimo do próprio agente: checkpoint e descoberta, sem transcrição.
-- `QueryService._context_for_agents(self, agents, *, limit) → str` — Contexto de um conjunto de agentes, com atribuição de quem descobriu o quê.
-- `QueryService._subtree_context(self, agent, *, limit) → str` — Estado do agente e de sua descendência.
-- `QueryService.resolve(self, query_id, *, provider, profile) → AgentQueryModel` — Resolve a consulta: estado persistido primeiro, inferência só se faltar.
-- `QueryService._is_grounded(self, answer, agent) → tuple[bool, list[str]]` — A resposta da inferência encontra respaldo no estado persistido?.
-- `QueryService._answer_with_inference(self, query, provider, profile) → dict[str, Any]` — Reativa o agente consultado e responde com uma inferência pelo executor compartilhado.
-- `QueryService._remember_inference(self, agent, content, fundamentada) → None` — Guarda a resposta sintetizada como descoberta do agente consultado.
-- `QueryService.answer(self, query_id, answer, *, evidence, artifacts, uncertainty, answered_by_agent_id) → AgentQueryModel` — Registra a resposta de um agente a uma consulta (caminho sem inferência).
-- `QueryService.cancel(self, query_id, *, reason) → AgentQueryModel` — Cancela uma consulta pendente.
 
 - `QueryService.__init__(self, session, settings, *, agent_service) → None` — Cria o serviço ligado a uma sessão.
 ### `scripts/avaliar-consultas.py`
@@ -6193,14 +5920,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `RetrievalQuery` — consulta de recuperação de contexto.
 - `RetrievalQuery.__init__(task: TaskModel, objective: str, *, required_files: list[str]=[], excluded_files: list[str]=[], max_tokens: int=8000, include_tests: bool=True, include_dependencies: bool=True, include_memory: bool=True, include_knowledge: bool=True, focus_symbols: list[str]=[]) -> None` — Inicializa a consulta com o objetivo da tarefa, arquivos requeridos/excluídos, orçamento de tokens e flags de inclusão.
 - `RetrievalResult` — resultado da recuperação de contexto.
-- `RetrievalResult.__init__(components: list[ContextComponent], estimated_tokens: int, dropped: list[str], coverage: dict[str, Any], retrieval_time_ms: float) -> None` — Constrói o resultado com componentes selecionados, custo estimado, componentes descartados, cobertura e tempo de recuperação.
 - `ComponentScorer` — avaliador de relevância de componentes de contexto.
-- `ComponentScorer.__init__(query: RetrievalQuery, graph: DependencyGraph | None=None) -> None` — Inicializa o avaliador com a consulta e o grafo de dependências opcional.
 - `ComponentScorer._tokenize(text: str) -> set[str]` — Tokeniza texto em palavras significativas.
 - `ComponentScorer.score_file(rel_path: str, content: str | None=None) -> float` — Avalia a relevância de um arquivo (score 0-100).
 - `ComponentScorer.score_symbol(symbol_name: str, file_path: str, symbol_kind: str) -> float` — Avalia a relevância de um símbolo.
 - `ContextRetriever` — recuperador de contexto para operações do agente.
-- `ContextRetriever.__init__(session: Session, project_root: str, graph: DependencyGraph | None=None) -> None` — Inicializa o recuperador com sessão, raiz do projeto e grafo opcional.
 - `ContextRetriever.retrieve(query: RetrievalQuery) -> RetrievalResult` — Recupera contexto para uma consulta: memória operacional, arquivos requeridos, dependências, testes, símbolos e arquivos por relevância dentro do orçamento.
 - `ContextRetriever._get_operational_memory(task: TaskModel) -> ContextComponent | None` — Recupera memória operacional da tarefa.
 - `ContextRetriever._get_file_component(rel_path: str, required: bool=False) -> ContextComponent | None` — Cria componente de contexto a partir de um arquivo.
@@ -6209,7 +5933,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `ContextRetriever._list_project_files(excluded: list[str]) -> list[str]` — Lista arquivos do projeto candidatos a contexto.
 - `ContextRetriever._read_file_safe(rel_path: str) -> str | None` — Lê arquivo com tratamento de erro.
 - `IncrementalContextManager` — gerenciador de contexto incremental com invalidação por dependência.
-- `IncrementalContextManager.__init__(session: Session, project_root: str, graph: DependencyGraph) -> None` — Inicializa o gerenciador com sessão, raiz do projeto e grafo de dependências.
 - `IncrementalContextManager._compute_file_hash(rel_path: str) -> str | None` — Computa o hash SHA-256 de um arquivo para detecção de mudança.
 - `IncrementalContextManager.get_reusable_components(task: TaskModel, query: RetrievalQuery) -> list[ContextComponent]` — Recupera componentes reutilizáveis do snapshot (não invalidados).
 - `IncrementalContextManager.get_snapshot(task: TaskModel) -> dict[str, Any] | None` — Recupera o snapshot de contexto de uma tarefa.
@@ -6231,7 +5954,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `DependencyGraph.get_file_node_id(rel_path: str) -> str` — Retorna o ID do nó de arquivo para um caminho.
 - `DependencyGraph.stats() -> dict[str, Any]` — Estatísticas do grafo.
 - `ImpactAnalyzer` — analisador de impacto de mudanças no projeto.
-- `ImpactAnalyzer.__init__(graph: DependencyGraph) -> None` — Cria o analisador com um grafo de dependências.
 - `ImpactAnalyzer.analyze(changed_files: list[str]) -> ImpactResult` — Analisa o impacto de uma lista de arquivos alterados.
 - `ImpactResult` — resultado da análise de impacto de uma mudança.
 - `NodeInfo` — informações de um nó no grafo de dependências.
@@ -6371,7 +6093,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `process_info(pid: int) -> ProcessInfo | None` — Inspeciona um processo pelo identificador.
 - `terminate_process(pid: int, *, force: bool=False, timeout: float=5.0) -> dict[str, Any]` — Encerra um processo autorizado.
 - `ProcessHandle` — Tarefa longa em segundo plano, com saída parcial e cancelamento.
-- `ProcessHandle.as_dict() -> dict[str, Any]` — Representação serializável da tarefa.
 - `ProcessManager` — Rastreia tarefas longas em segundo plano.
 - `ProcessManager.__init__(log_dir: str | None=None) -> None` — Cria o gerenciador.
 - `ProcessManager.start(command: Sequence[str], *, cwd: str | None=None, env: dict[str, str] | None=None) -> ProcessHandle` — Inicia um processo em segundo plano e devolve o identificador da tarefa.
@@ -6464,3 +6185,825 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_disponivel(exige: str) -> bool` — Diz se a ferramenta exigida (ruff, pytest, node) está instalada.
 - `rodar_passo(passo: Passo, verbose: bool) -> tuple[bool, float, str]` — Executa um passo e devolve se passou, a duração e um resumo (ou o fim da saída quando reprova).
 - `main(argv: list[str] | None=None) -> int` — Lê `--rapido`/`-v`, roda os portões, imprime o placar e devolve 0 ou 1.
+
+
+### `ETAPA0_AUDITORIA.md`
+
+**Propósito:** Auditoria arquitetural de estágio 0 — diagnóstico, problemas comprovados (P1-P10), melhorias propostas e linha de base de testes (1003).
+
+### `docs/architecture/knowledge-engine.md`
+
+**Propósito:** Documentação do Knowledge Engine — subsistema autônomo de aquisição e reutilização de conhecimento.
+
+### `src/agent/api/knowledge_routes.py`
+
+**Propósito:** Rotas FastAPI do Knowledge Engine — busca, criação, reutilização e estatísticas de itens de conhecimento.
+
+- `acquire_knowledge_for_request(project_id: uuid.UUID, request_id: uuid.UUID, payload: dict, session: Session=Depends(get_db_session)) -> dict[str, Any]` — Adquire conhecimento para uma requisição.
+- `create_knowledge_item(project_id: uuid.UUID, payload: dict, session: Session=Depends(get_db_session)) -> dict[str, Any]` — Cria item de conhecimento.
+- `create_knowledge_request(project_id: uuid.UUID, payload: dict, session: Session=Depends(get_db_session)) -> dict[str, Any]` — Cria requisição de conhecimento.
+- `get_knowledge_item(project_id: uuid.UUID, item_id: uuid.UUID, session: Session=Depends(get_db_session)) -> dict[str, Any]` — Devolve item de conhecimento.
+- `get_knowledge_request(project_id: uuid.UUID, request_id: uuid.UUID, session: Session=Depends(get_db_session)) -> dict[str, Any]` — Devolve requisição de conhecimento.
+- `get_knowledge_stats(project_id: uuid.UUID, session: Session=Depends(get_db_session)) -> dict[str, Any]` — Devolve estatísticas de conhecimento.
+- `reuser_knowledge(project_id: uuid.UUID, payload: dict, session: Session=Depends(get_db_session)) -> dict[str, Any]` — Reusa conhecimento.
+- `search_knowledge(project_id: uuid.UUID, q: str=Query(..., description='Termo de busca'), kind: str | None=Query(None, description='Tipo: fact, solution, pattern, etc.'), technology: str | None=Query(None, description='Tecnologia: python, javascript, etc.'), version: str | None=Query(None, description='Versão da tecnologia'), min_confidence: float=Query(0.0, ge=0.0, le=1.0), limit: int=Query(20, ge=1, le=100), session: Session=Depends(get_db_session)) -> dict[str, Any]` — Busca conhecimento.
+- `update_knowledge_item(project_id: uuid.UUID, item_id: uuid.UUID, payload: dict, session: Session=Depends(get_db_session)) -> dict[str, Any]` — Atualiza item de conhecimento.
+- `validate_knowledge_item(project_id: uuid.UUID, item_id: uuid.UUID, payload: dict, session: Session=Depends(get_db_session)) -> dict[str, Any]` — Valida item de conhecimento.
+
+### `src/agent/benchmark/runner.py`
+
+**Propósito:** Executor de benchmark reproduzível — roda tarefas padronizadas, coleta métricas e gera relatórios.
+
+- `BenchmarkRunner` — Classe que executa tarefas de benchmark, coleta métricas e gera relatórios.
+- `BenchmarkCategory(str, Enum)` — Categoria da tarefa de benchmark.
+- `BenchmarkRunner.run_benchmark(tasks_file, orchestrator, _parallel=1) -> list[BenchmarkResult]` — Executa o benchmark completo.
+- `BenchmarkRunner.run_task(task, orchestrator) -> BenchmarkResult` — Executa uma única tarefa de benchmark.
+- `BenchmarkTask` — Dataclass com definição de uma tarefa de benchmark (id, categoria, dificuldade, objetivo, critérios, scripts, timeout, metadados).
+- `BenchmarkRunner._load_tasks(tasks_file: str) -> list[BenchmarkTask]` — Carrega tarefas de um arquivo JSON.
+- `BenchmarkRunner._run_script(script: str) -> None` — Executa um script de shell capturando saída.
+- `BenchmarkRunner._save_result(result: BenchmarkResult) -> None` — Salva resultado individual em arquivo JSON.
+- `BenchmarkRunner._wait_for_completion(run_id: str, timeout: int) -> dict[str, Any]` — Aguarda conclusão de uma execução no banco.
+- `MetricsCollector` — Classe que coleta métricas de execução (latência, leituras, chamadas de ferramenta).
+- `MetricsCollector.__init__() -> None` — Inicializa coletor de métricas.
+- `MetricsCollector.get_metrics() -> BenchmarkMetrics` — Devolve métricas agregadas coletadas.
+- `MetricsCollector.record_file_read(path: str) -> None` — Registra leitura de um arquivo.
+- `BenchmarkRunner._create_run(run_id: str, task: BenchmarkTask) -> ExecutionRunModel` — Cria registro de execução no banco.
+- `BenchmarkRunner._create_task(run: ExecutionRunModel, task: BenchmarkTask) -> TaskModel` — Cria registro de tarefa no banco.
+- `BenchmarkRunner._evaluate_result(task: BenchmarkTask, result: dict[str, Any], metrics: BenchmarkMetrics) -> None` — Avalia resultado de uma tarefa.
+- `BenchmarkRunner._generate_report(results: list[BenchmarkResult]) -> None` — Gera relatório final do benchmark.
+- `MetricsCollector.record_inference(latency_ms: float, _tokens: int) -> None` — Registra uma inferência de modelo.
+- `MetricsCollector.record_tool_call() -> None` — Registra uma chamada de ferramenta.
+- `MetricsCollector.start() -> None` — Inicia a contagem de tempo.
+- `create_benchmark_runner(project_root: str, db_path: str, output_dir: str) -> BenchmarkRunner` — Constrói instância configurada do executor de benchmark.
+- `BenchmarkDifficulty(str, Enum)` — Enumeração de dificuldade de tarefa de benchmark.
+- `BenchmarkMetrics` — Dataclass com métricas agregadas de execução.
+- `BenchmarkResult` — Dataclass com resultado de uma tarefa de benchmark.
+- `BenchmarkRunner._aggregate_metrics(results: list[BenchmarkResult]) -> dict[str, Any]` — Agrega métricas de todos os resultados.
+- `BenchmarkRunner._cleanup_run(run_id: str) -> None` — Limpa recursos de uma execução concluída.
+
+### `src/agent/knowledge/__init__.py`
+
+**Propósito:** Pacote do Knowledge Engine — exporta símbolos públicos do subsistema de conhecimento.
+
+### `src/agent/knowledge/browser/__init__.py`
+
+**Propósito:** Pacote do navegador de conhecimento — exporta símbolos públicos.
+
+### `src/agent/knowledge/browser/ai_services.py`
+
+**Propósito:** Gerenciador de serviços de IA — coordena múltiplos provedores de IA via navegador.
+
+- `AIResponse` — Dataclass com resposta normalizada de um serviço de IA.
+- `AIResponse.__post_init__()` — Pós-inicialização do dataclass de resposta.
+- `AIServiceBase(ABC)` — Classe base abstrata para serviços de IA.
+- `AIServiceBase.__init__(session: AuthenticatedBrowserSession) -> None` — Inicializa serviço com sessão de navegador.
+- `AIServiceBase._clean_response(text: str) -> str` — Limpa resposta de IA removendo ruído.
+- `AIServiceBase._wait_for_response(selector: str, timeout: float=60) -> str` — Aguarda resposta aparecer no navegador.
+- `AIServiceBase.base_url() -> str` — Devolve URL base do serviço de IA.
+- `AIServiceBase.chat_url() -> str` — Devolve URL do chat do serviço.
+- `AIServiceBase.is_authenticated() -> bool` — Diz se o usuário está autenticado no serviço.
+- `AIServiceBase.send_question(question: str, *, wait_time: float=30) -> AIResponse` — Envia uma pergunta e devolve a resposta.
+- `AIServiceManager` — Gerenciador que coordena múltiplos serviços de IA.
+- `AIServiceManager._query_service(name, service, question, wait_time) -> AIResponse` — Consulta um serviço específico.
+- `AIServiceManager.check_all_auth() -> dict[str, bool]` — Verifica autenticação de todos os serviços.
+- `AIServiceManager.close() -> None` — Fecha todas as sessões de navegador.
+- `AIServiceManager.get_service(name: str) -> AIServiceBase | None` — Devolve um serviço pelo nome.
+- `AIServiceManager.initialize() -> None` — Inicializa todos os serviços configurados.
+- `AIServiceManager.query_all(question, *, services=None, wait_time=45) -> dict[str, AIResponse]` — Consulta todos os serviços com uma pergunta.
+- `ChatGPTService(AIServiceBase)` — Implementação do serviço ChatGPT.
+- `ClaudeService(AIServiceBase)` — Implementação do serviço Claude.
+- `GeminiService(AIServiceBase)` — Implementação do serviço Gemini.
+
+### `src/agent/knowledge/browser/extraction.py`
+
+**Propósito:** Extração de conteúdo de páginas da web para a base de conhecimento.
+
+- `ContentExtractor` — Extrator de conteúdo de páginas web.
+- `ContentExtractor.__init__(page: Page) -> None` — Inicializa extrator com página do navegador.
+- `ContentExtractor._clean_text(text: str) -> str` — Limpa texto extraído removendo ruído.
+- `ContentExtractor._extract_code_blocks() -> list[dict[str, str]]` — Extrai blocos de código da página.
+- `ContentExtractor._extract_headings() -> list[dict[str, str]]` — Extrai títulos da página.
+- `ContentExtractor._extract_links(base_url: str) -> list[dict[str, str]]` — Extrai links da página.
+- `ContentExtractor._extract_main_text() -> str` — Extrai texto principal da página.
+- `ContentExtractor._extract_meta() -> dict[str, Any]` — Extrai metadados da página.
+- `ContentExtractor._remove_noise() -> None` — Remove elementos de ruído da página.
+- `ContentExtractor.extract(url: str | None=None) -> ExtractedContent` — Extrai conteúdo completo de uma página.
+- `extract_from_url(page: Page, url: str) -> ExtractedContent` — Extrai conteúdo de uma URL específica.
+- `extract_search_results(page: Page, query: str) -> list[dict[str, str]]` — Extrai resultados de busca de uma página.
+- `ExtractedContent` — Dataclass com conteúdo extraído (texto, títulos, links, blocos, metadados).
+
+### `src/agent/knowledge/browser/session.py`
+
+**Propósito:** Sessão de navegador autenticada e perfil de navegador para extração.
+
+- `AuthenticatedBrowserSession` — Sessão de navegador com autenticação e gerenciamento de contexto.
+- `AuthenticatedBrowserSession.__aenter__() -> 'AuthenticatedBrowserSession'` — Entry do context manager assíncrono.
+- `AuthenticatedBrowserSession.__aexit__(exc_type, exc_val, exc_tb) -> None` — Exit do context manager assíncrono.
+- `AuthenticatedBrowserSession.__init__(profile: BrowserProfile | None=None, *, headless: bool=True, viewport: dict[str, int] | None=None) -> None` — Inicializa sessão com perfil e opções.
+- `AuthenticatedBrowserSession.click(selector: str, timeout: float=5000) -> None` — Clica em um elemento da página.
+- `AuthenticatedBrowserSession.close() -> None` — Fecha a sessão do navegador.
+- `AuthenticatedBrowserSession.context() -> BrowserContext` — Devolve o contexto do navegador.
+- `AuthenticatedBrowserSession.evaluate(script: str, *args) -> Any` — Executa JavaScript na página.
+- `AuthenticatedBrowserSession.fill(selector: str, value: str, timeout: float=5000) -> None` — Preenche um campo de texto.
+- `AuthenticatedBrowserSession.get_cookies() -> list[dict]` — Devolve cookies da sessão.
+- `AuthenticatedBrowserSession.get_html(selector: str='body') -> str` — Devolve HTML de um elemento.
+- `AuthenticatedBrowserSession.get_text(selector: str) -> str` — Devolve texto de um elemento.
+- `AuthenticatedBrowserSession.initialize() -> None` — Inicializa o navegador e abre a página.
+- `AuthenticatedBrowserSession.navigate(url: str, wait_until: str='domcontentloaded', timeout: float=30000) -> None` — Navega para uma URL.
+- `AuthenticatedBrowserSession.new_page() -> Page` — Cria uma nova página na sessão.
+- `AuthenticatedBrowserSession.page() -> Page` — Devolve a página atual.
+- `AuthenticatedBrowserSession.press(selector: str, key: str, timeout: float=5000) -> None` — Pressiona uma tecla em um elemento.
+- `AuthenticatedBrowserSession.screenshot(path: str | None=None, full_page: bool=False) -> bytes` — Tira screenshot da página.
+- `AuthenticatedBrowserSession.set_cookies(cookies: list[dict]) -> None` — Define cookies da sessão.
+- `AuthenticatedBrowserSession.wait_for_navigation(timeout: float=30000) -> None` — Aguarda navegação da página.
+- `AuthenticatedBrowserSession.wait_for_selector(selector: str, timeout: float=10000) -> None` — Aguarda um seletor aparecer na página.
+- `BrowserProfile` — Perfil do navegador (diretório de dados do usuário, cookies, extensões).
+- `BrowserProfile.exists() -> bool` — Diz se o perfil já existe no disco.
+- `BrowserProfile.get_user_data_dir() -> str` — Devolve o diretório de dados do usuário do perfil.
+
+### `src/agent/knowledge/learning/__init__.py`
+
+**Propósito:** Pacote de aprendizado — exporta símbolos públicos do subsistema de aprendizado operacional.
+
+### `src/agent/knowledge/learning/confidence.py`
+
+**Propósito:** Scoring de confiança dinâmico — calcula e atualiza confiança de itens de conhecimento.
+
+- `ConfidenceBreakdown` — Dataclass com resultado de cálculo de confiança (pontuação, fatores, explicação).
+- `ConfidenceFactors` — Dataclass com fatores de confiança (consenso, contradição, recência, qualidade, uso, validação).
+- `ConfidenceScorer` — Calcula confiança de um item de conhecimento baseado em evidências.
+- `ConfidenceScorer.__init__(session: Session) -> None` — Inicializa scorer com sessão do banco.
+- `ConfidenceScorer._calc_consensus_factor(item: KnowledgeItemModel) -> float` — Fator de consenso entre fontes.
+- `ConfidenceScorer._calc_contradiction_penalty(item: KnowledgeItemModel) -> float` — Penalidade por contradições.
+- `ConfidenceScorer._calc_recency_factor(item: KnowledgeItemModel) -> float` — Fator de recência do item.
+- `ConfidenceScorer._calc_source_quality(item: KnowledgeItemModel) -> float` — Qualidade da fonte do item.
+- `ConfidenceScorer._calc_usage_bonus(item: KnowledgeItemModel) -> float` — Bônus por uso do item.
+- `ConfidenceScorer._calc_validation_bonus(item: KnowledgeItemModel) -> float` — Bônus por validações.
+- `ConfidenceScorer._compute_final(factors: ConfidenceFactors) -> float` — Calcula pontuação final dos fatores.
+- `ConfidenceScorer._count_validations(item: KnowledgeItemModel) -> int` — Conta validações do item.
+- `ConfidenceScorer._generate_explanation(factors: ConfidenceFactors) -> str` — Gera explicação da pontuação.
+- `ConfidenceScorer.calculate(item: KnowledgeItemModel) -> ConfidenceBreakdown` — Calcula confiança completa de um item.
+- `ConfidenceUpdater` — Atualiza confiança de itens baseado em uso e validações.
+- `ConfidenceUpdater.update_all_for_project(project_id: uuid.UUID, min_usage: int=1) -> dict[str, int]` — Atualiza todos os itens de um projeto.
+- `ConfidenceUpdater.update_item(item_id: uuid.UUID) -> ConfidenceBreakdown | None` — Atualiza confiança de um item.
+- `recalculate_confidence(item: KnowledgeItemModel, session: Session) -> float` — Recalcula confiança de um item do zero.
+
+### `src/agent/knowledge/learning/tracker.py`
+
+**Propósito:** Rastreamento de padrões de sucesso/falha — registra outcomes e sugere melhorias.
+
+- `ImprovementSuggester` — Sugere melhorias baseadas em padrões detectados.
+- `ImprovementSuggester.__init__(detector: PatternDetector) -> None` — Inicializa sugeridor com detector.
+- `ImprovementSuggester._generate_suggestion(pattern: LearningPattern) -> ImprovementSuggestion | None` — Gera sugestão a partir de um padrão.
+- `ImprovementSuggester.suggest_improvements(project_id: uuid.UUID, days: int=30) -> list[ImprovementSuggestion]` — Sugere melhorias para um projeto.
+- `ImprovementSuggestion` — Dataclass com sugestão de melhoria.
+- `LearningPattern` — Dataclass com padrão de aprendizado detectado.
+- `LearningTracker` — Registra outcomes e detecta padrões de aprendizado.
+- `LearningTracker._extract_error_pattern(error: str) -> str` — Extrai padrão de erro de uma mensagem.
+- `LearningTracker._store_outcome(record: OutcomeRecord) -> None` — Armazena um outcome no banco.
+- `LearningTracker.get_recent_outcomes(project_id: uuid.UUID, days: int=30) -> list[OutcomeRecord]` — Devolve outcomes recentes de um projeto.
+- `LearningTracker.record_outcome(item_id, outcome_type, success, context, task_id, error) -> None` — Registra um outcome de uso/validação.
+- `OutcomeRecord` — Dataclass com registro de outcome.
+- `PatternDetector` — Detecta padrões de sucesso/falha em outcomes.
+- `PatternDetector._detect_error_patterns(outcomes, min_occ) -> list[LearningPattern]` — Deteta padrões de erro recorrentes.
+- `PatternDetector._detect_success_patterns(outcomes, min_occ) -> list[LearningPattern]` — Deteta padrões de sucesso recorrentes.
+- `PatternDetector._detect_tech_failure_patterns(outcomes, min_occ) -> list[LearningPattern]` — Deteta padrões de falha técnica.
+- `PatternDetector._detect_validation_gaps(outcomes, min_occ) -> list[LearningPattern]` — Deteta gaps de validação.
+- `PatternDetector.detect_patterns(project_id: uuid.UUID, days: int=30, min_occurrences: int=3) -> list[LearningPattern]` — Deteta todos os padrões de um projeto.
+- `run_learning_cycle(session: Session, project_id: uuid.UUID, days: int=30) -> dict[str, Any]` — Executa ciclo completo de aprendizado.
+
+### `src/agent/knowledge/memory/__init__.py`
+
+**Propósito:** Pacote de memória do knowledge — exporta símbolos públicos.
+
+### `src/agent/knowledge/memory/reuse.py`
+
+**Propósito:** Reuso de conhecimento — recupera itens relevantes para tarefas similares.
+
+- `BudgetAwareInjector` — Injeta conhecimento respeitando orçamento de tokens.
+- `BudgetAwareInjector.__init__(max_tokens: int=2000, reserve_ratio: float=0.1) -> None` — Inicializa injetor com orçamento.
+- `BudgetAwareInjector.get_budget_status(used_tokens: int) -> dict` — Devolve status do orçamento de tokens.
+- `BudgetAwareInjector.inject(knowledge, current_context_tokens=0) -> tuple[list[RetrievedKnowledge], str]` — Injeta conhecimento no contexto.
+- `ContextualRetriever` — Recupera conhecimento contextualizado por objetivo e tecnologia.
+- `ContextualRetriever._score_items(items, objective, technology, prefer_validated) -> list[tuple]` — Pontua itens por relevância.
+- `ContextualRetriever._to_retrieved(item) -> RetrievedKnowledge` — Converte item em RetrievedKnowledge.
+- `ContextualRetriever.retrieve_for_task(...) -> list[RetrievedKnowledge]` — Recupera conhecimento para uma tarefa.
+- `KnowledgeReuser` — Reusa conhecimento anterior em novas tarefas.
+- `KnowledgeReuser.format_for_prompt(result: RetrievalResult) -> str` — Formata resultado de recuperação para prompt.
+- `KnowledgeReuser.prepare_context_for_task(...) -> RetrievalResult` — Prepara contexto de conhecimento para uma tarefa.
+- `RetrievedKnowledge` — Dataclass com conhecimento recuperado (item, score, trecho).
+- `RetrievalResult` — Dataclass com resultado de recuperação de conhecimento.
+
+### `src/agent/knowledge/memory/store.py`
+
+**Propósito:** Armazenamento de itens de conhecimento — persistência e busca na base.
+
+- `Deduplicator` — Deteta e remove itens de conhecimento duplicados.
+- `Deduplicator.__init__(session: Session) -> None` — Inicializa deduplicador com sessão.
+- `Deduplicator.compute_content_hash(title: str, content: str, technology: str | None=None) -> str` — Calcula hash de conteúdo.
+- `Deduplicator.find_duplicates(project_id: uuid.UUID, title: str, content: str, technology: str | None=None) -> list[KnowledgeItemModel]` — Encontra duplicados.
+- `Deduplicator.is_duplicate(project_id: uuid.UUID, title: str, content: str, technology: str | None=None) -> KnowledgeItemModel | None` — Verifica se é duplicado.
+- `KnowledgeIndexer` — Indexa itens de conhecimento para busca full-text.
+- `KnowledgeIndexer.create_fts_table() -> None` — Cria tabela FTS no banco.
+- `KnowledgeIndexer.index_item(item: KnowledgeItemModel) -> None` — Indexa um item.
+- `KnowledgeIndexer.remove_item(item_id: uuid.UUID) -> None` — Remove um item do índice.
+- `KnowledgeIndexer.search(project_id: uuid.UUID, query: str, limit: int=20) -> list[dict]` — Busca itens indexados.
+- `KnowledgeMemoryStore` — Loja de memória de conhecimento (CRUD de itens).
+- `KnowledgeMemoryStore.delete(item_id: uuid.UUID) -> bool` — Remove um item do armazenamento.
+- `KnowledgeMemoryStore.get(item_id: uuid.UUID) -> KnowledgeItemModel | None` — Devolve um item pelo ID.
+- `KnowledgeMemoryStore.get_most_used(project_id: uuid.UUID, limit: int=20) -> list[KnowledgeItemModel]` — Devolve itens mais usados.
+- `KnowledgeMemoryStore.get_recent(project_id: uuid.UUID, days: int=7, limit: int=20) -> list[KnowledgeItemModel]` — Devolve itens recentes.
+- `KnowledgeMemoryStore.get_stats(project_id: uuid.UUID) -> dict` — Devolve estatísticas de uso.
+- `KnowledgeMemoryStore.get_with_sources(item_id: uuid.UUID) -> dict | None` — Devolve item com fontes.
+- `KnowledgeMemoryStore.initialize() -> None` — Inicializa tabelas no banco.
+- `KnowledgeMemoryStore.record_usage(item_id, task_id=None, run_id=None, agent_id=None, outcome='used', success=None) -> None` — Registra uso de um item.
+- `KnowledgeMemoryStore.save(project_id, kind, title, content, summary, technology, version, context_tags, confidence, sources, validation_status, allow_duplicate) -> KnowledgeItemModel` — Salva um item de conhecimento.
+- `KnowledgeMemoryStore.search_by_context(project_id, context_tags, limit=10) -> list[KnowledgeItemModel]` — Busca itens por tags de contexto.
+- `KnowledgeMemoryStore.update(item_id, title, content, summary, confidence, validation_status, sources) -> KnowledgeItemModel | None` — Atualiza um item.
+
+### `src/agent/knowledge/models.py`
+
+**Propósito:** Modelos de dados do Knowledge Engine — definições de tabelas e schemas.
+
+- `KnowledgeKind(str, enum.Enum)` — Tipo de conhecimento (fact, solution, pattern, etc.).
+- `KnowledgeRequestStatus(str, enum.Enum)` — Status de requisição de conhecimento.
+- `KnowledgeSourceKind(str, enum.Enum)` — Tipo de fonte de conhecimento.
+- `KnowledgeValidationStatus(str, enum.Enum)` — Status de validação de item.
+
+### `src/agent/knowledge/processing/__init__.py`
+
+**Propósito:** Pacote de processamento — exporta símbolos públicos.
+
+### `src/agent/knowledge/processing/compare.py`
+
+**Propósito:** Comparação de itens de conhecimento — deteta diferenças entre versões.
+
+- `ComparisonResult` — Dataclass com resultado de comparação de itens de conhecimento.
+- `SourceCluster` — Dataclass com cluster de fontes similares.
+- `SourceComparator` — Compara fontes de conhecimento e deteta consenso/divergência.
+- `SourceComparator.__init__(similarity_threshold: float=0.7) -> None` — Inicializa comparador com limiar.
+- `SourceComparator._calculate_agreement(sources: list[NormalizedSource], clusters: list[SourceCluster]) -> dict[str, float]` — Calcula acordo entre fontes.
+- `SourceComparator._calculate_similarity(a: NormalizedSource, b: NormalizedSource) -> float` — Calcula similaridade entre duas fontes.
+- `SourceComparator._check_contradiction(a: NormalizedSource, b: NormalizedSource) -> dict | None` — Verifica contradição entre fontes.
+- `SourceComparator._check_divergence(a: NormalizedSource, b: NormalizedSource, cluster_a: SourceCluster, cluster_b: SourceCluster) -> dict | None` — Verifica divergência entre fontes.
+- `SourceComparator._cluster_sources(sources: list[NormalizedSource]) -> list[SourceCluster]` — Agrupa fontes em clusters.
+- `SourceComparator._extract_consensus(cluster: SourceCluster) -> list[str]` — Extrai consenso de um cluster.
+- `SourceComparator._extract_keywords(source: NormalizedSource) -> set[str]` — Extrai palavras-chave de uma fonte.
+- `SourceComparator._find_divergences(clusters: list[SourceCluster]) -> tuple[list[dict], list[dict]]` — Encontra divergências entre clusters.
+- `SourceComparator._summarize_source(source: NormalizedSource) -> str` — Resume uma fonte.
+- `SourceComparator.compare(sources: list[NormalizedSource], topic: str='') -> ComparisonResult` — Compara fontes e devolve resultado.
+- `find_consensus(sources: list[NormalizedSource], threshold: float=0.7) -> list[str]` — Encontra consenso entre fontes.
+- `find_divergences(sources: list[NormalizedSource], threshold: float=0.7) -> list[dict]` — Encontra divergências entre fontes.
+
+### `src/agent/knowledge/processing/normalize.py`
+
+**Propósito:** Normalização de conhecimento — padroniza textos e metadados de itens.
+
+- `NormalizedSource` — Dataclass com fonte normalizada (texto limpo, metadados, palavras-chave).
+- `NormalizedSource.to_dict() -> dict[str, Any]` — Converte para dicionário.
+- `ResultNormalizer` — Normaliza resultados de diferentes fontes para formato comum.
+- `ResultNormalizer.__init__() -> None` — Inicializa normalizador.
+- `ResultNormalizer._detect_language(result: SearchResult) -> str | None` — Deteta idioma de um resultado.
+- `ResultNormalizer._parse_datetime(dt_str: str) -> datetime | None` — Converte string para datetime.
+- `ResultNormalizer.normalize(result: SearchResult) -> NormalizedSource` — Normaliza um resultado de busca.
+- `ResultNormalizer.normalize_batch(results: list[SearchResult]) -> list[NormalizedSource]` — Normaliza um lote de resultados.
+- `deduplicate_sources(sources: list[NormalizedSource]) -> list[NormalizedSource]` — Remove fontes duplicadas.
+- `normalize_search_result(result: SearchResult) -> NormalizedSource` — Normaliza um resultado de busca.
+
+### `src/agent/knowledge/processing/synthesize.py`
+
+**Propósito:** Síntese de conhecimento — combina múltiplos itens em um novo.
+
+- `Citation` — Dataclass com citação de fonte (texto, URL, relevância).
+- `KnowledgeSynthesizer` — Sintetiza conhecimento de múltiplas fontes em uma resposta coesa.
+- `KnowledgeSynthesizer.__init__(min_credibility: float=0.4, min_sources_for_fact: int=2) -> None` — Inicializa sintetizador.
+- `KnowledgeSynthesizer._calculate_overall_confidence(sections: list[SynthesisSection], comparison: ComparisonResult) -> float` — Calcula confiança geral da síntese.
+- `KnowledgeSynthesizer._extract_key_info(source: NormalizedSource) -> str` — Extrai informação chave de uma fonte.
+- `KnowledgeSynthesizer._format_consensus(points: list[str], sources: list[NormalizedSource]) -> str` — Formata pontos de consenso.
+- `KnowledgeSynthesizer._format_divergences(comparison: ComparisonResult) -> str` — Formata divergências entre fontes.
+- `KnowledgeSynthesizer._format_unique_insights(insights: list[dict]) -> str` — Formata insights únicos.
+- `KnowledgeSynthesizer._generate_executive_summary(question: str, sources: list[NormalizedSource], comparison: ComparisonResult) -> str` — Gera resumo executivo.
+- `KnowledgeSynthesizer._generate_thematic_sections(sources: list[NormalizedSource], comparison: ComparisonResult) -> list[SynthesisSection]` — Gera seções temáticas.
+- `KnowledgeSynthesizer._get_citations_for_insights(insights: list[dict], sources: list[NormalizedSource]) -> list[Citation]` — Devolve citações para insights.
+- `KnowledgeSynthesizer._get_citations_for_points(points: list[str], sources: list[NormalizedSource]) -> list[Citation]` — Devolve citações para pontos.
+- `KnowledgeSynthesizer._get_citations_for_text(text: str, sources: list[NormalizedSource]) -> list[Citation]` — Devolve citações para um texto.
+- `KnowledgeSynthesizer._identify_limitations(sources: list[NormalizedSource], comparison: ComparisonResult) -> list[str]` — Identifica limitações das fontes.
+- `KnowledgeSynthesizer.synthesize(question: str, sources: list[NormalizedSource], comparison: ComparisonResult | None=None) -> SynthesisResult` — Sintetiza conhecimento em resposta.
+- `SynthesisResult` — Dataclass com resultado de síntese (resposta, seções, citações, confiança).
+- `SynthesisSection` — Dataclass com seção temática da síntese.
+- `generate_synthesis(question: str, sources: list[NormalizedSource], comparison: ComparisonResult | None=None) -> SynthesisResult` — Função de conveniência para síntese.
+
+### `src/agent/knowledge/processing/verify.py`
+
+**Propósito:** Verificação de conhecimento — confere consistência e validade de itens.
+
+- `CodeVerifier` — Verifica código Python (sintaxe, imports, classes, funções).
+- `CodeVerifier.verify_class_exists(module_name: str, class_name: str, expected_methods: list[str] | None=None) -> VerificationResult` — Verifica se classe existe.
+- `CodeVerifier.verify_function_signature(module_name: str, function_name: str, expected_params: list[str] | None=None) -> VerificationResult` — Verifica assinatura de função.
+- `CodeVerifier.verify_import_exists(module_name: str, attribute: str | None=None) -> VerificationResult` — Verifica se import existe.
+- `CodeVerifier.verify_python_syntax(code: str) -> VerificationResult` — Verifica sintaxe Python.
+- `DocVerifier` — Verifica documentação externa.
+- `DocVerifier.verify_documentation_version(url: str, expected_version: str | None=None) -> VerificationResult` — Verifica versão da documentação.
+- `DocVerifier.verify_url_accessible(url: str, timeout: int=10) -> VerificationResult` — Verifica se URL é acessível.
+- `VerificationResult` — Dataclass com resultado de verificação (ok, summary, detail, artifacts).
+- `VersionChecker` — Verifica versões de ferramentas e pacotes.
+- `VersionChecker.check_command_available(command: str, version_flag: str='--version') -> VerificationResult` — Verifica se comando está disponível.
+- `VersionChecker.check_package_version(package_name: str, min_version: str | None=None, max_version: str | None=None) -> VerificationResult` — Verifica versão de pacote.
+- `VersionChecker.check_python_version(min_version: tuple[int, int]=(3, 11)) -> VerificationResult` — Verifica versão do Python.
+- `run_verifications(knowledge_item: dict[str, Any], verifiers: list[tuple[str, Any]] | None=None) -> list[VerificationResult]` — Executa verificações em um item de conhecimento.
+
+### `src/agent/knowledge/providers/__init__.py`
+
+**Propósito:** Pacote de provedores de conhecimento — exporta símbolos públicos.
+
+### `src/agent/knowledge/providers/base.py`
+
+**Propósito:** Classe base de provedor de conhecimento — interface para busca externa.
+
+- `SearchProvider(abc.ABC)` — Classe base abstrata para provedores de busca.
+- `SearchProvider.health_check() -> bool` — Verifica se o provedor está saudável.
+- `SearchProvider.name() -> str` — Devolve o nome do provedor.
+- `SearchProvider.normalize_result(raw: dict[str, Any]) -> SearchResult` — Normaliza resultado bruto.
+- `SearchProvider.search(query: str, *, limit: int=10, **kwargs: Any) -> list[SearchResult]` — Busca resultados de uma consulta.
+- `SearchProvider.source_kind() -> str` — Devolve o tipo de fonte do provedor.
+- `SearchProviderError(Exception)` — Exceção de erro do provedor de busca.
+- `SearchProviderError.__init__(message: str, provider: str, recoverable: bool=True) -> None` — Inicializa exceção.
+- `SearchResult` — Dataclass com resultado de busca (título, URL, trecho, score).
+- `SearchResult.to_dict() -> dict[str, Any]` — Converte para dicionário.
+
+### `src/agent/knowledge/providers/docs.py`
+
+**Propósito:** Provedor de documentação — busca documentação técnica externa.
+
+- `DocumentationProvider(SearchProvider)` — Provedor de documentação técnica externa.
+- `DocumentationProvider.__init__(custom_domains: list[str] | None=None) -> None` — Inicializa com domínios customizados.
+- `DocumentationProvider._build_query(query: str) -> str` — Constrói consulta de documentação.
+- `DocumentationProvider.health_check() -> bool` — Verifica se o provedor está saudável.
+- `DocumentationProvider.name() -> str` — Devolve o nome do provedor.
+- `DocumentationProvider.search(query: str, *, limit: int=10, **kwargs) -> list[SearchResult]` — Busca documentação.
+- `DocumentationProvider.source_kind() -> str` — Devolve o tipo de fonte.
+
+### `src/agent/knowledge/providers/duckduckgo.py`
+
+**Propósito:** Provedor DuckDuckGo — busca na web para enriquecer conhecimento.
+
+- `DuckDuckGoProvider(SearchProvider)` — Provedor de busca via DuckDuckGo.
+- `DuckDuckGoProvider.health_check() -> bool` — Verifica se o provedor está saudável.
+- `DuckDuckGoProvider.name() -> str` — Devolve o nome do provedor.
+- `DuckDuckGoProvider.search(query: str, *, limit: int=10, **kwargs) -> list[SearchResult]` — Busca no DuckDuckGo.
+- `DuckDuckGoProvider.source_kind() -> str` — Devolve o tipo de fonte.
+
+### `src/agent/knowledge/providers/github.py`
+
+**Propósito:** Provedor GitHub — busca código e issues no GitHub.
+
+- `GitHubProvider(SearchProvider)` — Provedor de busca via GitHub.
+- `GitHubProvider.__init__(token: str | None=None) -> None` — Inicializa com token opcional.
+- `GitHubProvider.health_check() -> bool` — Verifica se o provedor está saudável.
+- `GitHubProvider.name() -> str` — Devolve o nome do provedor.
+- `GitHubProvider.search(query: str, *, limit: int=10, **kwargs) -> list[SearchResult]` — Busca no GitHub.
+- `GitHubProvider.source_kind() -> str` — Devolve o tipo de fonte.
+
+### `src/agent/knowledge/reliability/__init__.py`
+
+**Propósito:** Pacote de confiabilidade — exporta símbolos públicos.
+
+### `src/agent/knowledge/reliability/circuit_breaker.py`
+
+**Propósito:** Circuito breaker — evita chamadas repetidas a provedores com falha.
+
+- `CircuitBreaker` — Circuito breaker com estados fechado/aberto/meio-aberto.
+- `CircuitBreaker.__init__(name, failure_threshold=5, success_threshold=2, timeout=60.0, excluded_exceptions=()) -> None` — Inicializa com parâmetros.
+- `CircuitBreaker._on_failure() -> None` — Trata falha (incrementa contador, pode abrir).
+- `CircuitBreaker._on_success() -> None` — Trata sucesso (pode fechar).
+- `CircuitBreaker.call(func, *args, **kwargs) -> T` — Executa função protegida pelo circuito.
+- `CircuitBreaker.get_stats() -> dict[str, Any]` — Devolve estatísticas do circuito.
+- `CircuitBreaker.reset() -> None` — Reinicia estado do circuito.
+- `CircuitBreaker.state() -> CircuitBreakerState` — Devolve estado atual do circuito.
+- `CircuitBreakerOpenError(Exception)` — Exceção lançada quando circuito está aberto.
+- `CircuitBreakerRegistry` — Registro de circuit breakers por nome.
+- `CircuitBreakerRegistry.get(name: str) -> CircuitBreaker | None` — Devolve circuito pelo nome.
+- `CircuitBreakerRegistry.get_all_stats() -> dict[str, dict]` — Devolve estatísticas de todos os circuitos.
+- `CircuitBreakerRegistry.get_or_create(name: str, failure_threshold: int=5, success_threshold: int=2, timeout: float=60.0) -> CircuitBreaker` — Obtém ou cria circuito.
+- `CircuitBreakerRegistry.reset_all() -> None` — Reinicia todos os circuitos.
+- `CircuitBreakerState(Enum)` — Estados do circuito (fechado, aberto, meio-aberto).
+
+### `src/agent/knowledge/reliability/limits.py`
+
+**Propósito:** Limites de taxa e uso — controla consumo de provedores externos.
+
+- `ConcurrencyLimiter` — Limita concorrência de operações.
+- `ConcurrencyLimiter.__init__(limits: ResourceLimits) -> None` — Inicializa com limites.
+- `ConcurrencyLimiter.acquire(operation: str) -> bool` — Adquire permissão para operação.
+- `ConcurrencyLimiter.get_active_count(operation: str) -> int` — Devolve contagem ativa.
+- `ConcurrencyLimiter.get_stats() -> dict[str, Any]` — Devolve estatísticas do limitador.
+- `ConcurrencyLimiter.release(operation: str) -> None` — Libera operação.
+- `OperationBudget` — Orçamento de operação (tokens, tempo, chamadas).
+- `OperationBudget.check_budget(operation: str, estimated_tokens: int=0, estimated_time: float=0, estimated_calls: int=1) -> tuple[bool, str]` — Verifica se orçamento permite.
+- `OperationBudget.consume(operation: str, tokens: int=0, time_sec: float=0, calls: int=1) -> None` — Consome orçamento.
+- `OperationBudget.get_budget_status(operation: str) -> dict[str, Any]` — Devolve status do orçamento.
+- `ResourceLimiter` — Limita recursos gerais de operação.
+- `ResourceLimiter.check_all(operation: str, estimated_tokens: int=0, estimated_time: float=0, estimated_storage_mb: float=0) -> tuple[bool, str]` — Verifica todos os recursos.
+- `ResourceLimiter.get_system_stats() -> dict[str, Any]` — Devolve estatísticas do sistema.
+- `ResourceLimits` — Dataclass com limites de recursos (tokens, tempo, armazenamento, chamadas).
+- `StorageQuota` — Cota de armazenamento.
+- `StorageQuota.check_quota(additional_mb: float=0) -> tuple[bool, str]` — Verifica se cota permite.
+- `StorageQuota.get_available_mb() -> float` — Devolve espaço disponível.
+- `StorageQuota.get_current_usage_mb() -> float` — Devolve uso atual.
+
+### `src/agent/knowledge/reliability/recovery.py`
+
+**Propósito:** Recuperação de falhas — estratégias para provedores indisponíveis.
+
+- `Checkpoint` — Dataclass com ponto de recuperação (projeto, tarefa, estado, timestamp).
+- `CheckpointManager` — Gerencia pontos de recuperação de tarefas.
+- `CheckpointManager.__init__(session: Session, checkpoint_dir: Path, interval_seconds: int=300) -> None` — Inicializa com sessão, diretório e intervalo.
+- `CheckpointManager.cleanup_old_checkpoints(keep_count: int=10) -> int` — Remove checkpoints antigos.
+- `CheckpointManager.create_checkpoint(project_id: uuid.UUID) -> Checkpoint` — Cria checkpoint de um projeto.
+- `CheckpointManager.get_latest_checkpoint(project_id: uuid.UUID) -> Checkpoint | None` — Devolve checkpoint mais recente.
+- `CheckpointManager.should_checkpoint() -> bool` — Diz se deve criar checkpoint agora.
+- `RecoveryManager` — Gerencia recuperação de falhas.
+- `RecoveryManager.full_recovery(project_id: uuid.UUID) -> dict[str, Any]` — Executa recuperação completa de um projeto.
+- `RecoveryManager.recover_pending_requests(project_id: uuid.UUID) -> dict[str, int]` — Recupera requisições pendentes.
+- `RecoveryManager.recover_stale_acquisitions(project_id: uuid.UUID, max_age_hours: int=2) -> dict[str, int]` — Recupera aquisições paradas.
+- `auto_recover_on_startup(session: Session, checkpoint_dir: Path) -> dict[str, Any]` — Executa recuperação automática na inicialização.
+
+### `src/agent/knowledge/reliability/retry.py`
+
+**Propósito:** Retry com backoff — nova tentativa em operações falhas.
+
+- `RetryPolicy` — Dataclass com política de retry (tentativas, atraso, backoff).
+- `RetryPolicy.calculate_delay(attempt: int) -> float` — Calcula atraso para uma tentativa.
+- `TimeoutManager` — Gerencia timeouts de operações.
+- `TimeoutManager.__init__(default_timeout: float=30.0) -> None` — Inicializa com timeout padrão.
+- `TimeoutManager.get_timeout(operation: str) -> float` — Devolve timeout de uma operação.
+- `TimeoutManager.run_with_timeout(operation: str, coro: Any, timeout: float | None=None) -> Any` — Executa corrotina com timeout.
+- `TimeoutManager.set_timeout(operation: str, timeout: float) -> None` — Define timeout de operação.
+- `retry_async(func: Callable[..., T], *args, policy: RetryPolicy | None=None, on_retry: Callable[[Exception, int], None] | None=None, **kwargs) -> T` — Executa função assíncrona com retry.
+- `retry_sync(func: Callable[..., T], *args, policy: RetryPolicy | None=None, on_retry: Callable[[Exception, int], None] | None=None, **kwargs) -> T` — Executa função síncrona com retry.
+
+### `src/agent/knowledge/reliability/security.py`
+
+**Propósito:** Segurança de provedores — sanitização e controle de acesso externo.
+
+- `AccessControl` — Controle de acesso baseado em roles.
+- `AccessControl.__init__() -> None` — Inicializa controle de acesso.
+- `AccessControl.add_permission(role: str, operation: str) -> None` — Adiciona permissão a um role.
+- `AccessControl.check_permission(role: str, operation: str) -> bool` — Verifica se role tem permissão.
+- `AccessControl.remove_permission(role: str, operation: str) -> None` — Remove permissão de um role.
+- `AuditLogger` — Log de auditoria de operações de segurança.
+- `AuditLogger._sanitize_for_log(data: dict) -> dict` — Sanitiza dados antes de gravar no log.
+- `AuditLogger.log(operation: str, user_id: str | None, project_id: str | None, details: dict, success: bool, error: str | None=None) -> None` — Registra evento de auditoria.
+- `CredentialManager` — Gerencia credenciais de provedores externos.
+- `CredentialManager._generate_key() -> bytes` — Gera chave de criptografia.
+- `CredentialManager.decrypt(encrypted_value: str) -> str` — Descriptografa um valor.
+- `CredentialManager.encrypt(value: str) -> str` — Criptografa um valor.
+- `CredentialManager.rotate_key(new_key: bytes) -> None` — Rotaciona chave de criptografia.
+- `InputSanitizer` — Sanitiza inputs externos.
+- `InputSanitizer.sanitize(text: str, replacement: str='[REDACTED]') -> str` — Sanitiza texto.
+- `InputSanitizer.sanitize_dict(data: dict, replacement: str='[REDACTED]') -> dict` — Sanitiza dicionário.
+- `InputSanitizer.validate_url(url: str) -> tuple[bool, str]` — Valida URL.
+
+### `src/agent/knowledge/request.py`
+
+**Propósito:** Requisições de conhecimento — modelo de pedido de busca/extração.
+
+- `KnowledgeDepth(str, Enum)` — Nível de profundidade de busca de conhecimento.
+- `KnowledgeDiscovery` — Descobre se conhecimento deve ser adquirido para uma tarefa.
+- `KnowledgeDiscovery.__init__(min_confidence: float=0.6, max_repeated_failures: int=2, max_context_age_hours: int=24) -> None` — Inicializa com parâmetros.
+- `KnowledgeDiscovery._find_relevant_knowledge(available: list[dict], reasons: list[str]) -> list[dict]` — Encontra conhecimento relevante.
+- `KnowledgeDiscovery.create_request_from_gap(gap: KnowledgeGap, project_id: uuid.UUID, task_id: uuid.UUID | None=None, agent_id: uuid.UUID | None=None) -> KnowledgeRequestCreate` — Cria requisição a partir de gap.
+- `KnowledgeDiscovery.should_acquire(*, model_confidence: float | None, context_has_answer: bool, repeated_failures: int, requires_updated_info: bool, needs_specialized_docs: bool, complexity_score: float, available_knowledge: list[dict] | None=None) -> tuple[bool, KnowledgeGap | None]` — Decide se deve adquirir conhecimento.
+- `KnowledgeGap` — Dataclass com gap de conhecimento (tópico, razão, urgência).
+- `KnowledgeRequestCreate(BaseModel)` — Modelo de criação de requisição de conhecimento.
+- `KnowledgeRequestRead(BaseModel)` — Modelo de leitura de requisição de conhecimento.
+
+### `src/agent/knowledge/service.py`
+
+**Propósito:** Serviço central do Knowledge Engine — orquestra busca, processamento e armazenamento.
+
+- `KnowledgeEngineService` — Orquestrador central do Knowledge Engine.
+- `KnowledgeEngineService.__init__(session: Session) -> None` — Inicializa com sessão do banco.
+- `KnowledgeEngineService._extract_technology(text: str) -> str | None` — Extrai tecnologia de um texto.
+- `KnowledgeEngineService.acquire_knowledge(request_id: uuid.UUID, *, providers: list[str] | None=None, max_results_per_provider: int=5) -> KnowledgeItemModel | None` — Adquire conhecimento para uma requisição.
+- `KnowledgeEngineService.add_validation(item_id: uuid.UUID, validation_kind: str, *, method: str | None=None, criteria: dict | None=None, evidence: dict | None=None, passed: bool | None=None, notes: str | None=None, validated_by: str | None=None) -> KnowledgeValidationModel | None` — Adiciona validação a um item.
+- `KnowledgeEngineService.create_request(data: KnowledgeRequestCreate) -> KnowledgeRequestModel` — Cria requisição de conhecimento.
+- `KnowledgeEngineService.evaluate_knowledge_need(*, project_id: uuid.UUID, task_id: uuid.UUID | None, agent_id: uuid.UUID | None, model_confidence: float | None, context_has_answer: bool, repeated_failures: int, requires_updated_info: bool, needs_specialized_docs: bool, complexity_score: float, objective: str) -> KnowledgeRequestCreate | None` — Avalia se conhecimento deve ser adquirido.
+- `KnowledgeEngineService.get_knowledge_item(item_id: uuid.UUID) -> KnowledgeItemModel | None` — Devolve um item pelo ID.
+- `KnowledgeEngineService.get_knowledge_with_sources(item_id: uuid.UUID) -> dict | None` — Devolve item com fontes.
+- `KnowledgeEngineService.get_stats(project_id: uuid.UUID) -> dict` — Devolve estatísticas de conhecimento.
+- `KnowledgeEngineService.link_knowledge(source_id: uuid.UUID, target_id: uuid.UUID, relation_type: str, strength: float=1.0, notes: str | None=None) -> None` — Cria relação entre itens.
+- `KnowledgeEngineService.record_usage(item_id: uuid.UUID, *, task_id: uuid.UUID | None=None, run_id: uuid.UUID | None=None, agent_id: uuid.UUID | None=None, context: str | None=None, outcome: str, success: bool | None=None, evidence_ref: str | None=None) -> None` — Registra uso de um item.
+- `KnowledgeEngineService.save_knowledge(*, project_id: uuid.UUID, kind: str, title: str, content: str, summary: str | None=None, technology: str | None=None, version: str | None=None, context_tags: list[str] | None=None, confidence: float=0.5, sources: list[dict] | None=None, validation_status: str=KnowledgeValidationStatus.UNVALIDATED.value) -> KnowledgeItemModel` — Salva um item de conhecimento.
+- `KnowledgeEngineService.search_knowledge(project_id: uuid.UUID, query: str, *, kind: str | None=None, technology: str | None=None, version: str | None=None, min_confidence: float=0.0, limit: int=20) -> list[KnowledgeItemModel]` — Busca itens de conhecimento.
+- `KnowledgeEngineService.update_knowledge(item_id: uuid.UUID, *, title: str | None=None, content: str | None=None, summary: str | None=None, confidence: float | None=None, validation_status: str | None=None, change_reason: str | None=None, changed_by: str | None=None) -> KnowledgeItemModel | None` — Atualiza um item.
+- `KnowledgeEngineService.update_request_status(request_id: uuid.UUID, status: str, *, result_item_id: uuid.UUID | None=None, error_message: str | None=None) -> KnowledgeRequestModel | None` — Atualiza status de uma requisição.
+
+### `src/agent/knowledge/tools.py`
+
+**Propósito:** Ferramentas de conhecimento — operações que o modelo chama para trabalhar com a base.
+
+- `_get_knowledge_reuser(ctx: ToolContext) -> KnowledgeReuser` — Obtém o reuser de conhecimento do contexto.
+- `_get_knowledge_service(ctx: ToolContext) -> KnowledgeEngineService` — Obtém o serviço de conhecimento do contexto.
+- `acquire_knowledge(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Adquire conhecimento externo para uma requisição.
+- `get_knowledge(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Busca conhecimento na base.
+- `knowledge_stats(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Devolve estatísticas de conhecimento.
+- `register_knowledge_tools(registry: ToolRegistry) -> None` — Registra ferramentas de conhecimento no registro.
+- `reuser_knowledge(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Recupera conhecimento reutilizável.
+- `save_knowledge(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Salva conhecimento na base.
+- `search_knowledge(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Busca conhecimento na base.
+- `validate_knowledge(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]` — Valida um item de conhecimento.
+
+### `src/agent/learning/operational.py`
+
+**Propósito:** Aprendizado operacional — registro e reutilização de estratégias de execução.
+
+- `ExperienceStore` — Armazena e consulta estratégias de execução.
+- `ExperienceStore.__init__(db_path: str) -> None` — Inicializa com caminho do banco.
+- `ExperienceStore._connect()` — Abre conexão com o banco.
+- `ExperienceStore._init_db() -> None` — Cria tabelas no banco.
+- `ExperienceStore._row_to_record(row: sqlite3.Row) -> StrategyRecord` — Converte linha do banco em registro.
+- `ExperienceStore.get_statistics() -> dict[str, Any]` — Devolve estatísticas de uso.
+- `ExperienceStore.query(query: StrategyQuery) -> list[StrategyRecord]` — Consulta registros por critérios.
+- `ExperienceStore.save(record: StrategyRecord) -> None` — Salva um registro de estratégia.
+- `OperationalLearning` — Aprendizado operacional baseado em resultados.
+- `OperationalLearning._calculate_confidence(success: bool, attempts: int, verification_result: str) -> float` — Calcula confiança de uma estratégia.
+- `OperationalLearning._similarity_factors(record: StrategyRecord, objective: str) -> list[str]` — Calcula fatores de similaridade entre registro e objetivo.
+- `OperationalLearning.get_recommendations(task_type: str, objective: str, complexity: str, risk: str, required_capabilities: list[str]) -> list[dict[str, Any]]` — Devolve recomendações de estratégia.
+- `OperationalLearning.record_execution(*, task_type: str, objective: str, complexity: str, risk: str, required_capabilities: list[str], strategy: dict[str, Any], model_provider: str, model_id: str, tools_used: list[str], tokens_estimated: int, tokens_consumed: int, duration_ms: int, attempts: int, verification_result: str, success: bool, failure_cause: str | None=None, recovery_strategy: str | None=None, project_version: str='unknown') -> StrategyRecord` — Registra uma execução.
+- `StrategyQuery` — Dataclass com critérios de consulta de estratégia.
+- `StrategyRecord` — Dataclass com registro de estratégia executada.
+- `StrategyRetriever` — Recupera estratégias relevantes.
+- `StrategyRetriever._extract_keywords(text: str) -> list[str]` — Extrai palavras-chave de um texto.
+- `StrategyRetriever.find_relevant(task_type: str, objective: str, complexity: str, risk: str, required_capabilities: list[str]) -> list[StrategyRecord]` — Encontra estratégias relevantes.
+- `create_operational_learning(db_path: str) -> OperationalLearning` — Cria instância de aprendizado operacional.
+
+### `src/agent/memory/inspection.py`
+
+**Propósito:** Índice de inspeção de arquivos — cache de metadados e hash para invalidação de contexto.
+
+- `CacheEntry` — Dataclass com entrada de cache de inspeção.
+- `CacheEntry.from_dict(data: dict[str, Any]) -> CacheEntry` — Converte dicionário em CacheEntry.
+- `CacheEntry.to_dict() -> dict[str, Any]` — Converte para dicionário.
+- `FileInspection` — Dataclass com inspeção de um arquivo.
+- `InspectionIndex` — Índice de inspeções de arquivos.
+- `InspectionIndex.__init__(items: dict[str, FileInspection] | None=None, cache: dict[str, CacheEntry] | None=None) -> None` — Inicializa índice com itens e cache.
+- `InspectionIndex.__len__() -> int` — Devolve número de itens indexados.
+- `InspectionIndex.cache_get(key: str) -> CacheEntry | None` — Devolve entrada de cache por chave.
+- `InspectionIndex.cache_invalidate(key: str) -> bool` — Invalida entrada de cache por chave.
+- `InspectionIndex.cache_invalidate_prefix(prefix: str) -> int` — Invalida entradas de cache por prefixo.
+- `InspectionIndex.cache_set(key: str, value: Any, hash: str, metadata: dict[str, Any] | None=None) -> CacheEntry` — Define entrada de cache.
+- `InspectionIndex.from_metadata(meta: dict[str, Any] | None) -> InspectionIndex` — Constrói índice a partir de metadados.
+- `InspectionIndex.get(path: str) -> FileInspection | None` — Devolve inspeção de um arquivo.
+- `InspectionIndex.items() -> list[FileInspection]` — Devolve todas as inspeções.
+- `InspectionIndex.set(inspection: FileInspection) -> None` — Registra inspeção de um arquivo.
+- `InspectionIndex.to_metadata() -> list[dict[str, Any]]` — Converte para lista de metadados.
+- `InspectionIndex.to_metadata_extended() -> dict[str, Any]` — Converte para metadados estendidos.
+- `_extract_snippets(content: str, objective: str) -> list[str]` — Extrai trechos relevantes de um conteúdo.
+- `_now_iso() -> str` — Devolve timestamp atual em ISO.
+- `is_cache_stale(index: InspectionIndex, key: str, current_hash: str) -> bool` — Diz se cache está desatualizado.
+- `is_stale(index: InspectionIndex, path: str, root_path: str) -> bool` — Diz se inspeção de arquivo está desatualizada.
+- `rank_by_relevance(index: InspectionIndex, limit: int=10) -> list[FileInspection]` — Ranqueia arquivos por relevância.
+- `record_inspection(index: InspectionIndex, path: str, root_path: str, content: str, *, objective: str='') -> FileInspection` — Registra inspeção de um arquivo.
+- `relevance_score(objective: str, content: str, snippets: list[str]) -> int` — Calcula pontuação de relevância.
+- `sha256_content(content: str) -> str` — Calcula SHA-256 de conteúdo.
+- `sha256_file(path: Path) -> str` — Calcula SHA-256 de um arquivo.
+
+### `src/agent/memory/layers.py`
+
+**Propósito:** Memória por camadas — organiza recuperação por finalidade e custo (níveis 1/2/3).
+
+- `MemoryLayer(str)` — Nome de camada de memória (enum).
+- `MemoryLayer.__eq__(other: object) -> bool` — Compara igualdade de camadas.
+- `MemoryLayer.__hash__() -> int` — Hash da camada.
+- `MemoryLayer.__init__(name: str) -> None` — Inicializa com nome.
+- `MemoryLayer.__str__() -> str` — Devolve representação em string.
+- `MemoryLayers` — Gerencia camadas de memória.
+- `MemoryLayers.archive(*, project_id: Any, kind: str | None=None, text: str | None=None, limit: int=20) -> list[MemoryRecordModel]` — Recupera camada de arquivo histórico.
+- `MemoryLayers.immediate(task_id: Any, *, objective: str='', limit: int=1) -> list[MemoryRecordModel]` — Recupera camada imediata de tarefa.
+- `MemoryLayers.layer(name: str) -> MemoryLayer` — Devolve camada pelo nome.
+- `MemoryLayers.project(*, project_id: Any, kind: str | None=None, text: str | None=None, limit: int=20) -> list[MemoryRecordModel]` — Recupera camada de projeto.
+- `MemoryLayers.summary_for_prompt(task: TaskModel, *, layer_budget: int=480) -> str` — Gera resumo para prompt.
+- `MemoryLayers.task(*, project_id: Any, task_id: Any | None=None, parent_task_id: Any | None=None, kind: str | None=None, text: str | None=None, limit: int=20) -> list[MemoryRecordModel]` — Recupera camada de tarefa.
+
+### `src/agent/memory/state.py`
+
+**Propósito:** Estado estruturado de tarefa — visão consolidada fora da janela do modelo.
+
+- `OperationState(BaseModel)` — Estado de uma operação dentro de uma tarefa.
+- `TaskState(BaseModel)` — Estado consolidado de uma tarefa.
+- `TaskStateService` — Serviço de estado de tarefa (visão consolidada).
+- `TaskStateService.__init__(session: Any) -> None` — Inicializa com sessão do banco.
+- `TaskStateService._extract_acceptance(contract_json: dict[str, Any], task: TaskModel) -> list[str]` — Extrai critérios de aceitação.
+- `TaskStateService._extract_assumptions(meta: dict[str, Any], contract_json: dict[str, Any]) -> list[str]` — Extrai premissas.
+- `TaskStateService._extract_budget(meta: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]` — Extrai orçamento.
+- `TaskStateService._extract_changes(result: dict[str, Any]) -> list[dict[str, Any]]` — Extrai alterações.
+- `TaskStateService._extract_constraints(meta: dict[str, Any]) -> dict[str, Any]` — Extrai restrições.
+- `TaskStateService._extract_decisions(meta: dict[str, Any]) -> list[str]` — Extrai decisões.
+- `TaskStateService._extract_files(meta: dict[str, Any], contract_json: dict[str, Any]) -> list[str]` — Extrai arquivos.
+- `TaskStateService._extract_last_error(meta: dict[str, Any]) -> str | None` — Extrai último erro.
+- `TaskStateService._extract_requirements(contract_json: dict[str, Any], meta: dict[str, Any]) -> list[dict[str, Any]]` — Extrai requisitos.
+- `TaskStateService._extract_tests(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]` — Extrai testes.
+- `TaskStateService.get_operational_summary(task_id: UUID) -> str` — Devolve resumo operacional de uma tarefa.
+- `TaskStateService.get_task_state(task_id: UUID) -> TaskState | None` — Devolve estado de uma tarefa.
+
+### `src/agent/memory/tool_results.py`
+
+**Propósito:** Processamento de resultados de ferramentas — armazena como artefatos compactos.
+
+- `ToolResultArtifact` — Registro de um resultado de ferramenta armazenado como artefato.
+- `ToolResultArtifact.from_dict(data: dict[str, Any]) -> ToolResultArtifact` — Constrói a partir de dicionário.
+- `ToolResultArtifact.to_dict() -> dict[str, Any]` — Converte para dicionário.
+- `ToolResultProcessor` — Processa, armazena e recupera resultados de ferramentas.
+- `ToolResultProcessor.__init__(session: Session, artifacts_root: Path | None=None) -> None` — Inicializa com sessão e diretório.
+- `ToolResultProcessor._compact_representation(artifact: ToolResultArtifact) -> str` — Gera representação compacta de um artefato.
+- `ToolResultProcessor._extract_content(result: dict[str, Any]) -> str` — Extrai conteúdo de um resultado.
+- `ToolResultProcessor._find_by_hash(task_id: uuid.UUID, content_hash: str) -> ToolResultArtifact | None` — Encontra artefato por hash.
+- `ToolResultProcessor.process(task: TaskModel, tool_name: str, tool_args: dict[str, Any], result: dict[str, Any], run_id: uuid.UUID | None=None) -> tuple[str, ToolResultArtifact]` — Processa e armazena um resultado.
+- `ToolResultProcessor.read_artifact_range(artifact_id: uuid.UUID, start: int, end: int) -> str | None` — Lê faixa de linhas de um artefato.
+- `ToolResultProcessor.retrieve_artifact(artifact_id: uuid.UUID) -> ToolResultArtifact | None` — Recupera artefato completo.
+- `ToolResultProcessor.search_in_artifact(artifact_id: uuid.UUID, query: str, limit: int=20) -> list[str]` — Busca termo dentro de um artefato.
+- `_detect_content_type(tool_name: str, content: str, _args: dict[str, Any]) -> str` — Deteta tipo de conteúdo de uma ferramenta.
+- `_extract_snippets(content: str, tool_name: str, max_snippets: int=_DEFAULT_SNIPPETS) -> list[str]` — Extrai trechos de conteúdo.
+- `_generate_summary(content: str, tool_name: str, success: bool, args: dict[str, Any]) -> str` — Gera resumo de um resultado.
+- `_now_iso() -> str` — Devolve timestamp atual em ISO.
+- `_sha256_content(content: str) -> str` — Calcula SHA-256 de conteúdo.
+- `store_result(session: Session, task: TaskModel, tool_name: str, tool_args: dict[str, Any], result: dict[str, Any], run_id: uuid.UUID | None=None, artifacts_root: Path | None=None) -> tuple[str, ToolResultArtifact]` — Armazena resultado de uma ferramenta.
+
+### `src/agent/orchestrator/cognitive_router.py`
+
+**Propósito:** Roteamento cognitivo adaptativo — seleciona modelo por complexidade, risco e capacidades.
+
+- `CognitiveRouter` — Roteia operações para modelos por complexidade, risco e capacidades.
+- `CognitiveRouter.__init__(settings: Settings) -> None` — Inicializa com configurações.
+- `create_cognitive_router(settings: Settings) -> CognitiveRouter` — Cria instância configurada do roteador cognitivo.
+- `CognitiveRouter._calculate_score(op_profile: OperationProfile, model_profile: ModelProfile, capabilities: ProviderCapabilities, provider_name: str) -> tuple[float, list[str], list[str]]` — Calcula pontuação de um modelo para uma operação.
+- `CognitiveRouter._determine_complexity(meta: dict[str, Any], context_info: dict[str, Any]) -> OperationComplexity` — Determina complexidade de uma operação.
+- `CognitiveRouter._determine_required_capabilities(meta: dict[str, Any], operation_type: str) -> set[RequiredCapability]` — Determina capacidades requeridas.
+- `CognitiveRouter._determine_risk(meta: dict[str, Any], context_info: dict[str, Any]) -> OperationRisk` — Determina risco de uma operação.
+- `CognitiveRouter._get_available_providers() -> list[tuple[str, LLMProvider, ProviderSpec]]` — Devolve provedores disponíveis.
+- `CognitiveRouter._get_model_profile(provider: LLMProvider, model_id: str) -> ModelProfile` — Devolve perfil de um modelo.
+- `CognitiveRouter._load_catalog() -> None` — Carrega catálogo de modelos.
+- `CognitiveRouter.analyze_operation(task_metadata: dict[str, Any], operation_type: str, context_info: dict[str, Any] | None=None) -> OperationProfile` — Analisa uma operação e devolve perfil.
+- `CognitiveRouter.get_provider_for_selection(selection: ModelSelection) -> LLMProvider | None` — Devolve provedor para uma seleção.
+- `CognitiveRouter.record_result(provider_name: str, model_id: str, success: bool) -> None` — Registra resultado de uma execução.
+- `CognitiveRouter.score_models(profile: OperationProfile) -> list[ModelScore]` — Pontua modelos para um perfil.
+- `CognitiveRouter.select_model(profile: OperationProfile) -> ModelSelection | None` — Seleciona o melhor modelo para um perfil.
+- `ModelScore` — Dataclass com pontuação de um modelo.
+- `ModelSelection` — Dataclass com seleção de modelo (provedor, modelo, justificativa).
+- `OperationComplexity(str, Enum)` — Complexidade de uma operação (enum).
+- `OperationProfile` — Perfil de uma operação (complexidade, risco, capacidades, orçamento).
+- `OperationRisk(str, Enum)` — Risco de uma operação (enum).
+- `RequiredCapability(str, Enum)` — Capacidade requerida por uma operação (enum).
+
+### `src/agent/orchestrator/task_compiler.py`
+
+**Propósito:** Compilador de tarefas — transforma intenção em TaskIR com operações pequenas e orçamentos.
+
+- `CompileResult(BaseModel)` — Resultado de compilação de tarefa.
+- `TaskCompiler` — Compilador de tarefas — transforma intenção em TaskIR.
+- `TaskCompiler.__init__(session: Any, project: ProjectModel) -> None` — Inicializa com sessão e projeto.
+- `TaskCompiler._affected_components(related: list[dict[str, Any]]) -> list[str]` — Extrai componentes afetados.
+- `TaskCompiler._allowed_files(related: list[dict[str, Any]]) -> list[str]` — Extrai arquivos permitidos.
+- `TaskCompiler._budget(_objective: str, num_ops: int, depth: int) -> ContextBudget` — Calcula orçamento de contexto.
+- `TaskCompiler._build_operations(objective: str, related: list[dict[str, Any]], affected: list[str], _manifest: dict[str, Any], _commands: list[str]) -> list[dict[str, Any]]` — Constrói operações da tarefa.
+- `TaskCompiler._complexity(objective: str, affected: list[str], num_ops: int) -> dict[str, Any]` — Calcula complexidade.
+- `TaskCompiler._constraints(manifest: dict[str, Any], _project_info: dict[str, Any]) -> list[ExecutionConstraint]` — Extrai restrições.
+- `TaskCompiler._derive_acceptance(objective: str, related: list[dict[str, Any]], requirements: list[dict[str, Any]]) -> list[str]` — Deriva critérios de aceitação.
+- `TaskCompiler._expected_artifacts(affected: list[str]) -> list[ArtifactRef]` — Define artefatos esperados.
+- `TaskCompiler._find_related(objective: str) -> list[dict[str, Any]]` — Encontra arquivos relacionados.
+- `TaskCompiler.compile(objective: str, *, parent_id: uuid.UUID | None=None, depth: int=0, requirements: list[dict[str, Any]] | None=None) -> CompileResult` — Compila uma tarefa em TaskIR.
+
+### `src/agent/tools/capability_tools.py`
+
+**Propósito:** Capacidades compostas — operações de alto nível que combinam várias chamadas determinísticas.
+
+- `EditConflict` — Conflito detetado em uma edição proposta.
+- `EditConflict.to_dict() -> dict[str, Any]` — Converte para dicionário.
+- `EditPreparation` — Preparação de edição (conteúdo, hash, trechos, prontidão).
+- `_file_snippets(content: str, objective: str, limit: int=3) -> list[str]` — Extrai trechos de um arquivo.
+- `_project_from_context(ctx: ToolContext) -> tuple[ProjectModel, str]` — Obtém projeto e raiz do contexto.
+- `_sha256_file(path: Path) -> str` — Calcula SHA-256 de um arquivo.
+- `analyze_impact(ctx: ToolContext, args: dict) -> dict[str, Any]` — Analisa impacto de uma alteração.
+- `diagnose_failure(_ctx: ToolContext, args: dict) -> dict[str, Any]` — Diagnostica uma falha.
+- `validate_change(ctx: ToolContext, args: dict) -> dict[str, Any]
+- `validate_change(` — Valida uma alteração.` — Valida uma alteração.
+- `find_related_tests(ctx: ToolContext, args: dict) -> dict[str, Any]` — Encontra testes relacionados.
+- `inspect_subsystem(ctx: ToolContext, args: dict) -> dict[str, Any]` — Inspeciona um subsistema.
+- `prepare_edit(ctx: ToolContext, args: dict) -> dict[str, Any]` — Prepara uma edição.
+- `recover_operation(ctx: ToolContext, args: dict) -> dict[str, Any]` — Recupera uma operação falhada.
+- `review_diff(ctx: ToolContext, args: dict) -> dict[str, Any]` — Revisa um diff.
+- `register_capability_tools(registry: Any) -> None` — Registra capability tools no registro.
+- `trace_dependency(ctx: ToolContext, args: dict) -> dict[str, Any]` — Rastreia dependências de um arquivo.
+
+### `src/agent/verification/alternatives.py`
+
+**Propósito:** Verificadores alternativos — seleciona e executa verificação quando a primária falha.
+
+- `AlternativeVerification` — Resultado de verificação alternativa.
+- `_adapt_spec_for_verifier(spec: dict[str, Any], verifier: str, diagnosis: RecoveryDiagnosis) -> dict[str, Any] | None` — Adapta spec para um verificador alternativo.
+- `run_alternative_verification(*, project_root: str, spec: dict[str, Any], primary_verifier: str, diagnosis: RecoveryDiagnosis, attempted: list[str] | None=None, tool_args: dict[str, Any] | None=None, approved: bool=False) -> AlternativeVerification | None` — Executa verificação alternativa.
+- `select_alternatives(primary_verifier: str, diagnosis: RecoveryDiagnosis, attempted: list[str] | None=None) -> list[str]` — Seleciona verificadores alternativos.
+
+### `src/agent/verification/gate.py`
+
+**Propósito:** Portão de verificação independente — garante que tarefa não seja concluída sem verificação determinística.
+
+- `GateResult(BaseModel)` — Resultado de um portão de verificação.
+- `VerificationGate` — Portão de verificação independente.
+- `VerificationGate.__init__(executor: TaskExecutor) -> None` — Inicializa com executor.
+- `VerificationGate._approve(_run: ExecutionRunModel, _project: ProjectModel, task: TaskModel, evidence_id: UUID, vresult: VerificationResult | AlternativeVerification) -> GateResult` — Aprova verificação independente.
+- `VerificationGate._attempts() -> int` — Devolve número de tentativas.
+- `VerificationGate._blocked_status(action: str, diagnosis: RecoveryDiagnosis | None, summary: str) -> TaskStatus` — Devolve status de bloqueio.
+- `VerificationGate._classify(passed: bool | None, summary: str, output: str) -> Failure | None` — Classifica resultado de verificação.
+- `VerificationGate._criteria_of(task: TaskModel) -> dict[str, Any]` — Devolve critérios de uma tarefa.
+- `VerificationGate._retry_status(diagnosis: RecoveryDiagnosis, summary: str) -> TaskStatus` — Devolve status de retry.
+- `VerificationGate._session()` — Devolve sessão do banco.
+- `VerificationGate._status_for(stage: VerificationStage, reason: str) -> TaskStatus` — Devolve status para um estágio.
+- `VerificationGate._tasks() -> list[TaskModel]` — Devolve tarefas.
+- `VerificationGate.gate(*, run: ExecutionRunModel, project: ProjectModel, task: TaskModel, root_path: str, config: dict[str, Any] | None=None) -> GateResult` — Executa portão de verificação.
+- `VerificationStage(str)` — Estágio de verificação de uma etapa.
+
+### `test.db`
+
+**Propósito:** Banco de dados de teste temporário (não commitado).
+
+### `tests/test_benchmark.py`
+
+**Propósito:** Testes do executor de benchmark.
+
+### `tests/test_capability_tools.py`
+
+**Propósito:** Testes das capacidades compostas.
+
+### `tests/test_cognitive_router.py`
+
+**Propósito:** Testes do roteamento cognitivo adaptativo.
+
+### `tests/test_inspection_index.py`
+
+**Propósito:** Testes do índice de inspeção de arquivos.
+
+### `tests/test_knowledge_engine.py`
+
+**Propósito:** Testes do Knowledge Engine.
+
+### `tests/test_knowledge_memory.py`
+
+**Propósito:** Testes de memória de conhecimento.
+
+### `tests/test_knowledge_processing.py`
+
+**Propósito:** Testes de processamento de conhecimento.
+
+### `tests/test_knowledge_providers.py`
+
+**Propósito:** Testes de provedores de conhecimento.
+
+### `tests/test_memory_layers.py`
+
+**Propósito:** Testes de memória por camadas.
+
+### `tests/test_operational_learning.py`
+
+**Propósito:** Testes de aprendizado operacional.
+
+### `tests/test_task_compiler.py`
+
+**Propósito:** Testes do compilador de tarefas (TaskIR).
+
+### `tests/test_task_state.py`
+
+**Propósito:** Testes de estado estruturado de tarefa.
+
+### `tests/test_verification_gate.py`
+
+**Propósito:** Testes do portão de verificação independente.
+
+### `src/agent/knowledge/learning/`
+
+**Propósito:** Pacote de aprendizado — exporta símbolos públicos do subsistema de aprendizado operacional.
+
+### `src/agent/knowledge/processing/`
+
+**Propósito:** Pacote de processamento — exporta símbolos públicos.
+
+### `src/agent/knowledge/providers/`
+
+**Propósito:** Pacote de provedores de conhecimento — exporta símbolos públicos.
+
+### `src/agent/knowledge/reliability/`
+
+**Propósito:** Pacote de confiabilidade — exporta símbolos públicos.
+
+### `src/agent/benchmark/`
+
+**Propósito:** Pacote de benchmark — exporta símbolos públicos.
+
+### `src/agent/knowledge/browser/`
+
+**Propósito:** Pacote do navegador de conhecimento — exporta símbolos públicos.
+
+### `src/agent/knowledge/memory/`
+
+**Propósito:** Pacote de memória do knowledge — exporta símbolos públicos.
