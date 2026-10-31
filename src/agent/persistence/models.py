@@ -13,6 +13,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -464,6 +465,15 @@ class InferenceRecordModel(Base):
     )
     cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     provider_meta_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Instrumentação de contexto (Fase A)
+    components_included_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    tool_results_attached_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    external_refs_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    compaction_events_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    budget_pressure: Mapped[bool] = mapped_column(Boolean, default=False)
+    input_budget_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_reserve_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    calibration_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -584,4 +594,191 @@ class AgentQueryModel(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class KnowledgeItemModel(Base):
+    """Item de conhecimento adquirido e processado."""
+
+    __tablename__ = "knowledge_items"
+    __table_args__ = (
+        Index("ix_knowledge_items_project", "project_id"),
+        Index("ix_knowledge_items_kind", "kind"),
+        Index("ix_knowledge_items_tech_version", "technology", "version"),
+        Index("ix_knowledge_items_confidence", "confidence"),
+        Index("ix_knowledge_items_created", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="fact")
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    technology: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    context_tags_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, default=0.5)
+    validation_status: Mapped[str] = mapped_column(String(32), default="unvalidated")
+    validation_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_count: Mapped[int] = mapped_column(Integer, default=0)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    sources: Mapped[list[KnowledgeSourceModel]] = relationship(back_populates="item", cascade="all, delete-orphan")
+    validations: Mapped[list[KnowledgeValidationModel]] = relationship(back_populates="item", cascade="all, delete-orphan")
+    usages: Mapped[list[KnowledgeUsageModel]] = relationship(back_populates="item", cascade="all, delete-orphan")
+    versions: Mapped[list[KnowledgeVersionModel]] = relationship(back_populates="item", cascade="all, delete-orphan")
+
+
+class KnowledgeSourceModel(Base):
+    """Fonte de um item de conhecimento."""
+
+    __tablename__ = "knowledge_sources"
+    __table_args__ = (
+        Index("ix_knowledge_sources_item", "item_id"),
+        Index("ix_knowledge_sources_kind", "source_kind"),
+        Index("ix_knowledge_sources_url", "url"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("knowledge_items.id", ondelete="CASCADE"), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    author: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    credibility: Mapped[float] = mapped_column(Float, default=0.5)
+    raw_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extracted_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    meta_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    item: Mapped[KnowledgeItemModel] = relationship(back_populates="sources")
+
+
+class KnowledgeRequestModel(Base):
+    """Solicitação de aquisição de conhecimento."""
+
+    __tablename__ = "knowledge_requests"
+    __table_args__ = (
+        Index("ix_knowledge_requests_project", "project_id"),
+        Index("ix_knowledge_requests_task", "task_id"),
+        Index("ix_knowledge_requests_agent", "agent_id"),
+        Index("ix_knowledge_requests_status", "status"),
+        Index("ix_knowledge_requests_created", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    context_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    constraints_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    desired_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    depth: Mapped[str] = mapped_column(String(16), default="standard")
+    validation_criteria_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    max_acquisition_time_sec: Mapped[int] = mapped_column(Integer, default=120)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    result_item_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("knowledge_items.id", ondelete="SET NULL"), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class KnowledgeValidationModel(Base):
+    """Validação de um item de conhecimento."""
+
+    __tablename__ = "knowledge_validations"
+    __table_args__ = (
+        Index("ix_knowledge_validations_item", "item_id"),
+        Index("ix_knowledge_validations_status", "status"),
+        Index("ix_knowledge_validations_kind", "validation_kind"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("knowledge_items.id", ondelete="CASCADE"), nullable=False)
+    validation_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="unvalidated")
+    method: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    criteria_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    evidence_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    passed: Mapped[bool | None] = mapped_column(nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    validated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    item: Mapped[KnowledgeItemModel] = relationship(back_populates="validations")
+
+
+class KnowledgeRelationModel(Base):
+    """Relação entre itens de conhecimento."""
+
+    __tablename__ = "knowledge_relations"
+    __table_args__ = (
+        UniqueConstraint("source_id", "target_id", "relation_type", name="uq_knowledge_relation"),
+        Index("ix_knowledge_relations_source", "source_id"),
+        Index("ix_knowledge_relations_target", "target_id"),
+        Index("ix_knowledge_relations_type", "relation_type"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("knowledge_items.id", ondelete="CASCADE"), nullable=False)
+    target_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("knowledge_items.id", ondelete="CASCADE"), nullable=False)
+    relation_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    strength: Mapped[float] = mapped_column(Float, default=1.0)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class KnowledgeUsageModel(Base):
+    """Uso de um item de conhecimento em uma task/execução."""
+
+    __tablename__ = "knowledge_usage"
+    __table_args__ = (
+        Index("ix_knowledge_usage_item", "item_id"),
+        Index("ix_knowledge_usage_task", "task_id"),
+        Index("ix_knowledge_usage_run", "run_id"),
+        Index("ix_knowledge_usage_outcome", "outcome"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("knowledge_items.id", ondelete="CASCADE"), nullable=False)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("execution_runs.id", ondelete="SET NULL"), nullable=True)
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
+    context: Mapped[str | None] = mapped_column(Text, nullable=True)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    success: Mapped[bool | None] = mapped_column(nullable=True)
+    evidence_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    item: Mapped[KnowledgeItemModel] = relationship(back_populates="usages")
+
+
+class KnowledgeVersionModel(Base):
+    """Versão de um item de conhecimento (histórico de mudanças)."""
+
+    __tablename__ = "knowledge_versions"
+    __table_args__ = (
+        Index("ix_knowledge_versions_item", "item_id"),
+        Index("ix_knowledge_versions_number", "version_number"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("knowledge_items.id", ondelete="CASCADE"), nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    change_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    changed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    item: Mapped[KnowledgeItemModel] = relationship(back_populates="versions")
 

@@ -1,23 +1,75 @@
 """
 Arquivo: src/agent/api/presenters.py
 Nome: presenters.py
-Propósito: montar os payloads de leitura (tarefa e conversa) que a API devolve.
+Propósito: montar os payloads de leitura (tarefa, conversa, knowledge) que a API devolve.
 Responsabilidade: camada de apresentação — serialização de leitura; não altera estado.
-Componentes: usage_tokens, remembered_model, present_task, present_conversation.
+Componentes: usage_tokens, remembered_model, present_task, present_conversation, present_knowledge_item, present_knowledge_source, present_knowledge_validation.
 Dependências: agent.domain.schemas, agent.services.conversation_service, agent.persistence.models.
 Observações: a apresentação é única para toda a API — a mesma tarefa aparece igual em qualquer rota.
 """
-
 from __future__ import annotations
 
+import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from agent.domain.schemas import BranchRead, ConversationRead, TaskRead
 from agent.i18n.locale import translate
-from agent.persistence.models import ConversationModel, ExecutionRunModel, ProjectModel
+from agent.persistence.models import (
+    ConversationModel,
+    ExecutionRunModel,
+    KnowledgeItemModel,
+    KnowledgeSourceModel,
+    KnowledgeValidationModel,
+    ProjectModel,
+)
 from agent.services.conversation_service import ConversationService, locale_for_task
 from agent.services.inbox import effective_root, is_inbox_project
+
+
+def present_knowledge_item(item: KnowledgeItemModel) -> dict:
+    """Serializa um item de conhecimento para a API."""
+    return {
+        "id": str(item.id),
+        "title": item.title,
+        "summary": item.summary,
+        "kind": item.kind,
+        "technology": item.technology,
+        "version": item.version,
+        "confidence": item.confidence,
+        "validation_status": item.validation_status,
+        "context_tags": item.context_tags_json,
+        "usage_count": item.usage_count,
+        "source_count": item.source_count,
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+    }
+
+
+def present_knowledge_source(source: KnowledgeSourceModel) -> dict:
+    """Serializa uma fonte de conhecimento para a API."""
+    return {
+        "id": str(source.id),
+        "source_kind": source.source_kind,
+        "title": source.title,
+        "url": source.url,
+        "author": source.author,
+        "credibility": source.credibility,
+        "published_at": source.published_at.isoformat() if source.published_at else None,
+    }
+
+
+def present_knowledge_validation(validation: KnowledgeValidationModel) -> dict:
+    """Serializa uma validação de conhecimento para a API."""
+    return {
+        "id": str(validation.id),
+        "validation_kind": validation.validation_kind,
+        "method": validation.method,
+        "passed": validation.passed,
+        "notes": validation.notes,
+        "validated_at": validation.validated_at.isoformat() if validation.validated_at else None,
+        "validated_by": validation.validated_by,
+    }
 
 
 def usage_tokens(session: Session, task) -> int:

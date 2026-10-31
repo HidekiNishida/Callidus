@@ -570,7 +570,7 @@ def build_default_registry() -> ToolRegistry:
     Returns:
         O registro pronto para uso, com as ferramentas de `agent.tools.builtins`,
         `agent.tools.automations`, `agent.tools.system_tools`, `agent.tools.desktop_tools`,
-        `agent.tools.devtools` e `agent.tools.skill_tools` cadastradas.
+        `agent.tools.devtools`, `agent.tools.skill_tools` e `agent.knowledge.tools` cadastradas.
     """
     from agent.tools import automations as automation_tools
     from agent.tools import builtins as built
@@ -578,6 +578,7 @@ def build_default_registry() -> ToolRegistry:
     from agent.tools import devtools as engineering
     from agent.tools import skill_tools as skills
     from agent.tools import system_tools as system
+    from agent.knowledge.tools import register_knowledge_tools
 
     reg = ToolRegistry()
     built.register_all(reg)
@@ -586,6 +587,7 @@ def build_default_registry() -> ToolRegistry:
     desktop.register_all(reg)
     engineering.register_all(reg)
     skills.register_all(reg)
+    register_knowledge_tools(reg)
     reg.register(
         ToolSpec(
             id="tool_catalog",
