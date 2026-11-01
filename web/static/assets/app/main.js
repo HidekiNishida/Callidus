@@ -582,7 +582,7 @@ const App = {
             </span>
             <button type="button" class="btn-ghost small" @click="bootstrap()">Tentar novamente</button>
           </div>
-          <Transition v-else name="view" mode="out-in">
+          <Transition v-else name="view" mode="default">
             <ChatView v-if="state.view === 'chat'" key="chat" />
             <LivePanel v-else-if="state.view === 'live'" key="live" />
             <div v-else-if="state.view === 'intelligence'" key="intelligence" class="intelligence-container">
@@ -620,7 +620,7 @@ const App = {
                   <span v-html="icon('alert-circle', 15)"></span><span>Diagnósticos</span>
                 </button>
               </nav>
-              <Transition name="fade" mode="out-in">
+              <Transition name="fade" mode="default">
                 <CognitiveGraphView v-if="intelligenceSubView === 'overview'" key="intelligence-overview" :run-id="state.currentRun?.id" />
                 <IntelligencePerformance v-else-if="intelligenceSubView === 'performance'" key="intelligence-performance" :run-id="state.currentRun?.id" />
                 <IntelligenceBenchmarks v-else-if="intelligenceSubView === 'benchmarks'" key="intelligence-benchmarks" />
