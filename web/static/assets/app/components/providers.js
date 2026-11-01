@@ -373,7 +373,7 @@ export const ProvidersView = {
           </label>
 
           <label class="field">
-            <span>Modelo</span>
+            <span v-html="icon('spark', 15)"></span>
             <input v-model="form.model" type="text" placeholder="ex.: llama3.2" list="model-list" />
             <datalist id="model-list">
               <option v-for="item in models" :key="item" :value="item"></option>

@@ -580,7 +580,7 @@ export const ChatView = {
             <input ref="fileInput" type="file" multiple hidden accept="image/*,.pdf,.txt,.md,.py,.json,.csv,.js,.ts,.tsx,.html,.css,.xml,.yaml,.yml,.toml,.zip,.doc,.docx,.svg" @change="onFiles" />
             <div class="composer-pickers">
               <label class="picker">
-                <span class="picker-label">Provedor</span>
+                <span v-html="icon('server', 15)"></span>
                 <select v-model="state.provider" @change="onProviderChange" aria-label="Provedor">
                   <option v-for="item in providerOptions" :key="item.name" :value="item.name">
                     {{ item.name }}<template v-if="item.type && item.type !== item.name"> · {{ item.type }}</template>
@@ -588,14 +588,14 @@ export const ChatView = {
                 </select>
               </label>
               <label class="picker">
-                <span class="picker-label">Modelo</span>
+                <span v-html="icon('spark', 15)"></span>
                 <select v-model="state.modelId" aria-label="Modelo">
                   <option v-if="!models.length" :value="state.modelId">{{ state.modelId || 'modelo' }}</option>
                   <option v-for="item in models" :key="item" :value="item">{{ item }}</option>
                 </select>
               </label>
               <label class="picker">
-                <span class="picker-label">Navegador</span>
+                <span v-html="icon('globe', 15)"></span>
                 <select v-model="state.browserMode" aria-label="Navegador">
                   <option value="off">Desligado</option>
                   <option value="headless">Invisível</option>
@@ -604,7 +604,7 @@ export const ChatView = {
               </label>
               <label class="picker picker-check" title="Permitir comandos e scripts">
                 <input type="checkbox" v-model="state.approveTools" />
-                <span>Ferramentas</span>
+                <span v-html="icon('wrench', 15)"></span>
               </label>
             </div>
             <button

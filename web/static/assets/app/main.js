@@ -513,21 +513,6 @@ const App = {
       openView("intelligence");
     }
 
-    const intelligenceComponent = computed(() => {
-      switch (intelligenceSubView.value) {
-        case 'overview':
-          return CognitiveGraphView;
-        case 'performance':
-          return IntelligencePerformance;
-        case 'benchmarks':
-          return IntelligenceBenchmarks;
-        case 'diagnostics':
-          return IntelligenceDiagnostics;
-        default:
-          return CognitiveGraphView;
-      }
-    });
-
     return {
       state,
       modal,
@@ -600,57 +585,73 @@ const App = {
           <Transition v-else name="view" mode="default">
             <ChatView v-if="state.view === 'chat'" key="chat" />
             <LivePanel v-else-if="state.view === 'live'" key="live" />
-            <div v-else-if="state.view === 'intelligence'" key="intelligence" class="intelligence-container">
-              <nav class="intelligence-tabs" role="tablist" aria-label="Seções de inteligência">
-                <button
-                  role="tab"
-                  :class="{ active: intelligenceSubView === 'overview' }"
-                  @click="setIntelligenceSubView('overview')"
-                  aria-selected="intelligenceSubView === 'overview'"
-                >
-                  <span v-html="icon('layout', 15)"></span><span>Overview</span>
-                </button>
-                <button
-                  role="tab"
-                  :class="{ active: intelligenceSubView === 'performance' }"
-                  @click="setIntelligenceSubView('performance')"
-                  aria-selected="intelligenceSubView === 'performance'"
-                >
-                  <span v-html="icon('activity', 15)"></span><span>Desempenho</span>
-                </button>
-                <button
-                  role="tab"
-                  :class="{ active: intelligenceSubView === 'benchmarks' }"
-                  @click="setIntelligenceSubView('benchmarks')"
-                  aria-selected="intelligenceSubView === 'benchmarks'"
-                >
-                  <span v-html="icon('bar-chart', 15)"></span><span>Benchmarks</span>
-                </button>
-                <button
-                  role="tab"
-                  :class="{ active: intelligenceSubView === 'diagnostics' }"
-                  @click="setIntelligenceSubView('diagnostics')"
-                  aria-selected="intelligenceSubView === 'diagnostics'"
-                >
-                  <span v-html="icon('alert-circle', 15)"></span><span>Diagnósticos</span>
-                </button>
-              </nav>
-              <component
-                :is="intelligenceComponent"
-                :run-id="state.currentRun?.id"
-                :key="intelligenceSubView"
-              />
-            </div>
             <ProvidersView v-else-if="state.view === 'providers'" key="providers" />
             <AutomationsView v-else-if="state.view === 'automations'" key="automations" />
             <SettingsView
-              v-else
+              v-else-if="state.view === 'settings'"
               key="settings"
               @new-project="newProject()"
               @move-folder="moveFolderTo($event)"
               @remote="openRemote($event)"
             />
           </Transition>
+          <div v-if="state.view === 'intelligence'" class="intelligence-container" key="intelligence">
+            <nav class="intelligence-tabs" role="tablist" aria-label="Seções de inteligência">
+              <button
+                role="tab"
+                :class="{ active: intelligenceSubView === 'overview' }"
+                @click="setIntelligenceSubView('overview')"
+                aria-selected="intelligenceSubView === 'overview'"
+              >
+                <span v-html="icon('layout', 15)"></span><span>Overview</span>
+              </button>
+              <button
+                role="tab"
+                :class="{ active: intelligenceSubView === 'performance' }"
+                @click="setIntelligenceSubView('performance')"
+                aria-selected="intelligenceSubView === 'performance'"
+              >
+                <span v-html="icon('activity', 15)"></span><span>Desempenho</span>
+              </button>
+              <button
+                role="tab"
+                :class="{ active: intelligenceSubView === 'benchmarks' }"
+                @click="setIntelligenceSubView('benchmarks')"
+                aria-selected="intelligenceSubView === 'benchmarks'"
+              >
+                <span v-html="icon('bar-chart', 15)"></span><span>Benchmarks</span>
+              </button>
+              <button
+                role="tab"
+                :class="{ active: intelligenceSubView === 'diagnostics' }"
+                @click="setIntelligenceSubView('diagnostics')"
+                aria-selected="intelligenceSubView === 'diagnostics'"
+              >
+                <span v-html="icon('alert-circle', 15)"></span><span>Diagnósticos</span>
+              </button>
+</nav>
+              <div class="intelligence-sub-views">
+                <CognitiveGraphView
+                  v-show="intelligenceSubView === 'overview'"
+                  :key="'intelligence-overview'"
+                  :run-id="state.currentRun?.id"
+                />
+                <IntelligencePerformance
+                  v-show="intelligenceSubView === 'performance'"
+                  :key="'intelligence-performance'"
+                  :run-id="state.currentRun?.id"
+                />
+                <IntelligenceBenchmarks
+                  v-show="intelligenceSubView === 'benchmarks'"
+                  :key="'intelligence-benchmarks'"
+                />
+                <IntelligenceDiagnostics
+                  v-show="intelligenceSubView === 'diagnostics'"
+                  :key="'intelligence-diagnostics'"
+                  :run-id="state.currentRun?.id"
+                />
+              </div>
+            </div>
         </main>
 
         <DetailsPanel v-if="state.view === 'chat'" :class="{ open: state.detailsOpen }" />

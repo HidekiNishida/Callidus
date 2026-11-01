@@ -228,7 +228,7 @@ export const SettingsView = {
             <small class="muted">Os modelos vêm do servidor do provedor selecionado.</small>
           </label>
           <label class="field">
-            <span>Navegador</span>
+            <span v-html="icon('globe', 15)"></span>
             <select v-model="state.browserMode">
               <option value="off">Desligado</option>
               <option value="headless">Invisível</option>

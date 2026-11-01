@@ -109,8 +109,8 @@ export const IntelligenceOverview = {
             <tr>
               <th>ID</th>
               <th>Status</th>
-              <th>Provedor</th>
-              <th>Modelo</th>
+              <th><span v-html="icon('server', 12)"></span></th>
+              <th><span v-html="icon('spark', 12)"></span></th>
               <th>Criada em</th>
             </tr>
           </thead>
@@ -222,7 +222,7 @@ export const IntelligencePerformance = {
         <table class="data-table" v-if="state.runMetrics.inference.by_provider && Object.keys(state.runMetrics.inference.by_provider).length">
           <thead>
             <tr>
-              <th>Provedor</th>
+              <th><span v-html="icon('server', 12)"></span></th>
               <th>Chamadas</th>
               <th>Falhas</th>
               <th>Timeouts</th>
@@ -331,7 +331,7 @@ export const IntelligenceBenchmarks = {
 
             <div class="bench-actions">
               <label class="field">
-                <span>Provedor</span>
+                <span v-html="icon('server', 15)"></span>
                 <select v-model="benchmarkConfig.provider">
                   <option value="ollama">Ollama</option>
                   <option value="llamacpp">llama.cpp</option>
@@ -339,7 +339,7 @@ export const IntelligenceBenchmarks = {
                 </select>
               </label>
               <label class="field">
-                <span>Modelo</span>
+                <span v-html="icon('spark', 15)"></span>
                 <input v-model="benchmarkConfig.model_id" type="text" placeholder="ex.: llama3.2" />
               </label>
               <button type="button" class="btn-primary" @click="runSelected" :disabled="loading">
@@ -363,8 +363,8 @@ export const IntelligenceBenchmarks = {
                 <thead>
                   <tr>
                     <th>Execução</th>
-                    <th>Provedor</th>
-                    <th>Modelo</th>
+                    <th><span v-html="icon('server', 12)"></span></th>
+                    <th><span v-html="icon('spark', 12)"></span></th>
                     <th>Status</th>
                     <th>Tokens</th>
                     <th>Tempo (s)</th>
