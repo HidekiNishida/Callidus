@@ -53,8 +53,8 @@ export const ICONS = {
   server: '<rect x="2.5" y="3" width="11" height="4" rx="1"/><rect x="2.5" y="9" width="11" height="4" rx="1"/><path d="M5 5h.01M5 11h.01"/>',
   layout: '<rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/>',
   activity: '<path d="M3 10l3-3 2 2 3-4 2 4"/><path d="M13 10V6"/><path d="M3 10v-4"/>',
-  bar-chart: '<rect x="3" y="9" width="3" height="4" rx="0.5"/><rect x="7" y="5" width="3" height="8" rx="0.5"/><rect x="11" y="2" width="3" height="11" rx="0.5"/>',
-  alert-circle: '<circle cx="8" cy="8" r="6"/><path d="M8 4v5M8 11h.01"/>',
+  "bar-chart": '<rect x="3" y="9" width="3" height="4" rx="0.5"/><rect x="7" y="5" width="3" height="8" rx="0.5"/><rect x="11" y="2" width="3" height="11" rx="0.5"/>',
+  "alert-circle": '<circle cx="8" cy="8" r="6"/><path d="M8 4v5M8 11h.01"/>',
   history: '<path d="M8 2.5l6 11H2zM8 7v3M8 11h.01"/><path d="M8 12.5A4.5 4.5 0 0 0 12.5 8"/>',
 };
 
