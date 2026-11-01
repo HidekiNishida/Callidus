@@ -379,7 +379,17 @@ async function runBootstrap() {
 
     state.initialization.completedAt = Date.now();
     state.ready = true;
-    bootEvent("BOOT_COMPLETED", { generation });
+    bootEvent("BOOT_COMPLETED", { generation, durationMs: Date.now() - startedAt });
+  } catch (err) {
+    // Erro síncrono inesperado no bootstrap (não deveria acontecer com allSettled).
+    bootEvent("BOOTSTRAP_FATAL", { error: err?.message || String(err), stack: err?.stack });
+    state.initialization.bootstrap = RESOURCE_STATES.error;
+    state.initialization.errors.push({
+      resource: "bootstrap",
+      error: err?.message || String(err),
+      at: Date.now(),
+    });
+    computeAggregateState(generation);
   } finally {
     bootstrapPromise = null;
   }
@@ -437,8 +447,9 @@ async function loadProjectsOnce(generation) {
     const data = await api("/projects", { timeout: DEFAULT_TIMEOUT });
     if (generation !== bootstrapGeneration) return; // inicialização antiga
     state.projects = Array.isArray(data) ? data : [];
+    bootEvent("BOOT_PROJECTS_LOADED", { generation, count: state.projects.length });
   } catch (err) {
-    console.log("DEBUG loadProjectsOnce catch:", err.constructor.name, err.message);
+    bootEvent("BOOT_PROJECTS_ERROR", { generation, error: err?.message || String(err) });
     throw err;
   }
 }
@@ -453,9 +464,15 @@ async function loadProjectsOnce(generation) {
 async function loadConversationsOnce(generation) {
   state.initialization.conversations = RESOURCE_STATES.loading;
   bootEvent("BOOT_CONVERSATIONS_LOADING", { generation });
-  const data = await api("/conversations", { timeout: DEFAULT_TIMEOUT });
-  if (generation !== bootstrapGeneration) return;
-  state.loose = Array.isArray(data) ? data : [];
+  try {
+    const data = await api("/conversations", { timeout: DEFAULT_TIMEOUT });
+    if (generation !== bootstrapGeneration) return;
+    state.loose = Array.isArray(data) ? data : [];
+    bootEvent("BOOT_CONVERSATIONS_LOADED", { generation, count: state.loose.length });
+  } catch (err) {
+    bootEvent("BOOT_CONVERSATIONS_ERROR", { generation, error: err?.message || String(err) });
+    throw err;
+  }
 }
 
 /**
@@ -468,11 +485,17 @@ async function loadConversationsOnce(generation) {
 async function loadConfigurationOnce(generation) {
   state.initialization.configuration = RESOURCE_STATES.loading;
   bootEvent("BOOT_CONFIGURATION_LOADING", { generation });
-  const data = await api("/config/ui-defaults", { timeout: DEFAULT_TIMEOUT });
-  if (generation !== bootstrapGeneration) return;
-  state.uiDefaults = data || null;
-  if (data?.provider) state.provider = data.provider;
-  if (data?.model_id) state.modelId = data.model_id;
+  try {
+    const data = await api("/config/ui-defaults", { timeout: DEFAULT_TIMEOUT });
+    if (generation !== bootstrapGeneration) return;
+    state.uiDefaults = data || null;
+    if (data?.provider) state.provider = data.provider;
+    if (data?.model_id) state.modelId = data.model_id;
+    bootEvent("BOOT_CONFIGURATION_LOADED", { generation });
+  } catch (err) {
+    bootEvent("BOOT_CONFIGURATION_ERROR", { generation, error: err?.message || String(err) });
+    throw err;
+  }
 }
 
 /**
@@ -485,10 +508,15 @@ async function loadConfigurationOnce(generation) {
 async function loadHealthOnce(generation) {
   state.initialization.health = RESOURCE_STATES.loading;
   bootEvent("BOOT_HEALTH_LOADING", { generation });
-  await api("/health", { timeout: HEALTH_TIMEOUT });
-  if (generation !== bootstrapGeneration) return;
-  state.resourceError.health = null;
-  bootEvent("BOOT_HEALTH_CHECK_COMPLETED", { generation, data: true });
+  try {
+    await api("/health", { timeout: HEALTH_TIMEOUT });
+    if (generation !== bootstrapGeneration) return;
+    state.resourceError.health = null;
+    bootEvent("BOOT_HEALTH_CHECK_COMPLETED", { generation, data: true });
+  } catch (err) {
+    bootEvent("BOOT_HEALTH_ERROR", { generation, error: err?.message || String(err) });
+    throw err;
+  }
 }
 
 /**
@@ -654,8 +682,10 @@ export async function loadProvidersOnce(generation) {
         ? catalogResult.value.providers
         : [];
       state.providers = providers;
+      bootEvent("BOOT_PROVIDERS_CATALOG_LOADED", { generation, count: providers.length });
     } else {
       // Falha de comunicação com o catálogo de provedores não é uma resposta vazia válida.
+      bootEvent("BOOT_PROVIDERS_CATALOG_ERROR", { generation, error: catalogResult.reason?.message });
       throw catalogResult.reason;
     }
 
@@ -663,6 +693,9 @@ export async function loadProvidersOnce(generation) {
     if (configResult.status === "fulfilled" && configResult.value) {
       state.providerConfig = configResult.value;
       if (configResult.value.default_provider) state.provider = configResult.value.default_provider;
+      bootEvent("BOOT_PROVIDERS_CONFIG_LOADED", { generation });
+    } else if (configResult.status === "rejected") {
+      bootEvent("BOOT_PROVIDERS_CONFIG_ERROR", { generation, error: configResult.reason?.message });
     }
 
     state.providers.forEach((item) => {
@@ -673,7 +706,7 @@ export async function loadProvidersOnce(generation) {
       ? RESOURCE_STATES.ready
       : RESOURCE_STATES.empty;
     state.resourceError.providers = null;
-    bootEvent("BOOT_PROVIDERS_LOADED", { generation });
+    bootEvent("BOOT_PROVIDERS_LOADED", { generation, count: state.providers.length });
   } catch (err) {
     if (generation !== bootstrapGeneration) return;
     state.initialization.providers = RESOURCE_STATES.error;
@@ -700,6 +733,7 @@ function bootEvent(stage, detail = {}) {
   if (bootEvents.length > 200) bootEvents.shift();
   try {
     window.dispatchEvent(new CustomEvent("callidus:boot-event", { detail: entry }));
+    if (window.__callidusBoot) window.__callidusBoot(entry);
   } catch {
     /* sem ouvintes: ignora */
   }

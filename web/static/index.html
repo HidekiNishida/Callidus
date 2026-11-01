@@ -13,6 +13,95 @@
   <div id="app">
     <div class="boot"><span class="spinner"></span> Carregando o Callidus…</div>
   </div>
+
+  <!-- Guarda de inicialização: roda ANTES do módulo principal e detecta
+       falhas de carregamento de scripts, erros de módulos e montagem parada.
+       Não duplica a aplicação. -->
+  <script>
+    (function () {
+      var APP_ID = "app";
+      var BOOT_MSG = "Carregando o Callidus…";
+      var TIMEOUT_MS = 15000;
+      var started = Date.now();
+      var mounted = false;
+      var scriptFailed = null;
+      var bootEvents = [];
+
+      var root = document.getElementById(APP_ID);
+      if (!root) return;
+
+      function logBootEvent(stage, detail) {
+        var entry = { stage: stage, at: Date.now() - started, detail: detail || {} };
+        bootEvents.push(entry);
+        if (window.__callidusBoot) {
+          try { window.__callidusBoot(entry); } catch {}
+        }
+      }
+
+      function show(message, category, retryable) {
+        var html = "<div class=\"boot\" style=\"text-align:center;padding:24px;\">";
+        html += "<div style=\"margin-bottom:12px;color:var(--destructive, #ef4444);font-weight:600;\">" + escapeHtml(message) + "</div>";
+        if (category) {
+          html += "<div style=\"margin-bottom:12px;font-size:0.875rem;color:var(--muted-foreground, #6b7280);\">" + escapeHtml(category) + "</div>";
+        }
+        if (retryable) {
+          html += "<button onclick=\"location.reload()\" style=\"padding:8px 14px;\">Tentar novamente</button>";
+        }
+        html += "<details style=\"margin-top:16px;text-align:left;\"><summary>Diagnóstico de boot</summary><pre style=\"max-height:200px;overflow:auto;font-size:0.75rem;\">" + escapeHtml(JSON.stringify(bootEvents, null, 2)) + "</pre></details>";
+        html += "</div>";
+        root.innerHTML = html;
+      }
+
+      function escapeHtml(text) {
+        var div = document.createElement("div");
+        div.textContent = text === null || text === undefined ? "" : String(text);
+        return div.innerHTML;
+      }
+
+      // Detecta se o módulo principal montou a aplicação observando o elemento .shell.
+      var observer = new MutationObserver(function () {
+        if (!mounted && root.querySelector(".shell")) {
+          mounted = true;
+          observer.disconnect();
+          logBootEvent("MOUNT_DETECTED", { selector: ".shell" });
+        }
+      });
+      observer.observe(root, { childList: true, subtree: true });
+
+      // Tempo limite: se não montou, substitui a mensagem infinita por diagnóstico.
+      setTimeout(function () {
+        if (!mounted) {
+          observer.disconnect();
+          var detail = scriptFailed
+            ? "Falha ao carregar módulo: " + escapeHtml(scriptFailed)
+            : "A interface não terminou de inicializar após " + (TIMEOUT_MS / 1000) + " segundos.";
+          show("O Callidus não pôde ser iniciado.", detail, true);
+          logBootEvent("BOOT_TIMEOUT", { detail: detail });
+        }
+      }, TIMEOUT_MS);
+
+      // Registra falha de carregamento de qualquer script/módulo.
+      window.addEventListener("error", function (event) {
+        if (!mounted && event.filename) {
+          scriptFailed = event.message || "erro ao carregar " + event.filename;
+          logBootEvent("SCRIPT_ERROR", { filename: event.filename, message: event.message, lineno: event.lineno, colno: event.colno });
+        }
+      }, true);
+
+      // Captura promessas rejeitadas durante o bootstrap.
+      window.addEventListener("unhandledrejection", function (event) {
+        if (!mounted) {
+          var reason = event.reason;
+          var msg = reason?.message || reason?.toString?.() || String(reason);
+          scriptFailed = "promise rejection: " + msg;
+          logBootEvent("UNHANDLED_REJECTION", { message: msg });
+        }
+      }, true);
+
+      logBootEvent("BOOT_GUARD_READY", {});
+    })();
+  </script>
+
   <script src="/assets/vendor/vue.global.prod.js"></script>
   <script type="module" src="/assets/app/main.js"></script>
 </body>

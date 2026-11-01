@@ -110,7 +110,7 @@ export const IntelligenceOverview = {
           <tbody>
             <tr v-for="run in state.intelligenceOverview.recent_runs" :key="run.id">
               <td class="mono">{{ run.id.slice(0, 8) }}</td>
-              <td><span class="status-badge" :class="`status-${run.status.toLowerCase()}`">{{ run.status }}</span></td>
+              <td><span class="status-badge" :class="'status-' + run.status.toLowerCase()">{{ run.status }}</span></td>
               <td>{{ run.provider }}</td>
               <td>{{ run.model }}</td>
               <td>{{ run.created_at }}</td>
@@ -493,8 +493,8 @@ export const IntelligenceDiagnostics = {
           <tbody>
             <tr v-for="d in state.diagnostics" :key="d.id">
               <td>{{ d.category }}</td>
-              <td><span class="severity-badge" :class="`sev-${d.severity}`">{{ d.severity }}</span></td>
-              <td><span class="status-badge" :class="`status-${d.state}`">{{ d.state }}</span></td>
+              <td><span class="severity-badge" :class="'sev-' + d.severity">{{ d.severity }}</span></td>
+              <td><span class="status-badge" :class="'status-' + d.state">{{ d.state }}</span></td>
               <td class="mono">{{ d.metric_affected || '—' }}</td>
               <td>{{ d.probable_cause || '—' }}</td>
               <td>{{ d.recommendation || '—' }}</td>

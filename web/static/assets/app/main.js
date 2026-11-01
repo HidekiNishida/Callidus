@@ -109,6 +109,13 @@ const App = {
     onMounted(() => {
       watchViewport();
 
+      // Emite evento de montagem para diagnóstico externo (bootstrap guard).
+      try {
+        if (window.__callidusBoot) {
+          window.__callidusBoot({ stage: "VUE_MOUNTED", at: Date.now() });
+        }
+      } catch {}
+
       // A interface está montada: dispara o carregamento dos serviços sem bloquear a apresentação.
       void bootstrap();
 
@@ -502,6 +509,7 @@ const App = {
       modal,
       navItems,
       apiLabel,
+      apiClass,
       newProject,
       createProject,
       openFolder,
@@ -738,4 +746,4 @@ app.mount("#app");
 
 // Alça de depuração: permite inspecionar o estado da interface pelo console do navegador
 // (e automatizar verificações visuais sem depender do modelo).
-window.__callidus = { state };
+window.__callidus = { state, getBootEvents };

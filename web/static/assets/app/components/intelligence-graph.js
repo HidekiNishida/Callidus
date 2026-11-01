@@ -107,8 +107,14 @@ export const CognitiveGraphView = {
     const isPlaying = Vue.ref(false);
     let playbackTimer = null;
 
-    const prefersReducedMotion =
-      typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let prefersReducedMotion = false;
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+      try {
+        prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      } catch {
+        prefersReducedMotion = false;
+      }
+    }
 
     const nodes = Vue.computed(() => graphData.value?.nodes || []);
     const edges = Vue.computed(() => graphData.value?.edges || []);
@@ -291,7 +297,7 @@ export const CognitiveGraphView = {
           <g class="edges-layer">
             <line
               v-for="edge in edges"
-              :key="`${edge.source}-${edge.target}`"
+              :key="edge.source + '-' + edge.target"
               :x1="layout[edge.source]?.x || 60"
               :y1="layout[edge.source]?.y || 60"
               :x2="layout[edge.target]?.x || 60"
@@ -306,7 +312,7 @@ export const CognitiveGraphView = {
             <g
               v-for="node in nodes"
               :key="node.id"
-              :transform="`translate(${layout[node.id]?.x || 0},${layout[node.id]?.y || 0})`"
+              :transform="'translate(' + (layout[node.id]?.x || 0) + ',' + (layout[node.id]?.y || 0) + ')'"
               @mouseenter="hoveredNodeId = node.id"
               @mouseleave="hoveredNodeId = null"
               @click="selectNode(node.id)"
@@ -412,7 +418,7 @@ export const CognitiveGraphView = {
           <button type="button" class="btn-ghost" @click="showHistory = false">Fechar</button>
         </div>
         <div class="history-panel-body">
-          <div v-for="ev in historyEvents" :key="`ev-${ev.seq}`" class="history-event">
+          <div v-for="ev in historyEvents" :key="'ev-' + ev.seq" class="history-event">
             <span class="history-seq">{{ ev.seq }}</span>
             <span class="history-type">{{ ev.type }}</span>
             <span class="history-at">{{ ev.at }}</span>

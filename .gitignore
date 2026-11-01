@@ -33,6 +33,7 @@ lab/out/
 web/node_modules/
 node_modules/
 *.egg-info/
+.playwright-mcp/
 
 # OS / tooling noise
 Thumbs.db
