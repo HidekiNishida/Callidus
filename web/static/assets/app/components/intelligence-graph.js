@@ -238,7 +238,7 @@ export const CognitiveGraphView = {
       NODE_RADIUS,
     };
   },
-  template: `
+  <template: `
     <div class="intelligence-graph" :class="{ 'reduced-motion': prefersReducedMotion }">
       <div class="graph-header">
         <h2>{{ runId ? 'Grafo Cognitivo — Run' : 'Arquitetura Cognitiva' }}</h2>
@@ -277,7 +277,13 @@ export const CognitiveGraphView = {
 
       <div v-if="error" class="alert error">{{ error }}</div>
 
-      <div class="graph-surface">
+      <div v-if="!loading && !error && (!graphData || !nodes.length)" class="empty-state">
+        <p v-if="runId">Nenhum dado de grafo para esta execução.</p>
+        <p v-else>A arquitetura cognitiva será preenchida conforme o agente executa tarefas.</p>
+        <button type="button" class="btn-primary" @click="loadGraph" v-html="icon('refresh', 16)"></button>
+      </div>
+
+      <div v-else class="graph-surface">
         <svg
           class="graph-svg"
           width="1200"

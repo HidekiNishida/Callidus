@@ -7,7 +7,7 @@
  * Dependências: `../store.js` (estado e ações de provedor), `../ui.js` (ícones).
  * Observações: a credencial é gravada em arquivo protegido pelo servidor — nunca no repositório.
  */
-import { state, saveProviderConfig, removeProvider, setProviderSecret, clearProviderSecret, testProvider, loadModels, toast } from "../store.js";
+import { state, saveProviderConfig, removeProvider, setProviderSecret, clearProviderSecret, testProvider, loadModels, toast, reloadProviders, getBootEvents } from "../store.js";
 import { icon } from "../ui.js";
 
 /** Tipos de provedor suportados, com URL padrão e dica de uso. */
@@ -277,6 +277,8 @@ export const ProvidersView = {
       fetchModels,
       clearSecret,
       typeInfo,
+      reloadProviders,
+      getBootEvents,
       icon,
     };
   },
@@ -295,6 +297,12 @@ export const ProvidersView = {
           <span v-html="icon('plus', 15)"></span> Adicionar provedor
         </button>
       </header>
+
+      <div v-if="state.initialization.providers === 'error'" class="alert alert-error">
+        <span v-html="icon('alert-circle', 16)"></span>
+        <span>Falha ao carregar provedores: {{ state.resourceError?.providers || 'erro desconhecido' }}</span>
+        <button type="button" class="btn-ghost small" @click="reloadProviders()">Tentar novamente</button>
+      </div>
 
       <div class="providers-grid">
         <div class="provider-list">

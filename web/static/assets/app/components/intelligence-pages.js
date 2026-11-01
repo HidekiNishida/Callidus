@@ -49,6 +49,11 @@ export const IntelligenceOverview = {
         <div class="skeleton-line"></div>
       </div>
 
+      <div v-if="!loading && !state.intelligenceOverview" class="empty-state">
+        <p>Nenhuma métrica disponível. Execute alguma tarefa para gerar dados.</p>
+        <button type="button" class="btn-primary" @click="load" v-html="icon('refresh', 16)"></button>
+      </div>
+
       <div v-if="!loading && state.intelligenceOverview" class="metrics-grid">
         <div class="metric-card">
           <div class="metric-value">{{ state.intelligenceOverview.runs_total }}</div>
@@ -80,6 +85,7 @@ export const IntelligenceOverview = {
               <span class="bar-value">{{ count }}</span>
             </div>
           </div>
+          <p v-else class="muted small">Nenhum modelo registrado ainda.</p>
         </div>
         <div class="chart-panel">
           <h3>Provedores</h3>
@@ -92,12 +98,13 @@ export const IntelligenceOverview = {
               <span class="bar-value">{{ count }}</span>
             </div>
           </div>
+          <p v-else class="muted small">Nenhum provedor registrado ainda.</p>
         </div>
       </div>
 
       <div v-if="!loading && state.intelligenceOverview" class="table-panel">
         <h3>Runs recentes</h3>
-        <table class="data-table">
+        <table class="data-table" v-if="state.intelligenceOverview.recent_runs?.length">
           <thead>
             <tr>
               <th>ID</th>
@@ -117,6 +124,7 @@ export const IntelligenceOverview = {
             </tr>
           </tbody>
         </table>
+        <p v-else class="muted small">Nenhuma run recente.</p>
       </div>
     </div>
   `,
@@ -165,20 +173,25 @@ export const IntelligencePerformance = {
         <div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div>
       </div>
 
-      <div v-if="!loading" class="metrics-grid">
-        <div v-if="state.runMetrics" class="metric-card">
+      <div v-if="!loading && !state.runMetrics" class="empty-state">
+        <p>Selecione uma execução no acompanhamento ou execute uma tarefa para ver métricas de desempenho.</p>
+        <button type="button" class="btn-primary" @click="load" v-html="icon('refresh', 16)"></button>
+      </div>
+
+      <div v-if="!loading && state.runMetrics" class="metrics-grid">
+        <div class="metric-card">
           <div class="metric-value">{{ state.runMetrics.tokens.total_tokens || 0 }}</div>
           <div class="metric-label">Tokens totais (run)</div>
         </div>
-        <div v-if="state.runMetrics" class="metric-card">
+        <div class="metric-card">
           <div class="metric-value">{{ state.runMetrics.inference.calls }}</div>
           <div class="metric-label">Chamadas ao modelo</div>
         </div>
-        <div v-if="state.runMetrics" class="metric-card">
+        <div class="metric-card">
           <div class="metric-value">{{ (state.runMetrics.efficiency.completion_rate * 100).toFixed(1) }}%</div>
           <div class="metric-label">Taxa de conclusão</div>
         </div>
-        <div v-if="state.runMetrics" class="metric-card">
+        <div class="metric-card">
           <div class="metric-value">{{ state.runMetrics.resources.samples }}</div>
           <div class="metric-label">Amostras de recurso</div>
         </div>
@@ -206,7 +219,7 @@ export const IntelligencePerformance = {
 
       <div v-if="!loading && state.runMetrics" class="table-panel">
         <h3>Consumo por provedor</h3>
-        <table class="data-table">
+        <table class="data-table" v-if="state.runMetrics.inference.by_provider && Object.keys(state.runMetrics.inference.by_provider).length">
           <thead>
             <tr>
               <th>Provedor</th>
@@ -226,6 +239,7 @@ export const IntelligencePerformance = {
             </tr>
           </tbody>
         </table>
+        <p v-else class="muted small">Nenhum dado de provedor disponível.</p>
       </div>
     </div>
   `,
@@ -281,7 +295,7 @@ export const IntelligenceBenchmarks = {
         <div class="bench-sidebar">
           <h3>Cenários</h3>
           <div v-if="loading" class="skeleton-line"></div>
-          <div v-if="!loading" class="scenario-list">
+          <div v-if="!loading && state.benchmarkScenarios?.length" class="scenario-list">
             <div
               v-for="sc in state.benchmarkScenarios"
               :key="sc.id"
@@ -296,6 +310,7 @@ export const IntelligenceBenchmarks = {
               </div>
             </div>
           </div>
+          <p v-if="!loading && !state.benchmarkScenarios?.length" class="muted small">Nenhum cenário disponível. Crie um via API ou adicione ao banco.</p>
         </div>
 
         <div class="bench-main">
@@ -367,6 +382,7 @@ export const IntelligenceBenchmarks = {
                 </tbody>
               </table>
             </div>
+            <p v-else class="muted small">Nenhum resultado ainda. Execute o benchmark para ver resultados.</p>
           </div>
         </div>
       </div>
@@ -435,6 +451,11 @@ export const IntelligenceDiagnostics = {
         <div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div>
       </div>
 
+      <div v-if="!loading && !state.diagnosticsSummary" class="empty-state">
+        <p>Nenhum diagnóstico disponível. Execute uma tarefa e use "Analisar run" para gerar diagnósticos.</p>
+        <button type="button" class="btn-primary" @click="load" v-html="icon('refresh', 16)"></button>
+      </div>
+
       <div v-if="!loading && state.diagnosticsSummary" class="summary-cards">
         <div class="metric-card">
           <div class="metric-value">{{ state.diagnosticsSummary.total }}</div>
@@ -453,7 +474,7 @@ export const IntelligenceDiagnostics = {
       <div v-if="!loading && state.diagnosticsSummary" class="charts-row">
         <div class="chart-panel">
           <h3>Por categoria</h3>
-          <div class="bar-chart">
+          <div class="bar-chart" v-if="state.diagnosticsSummary.by_category && Object.keys(state.diagnosticsSummary.by_category).length">
             <div v-for="(count, cat) in state.diagnosticsSummary.by_category" :key="cat" class="bar-item">
               <span class="bar-label">{{ cat }}</span>
               <div class="bar-track">
@@ -462,10 +483,11 @@ export const IntelligenceDiagnostics = {
               <span class="bar-value">{{ count }}</span>
             </div>
           </div>
+          <p v-else class="muted small">Nenhuma categoria registrada.</p>
         </div>
         <div class="chart-panel">
           <h3>Por severidade</h3>
-          <div class="bar-chart">
+          <div class="bar-chart" v-if="state.diagnosticsSummary.by_severity && Object.keys(state.diagnosticsSummary.by_severity).length">
             <div v-for="(count, sev) in state.diagnosticsSummary.by_severity" :key="sev" class="bar-item">
               <span class="bar-label">{{ sev }}</span>
               <div class="bar-track">
@@ -474,12 +496,13 @@ export const IntelligenceDiagnostics = {
               <span class="bar-value">{{ count }}</span>
             </div>
           </div>
+          <p v-else class="muted small">Nenhuma severidade registrada.</p>
         </div>
       </div>
 
       <div v-if="!loading" class="table-panel">
         <h3>Detalhes</h3>
-        <table class="data-table">
+        <table class="data-table" v-if="state.diagnostics?.length">
           <thead>
             <tr>
               <th>Categoria</th>
@@ -501,6 +524,7 @@ export const IntelligenceDiagnostics = {
             </tr>
           </tbody>
         </table>
+        <p v-else class="muted small">Nenhum diagnóstico para exibir.</p>
       </div>
     </div>
   `,

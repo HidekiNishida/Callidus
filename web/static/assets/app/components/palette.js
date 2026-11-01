@@ -146,7 +146,7 @@ export const CommandPalette = {
     function toggleTheme() {
       const next = state.theme === "dark" ? "light" : "dark";
       document.documentElement.dataset.theme = next;
-      localStorage.setItem("callidus-theme", next);
+      try { localStorage.setItem("callidus-theme", next); } catch { /* armazenamento indisponível */ }
       state.theme = next;
     }
 

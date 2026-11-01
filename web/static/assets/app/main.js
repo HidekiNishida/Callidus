@@ -50,10 +50,7 @@ const { createApp, reactive, ref, computed, onMounted, onBeforeUnmount } = Vue;
 const NAV_ITEMS = [
   { id: "chat", label: "Conversa", icon: "chat" },
   { id: "live", label: "Execução", icon: "chart" },
-  { id: "intelligence-overview", label: "Inteligência", icon: "layout" },
-  { id: "intelligence-performance", label: "Desempenho", icon: "activity" },
-  { id: "intelligence-benchmarks", label: "Benchmarks", icon: "bar-chart" },
-  { id: "intelligence-diagnostics", label: "Diagnósticos", icon: "alert-circle" },
+  { id: "intelligence", label: "Inteligência", icon: "layout" },
   { id: "providers", label: "Provedores", icon: "server" },
   { id: "automations", label: "Automações", icon: "clock" },
   { id: "settings", label: "Ajustes", icon: "cog" },
@@ -105,6 +102,8 @@ const App = {
       remoteResult: null,
       remoteBusy: false,
     });
+
+    const intelligenceSubView = ref("overview"); // overview, performance, benchmarks, diagnostics
 
     onMounted(() => {
       watchViewport();
@@ -504,6 +503,16 @@ const App = {
 
     const navItems = computed(() => NAV_ITEMS);
 
+    /**
+     * Troca a sub-visão de inteligência.
+     *
+     * @param {string} subView Uma das: "overview", "performance", "benchmarks", "diagnostics"
+     */
+    function setIntelligenceSubView(subView) {
+      intelligenceSubView.value = subView;
+      openView("intelligence");
+    }
+
     return {
       state,
       modal,
@@ -529,6 +538,8 @@ const App = {
       openView,
       icon,
       getBootEvents,
+      intelligenceSubView,
+      setIntelligenceSubView,
     };
   },
   template: `
@@ -574,10 +585,48 @@ const App = {
           <Transition v-else name="view" mode="out-in">
             <ChatView v-if="state.view === 'chat'" key="chat" />
             <LivePanel v-else-if="state.view === 'live'" key="live" />
-            <CognitiveGraphView v-else-if="state.view === 'intelligence-overview'" key="intelligence-overview" :run-id="state.currentRun?.id" />
-            <IntelligencePerformance v-else-if="state.view === 'intelligence-performance'" key="intelligence-performance" :run-id="state.currentRun?.id" />
-            <IntelligenceBenchmarks v-else-if="state.view === 'intelligence-benchmarks'" key="intelligence-benchmarks" />
-            <IntelligenceDiagnostics v-else-if="state.view === 'intelligence-diagnostics'" key="intelligence-diagnostics" :run-id="state.currentRun?.id" />
+            <div v-else-if="state.view === 'intelligence'" key="intelligence" class="intelligence-container">
+              <nav class="intelligence-tabs" role="tablist" aria-label="Seções de inteligência">
+                <button
+                  role="tab"
+                  :class="{ active: intelligenceSubView === 'overview' }"
+                  @click="setIntelligenceSubView('overview')"
+                  aria-selected="intelligenceSubView === 'overview'"
+                >
+                  <span v-html="icon('layout', 15)"></span><span>Overview</span>
+                </button>
+                <button
+                  role="tab"
+                  :class="{ active: intelligenceSubView === 'performance' }"
+                  @click="setIntelligenceSubView('performance')"
+                  aria-selected="intelligenceSubView === 'performance'"
+                >
+                  <span v-html="icon('activity', 15)"></span><span>Desempenho</span>
+                </button>
+                <button
+                  role="tab"
+                  :class="{ active: intelligenceSubView === 'benchmarks' }"
+                  @click="setIntelligenceSubView('benchmarks')"
+                  aria-selected="intelligenceSubView === 'benchmarks'"
+                >
+                  <span v-html="icon('bar-chart', 15)"></span><span>Benchmarks</span>
+                </button>
+                <button
+                  role="tab"
+                  :class="{ active: intelligenceSubView === 'diagnostics' }"
+                  @click="setIntelligenceSubView('diagnostics')"
+                  aria-selected="intelligenceSubView === 'diagnostics'"
+                >
+                  <span v-html="icon('alert-circle', 15)"></span><span>Diagnósticos</span>
+                </button>
+              </nav>
+              <Transition name="fade" mode="out-in">
+                <CognitiveGraphView v-if="intelligenceSubView === 'overview'" key="intelligence-overview" :run-id="state.currentRun?.id" />
+                <IntelligencePerformance v-else-if="intelligenceSubView === 'performance'" key="intelligence-performance" :run-id="state.currentRun?.id" />
+                <IntelligenceBenchmarks v-else-if="intelligenceSubView === 'benchmarks'" key="intelligence-benchmarks" />
+                <IntelligenceDiagnostics v-else-if="intelligenceSubView === 'diagnostics'" key="intelligence-diagnostics" :run-id="state.currentRun?.id" />
+              </Transition>
+            </div>
             <ProvidersView v-else-if="state.view === 'providers'" key="providers" />
             <AutomationsView v-else-if="state.view === 'automations'" key="automations" />
             <SettingsView

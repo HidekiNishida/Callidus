@@ -5516,6 +5516,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `apiClass(api)` → `string` — Monta a classe CSS do estado da API (`api-online`, `api-offline`, …).
 - `onGlobalError(event)` — Registra exceções não tratadas como evento de boot sem impedir o navegador.
 - `onGlobalUnhandledRejection(event)` — Registra promessas rejeitadas sem handler como evento de boot sem engolir o erro.
+- `setIntelligenceSubView(subView)` — Alterna a sub-visão de inteligência (overview, performance, benchmarks, diagnostics) e abre a view principal. Entrada: string com o id da sub-visão. Saída: atualiza `intelligenceSubView` e chama `openView("intelligence")`.
 
 ### `web/static/assets/app/tools-report.js`
 
