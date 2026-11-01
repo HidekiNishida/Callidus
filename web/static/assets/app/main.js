@@ -594,42 +594,45 @@ const App = {
               @move-folder="moveFolderTo($event)"
               @remote="openRemote($event)"
             />
-          </Transition>
-          <div v-if="state.view === 'intelligence'" class="intelligence-container" key="intelligence">
-            <nav class="intelligence-tabs" role="tablist" aria-label="Seções de inteligência">
-              <button
-                role="tab"
-                :class="{ active: intelligenceSubView === 'overview' }"
-                @click="setIntelligenceSubView('overview')"
-                aria-selected="intelligenceSubView === 'overview'"
-              >
-                <span v-html="icon('layout', 15)"></span><span>Overview</span>
-              </button>
-              <button
-                role="tab"
-                :class="{ active: intelligenceSubView === 'performance' }"
-                @click="setIntelligenceSubView('performance')"
-                aria-selected="intelligenceSubView === 'performance'"
-              >
-                <span v-html="icon('activity', 15)"></span><span>Desempenho</span>
-              </button>
-              <button
-                role="tab"
-                :class="{ active: intelligenceSubView === 'benchmarks' }"
-                @click="setIntelligenceSubView('benchmarks')"
-                aria-selected="intelligenceSubView === 'benchmarks'"
-              >
-                <span v-html="icon('bar-chart', 15)"></span><span>Benchmarks</span>
-              </button>
-              <button
-                role="tab"
-                :class="{ active: intelligenceSubView === 'diagnostics' }"
-                @click="setIntelligenceSubView('diagnostics')"
-                aria-selected="intelligenceSubView === 'diagnostics'"
-              >
-                <span v-html="icon('alert-circle', 15)"></span><span>Diagnósticos</span>
-              </button>
-</nav>
+            <div
+              v-else-if="state.view === 'intelligence'"
+              key="intelligence"
+              class="intelligence-container"
+            >
+              <nav class="intelligence-tabs" role="tablist" aria-label="Seções de inteligência">
+                <button
+                  role="tab"
+                  :class="{ active: intelligenceSubView === 'overview' }"
+                  @click="setIntelligenceSubView('overview')"
+                  aria-selected="intelligenceSubView === 'overview'"
+                >
+                  <span v-html="icon('layout', 15)"></span><span>Overview</span>
+                </button>
+                <button
+                  role="tab"
+                  :class="{ active: intelligenceSubView === 'performance' }"
+                  @click="setIntelligenceSubView('performance')"
+                  aria-selected="intelligenceSubView === 'performance'"
+                >
+                  <span v-html="icon('activity', 15)"></span><span>Desempenho</span>
+                </button>
+                <button
+                  role="tab"
+                  :class="{ active: intelligenceSubView === 'benchmarks' }"
+                  @click="setIntelligenceSubView('benchmarks')"
+                  aria-selected="intelligenceSubView === 'benchmarks'"
+                >
+                  <span v-html="icon('bar-chart', 15)"></span><span>Benchmarks</span>
+                </button>
+                <button
+                  role="tab"
+                  :class="{ active: intelligenceSubView === 'diagnostics' }"
+                  @click="setIntelligenceSubView('diagnostics')"
+                  aria-selected="intelligenceSubView === 'diagnostics'"
+                >
+                  <span v-html="icon('alert-circle', 15)"></span><span>Diagnósticos</span>
+                </button>
+              </nav>
               <div class="intelligence-sub-views">
                 <CognitiveGraphView
                   v-show="intelligenceSubView === 'overview'"
@@ -652,6 +655,7 @@ const App = {
                 />
               </div>
             </div>
+          </Transition>
         </main>
 
         <DetailsPanel v-if="state.view === 'chat'" :class="{ open: state.detailsOpen }" />
