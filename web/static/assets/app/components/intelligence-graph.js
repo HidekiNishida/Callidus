@@ -238,7 +238,7 @@ export const CognitiveGraphView = {
       NODE_RADIUS,
     };
   },
-  <template: `
+  template: `
     <div class="intelligence-graph" :class="{ 'reduced-motion': prefersReducedMotion }">
       <div class="graph-header">
         <h2>{{ runId ? 'Grafo Cognitivo — Run' : 'Arquitetura Cognitiva' }}</h2>
@@ -269,7 +269,7 @@ export const CognitiveGraphView = {
             :title="isPlaying ? 'Pausar reprodução' : 'Reproduzir histórico'"
             aria-label={isPlaying ? 'Pausar reprodução' : 'Reproduzir histórico'}
           >
-            <span v-html="{ isPlaying: icon('pause', 16), '': icon('play', 16) }[isPlaying ? 'isPlaying' : '']"></span>
+            <span v-html="isPlaying ? icon('pause', 16) : icon('play', 16)"></span>
           </button>
           <span class="muted small">{{ loading ? 'Carregando…' : (graphData ? nodes.length + ' componentes' : '—') }}</span>
         </div>
