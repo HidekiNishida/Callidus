@@ -997,6 +997,23 @@ pre,
 .picker-check { cursor: pointer; color: var(--muted); gap: 4px; }
 .picker-check input { accent-color: var(--accent); }
 
+/* Ícone centralizado dentro do picker, com visual de botão redondo como o anexo de arquivos. */
+.picker-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-3);
+  color: var(--muted);
+  transition: border-color var(--dur-2) var(--ease), background var(--dur-2) var(--ease), color var(--dur-2) var(--ease);
+}
+.picker-ico svg { width: 13px; height: 13px; display: block; }
+.picker:hover .picker-ico { border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--text); }
+
 .send-btn { padding: 8px 16px; margin-left: auto; }
 
 /* botão de rolar para o fim */
