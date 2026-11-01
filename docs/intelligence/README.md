@@ -11,6 +11,7 @@
 | [metrics.md](./metrics.md) | Métricas de tokens, contexto, inferência, recursos, eficiência | Consultar agregações e percentis |
 | [cognitive-graph.md](./cognitive-graph.md) | Grafo cognitivo dinâmico, topologia, estados | Visualizar o fluxo de execução real |
 | [benchmarks.md](./benchmarks.md) | Engine de benchmarking, cenários, pontuação | Comparar modelos e arquiteturas |
+| [calibracao.md](./calibracao.md) | Calibração adaptativa campeão/desafiador com rollback | Ajustar parâmetros por tipo de trabalho |
 | [diagnostics.md](./diagnostics.md) | Motor de diagnóstico, gargalos, recomendações | Identificar problemas e oportunidades |
 | [api.md](./api.md) | Endpoints unificados de inteligência | Integrar sistemas externos |
 | [frontend.md](./frontend.md) | Páginas e componentes da interface | Entender a visualização de dados |
@@ -24,7 +25,8 @@ O sistema de inteligência é composto por cinco subsistemas integrados:
 2. **Analytics** — agregação de métricas de tokens, contexto, inferência, recursos e eficiência.
 3. **Cognitive Graph** — representação visual dinâmica da arquitetura percorrida pelo agente.
 4. **Benchmark Engine** — laboratório de testes comparativos entre modelos e configurações.
-5. **Diagnostic Engine** — identificação determinística de gargalos e oportunidades de otimização.
+5. **Calibração adaptativa** — ajuste de parâmetros operacionais com base em evidências, campeão/desafiador e rollback.
+6. **Diagnostic Engine** — identificação determinística de gargalos e oportunidades de otimização.
 
 Todos os dados são persistidos no SQLite e disponibilizados por API HTTP e SSE, sem depender de modelos de linguagem para cálculos determinísticos.
 

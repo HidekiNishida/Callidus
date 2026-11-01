@@ -2016,7 +2016,16 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `DiagnosticIn` — Schema Pydantic de entrada para criação de diagnóstico (run_id, category, severity, evidence, recommendation, kind, etc.).
 - `_run_or_404(session, run_id) -> ExecutionRunModel` — Devolve a run ou levanta HTTP 404.
 - `_scenario_or_404(session, scenario_id) -> BenchmarkScenarioModel` — Devolve o cenário ou levanta HTTP 404.
-
+- `capabilities(settings) -> dict` — Capacidades observadas do provedor e ambiente (`GET /capabilities`).
+- `profiles(settings) -> dict` — Perfis operacionais e limites aplicados (`GET /profiles`).
+- `dashboard(project_id, session, settings) -> dict` — Painel consolidado de desempenho (`GET /dashboard`).
+- `calibration_history(work_type, settings) -> dict` — Histórico de mudanças e decisões de calibração (`GET /calibration/history`).
+- `calibration_change(payload, settings) -> dict` — Registra mudança candidata de calibração (`POST /calibration/change`).
+- `calibration_evaluate(payload, settings) -> dict` — Avalia campeão vs desafiador (`POST /calibration/evaluate`).
+- `calibration_rollback(change_id, settings) -> dict` — Desativa mudança de calibração (`POST /calibration/rollback/{id}`).
+- `_calibration_store(settings: Settings)` — Armazenamento de calibração ligado ao banco aditivo `data/calibration.db`.
+- `CalibrationChangeIn` — Schema Pydantic de entrada para mudança de calibração (work_type, parameter, previous_value, new_value, justification, hypothesis).
+- `CalibrationEvaluateIn` — Schema Pydantic de entrada para avaliação campeão/desafiador (change_id, champion, challenger, samples, reason).
 
 ## `src/agent/orchestrator/execution/`
 
@@ -2350,12 +2359,14 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `DecompositionDecision(StrEnum)` — Decisão de decomposição para uma tarefa (`execute_directly`, `prepare_context`, `decompose`, `investigate`, `diagnose`, `replan`).
 - `DecompositionLimits` — Limites configuráveis para impedir explosão de tarefas (profundidade, filhos, tokens, tentativas, custo total, limiar de complexidade).
 - `DecompositionLimits.__init__(*, max_depth: int=16, max_children: int=8, max_tokens_per_operation: int=6000, max_attempts: int=8, min_work_per_subtask: int=50, max_total_cost: int=5000000, complexity_threshold: int=6) -> None` — Inicializa os limites com valores padrão.
+- `DecompositionLimits.from_profile_limit(profile_limit: 'ProfileLimit' | None, defaults: 'DecompositionLimits' | None=None) -> 'DecompositionLimits'` — Cria limites de decomposição a partir de um perfil operacional (mapeia orçamento de contexto e tentativas).
 - `DecompositionResult` — Resultado da decisão de decomposição (decisão, justificativa, specs de subtarefas, componentes de contexto, foco de investigação, dica de diagnóstico, escopo de replanejamento).
 - `DecompositionPolicy` — Política de decomposição recursiva adaptativa que usa grafo de dependências, TaskIR e métricas determinísticas.
 - `DecompositionPolicy.decide(ir: TaskIR, *, graph: Any | None=None, attempt_count: int=0, has_children: bool=False, depth: int=0, previous_failures: list[str] | None=None) -> DecompositionResult` — Decide a estratégia de decomposição para uma tarefa.
 - `DecompositionPolicy._complexity_score(ir: TaskIR, *, graph: Any | None=None, attempt_count: int=0) -> int` — Calcula pontuação de complexidade usando dados determinísticos do projeto (objetivo, requisitos, arquivos, dependências, grafo, tentativas).
 - `DecompositionPolicy._generate_subtasks(ir: TaskIR, *, graph: Any | None=None) -> list[dict[str, Any]]` — Gera specs de subtarefas com base no objetivo e nos componentes afetados.
-- `decide_decomposition(ir: TaskIR, *, graph: Any | None=None, limits: DecompositionLimits | None=None, attempt_count: int=0, has_children: bool=False, depth: int=0, previous_failures: list[str] | None=None) -> DecompositionResult` — Função de conveniência para decidir a decomposição de uma tarefa.
+- `decide_decomposition(ir: TaskIR, *, graph: Any | None=None, limits: DecompositionLimits | None=None, attempt_count: int=0, has_children: bool=False, depth: int=0, previous_failures: list[str] | None=None, profile_limit: 'ProfileLimit | None'=None) -> DecompositionResult` — Função de conveniência para decidir a decomposição de uma tarefa, com suporte a limite de perfil operacional.
+- `decide_decomposition_for_work_type(ir: TaskIR, *, graph: Any | None=None, catalog: Any, work_type: str, attempt_count: int=0, has_children: bool=False, depth: int=0, previous_failures: list[str] | None=None) -> DecompositionResult` — Decide a decomposição usando o perfil operacional de um tipo de trabalho (consulta, implementação, correção, etc.).
 
 ### `src/agent/orchestrator/planner.py`
 
@@ -3754,6 +3765,21 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `tests/test_app_runner.py`
 
 **Propósito:** verificar a execução de comandos de projeto com prazo e captura de saída.
+### `tests/test_learning_calibration.py`
+
+**Propósito:** Verifica registro, avaliação (promover/reverter/manter/bloquear), histórico e rollback da calibração adaptativa.
+
+
+### `tests/test_learning_capability.py`
+
+**Propósito:** Verifica a estrutura de ProviderCapability, a reportagem honesta de campos não verificáveis e a serialização to_dict.
+
+
+### `tests/test_learning_profiles.py`
+
+**Propósito:** Verifica a seleção de perfil por tipo de trabalho, a aplicação dos limites globais, o registro e a sobreposição de perfis.
+
+
 
 ### `tests/test_final_review.py`
 
@@ -5369,6 +5395,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `onClick`
 - `onSearch`
 - `bump`
+
+### `web/static/assets/app/components/intelligence-subview.js`
+
+**Propósito:** Sub-view de inteligência da interface (dashboard de desempenho, calibração, capacidades e perfis). **Quando/onde:** consumida pela SPA para exibir métricas de qualidade, eficiência, recursos e autonomia.
 
 ### `web/static/assets/app/components/palette.js`
 
@@ -7401,6 +7431,72 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `StrategyRetriever._extract_keywords(text: str) -> list[str]` — Extrai palavras-chave de um texto.
 - `StrategyRetriever.find_relevant(task_type: str, objective: str, complexity: str, risk: str, required_capabilities: list[str]) -> list[StrategyRecord]` — Encontra estratégias relevantes.
 - `create_operational_learning(db_path: str) -> OperationalLearning` — Cria instância de aprendizado operacional.
+### `src/agent/learning/calibration.py`
+
+**Propósito:** Calibração adaptativa campeão/desafiador com rollback e histórico persistido.
+
+- `CalibrationChange` — Proposta de mudança de parâmetro de calibração (anterior/novo, justificativa, hipótese).
+- `CalibrationDecision(str)` — Decisão de um experimento (promover, reverter, manter, bloquear).
+- `CalibrationEngine` — Motor de calibração: registra mudanças, avalia desafiador vs campeão, aplica rollback.
+- `CalibrationEngine.__init__(store: CalibrationStore) -> None` — Inicializa com armazenamento de calibração.
+- `CalibrationEngine.champion_config(work_type: str) -> ProfileLimit` — Expõe o conceito de campeão (delegado ao ProfileCatalog).
+- `CalibrationEngine.evaluate(change_id: str, champion: CalibrationMetrics, challenger: CalibrationMetrics, samples: int, *, reason: str | None=None) -> CalibrationRecord` — Avalia se o desafiador substitui o campeão.
+- `CalibrationEngine.history(work_type: str | None=None) -> dict[str, Any]` — Devolve histórico de mudanças e decisões.
+- `CalibrationEngine.register_change(*, work_type: str, parameter: str, previous_value: Any, new_value: Any, origin: str, justification: str, hypothesis: str, scenario: str | None=None, version: int=1) -> CalibrationChange` — Registra uma mudança candidata de calibração.
+- `CalibrationEngine.rollback(change_id: str) -> bool` — Desativa uma mudança (rollback ao campeão anterior).
+- `CalibrationMetrics` — Métricas comparáveis de um perfil (taxa de sucesso, tokens, chamadas, duração, falsos completos, recuperações).
+- `CalibrationRecord` — Resultado de uma avaliação de calibração (decisão, confiança, melhoria, regressão).
+- `CalibrationStore` — Armazenamento persistente de mudanças e registros de calibração.
+- `CalibrationStore.__init__(db_path: str) -> None` — Inicializa e cria tabelas aditivas.
+- `CalibrationStore._connect()` — Abre conexão com transação.
+- `CalibrationStore._init_db() -> None` — Cria tabelas calibration_changes e calibration_records.
+- `CalibrationStore.get_change(change_id: str) -> CalibrationChange | None` — Devolve mudança por identificador.
+- `CalibrationStore.latest_decision(change_id: str) -> CalibrationRecord | None` — Devolve última decisão de uma mudança.
+- `CalibrationStore.list_changes(work_type: str | None=None, active: bool | None=None) -> list[CalibrationChange]` — Lista mudanças (filtro por tipo de trabalho e ativa).
+- `CalibrationStore.list_records(change_id: str | None=None) -> list[CalibrationRecord]` — Lista registros de avaliação.
+- `CalibrationStore.save_change(change: CalibrationChange) -> None` — Persiste uma mudança de calibração.
+- `CalibrationStore.save_record(record: CalibrationRecord) -> None` — Persiste um registro de decisão de calibração.
+- `_dump(value: Any) -> str` — Serializa valor para texto no banco.
+- `_has_regression(champion: CalibrationMetrics, challenger: CalibrationMetrics) -> bool` — Detecta regressão de qualidade (sucesso menor ou falsos completos maiores).
+- `_load(value: str) -> Any` — Desserializa valor armazenado.
+- `_metrics_to_dict(m: CalibrationMetrics) -> dict[str, Any]` — Converte CalibrationMetrics em dicionário.
+- `_relative_improvement(champion: CalibrationMetrics, challenger: CalibrationMetrics) -> float` — Melhoria relativa do desafiador sobre o campeão.
+- `_row_to_change(row: sqlite3.Row) -> CalibrationChange` — Converte linha do banco em mudança.
+- `_row_to_record(row: sqlite3.Row) -> CalibrationRecord` — Converte linha do banco em registro.
+- `create_calibration_engine(store: CalibrationStore) -> CalibrationEngine` — Cria motor de calibração.
+- `create_calibration_store(db_path: str) -> CalibrationStore` — Cria armazenamento de calibração.
+
+### `src/agent/learning/capability_discovery.py`
+
+**Propósito:** Descoberta automática de capacidades do provedor e do ambiente (SO, CPU, RAM, GPU, VRAM, contexto, streaming, ferramentas, saída estruturada, visão).
+
+- `CapabilityDiscovery` — Descobre capacidades do provedor conectado e do ambiente.
+- `CapabilityDiscovery.__init__(settings: Settings) -> None` — Inicializa com configurações do processo.
+- `CapabilityDiscovery.discover() -> ProviderCapability` — Executa a descoberta de capacidades.
+- `ProviderCapability` — Capacidade observada de um provedor/modelo.
+- `ProviderCapability.to_dict() -> dict[str, Any]` — Converte para dicionário serializável.
+- `_ollama_context_length(base_url: str, model_id: str, timeout: float=5.0) -> int | None` — Consulta o contexto real do modelo no /api/tags do Ollama.
+- `_read_ram_mb() -> int | None` — Lê a memória RAM total em MB usando stdlib.
+- `discover_capabilities(settings: Settings) -> ProviderCapability` — Função de conveniência para descoberta de capacidades.
+
+### `src/agent/learning/profiles.py`
+
+**Propósito:** Perfis operacionais com limites configuráveis por tipo de trabalho (consulta, investigação, planejamento, implementação, correção, refatoração, testes, documentação, verificação, pesquisa, automação).
+
+- `DecompositionGranularity(str)` — Granularidade de decomposição (simple/hierarchical/recursive).
+- `OperationalProfile` — Perfil operacional completo para um tipo de trabalho.
+- `ProfileCatalog` — Catálogo de perfis com aplicação dos limites globais de configuração.
+- `ProfileCatalog.__init__(settings: Settings) -> None` — Cria o catálogo com os perfis padrões.
+- `ProfileCatalog._apply_global_limits(limit: ProfileLimit) -> ProfileLimit` — Capa os limites do perfil pelos globais de Settings.
+- `ProfileCatalog.clear_override(work_type: str) -> None` — Remove a sobreposição de calibração de um tipo de trabalho.
+- `ProfileCatalog.override_limit(work_type: str, limit: ProfileLimit) -> None` — Sobrepõe o limite de um tipo de trabalho (calibração adaptativa).
+- `ProfileCatalog.profile_for(work_type: str) -> OperationalProfile` — Devolve o perfil com limites aplicados pelos globais.
+- `ProfileCatalog.register_profile(profile: OperationalProfile) -> None` — Registra ou substitui um perfil operacional.
+- `ProfileCatalog.work_types() -> list[str]` — Devolve os tipos de trabalho registrados.
+- `ProfileLimit` — Limite operacional de um perfil para um tipo de trabalho.
+- `VerificationIntensity(str)` — Intensidade de verificação (low/medium/high).
+- `create_profile_catalog(settings: Settings) -> ProfileCatalog` — Cria o catálogo de perfis operacionais.
+
 
 ### `src/agent/memory/inspection.py`
 
@@ -7671,3 +7767,34 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `src/agent/knowledge/memory/`
 
 **Propósito:** Pacote de memória do knowledge — exporta símbolos públicos.
+### `Site-Exemplo/`
+
+**Propósito:** Site de exemplo usado para demonstração e testes locais (arquivos não versionados mantidos pelo usuário, fora do escopo do núcleo do Callidus).
+
+### `Site-Exemplo/site/`
+
+**Propósito:** Pasta de assets do site de exemplo.
+
+### `Site-Exemplo/site/css/`
+
+**Propósito:** Folhas de estilo do site de exemplo.
+
+### `RELATORIO_ERRO_COMPILER_34.md`
+
+**Propósito:** Relatório de erro do compilador Vue (não versionado, mantido pelo usuário).
+
+### `Site-Exemplo/index.html`
+
+**Propósito:** Página inicial do site de exemplo.
+
+### `Site-Exemplo/site/css/styles.css`
+
+**Propósito:** Estilos do site de exemplo.
+
+### `Site-Exemplo/style.css`
+
+**Propósito:** Estilos raiz do site de exemplo.
+
+### `docs/intelligence/calibracao.md`
+
+**Propósito:** Calibração adaptativa campeão/desafiador com rollback — ajuste de parâmetros operacionais por tipo de trabalho com base em evidências de execução.

@@ -17,6 +17,11 @@ from typing import Any
 from agent.domain.enums import TaskKind, TaskStatus
 from agent.orchestrator.task_ir import TaskIR
 
+try:  # integração opcional com perfis operacionais (não quebra quando ausente)
+    from agent.learning.profiles import ProfileLimit
+except Exception:  # pragma: no cover - import opcional
+    ProfileLimit = None  # type: ignore[assignment]
+
 
 class DecompositionDecision(StrEnum):
     """Decisão de decomposição para uma tarefa."""
@@ -51,6 +56,36 @@ class DecompositionLimits:
     max_total_cost: int = 5_000_000
     complexity_threshold: int = 6
 
+    @classmethod
+    def from_profile_limit(
+        cls, profile_limit: "ProfileLimit" | None, defaults: "DecompositionLimits" | None = None
+    ) -> "DecompositionLimits":
+        """Cria limites de decomposição a partir de um perfil operacional.
+
+        Quando o perfil não provê um valor direto (ex.: `max_tool_iterations` não é um
+        limite de decomposição), o default é preservado. Apenas limites que fazem sentido
+        para a decomposição são mapeados.
+
+        Args:
+            profile_limit: limite do perfil operacional (pode ser None).
+            defaults: limites-base usados quando o perfil não sobrescreve.
+
+        Returns:
+            Instância de `DecompositionLimits` com os valores do perfil aplicados.
+        """
+        base = defaults or cls()
+        if profile_limit is None or ProfileLimit is None:
+            return base
+        return cls(
+            max_depth=base.max_depth,
+            max_children=base.max_children,
+            max_tokens_per_operation=profile_limit.context_budget or base.max_tokens_per_operation,
+            max_attempts=profile_limit.max_attempts or base.max_attempts,
+            min_work_per_subtask=base.min_work_per_subtask,
+            max_total_cost=base.max_total_cost,
+            complexity_threshold=base.complexity_threshold,
+        )
+
 
 @dataclass
 class DecompositionResult:
@@ -81,15 +116,31 @@ class DecompositionPolicy:
     Usa o grafo de dependências, o TaskIR e métricas determinísticas para decidir
     se uma tarefa deve ser executada diretamente, ter o contexto preparado, ser
     decomposta, investigada, diagnosticada ou replanejada.
+
+    Quando um `profile_limit` de perfil operacional é informado, seus limites
+    (orçamento de contexto, tentativas) são aplicados aos limites de decomposição,
+    permitindo escolha automática de granularidade por tipo de trabalho.
     """
 
-    def __init__(self, limits: DecompositionLimits | None = None) -> None:
+    def __init__(
+        self,
+        limits: DecompositionLimits | None = None,
+        *,
+        profile_limit: "ProfileLimit | None" = None,
+    ) -> None:
         """Inicializa a política com limites configuráveis.
 
         Args:
             limits: limites de decomposição (usa padrões se não informado).
+            profile_limit: limite de perfil operacional, quando a decisão deve ser
+                guiada por um tipo de trabalho específico (consulta, implementação,
+                correção, etc.). Sobrescreve `limits` nos campos que faz sentido.
         """
-        self.limits = limits or DecompositionLimits()
+        base = limits or DecompositionLimits()
+        if profile_limit is not None:
+            self.limits = DecompositionLimits.from_profile_limit(profile_limit, defaults=base)
+        else:
+            self.limits = base
 
     def decide(
         self,
@@ -306,6 +357,7 @@ def decide_decomposition(
     has_children: bool = False,
     depth: int = 0,
     previous_failures: list[str] | None = None,
+    profile_limit: "ProfileLimit | None" = None,
 ) -> DecompositionResult:
     """Função de conveniência para decidir a decomposição de uma tarefa.
 
@@ -317,11 +369,13 @@ def decide_decomposition(
         has_children: se a tarefa já tem subtarefas.
         depth: profundidade atual na árvore.
         previous_failures: lista de falhas anteriores.
+        profile_limit: limite de perfil operacional, quando a decisão deve ser guiada
+            por um tipo de trabalho específico.
 
     Returns:
         O resultado da decisão de decomposição.
     """
-    policy = DecompositionPolicy(limits=limits)
+    policy = DecompositionPolicy(limits=limits, profile_limit=profile_limit)
     return policy.decide(
         ir=ir,
         graph=graph,
@@ -329,4 +383,46 @@ def decide_decomposition(
         has_children=has_children,
         depth=depth,
         previous_failures=previous_failures,
+    )
+
+
+def decide_decomposition_for_work_type(
+    ir: TaskIR,
+    *,
+    graph: Any | None = None,
+    catalog: Any,
+    work_type: str,
+    attempt_count: int = 0,
+    has_children: bool = False,
+    depth: int = 0,
+    previous_failures: list[str] | None = None,
+) -> DecompositionResult:
+    """Decide a decomposição de uma tarefa usando o perfil operacional de um tipo de trabalho.
+
+    Consulta o `ProfileCatalog` para o `work_type` informado e aplica seus limites
+    (orçamento de contexto, tentativas, granularidade) à decisão de decomposição.
+
+    Args:
+        ir: representação intermediária da tarefa.
+        graph: grafo de dependências do projeto (opcional).
+        catalog: catálogo de perfis operacionais (`ProfileCatalog`).
+        work_type: tipo de trabalho (consulta, implementação, correção, refatoração,
+            testes, documentação, verificação, pesquisa, automação, investigação).
+        attempt_count: número de tentativas já feitas.
+        has_children: se a tarefa já tem subtarefas.
+        depth: profundidade atual na árvore.
+        previous_failures: lista de falhas anteriores.
+
+    Returns:
+        O resultado da decisão de decomposição, com limites do perfil aplicados.
+    """
+    profile = catalog.profile_for(work_type)
+    return decide_decomposition(
+        ir=ir,
+        graph=graph,
+        attempt_count=attempt_count,
+        has_children=has_children,
+        depth=depth,
+        previous_failures=previous_failures,
+        profile_limit=profile.limit,
     )

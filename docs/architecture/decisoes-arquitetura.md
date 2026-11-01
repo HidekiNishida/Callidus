@@ -11,6 +11,7 @@ consequências e estado**. O resumo curto está em
 | [ADR-003](#adr-003-verificação-independente-de-quem-executa) | Verificação independente de quem executa | Aceito |
 | [ADR-004](#adr-004-o-sqlite-como-fonte-da-verdade) | O SQLite como fonte da verdade | Aceito |
 | [ADR-005](#adr-005-o-modelo-como-peça-substituível) | O modelo como peça substituível | Aceito |
+| [ADR-006](#adr-006-calibração-adaptativa-campeão-desafiador-com-rollback) | Calibração adaptativa campeão/desafiador com rollback | Aceito |
 
 ---
 
@@ -172,6 +173,58 @@ tocar no núcleo e injetar um provedor falso nos testes.
 
 Trocar de modelo não exige mudança no orquestrador; o perfil do modelo (limites de contexto e
 geração) continua sendo a forma de casar a operação com a capacidade do provedor.
+
+---
+
+## ADR-006: Calibração adaptativa campeão/desafiador com rollback
+
+**Status:** Aceito · **Data:** 2026-11
+
+### Contexto
+
+O Callidus roda com um único modelo local (`my_ollama` / `gpt-oss:20b`) em máquinas modestas.
+Parâmetros fixos (janela de contexto, reserva de saída, granularidade de decomposição,
+tentativas, inspeções) não servem para todos os tipos de trabalho: uma consulta simples não
+precisa de decomposição hierárquica, e um subsistema complexo não pode ser tratado como uma
+única operação. Não havia mecanismo para descobrir, por perfil de trabalho, quais parâmetros
+produzem melhor taxa de conclusão com menos tokens e inferências.
+
+### Problema
+
+Sem calibração, o Callidus usa a mesma configuração para todo tipo de trabalho, sem aprender
+com execuções anteriores e sem forma segura de reverter uma mudança que piora o resultado.
+
+### Alternativas
+
+| Alternativa | Por que não |
+|-------------|-------------|
+| Parâmetros fixos globais | Não se adapta ao tipo de trabalho nem ao modelo disponível |
+| Ajuste automático direto no código-fonte pela inferência | Viola a regra de que inferência comum não altera código-fonte nem regras de segurança |
+| Apenas coleta de métricas, sem ajuste | Não fecha o ciclo de melhoria contínua |
+
+### Decisão
+
+Adicionar camada de calibração operacional em `src/agent/learning/`:
+
+- `profiles.py` — perfis nomeados por tipo de trabalho com limites configuráveis, sempre
+  capados pelos limites globais de `Settings`.
+- `capability_discovery.py` — descoberta de capacidades do provedor e ambiente, relatando
+  `desconhecido` quando não verificável.
+- `calibration.py` — campeão/desafiador com avaliação controlada, promoção somente com
+  melhoria real e sem regressão, histórico persistido e rollback.
+- Endpoints de API em `agent.api.intelligence_routes` (`capabilities`, `profiles`,
+  `calibration/*`, `dashboard`).
+
+A alteração é persistida em `data/calibration.db` (banco aditivo, não mexe em
+`data/agent.db`). Uma inferência de modelo local por vez; nenhum benchmark pesado na
+inicialização.
+
+### Consequências
+
+O Callidus pode ajustar automaticamente parâmetros operacionais com base em evidências,
+revertendo mudanças que causem regressão. Parâmetros críticos de segurança são bloqueados
+quando alterados manualmente. Novos símbolos e endpoints precisam ser descritos em
+`resume.md` e o inventário carimbado (`scripts/resume.py carimbar`).
 
 ---
 

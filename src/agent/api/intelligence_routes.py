@@ -15,7 +15,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from agent.api.deps import db_session
+from agent.api.deps import db_session, read_settings
+from agent.config import Settings
 from agent.intelligence import (
     AnalyticsService,
     BenchmarkEngine,
@@ -23,6 +24,14 @@ from agent.intelligence import (
     DiagnosticEngine,
     TelemetryService,
 )
+from agent.learning.calibration import (
+    CalibrationDecision,
+    CalibrationMetrics,
+    create_calibration_engine,
+    create_calibration_store,
+)
+from agent.learning.capability_discovery import discover_capabilities
+from agent.learning.profiles import create_profile_catalog, ProfileLimit
 from agent.persistence.models import (
     BenchmarkExecutionModel,
     BenchmarkScenarioModel,
@@ -31,6 +40,290 @@ from agent.persistence.models import (
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/intelligence", tags=["intelligence"])
+
+
+def _calibration_store(settings: Settings):
+    """Armazenamento de calibração ligado ao banco aditivo `data/calibration.db`."""
+    return create_calibration_store(str(settings.data_dir / "calibration.db"))
+
+
+# ── Capacidades e perfis ────────────────────────────────────────────────────
+
+@router.get("/capabilities")
+def capabilities(
+    settings: Settings = Depends(read_settings),
+) -> dict[str, Any]:
+    """Capacidades observadas do provedor conectado e do ambiente.
+
+    Campos não verificáveis são reportados como `desconhecido`/`None`; nada é
+    presumido a partir da configuração declarada.
+    """
+    return discover_capabilities(settings).to_dict()
+
+
+@router.get("/profiles")
+def profiles(
+    settings: Settings = Depends(read_settings),
+) -> dict[str, Any]:
+    """Perfis operacionais disponíveis e seus limites (após aplicação dos globais)."""
+    catalog = create_profile_catalog(settings)
+    return {
+        "work_types": catalog.work_types(),
+        "profiles": {
+            work_type: {
+                "description": catalog.profile_for(work_type).description,
+                "requires_model": catalog.profile_for(work_type).requires_model,
+                "deterministic_first": catalog.profile_for(work_type).deterministic_first,
+                "limit": {
+                    "context_budget": catalog.profile_for(work_type).limit.context_budget,
+                    "output_reserve": catalog.profile_for(work_type).limit.output_reserve,
+                    "decomposition_granularity": catalog.profile_for(
+                        work_type
+                    ).limit.decomposition_granularity,
+                    "max_recursion_depth": catalog.profile_for(
+                        work_type
+                    ).limit.max_recursion_depth,
+                    "max_attempts": catalog.profile_for(work_type).limit.max_attempts,
+                    "max_inspections": catalog.profile_for(work_type).limit.max_inspections,
+                    "max_tool_iterations": catalog.profile_for(
+                        work_type
+                    ).limit.max_tool_iterations,
+                    "max_tool_calls": catalog.profile_for(work_type).limit.max_tool_calls,
+                    "verification_intensity": catalog.profile_for(
+                        work_type
+                    ).limit.verification_intensity,
+                    "skills_selected": catalog.profile_for(
+                        work_type
+                    ).limit.skills_selected,
+                    "max_model_calls": catalog.profile_for(work_type).limit.max_model_calls,
+                    "timeout_sec": catalog.profile_for(work_type).limit.timeout_sec,
+                },
+            }
+            for work_type in catalog.work_types()
+        },
+    }
+
+
+# ── Calibração adaptativa ───────────────────────────────────────────────────
+
+class CalibrationChangeIn(BaseModel):
+    work_type: str
+    parameter: str
+    previous_value: Any
+    new_value: Any
+    origin: str = "manual"
+    justification: str
+    hypothesis: str
+    scenario: str | None = None
+    version: int = 1
+
+
+class CalibrationEvaluateIn(BaseModel):
+    change_id: str
+    champion: CalibrationMetrics
+    challenger: CalibrationMetrics
+    samples: int
+    reason: str | None = None
+
+
+@router.get("/calibration/history")
+def calibration_history(
+    work_type: str | None = Query(default=None),
+    settings: Settings = Depends(read_settings),
+) -> dict[str, Any]:
+    """Histórico de mudanças e decisões de calibração (campeão/desafiador)."""
+    engine = create_calibration_engine(_calibration_store(settings))
+    return engine.history(work_type=work_type)
+
+
+@router.post("/calibration/change")
+def calibration_change(
+    payload: CalibrationChangeIn,
+    settings: Settings = Depends(read_settings),
+) -> dict[str, Any]:
+    """Registra uma mudança candidata de calibração."""
+    from uuid import uuid4
+
+    from agent.learning.calibration import CalibrationChange
+
+    change = CalibrationChange(
+        id=str(uuid4()),
+        work_type=payload.work_type,
+        parameter=payload.parameter,
+        previous_value=payload.previous_value,
+        new_value=payload.new_value,
+        origin=payload.origin,
+        justification=payload.justification,
+        hypothesis=payload.hypothesis,
+        scenario=payload.scenario,
+        version=payload.version,
+    )
+    engine = create_calibration_engine(_calibration_store(settings))
+    engine.register_change(change)
+    return {"id": change.id, "work_type": change.work_type, "active": change.active}
+
+
+@router.post("/calibration/evaluate")
+def calibration_evaluate(
+    payload: CalibrationEvaluateIn,
+    settings: Settings = Depends(read_settings),
+) -> dict[str, Any]:
+    """Avalia se o desafiador substitui o campeão (promover / reverter / manter / bloquear)."""
+    engine = create_calibration_engine(_calibration_store(settings))
+    record = engine.evaluate(
+        change_id=payload.change_id,
+        champion=payload.champion,
+        challenger=payload.challenger,
+        samples=payload.samples,
+        reason=payload.reason,
+    )
+    return {
+        "id": record.id,
+        "change_id": record.change_id,
+        "decision": record.decision,
+        "confidence": record.confidence,
+        "improvement": record.improvement,
+        "regression": record.regression,
+        "samples": record.samples,
+        "applied_at": record.applied_at,
+        "reason": record.reason,
+    }
+
+
+@router.post("/calibration/rollback/{change_id}")
+def calibration_rollback(
+    change_id: str,
+    settings: Settings = Depends(read_settings),
+) -> dict[str, Any]:
+    """Desativa uma mudança de calibração (rollback ao campeão anterior)."""
+    engine = create_calibration_engine(_calibration_store(settings))
+    ok = engine.rollback(change_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="mudança de calibração não encontrada")
+    return {"change_id": change_id, "rolled_back": True}
+
+
+# ── Painel de desempenho consolidado ────────────────────────────────────────
+
+@router.get("/dashboard")
+def dashboard(
+    project_id: uuid.UUID | None = Query(default=None),
+    session: Session = Depends(db_session),
+    settings: Settings = Depends(read_settings),
+) -> dict[str, Any]:
+    """Painel consolidado de desempenho: qualidade, eficiência, recursos e autonomia.
+
+    Responde às questões: está melhorando? qual é o principal gargalo? qual estratégia
+    produz melhores resultados? qual perfil é mais eficiente? quais falhas são mais
+    frequentes? quais ajustes automáticos foram aplicados e com qual impacto? como está
+    o desempenho do modelo de referência?
+    """
+    analytics = AnalyticsService(session)
+    overview = analytics.overview(project_id=project_id)
+    inference = overview.get("inference", {})
+    efficiency = overview.get("efficiency", {})
+    resources = overview.get("resources", {})
+    models_used = overview.get("models_used", {})
+
+    # Gargalo principal: maior taxa de erro/timeout entre provedores e maior latência.
+    by_provider = inference.get("by_provider", {})
+    bottleneck_provider = None
+    bottleneck_metric = None
+    if by_provider:
+        worst = max(
+            by_provider.items(),
+            key=lambda item: item[1]["error_rate"] + item[1]["timeout_rate"],
+        )
+        bottleneck_provider, bottleneck_metric = worst
+
+    # Falhas mais frequentes via diagnóstico (quando há diagnósticos criados).
+    diag_engine = DiagnosticEngine(session)
+    diag_summary = diag_engine.get_summary(run_id=None)
+
+    # Histórico de calibração: ajustes aplicados e impacto.
+    cal_engine = create_calibration_engine(_calibration_store(settings))
+    cal_history = cal_engine.history()
+    applied = [
+        r
+        for r in cal_history["records"]
+        if r["decision"] == CalibrationDecision.PROMOTE
+    ]
+
+    return {
+        "project_id": str(project_id) if project_id else None,
+        "melhorando": {
+            "taxa_conclusao": overview.get("completion_rate"),
+            "runs_concluidas": overview.get("runs_completed"),
+            "runs_falharam": overview.get("runs_failed"),
+            "runs_ativas": overview.get("runs_active"),
+        },
+        "gargalo_principal": {
+            "provedor": bottleneck_provider,
+            "taxa_erro": bottleneck_metric["error_rate"] if bottleneck_metric else None,
+            "taxa_timeout": bottleneck_metric["timeout_rate"] if bottleneck_metric else None,
+            "latencia_p95_ms": inference.get("duration_ms", {}).get("p95"),
+            "categoria_diagnostico_mais_frequente": (
+                max(diag_summary.get("by_category", {}).items(), key=lambda i: i[1])[0]
+                if diag_summary.get("by_category")
+                else None
+            ),
+        },
+        "estrategia_mais_eficiente": {
+            "tokens_por_tarefa_concluida": efficiency.get("tokens_per_completed_task"),
+            "chamadas_por_tarefa_concluida": efficiency.get("calls_per_completed_task"),
+            "taxa_progresso": efficiency.get("progress_rate"),
+            "chamadas_sem_progresso": efficiency.get("calls_without_progress"),
+            "recuperacoes": efficiency.get("recovery_count"),
+        },
+        "perfil_configuracao": {
+            "provedor_padrao": settings.default_provider,
+            "modelo_padrao": settings.default_model_id,
+            "modelos_usados": models_used,
+            "inferencias_concorrentes": settings.max_concurrent_inferences,
+        },
+        "falhas_mais_frequentes": {
+            "diagnosticos_por_categoria": diag_summary.get("by_category", {}),
+            "diagnosticos_por_severidade": diag_summary.get("by_severity", {}),
+            "taxa_erro_inferencia": inference.get("error_rate"),
+            "taxa_timeout_inferencia": inference.get("timeout_rate"),
+        },
+        "ajustes_automaticos": {
+            "aplicados": len(applied),
+            "historico": [
+                {
+                    "mudanca": r["change_id"],
+                    "decisao": r["decision"],
+                    "confianca": r["confidence"],
+                    "melhoria_relativa": r["improvement"],
+                    "regressao": r["regression"],
+                    "amostras": r["samples"],
+                    "aplicado_em": r["applied_at"],
+                    "motivo": r["reason"],
+                }
+                for r in applied
+            ],
+        },
+        "desempenho_modelo_referencia": {
+            "modelo": settings.default_model_id,
+            "provedor": settings.default_provider,
+            "chamadas": inference.get("calls"),
+            "concluidas": inference.get("completed"),
+            "falhas": inference.get("failed"),
+            "timeouts": inference.get("timed_out"),
+            "latencia_p50_ms": inference.get("duration_ms", {}).get("p50"),
+            "latencia_p95_ms": inference.get("duration_ms", {}).get("p95"),
+            "tokens_por_segundo_p50": inference.get("tokens_per_second", {}).get("p50"),
+            "tokens_por_segundo_p95": inference.get("tokens_per_second", {}).get("p95"),
+            "qualidade_medicao": "estimada",
+        },
+        "recursos": {
+            "cpu_percent_medio": resources.get("cpu_percent", {}).get("avg"),
+            "ram_mb_maximo": resources.get("ram_mb", {}).get("max"),
+            "vram_mb_maximo": resources.get("vram_mb", {}).get("max"),
+            "amostras": resources.get("samples"),
+        },
+    }
+
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────
