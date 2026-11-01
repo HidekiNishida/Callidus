@@ -29,7 +29,7 @@ from agent.domain.schemas import MemoryCreate, TaskStatusUpdate
 from agent.i18n.locale import detect_language
 from agent.intelligence.telemetry import TelemetryService
 from agent.observability import emit, get_bus, observe, set_task
-from agent.orchestrator.approach import approach_of, approach_signature
+from agent.orchestrator.approach import approach_of, approach_signature, record_attempt
 from agent.orchestrator.atomizer import should_decompose_further
 from agent.orchestrator.consolidation import (
     children_of,
@@ -45,6 +45,7 @@ from agent.orchestrator.decomposition import (
     resolve_decomposition_plan,
     seal_repeated_steps,
 )
+from agent.orchestrator.cognitive_router import create_cognitive_router, OperationComplexity
 from agent.orchestrator.execution import (
     ExecutionRuntime,
     TaskExecutor,
@@ -129,6 +130,11 @@ def _select_provider(settings: Settings, run_config: dict) -> LLMProvider:
     O nome permanece neste módulo porque é aqui que consumidores e testes a injetam
     (monkeypatch): trocar a implementação não pode quebrar quem injeta o provedor.
 
+    Quando o run não especifica um provedor explícito, o roteador cognitivo escolhe o
+    modelo mais adequado à complexidade da tarefa (análise do metadado da tarefa raiz).
+    Caso contrário, o provedor do run ou o padrão das settings é usado, sem fallback
+    silencioso para o mock.
+
     Args:
         settings: configuração do processo.
         run_config: configuração do run (`provider`, `mock_keyword_map`).
@@ -139,6 +145,23 @@ def _select_provider(settings: Settings, run_config: dict) -> LLMProvider:
     Raises:
         ProviderConfigError: quando o provedor pedido não existe e não há fallback autorizado.
     """
+    name = str(run_config.get("provider") or "")
+    if name:
+        return select_provider(settings, run_config)
+    # Sem provedor explícito: o roteador cognitivo escolhe com base na complexidade
+    # da tarefa. Nunca recai silenciosamente para o mock — se não houver provedor
+    # adequado, usa o padrão das settings.
+    router = create_cognitive_router(settings)
+    profile = router.analyze_operation(
+        task_metadata=run_config.get("task_metadata") or {},
+        operation_type=str(run_config.get("operation_type") or "operation"),
+        context_info=run_config.get("context_info") or {},
+    )
+    selection = router.select_model(profile)
+    if selection is not None:
+        provider = router.get_provider_for_selection(selection)
+        if provider is not None:
+            return provider
     return select_provider(settings, run_config)
 
 
@@ -750,6 +773,46 @@ class RunOrchestrator:
                 category="alert",
             )
             return {"action": "root_recovery", **result}
+        # Antes de pausar: quando o diagnóstico é automático, o orçamento não acabou e o
+        # replanejamento foi recusado (ou não houve pai para replanejar), tenta a próxima
+        # alternativa declarada antes de entregar o run. É a recuperação com estratégia
+        # alternativa — o modelo recebe uma instrução concreta do que fazer diferente.
+        if diag["automatic"] and not exhausted and (decision is None or not decision.replan):
+            approach = approach_of(task)
+            choice = alternative_continuance(approach)
+            if choice == "continue":
+                record_attempt(task, last)
+                next_alt = (approach.get("alternatives") or [])[int(approach.get("alternatives_used") or 0)]
+                self._tasks.update_status(
+                    task.id,
+                    TaskStatusUpdate(status=TaskStatus.RETRY_PENDING, reason=f"estagnou, tentando alternativa: {next_alt}"),
+                )
+                record["next_action"] = f"tentar alternativa: {next_alt}"
+                record["alternative"] = next_alt
+                task.metadata_json = {**(task.metadata_json or {}), "stagnation": record}
+                self._session.add(
+                    EventLogModel(
+                        project_id=run.project_id,
+                        run_id=run.id,
+                        task_id=task.id,
+                        event_type="run.stagnation_alternative",
+                        payload_json={"task": task.title, "alternative": next_alt, **record},
+                    )
+                )
+                self._note_thought(
+                    run,
+                    task,
+                    f"«{task.title}» estagnou com a mesma estratégia. Vou tentar diferente: {next_alt}.",
+                    phase="recover",
+                    category="alert",
+                )
+                return {
+                    "action": "stagnation_alternative",
+                    "task_id": raw,
+                    "failure": noted,
+                    "stagnation": record,
+                    "thought": f"«{task.title}» estagnou. Vou tentar: {next_alt}.",
+                }
         root = self._tasks.get_task(run.root_task_id)
         if not diag["automatic"]:
             # Credencial, executável ausente, funcionalidade desligada ou aprovação:

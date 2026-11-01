@@ -19,10 +19,13 @@ from typing import Any
 # `write_file`/`edit_file`, porque "não altere nenhum arquivo" não pode ser só um texto no
 # prompt que o modelo ignora.
 _READ_ONLY_PATTERNS = (
-    r"n[ãa]o\s+(?:altere|modifique|edite|reescreva|apague|remova|crie|execute\s+nada)",
-    r"n[ãa]o\s+(?:fa[çc]a|mude|troque)\s+(?:nenhuma\s+)?(?:altera|modifica)",
-    r"sem\s+alterar",
-    r"sem\s+modificar",
+    # Proibição geral: "não altere/modifique/edite/... nenhum/qualquer/nada/arquivo(s)".
+    # Uma proibição de um objeto específico (ex.: "não altere o nome da coluna") NÃO é
+    # somente leitura — é uma restrição pontual que o modelo deve respeitar ao editar.
+    r"n[ãa]o\s+(?:altere|modifique|edite|reescreva|apague|remova|crie)\s+(?:nenhum|qualquer|qual|nenhuma|nada|arquivo|arquivos|coisa|coisas)",
+    r"n[ãa]o\s+execute\s+nada",
+    r"sem\s+alterar\s+(?:nenhum|qualquer|arquivo|arquivos|coisa|coisas|nada)",
+    r"sem\s+modificar\s+(?:nenhum|qualquer|arquivo|arquivos|coisa|coisas|nada)",
     r"apenas\s+(?:leia|leitura|reporte|relate|informe|consulte|verifique|execute\s+a\s+su[íi]te)",
     r"s[óo]\s+(?:leia|leitura|reporte|relate|inspecione)",
     r"read[- ]only",

@@ -850,19 +850,45 @@ def apply_decomposition(
         ts.update_status(parent_id, TaskStatusUpdate(status=TaskStatus.PLANNING))
 
     created_ids: list[uuid.UUID] = []
-    from agent.orchestrator.consolidation import inherits_flag
+    from agent.orchestrator.consolidation import children_of, inherits_flag, superseded
 
     inherited = {
         flag: True
         for flag in ("read_only", "protect_tests")
         if inherits_flag(session, parent, flag)
     }
-    for spec in plan.subtasks:
+    # Evita duplicatas: subtarefas com o mesmo título já existentes sob o mesmo
+    # pai não são recriadas — são reutilizadas. Isso impede que replanejamentos
+    # sucessivos gerem cópias idênticas ("Ver o que ainda falta", "Seguir com o plano corrigido", …).
+    existing_children = children_of(session, parent_id)
+    existing_by_title: dict[str, TaskModel] = {}
+    for child in existing_children:
+        # Mantém a primeira não-cancelada/subscrevida; se todas estiverem canceladas, recria.
+        title_key = (child.title or "").strip().casefold()
+        if title_key not in existing_by_title:
+            existing_by_title[title_key] = child
+        elif child.status not in {TaskStatus.CANCELLED.value} and not superseded(child):
+            existing_by_title[title_key] = child
+
+    # Índice do plano -> identificador da tarefa (existente ou recém-criada), para
+    # remapear os `depends_on_indices` quando uma subtarefa é reutilizada.
+    plan_index_to_task_id: dict[int, uuid.UUID] = {}
+    for plan_idx, spec in enumerate(plan.subtasks):
         metadata = dict(spec.metadata or {})
         if inherited:
-            # As restrições do pedido descem com a decomposição: uma subetapa de um pedido
-            # sem escrita (ou com a régua protegida) herda a restrição.
             metadata.update(inherited)
+        title_key = (spec.title or "").strip().casefold()
+        existing = existing_by_title.get(title_key)
+        if existing is not None:
+            # Reutiliza a subtarefa existente em vez de criar duplicata.
+            plan_index_to_task_id[plan_idx] = existing.id
+            # Garante que esteja em um estado que possa avançar.
+            if existing.status in {TaskStatus.BLOCKED.value, TaskStatus.FAILED.value}:
+                ts.update_status(
+                    existing.id,
+                    TaskStatusUpdate(status=TaskStatus.RETRY_PENDING, reason="reaproveitada após replanejamento"),
+                )
+            continue
         task = ts.create_task(
             project_id,
             TaskCreate(
@@ -876,6 +902,7 @@ def apply_decomposition(
             ),
         )
         created_ids.append(task.id)
+        plan_index_to_task_id[plan_idx] = task.id
         # Cada subtarefa ganha um agente lógico: é ele que guarda as descobertas e que
         # responde a consultas quando o pai precisa de detalhe.
         AgentService(session).ensure_agent(task.id)
@@ -884,12 +911,16 @@ def apply_decomposition(
         for dep_idx in spec.depends_on_indices:
             # Dependência inválida (fora do plano ou de si mesma) é ignorada: o plano
             # nunca pode criar auto-ciclo nem quebrar a criação das subtarefas.
-            if not (0 <= dep_idx < len(created_ids)) or dep_idx == idx:
+            if not (0 <= dep_idx < len(plan.subtasks)) or dep_idx == idx:
+                continue
+            from_id = plan_index_to_task_id.get(idx)
+            to_id = plan_index_to_task_id.get(dep_idx)
+            if from_id is None or to_id is None or from_id == to_id:
                 continue
             try:
                 ts.add_dependency(
-                    created_ids[idx],
-                    TaskDependencyCreate(depends_on_task_id=created_ids[dep_idx]),
+                    from_id,
+                    TaskDependencyCreate(depends_on_task_id=to_id),
                 )
             except DependencyError:
                 continue

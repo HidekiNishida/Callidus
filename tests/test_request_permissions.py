@@ -51,6 +51,10 @@ def test_pedido_somente_leitura_e_reconhecido():
     assert is_read_only_request("Execute a suíte e diga o resultado. Não altere nenhum arquivo.") is True
     assert is_read_only_request("Apenas leia os arquivos e me diga o que encontrou") is True
     assert is_read_only_request("Crie em app.py uma função dobro(x)") is False
+    # Restrição pontual de um objeto específico não torna o pedido somente leitura:
+    # o modelo ainda pode editar código, apenas deve respeitar a restrição citada.
+    assert is_read_only_request("Não altere o nome da coluna no CSV; adapte o codigo ao formato atual do arquivo.") is False
+    assert is_read_only_request("Não modifique os testes, mas corrija o código-fonte.") is False
 
 
 def test_régua_protegida_só_abre_quando_o_pedido_manda_mexer_nos_testes():

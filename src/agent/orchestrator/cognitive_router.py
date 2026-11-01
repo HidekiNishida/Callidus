@@ -289,7 +289,10 @@ class CognitiveRouter:
 
             # Obtém perfil e capacidades do modelo
             model_profile = self._get_model_profile(provider, model_id)
-            capabilities = provider.capabilities
+            caps = provider.capabilities
+            if callable(caps):
+                caps = caps()
+            capabilities = caps
 
             # Calcula pontuação base
             score, reasons, warnings = self._calculate_score(profile, model_profile, capabilities, provider_name)
@@ -321,6 +324,8 @@ class CognitiveRouter:
 
         # Fallback: perfil genérico baseado nas capacidades do provedor
         caps = provider.capabilities
+        if callable(caps):
+            caps = caps()
         return ModelProfile(
             model_id=model_id,
             context_limit=8192,

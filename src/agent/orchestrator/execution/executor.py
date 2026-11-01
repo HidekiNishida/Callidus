@@ -537,6 +537,7 @@ class TaskExecutor:
             extract_sources,
             local_now_line,
             usable_reply,
+            validate_final_answer,
             verification_footer,
         )
         from agent.providers.base import ChatCompletionRequest, ChatMessage
@@ -595,6 +596,42 @@ class TaskExecutor:
         footer = verification_footer(self._session, parent if parent is not None else task)
         if footer:
             markdown = f"{markdown.rstrip()}\n\n{footer}"
+        # Validação da resposta final: variáveis de template não preenchidas e placeholders
+        # genéricos indicam que o modelo não entregou o conteúdo pedido.
+        ok_final, motivo_final = validate_final_answer(markdown)
+        if not ok_final:
+            from agent.domain.failures import Failure, FailureCategory, FailureCause
+            failure = Failure(
+                FailureCategory.CHANGE_STRATEGY,
+                FailureCause.INVALID_OUTPUT,
+                f"resposta final incompleta: {motivo_final}",
+            )
+            attempts.record(
+                run_id=run.id,
+                task_id=task.id,
+                kind=AttemptKind.MODEL,
+                provider=provider.name,
+                request={"purpose": "final_answer"},
+                response={"content_preview": markdown[:500]},
+                success=False,
+                project_id=project.id,
+                failure=failure,
+            )
+            noted = self._executor.remember_failure(task, failure)
+            self.note_thought(
+                run,
+                task,
+                f"A resposta final ainda não está pronta: {motivo_final}. Vou reescrever.",
+                phase="recover",
+                category="alert",
+            )
+            self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.RETRY_PENDING, reason=motivo_final))
+            return {
+                "action": "final_answer_invalid",
+                "task_id": str(task.id),
+                "failure": noted,
+                "thought": f"Resposta final incompleta: {motivo_final}.",
+            }
         sources = extract_sources(markdown, *[str(stage.get("sources")) for stage in stages])
         task.consolidated_result_json = {"final_answer": True, "markdown": markdown, "sources": sources}
         # A conversa lê a raiz. A consolidação só copia o texto quando todos os

@@ -286,6 +286,12 @@ async def _write_file(ctx: ToolContext, args: dict) -> dict:
         return await remote_tools.write_file(ctx, args)
     path = args.get("path", "")
     content = args.get("content", "")
+    # Modelos pequenos podem escapar novas linhas como "\\n" (duplo escape) no
+    # JSON da chamada de ferramenta. Quando o conteudo nao tem nenhuma nova linha
+    # real mas tem sequencias "\\n", substitui-as por novas linhas reais para nao
+    # quebrar scripts gerados.
+    if content and "\\n" in content and "\n" not in content:
+        content = content.replace("\\n", "\n")
     try:
         full = resolve_under_root(ctx.project_root, path)
     except PathSecurityError as exc:

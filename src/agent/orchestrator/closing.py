@@ -211,6 +211,49 @@ def extract_sources(*chunks: str) -> list[str]:
     return found[:12]
 
 
+# Padrões que indicam que a resposta final não está pronta: variáveis de template não
+# preenchidas, placeholders genéricos ou valores claramente fabricados.
+_TEMPLATE_VAR = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}")
+_PLACEHOLDER_WORDS = (
+    "exemplo",
+    "placeholder",
+    "tbd",
+    "a definir",
+    "em breve",
+    "valor fictício",
+    "dado fictício",
+    "xx.xx",
+    "00.00",
+)
+
+
+def validate_final_answer(text: str) -> tuple[bool, str | None]:
+    """Verifica se a resposta final do modelo está pronta para ser entregue.
+
+    Detecta problemas que tornam a resposta inutilizável sem depender do julgamento
+    do modelo: variáveis de template não preenchidas e placeholders genéricos.
+
+    Args:
+        text: texto da resposta final candidata.
+
+    Returns:
+        Tuple `(ok, motivo)`. Quando `ok` é `True`, a resposta está pronta.
+        Quando `False`, `motivo` descreve o problema a corrigir.
+    """
+    if not text or not text.strip():
+        return False, "a resposta final está vazia"
+    body = text.strip()
+    # Variáveis de template não preenchidas: {total_transactions}, {vendor}, etc.
+    for match in _TEMPLATE_VAR.findall(body):
+        return False, f"variável de template não preenchida: {match}"
+    # Palavras de placeholder que indicam que o modelo não preencheu o conteúdo.
+    lower = body.casefold()
+    for word in _PLACEHOLDER_WORDS:
+        if word in lower:
+            return False, f"resposta contém placeholder não preenchido: {word}"
+    return True, None
+
+
 def verification_footer(session, root) -> str:
     """Fatos verificados do trabalho, em texto determinístico.
 
