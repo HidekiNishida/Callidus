@@ -106,7 +106,11 @@ app.include_router(task_router)
 app.include_router(run_router)
 
 
-_REVALIDATE = {"Cache-Control": "no-cache"}
+_REVALIDATE = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
 
 
 class _RevalidatedStatic(StaticFiles):
