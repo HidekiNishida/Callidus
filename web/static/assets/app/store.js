@@ -8,7 +8,7 @@
  * Observações: o estado é a fonte da verdade do navegador; o servidor continua sendo a fonte da verdade
  * da execução. As ações do store avisam o usuário por `toast` em vez de lançar erros.
  */
-import { api } from "./api.js";
+import { api, DEFAULT_TIMEOUT, HEALTH_TIMEOUT } from "./api.js";
 import { formatToolsReport } from "./tools-report.js";
 import { describeActivity, mergeActivity } from "./ui.js";
 import { applyEvent, applyLive, createState, markConnection, markResync } from "./live-state.js";
@@ -16,16 +16,33 @@ import { createStream } from "./live-stream.js";
 
 const { reactive } = Vue;
 
+/** Estados possíveis de cada recurso durante o bootstrap. */
+const RESOURCE_STATES = {
+  idle: "idle",
+  loading: "loading",
+  ready: "ready",
+  error: "error",
+  unavailable: "unavailable",
+  degraded: "degraded",
+  retrying: "retrying",
+};
+
+/** Contador de geração do bootstrap: inicializações antigas não sobrescrevem estados novos. */
+let bootstrapGeneration = 0;
+
+/** Promessa do bootstrap em curso: chamadas simultâneas a bootstrap() a reutilizam. */
+let bootstrapPromise = null;
+
 /** Estado reativo compartilhado por todos os componentes. */
 export const state = reactive({
   view: "chat",
-  theme: localStorage.getItem("callidus-theme") || "dark",
-  density: localStorage.getItem("callidus-density") || "confortavel",
-  feedOpen: localStorage.getItem("callidus-feed-open") === "aberto" ? "aberto" : "fechado",
+  theme: (() => { try { return localStorage.getItem("callidus-theme") || "dark"; } catch { return "dark"; } })(),
+  density: (() => { try { return localStorage.getItem("callidus-density") || "confortavel"; } catch { return "confortavel"; } })(),
+  feedOpen: (() => { try { return localStorage.getItem("callidus-feed-open") === "aberto" ? "aberto" : "fechado"; } catch { return "fechado"; } })(),
   ready: false,
   railOpen: false,
   paletteOpen: false,
-  compact: typeof window !== "undefined" ? window.matchMedia("(max-width: 1179px)").matches : false,
+  compact: (() => { try { return typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 1179px)").matches : false; } catch { return false; } })(),
   settingsTab: "geral",
 
   projects: [],
@@ -63,7 +80,7 @@ export const state = reactive({
   modelId: "",
   browserMode: "off",
   approveTools: true,
-  autoMode: localStorage.getItem("callidus-auto") !== "off",
+  autoMode: (() => { try { return localStorage.getItem("callidus-auto") !== "off"; } catch { return true; } })(),
   objective: "",
   attachments: [],
 
@@ -94,6 +111,31 @@ export const state = reactive({
   diagnostics: [],
   diagnosticAnalysis: null,
   diagnosticsSummary: null,
+
+  /** Estados independentes de cada recurso durante o bootstrap. */
+  initialization: {
+    interface: RESOURCE_STATES.ready,
+    bootstrap: RESOURCE_STATES.idle,
+    api: "unknown",
+    startedAt: null,
+    completedAt: null,
+    errors: [],
+    degraded: false,
+    projects: RESOURCE_STATES.idle,
+    conversations: RESOURCE_STATES.idle,
+    configuration: RESOURCE_STATES.idle,
+    providers: RESOURCE_STATES.idle,
+    health: RESOURCE_STATES.idle,
+  },
+
+  /** Último erro por recurso (para telas de recuperação). */
+  resourceError: {
+    projects: null,
+    conversations: null,
+    configuration: null,
+    providers: null,
+    health: null,
+  },
 });
 
 let stream = null;
@@ -179,7 +221,7 @@ export function descendantIds(rootId) {
  */
 export function setTheme(theme) {
   state.theme = theme;
-  localStorage.setItem("callidus-theme", theme);
+  try { localStorage.setItem("callidus-theme", theme); } catch { /* armazenamento indisponível */ }
   document.documentElement.dataset.theme = theme;
 }
 
@@ -191,7 +233,7 @@ export function setTheme(theme) {
  */
 export function setDensity(density) {
   state.density = density;
-  localStorage.setItem("callidus-density", density);
+  try { localStorage.setItem("callidus-density", density); } catch { /* armazenamento indisponível */ }
   document.documentElement.dataset.density = density;
 }
 
@@ -205,7 +247,7 @@ export function setDensity(density) {
 export function setFeedOpen(mode) {
   const next = mode === "aberto" ? "aberto" : "fechado";
   state.feedOpen = next;
-  localStorage.setItem("callidus-feed-open", next);
+  try { localStorage.setItem("callidus-feed-open", next); } catch { /* armazenamento indisponível */ }
 }
 
 /**
@@ -215,8 +257,14 @@ export function setFeedOpen(mode) {
  * Observações: em telas estreitas a barra lateral e o painel de detalhes começam fechados.
  */
 export function watchViewport() {
-  if (typeof window === "undefined") return;
-  const query = window.matchMedia("(max-width: 1179px)");
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+  let query;
+  try {
+    query = window.matchMedia("(max-width: 1179px)");
+  } catch {
+    state.compact = false;
+    return;
+  }
   const apply = () => {
     state.compact = query.matches;
     if (query.matches) {
@@ -224,7 +272,13 @@ export function watchViewport() {
       state.detailsOpen = false;
     }
   };
-  query.addEventListener("change", apply);
+  try {
+    if (typeof query.addEventListener === "function") {
+      query.addEventListener("change", apply);
+    } else if (typeof query.addListener === "function") {
+      query.addListener(apply);
+    }
+  } catch { /* listener indisponível */ }
   apply();
 }
 
@@ -247,25 +301,194 @@ export function openView(view) {
  * Observações: falhas de leitura são absorvidas — a interface abre mesmo sem algum recurso.
  */
 export async function bootstrap() {
-  setTheme(state.theme);
-  const [projects, loose, defaults, health] = await Promise.all([
-    api("/projects").catch(() => []),
-    api("/conversations").catch(() => []),
-    api("/config/ui-defaults").catch(() => null),
-    api("/health").catch(() => null),
-  ]);
-  state.projects = projects;
-  state.loose = loose;
-  state.uiDefaults = defaults;
-  state.provider = defaults?.provider || "ollama";
-  state.modelId = defaults?.model_id || "";
-  state.ready = true;
-  await loadProviders();
-  if (state.providers.length) {
-    const current = state.providers.find((item) => item.name === state.provider);
-    if (!current) state.provider = state.providers[0].name;
+  // Chamadas simultâneas a bootstrap() reutilizam a mesma promessa em curso,
+  // evitando inicializações duplicadas e requisições concorrentes desnecessárias.
+  if (bootstrapPromise) return bootstrapPromise;
+  bootstrapPromise = runBootstrap();
+  return bootstrapPromise;
+}
+
+/**
+ * Executa o carregamento dos recursos de forma resiliente e agrega o resultado.
+ *
+ * @returns {Promise<void>}
+ * Observações: cada recurso carrega de forma independente; uma falha não impede
+ * os demais. O estado agregado (bootstrap/api/degradado) reflete o conjunto.
+ */
+async function runBootstrap() {
+  try {
+    const generation = ++bootstrapGeneration;
+    const startedAt = Date.now();
+    bootEvent("BOOTSTRAP_STARTED", { generation });
+
+    state.initialization.bootstrap = RESOURCE_STATES.loading;
+    state.initialization.api = "unknown";
+    state.initialization.startedAt = startedAt;
+    state.initialization.completedAt = null;
+    state.initialization.errors = [];
+    state.initialization.degraded = false;
+    state.ready = false;
+
+    // Define o provedor a partir dos padrões da UI (sem esperar rede).
+    state.provider = state.uiDefaults?.provider || "ollama";
+    state.modelId = state.uiDefaults?.model_id || "";
+
+    // Carrega os recursos independentes em paralelo, sem bloquear uns aos outros.
+    // Cada função lança em caso de falha; Promise.allSettled captura a rejeição
+    // e o bloco forEach abaixo define o estado correto de cada recurso.
+    const results = await Promise.allSettled([
+      loadProjectsOnce(generation),
+      loadConversationsOnce(generation),
+      loadConfigurationOnce(generation),
+      loadHealthOnce(generation),
+    ]);
+
+    // Cada resultado atualiza seu próprio estado; falhas são registradas, não lançadas.
+    const names = ["projects", "conversations", "configuration", "health"];
+    results.forEach((result, index) => {
+      const name = names[index];
+      if (result.status === "fulfilled") {
+        state.initialization[name] = RESOURCE_STATES.ready;
+        state.resourceError[name] = null;
+        bootEvent(`BOOT_${name.toUpperCase()}_LOADED`, { generation });
+      } else {
+        state.initialization[name] = RESOURCE_STATES.error;
+        state.resourceError[name] = result.reason?.message || String(result.reason);
+        state.initialization.errors.push({
+          resource: name,
+          error: state.resourceError[name],
+          at: Date.now(),
+        });
+        bootEvent(`BOOT_${name.toUpperCase()}_ERROR`, { generation, error: state.resourceError[name] });
+      }
+    });
+
+    // Provedores são carregados separadamente (próprio timeout, próprio estado).
+    await loadProvidersOnce(generation);
+
+    // Seleciona o provedor padrão se houver catálogo.
+    if (state.providers.length) {
+      const current = state.providers.find((item) => item.name === state.provider);
+      if (!current) {
+        state.provider = state.providers[0].name;
+        state.modelId = "";
+      }
+    }
+
+    computeAggregateState(generation);
+
+    state.initialization.completedAt = Date.now();
+    state.ready = true;
+    bootEvent("BOOT_COMPLETED", { generation });
+  } finally {
+    bootstrapPromise = null;
   }
-  void health;
+}
+
+/**
+ * Recalcula o estado agregado do bootstrap a partir dos estados individuais.
+ *
+ * @param {number} [generation] Geração da execução em curso; se informada e for
+ *   diferente da geração atual, a atualização é descartada (resposta obsoleta).
+ * @returns {void}
+ * Observações: nem todo erro é ausência de dados. Uma resposta vazia válida
+ * (lista vazia) conta como sucesso; somente falhas de comunicação contam como
+ * erro para fins de agregação.
+ */
+function computeAggregateState(generation) {
+  if (generation !== undefined && generation !== bootstrapGeneration) return;
+
+  const resources = [
+    state.initialization.projects,
+    state.initialization.conversations,
+    state.initialization.configuration,
+    state.initialization.providers,
+    state.initialization.health,
+  ];
+  const failures = resources.filter((status) => status === RESOURCE_STATES.error).length;
+  const total = resources.length;
+
+  if (failures === 0) {
+    state.initialization.bootstrap = RESOURCE_STATES.ready;
+    state.initialization.api = "online";
+    state.initialization.degraded = false;
+  } else if (failures === total) {
+    state.initialization.bootstrap = RESOURCE_STATES.error;
+    state.initialization.api = "offline";
+    state.initialization.degraded = true;
+  } else {
+    state.initialization.bootstrap = RESOURCE_STATES.degraded;
+    state.initialization.api = "partial";
+    state.initialization.degraded = true;
+  }
+}
+
+/**
+ * Carrega a lista de projetos com isolamento de geração.
+ * Lança em caso de falha para que Promise.allSettled capture a rejeição.
+ *
+ * @param {number} generation Geração do bootstrap atual.
+ * @returns {Promise<void>}
+ */
+async function loadProjectsOnce(generation) {
+  state.initialization.projects = RESOURCE_STATES.loading;
+  bootEvent("BOOT_PROJECTS_LOADING", { generation });
+  try {
+    const data = await api("/projects", { timeout: DEFAULT_TIMEOUT });
+    if (generation !== bootstrapGeneration) return; // inicialização antiga
+    state.projects = Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.log("DEBUG loadProjectsOnce catch:", err.constructor.name, err.message);
+    throw err;
+  }
+}
+
+/**
+ * Carrega conversas soltas com isolamento de geração.
+ * Lança em caso de falha para que Promise.allSettled capture a rejeição.
+ *
+ * @param {number} generation Geração do bootstrap atual.
+ * @returns {Promise<void>}
+ */
+async function loadConversationsOnce(generation) {
+  state.initialization.conversations = RESOURCE_STATES.loading;
+  bootEvent("BOOT_CONVERSATIONS_LOADING", { generation });
+  const data = await api("/conversations", { timeout: DEFAULT_TIMEOUT });
+  if (generation !== bootstrapGeneration) return;
+  state.loose = Array.isArray(data) ? data : [];
+}
+
+/**
+ * Carrega configurações padrão da UI com isolamento de geração.
+ * Lança em caso de falha para que Promise.allSettled capture a rejeição.
+ *
+ * @param {number} generation Geração do bootstrap atual.
+ * @returns {Promise<void>}
+ */
+async function loadConfigurationOnce(generation) {
+  state.initialization.configuration = RESOURCE_STATES.loading;
+  bootEvent("BOOT_CONFIGURATION_LOADING", { generation });
+  const data = await api("/config/ui-defaults", { timeout: DEFAULT_TIMEOUT });
+  if (generation !== bootstrapGeneration) return;
+  state.uiDefaults = data || null;
+  if (data?.provider) state.provider = data.provider;
+  if (data?.model_id) state.modelId = data.model_id;
+}
+
+/**
+ * Executa o health check de forma independente e isolada.
+ * Lança em caso de falha para que Promise.allSettled capture a rejeição.
+ *
+ * @param {number} generation Geração do bootstrap atual.
+ * @returns {Promise<void>}
+ */
+async function loadHealthOnce(generation) {
+  state.initialization.health = RESOURCE_STATES.loading;
+  bootEvent("BOOT_HEALTH_LOADING", { generation });
+  await api("/health", { timeout: HEALTH_TIMEOUT });
+  if (generation !== bootstrapGeneration) return;
+  state.resourceError.health = null;
+  bootEvent("BOOT_HEALTH_CHECK_COMPLETED", { generation, data: true });
 }
 
 /**
@@ -416,17 +639,190 @@ export function conversationStatus(conversation) {
  * @returns {Promise<void>}
  * Observações: falhas de leitura são absorvidas e deixam a lista vazia.
  */
+export async function loadProvidersOnce(generation) {
+  state.initialization.providers = RESOURCE_STATES.loading;
+  bootEvent("BOOT_PROVIDERS_LOADING", { generation });
+  try {
+    const [catalogResult, configResult] = await Promise.allSettled([
+      api("/providers", { timeout: DEFAULT_TIMEOUT }),
+      api("/providers/config", { timeout: DEFAULT_TIMEOUT }),
+    ]);
+    if (generation !== bootstrapGeneration) return;
+
+    if (catalogResult.status === "fulfilled") {
+      const providers = Array.isArray(catalogResult.value?.providers)
+        ? catalogResult.value.providers
+        : [];
+      state.providers = providers;
+    } else {
+      // Falha de comunicação com o catálogo de provedores não é uma resposta vazia válida.
+      throw catalogResult.reason;
+    }
+
+    // A configuração é secundária: a falha dela não invalida o catálogo de provedores.
+    if (configResult.status === "fulfilled" && configResult.value) {
+      state.providerConfig = configResult.value;
+      if (configResult.value.default_provider) state.provider = configResult.value.default_provider;
+    }
+
+    state.providers.forEach((item) => {
+      if (item.name === state.provider) state.modelId = item.model || state.modelId;
+    });
+
+    state.initialization.providers = state.providers.length
+      ? RESOURCE_STATES.ready
+      : RESOURCE_STATES.empty;
+    state.resourceError.providers = null;
+    bootEvent("BOOT_PROVIDERS_LOADED", { generation });
+  } catch (err) {
+    if (generation !== bootstrapGeneration) return;
+    state.initialization.providers = RESOURCE_STATES.error;
+    state.resourceError.providers = err.message || String(err);
+    state.initialization.errors.push({
+      resource: "providers",
+      error: state.resourceError.providers,
+      at: Date.now(),
+    });
+    bootEvent("BOOT_PROVIDERS_ERROR", { generation, error: state.resourceError.providers });
+  }
+}
+
+/**
+ * Registra um evento de ciclo de vida do bootstrap.
+ *
+ * @param {string} stage Nome da etapa (ex.: BOOT_STARTED, PROJECTS_LOADED).
+ * @param {object} [detail] Detalhes opcionais da etapa.
+ * @returns {void}
+ */
+function bootEvent(stage, detail = {}) {
+  const entry = { stage, at: Date.now(), detail };
+  bootEvents.push(entry);
+  if (bootEvents.length > 200) bootEvents.shift();
+  try {
+    window.dispatchEvent(new CustomEvent("callidus:boot-event", { detail: entry }));
+  } catch {
+    /* sem ouvintes: ignora */
+  }
+}
+
+/** Último resultado registrado de cada etapa do bootstrap (para diagnóstico). */
+const bootEvents = [];
+
+/**
+ * Devolve os eventos de ciclo de vida do bootstrap (para diagnóstico).
+ *
+ * @returns {Array} Os eventos registrados, do mais antigo para o mais recente.
+ */
+export function getBootEvents() {
+  return [...bootEvents];
+}
+
+/**
+ * Recarrega apenas os projetos (recuperação individual).
+ *
+ * @returns {Promise<void>}
+ */
+export async function reloadProjects() {
+  state.initialization.projects = RESOURCE_STATES.retrying;
+  bootEvent("BOOT_PROJECTS_RETRYING");
+  try {
+    const data = await api("/projects", { timeout: DEFAULT_TIMEOUT });
+    state.projects = Array.isArray(data) ? data : [];
+    state.initialization.projects = RESOURCE_STATES.ready;
+    state.resourceError.projects = null;
+    bootEvent("BOOT_PROJECTS_LOADED");
+  } catch (err) {
+    state.initialization.projects = RESOURCE_STATES.error;
+    state.resourceError.projects = err.message || String(err);
+    bootEvent("BOOT_PROJECTS_ERROR", { error: state.resourceError.projects });
+  }
+  computeAggregateState();
+}
+
+/**
+ * Recarrega apenas as conversas soltas (recuperação individual).
+ *
+ * @returns {Promise<void>}
+ */
+export async function reloadConversations() {
+  state.initialization.conversations = RESOURCE_STATES.retrying;
+  bootEvent("BOOT_CONVERSATIONS_RETRYING");
+  try {
+    const data = await api("/conversations", { timeout: DEFAULT_TIMEOUT });
+    state.loose = Array.isArray(data) ? data : [];
+    state.initialization.conversations = RESOURCE_STATES.ready;
+    state.resourceError.conversations = null;
+    bootEvent("BOOT_CONVERSATIONS_LOADED");
+  } catch (err) {
+    state.initialization.conversations = RESOURCE_STATES.error;
+    state.resourceError.conversations = err.message || String(err);
+    bootEvent("BOOT_CONVERSATIONS_ERROR", { error: state.resourceError.conversations });
+  }
+  computeAggregateState();
+}
+
+/**
+ * Recarrega apenas a configuração padrão da UI (recuperação individual).
+ *
+ * @returns {Promise<void>}
+ */
+export async function reloadConfiguration() {
+  state.initialization.configuration = RESOURCE_STATES.retrying;
+  bootEvent("BOOT_CONFIGURATION_RETRYING");
+  try {
+    const data = await api("/config/ui-defaults", { timeout: DEFAULT_TIMEOUT });
+    state.uiDefaults = data || null;
+    if (data?.provider) state.provider = data.provider;
+    if (data?.model_id) state.modelId = data.model_id;
+    state.initialization.configuration = RESOURCE_STATES.ready;
+    state.resourceError.configuration = null;
+    bootEvent("BOOT_CONFIGURATION_LOADED");
+  } catch (err) {
+    state.initialization.configuration = RESOURCE_STATES.error;
+    state.resourceError.configuration = err.message || String(err);
+    bootEvent("BOOT_CONFIGURATION_ERROR", { error: state.resourceError.configuration });
+  }
+  computeAggregateState();
+}
+
+/**
+ * Recarrega apenas os provedores (recuperação individual).
+ *
+ * @returns {Promise<void>}
+ */
+export async function reloadProviders() {
+  await loadProvidersOnce(++bootstrapGeneration);
+  computeAggregateState();
+}
+
+/**
+ * Reexecuta o health check (recuperação individual).
+ *
+ * @returns {Promise<void>}
+ */
+export async function reloadHealth() {
+  await loadHealthOnce(++bootstrapGeneration);
+  computeAggregateState();
+}
+
+/**
+ * Reexecuta todo o bootstrap (recuperação completa).
+ *
+ * @returns {Promise<void>}
+ */
+export async function reloadBootstrap() {
+  await bootstrap();
+}
+
+/**
+ * Carrega o catálogo de provedores e a configuração gravada.
+ *
+ * @returns {Promise<void>}
+ * Observações: falhas de leitura são absorvidas e deixam a lista vazia.
+ */
 export async function loadProviders() {
-  const [catalog, config] = await Promise.all([
-    api("/providers").catch(() => ({ providers: [], default_provider: null })),
-    api("/providers/config").catch(() => null),
-  ]);
-  state.providers = catalog.providers || [];
-  state.providerConfig = config;
-  if (config?.default_provider) state.provider = config.default_provider;
-  state.providers.forEach((item) => {
-    if (item.name === state.provider) state.modelId = item.model || state.modelId;
-  });
+  await loadProvidersOnce(++bootstrapGeneration);
+  computeAggregateState();
 }
 
 /**
@@ -770,7 +1166,7 @@ export function cancelQueued() {
  */
 export function setAutoMode(value) {
   state.autoMode = Boolean(value);
-  localStorage.setItem("callidus-auto", state.autoMode ? "on" : "off");
+  try { localStorage.setItem("callidus-auto", state.autoMode ? "on" : "off"); } catch { /* armazenamento indisponível */ }
 }
 
 /**

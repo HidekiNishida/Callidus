@@ -105,6 +105,14 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Metadados do pacote Python (`agente-local`), dependências, scripts (`agente-api`), config pytest.
 
+### `package.json`
+
+**Propósito:** Metadados do pacote Node da interface, scripts (`test:web`, `test:e2e`) e dependência de desenvolvimento (`playwright`).
+
+### `package-lock.json`
+
+**Propósito:** Trava de versões das dependências Node para instalações reproduzíveis.
+
 ### `notes.md`
 
 **Propósito:** Status efêmero do Project (espelho do painel Notes do Cursor).
@@ -3838,6 +3846,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [replay.mjs](/tests/web/replay.mjs)
 - Arquivo: [tools-report.test.mjs](/tests/web/tools-report.test.mjs)
 - Arquivo: [usage-format.test.mjs](/tests/web/usage-format.test.mjs)
+- Arquivo: [api.test.mjs](/tests/web/api.test.mjs)
+- Arquivo: [bootstrap.test.mjs](/tests/web/bootstrap.test.mjs)
+- Arquivo: [compatibility.test.mjs](/tests/web/compatibility.test.mjs)
+- Arquivo: [e2e.mjs](/tests/web/e2e.mjs)
 
 ## `tests/web/fixtures/`
 
@@ -3884,6 +3896,35 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `tests/web/replay.mjs`
 
 **Propósito:** Teste Playwright de replay de eventos (snapshot → replay → estado final).
+
+### `tests/web/api.test.mjs`
+
+**Propósito:** Testa o cliente HTTP da interface (timeouts, cancelamento, tratamento de erros) com `fetch` simulado, sem navegador nem rede real.
+
+- `api(path, opts)` → `Promise<any|null>` — Executa requisição JSON na API, respeita `timeout` e `AbortSignal`, lança `TimeoutError`, `ConnectionError`, `HttpError`, `InvalidJsonError` ou `CancelError`.
+- `DEFAULT_TIMEOUT = 10000` — Tempo limite padrão de requisição (ms).
+- `HEALTH_TIMEOUT = 5000` — Tempo limite do health check (ms).
+- `ADMIN_TIMEOUT = 30000` — Tempo limite de operações administrativas (ms).
+
+### `tests/web/bootstrap.test.mjs`
+
+**Propósito:** Testa o ciclo de inicialização da interface (estados de recursos, agregação, idempotência, falha parcial, recuperação) com `fetch` simulado.
+
+- `bootstrap()` → `Promise<void>` — Carrega projetos, conversas, configuração, health e provedores de forma independente, agrega o estado e protege contra chamadas simultâneas.
+- `reloadProjects()` → `Promise<void>` — Recarrega apenas projetos sem alterar outros estados.
+- `reloadProviders()` → `Promise<void>` — Recarrega o catálogo de provedores.
+- `getBootEvents()` → `Array` — Devolve eventos de ciclo de vida do bootstrap para diagnóstico.
+
+### `tests/web/compatibility.test.mjs`
+
+**Propósito:** Testa compatibilidade sem `localStorage` nem `matchMedia` (navegadores restritos/modo privado/testes).
+
+- `setTheme`, `setDensity`, `setFeedOpen`, `setAutoMode` — Gravam no estado reativo mesmo quando `localStorage` lança.
+- `watchViewport()` — Define `state.compact` com valor padrão seguro quando `matchMedia` está ausente.
+
+### `tests/web/e2e.mjs`
+
+**Propósito:** Teste end-to-end com navegador real (Playwright) e servidor FastAPI isolado. Valida montagem da interface com backend disponível, indisponível, parcial, lento e storage bloqueado.
 
 ### `tests/README.md`
 
@@ -5471,6 +5512,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `useFolder`
 - `moveFolderTo`
 - `renameConversation`
+- `apiLabel(api)` → `string` — Traduz o estado agregado da API (`"online"`, `"offline"`, `"partial"`, `"unknown"`) em rótulo de interface.
+- `apiClass(api)` → `string` — Monta a classe CSS do estado da API (`api-online`, `api-offline`, …).
+- `onGlobalError(event)` — Registra exceções não tratadas como evento de boot sem impedir o navegador.
+- `onGlobalUnhandledRejection(event)` — Registra promessas rejeitadas sem handler como evento de boot sem engolir o erro.
 
 ### `web/static/assets/app/tools-report.js`
 
@@ -5558,6 +5603,21 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `loadDiagnostics(runId)` — Carrega diagnósticos via `/api/intelligence/diagnostics?run_id=...` e armazena em `state.diagnostics`.
 - `analyzeRunDiagnostics(runId)` — Executa diagnóstico determinístico via `POST /api/intelligence/diagnostics/runs/{runId}/analyze` e armazena em `state.diagnosticAnalysis`.
 - `loadDiagnosticsSummary(runId)` — Carrega resumo de diagnósticos via `/api/intelligence/diagnostics/summary?run_id=...` e armazena em `state.diagnosticsSummary`.
+- `computeAggregateState(generation)` — Recalcula o estado agregado do bootstrap (`ready`/`degraded`/`error`, `api`, `degraded`) a partir dos estados individuais dos recursos; ignora respostas obsoletas de outra geração.
+- `runBootstrap()` — Executa o carregamento resiliente dos recursos em paralelo com `Promise.allSettled`, agrega o resultado e recalcula o estado; protegido por `bootstrapPromise` contra chamadas simultâneas.
+- `bootEvent(stage, detail = {})` — Registra um evento de ciclo de vida do bootstrap (ex.: `BOOTSTRAP_STARTED`, `BOOT_COMPLETED`, `BOOT_PROJECTS_LOADED`) e despacha `callidus:boot-event`.
+- `getBootEvents()` → `Array` — Devolve os eventos de ciclo de vida registrados (mais antigos primeiro), limitado a 200 entradas.
+- `loadConfigurationOnce(generation)` — Carrega `GET /config/ui-defaults` com isolamento de geração e timeout padrão.
+- `loadConversationsOnce(generation)` — Carrega `GET /conversations` com isolamento de geração e timeout padrão.
+- `loadHealthOnce(generation)` — Carrega `GET /health` com timeout curto (5s) para não bloquear a interface.
+- `loadProjectsOnce(generation)` — Carrega `GET /projects` com isolamento de geração e timeout padrão.
+- `loadProvidersOnce(generation)` — Carrega `GET /providers` e `GET /providers/config`; uma falha de comunicação catálogista marca o recurso em `error` (não como resposta vazia).
+- `reloadBootstrap()` → `Promise<void>` — Reexecuta todo o bootstrap (recuperação completa).
+- `reloadConfiguration()` → `Promise<void>` — Recarrega apenas a configuração da UI (recuperação individual) e recalcula o estado agregado.
+- `reloadConversations()` → `Promise<void>` — Recarrega apenas conversas (recuperação individual) e recalcula o estado agregado.
+- `reloadHealth()` → `Promise<void>` — Reexecuta o health check (recuperação individual) e recalcula o estado agregado.
+- `reloadProjects()` → `Promise<void>` — Recarrega apenas projetos (recuperação individual) e recalcula o estado agregado.
+- `reloadProviders()` → `Promise<void>` — Recarrega apenas provedores (recuperação individual) e recalcula o estado agregado.
 
 ### `web/static/assets/app/components/intelligence-graph.js`
 

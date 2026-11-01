@@ -3,10 +3,11 @@
 Arquivo: scripts/ci.py
 Nome: ci.py
 Propósito: rodar, num único comando, todos os portões de qualidade do Callidus.
-Responsabilidade: script de verificação — agrega lint, testes Python, testes da interface e as verificações de documentação e de regras.
+Responsabilidade: script de verificação — agrega lint, testes Python, testes da interface,
+testes E2E com navegador real e as verificações de documentação e de regras.
 Componentes: Passo, passos, rodar_passo, main.
 Dependências: argparse, shutil, subprocess, sys, time, pathlib (somente biblioteca padrão).
-Observações: roda todos os passos mesmo quando um falha, para mostrar o quadro inteiro; sai com 1 se qualquer passo obrigatório falhar. Ferramenta ausente (ruff, node) reprova o passo em vez de ser ignorada em silêncio.
+Observações: roda todos os passos mesmo quando um falha, para mostrar o quadro inteiro; sai com 1 se qualquer passo obrigatório falhar. Ferramenta ausente (ruff, node, playwright) reprova o passo em vez de ser ignorada em silêncio.
 """
 from __future__ import annotations
 
@@ -52,6 +53,8 @@ def passos() -> list[Passo]:
         Passo("resume.md", [PY, "scripts/resume.py", "check"], "resumo vivo sincronizado (AGENTS.md §13)"),
         Passo("testes da interface", ["node", "--test", *web_tests], "comportamento da SPA (AGENTS.md §10)",
               exige="node"),
+        Passo("testes E2E", ["node", "tests/web/e2e.mjs"], "navegador real valida a inicialização (AGENTS.md §11)",
+              lento=True, exige="node"),
         Passo("testes Python", [PY, "-m", "pytest", "-q"], "comportamento e contratos (AGENTS.md §9 e §10)",
               lento=True, exige="pytest"),
     ]

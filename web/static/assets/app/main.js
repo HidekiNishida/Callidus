@@ -1,8 +1,8 @@
 /**
  * Arquivo: web/static/assets/app/main.js
  * Nome: main.js
- * Propósito: bootstrap da interface (Vue 3) — monta o componente raiz e registra a aplicação.
- * Responsabilidade: frontend/bootstrap — liga os componentes, os modais e os atalhos globais.
+ * Propósito: bootstrap da interface (Vue 3) — monta o componente raiz e dispara o carregamento dos serviços de forma assíncrona, sem bloquear a apresentação.
+ * Responsabilidade: frontend/bootstrap — liga os componentes, os modais e os atalhos globais; separa a montagem da interface da inicialização dos serviços.
  * Componentes: App (componente raiz), NAV_ITEMS, handlers de modais (projeto, pasta, remoto), atalhos.
  * Dependências: `./store.js`, `./api.js`, `./ui.js` e os componentes em `./components/`.
  * Observações: expõe `window.__callidus` para inspeção e automação de verificações visuais.
@@ -26,6 +26,7 @@ import {
   saveRemote,
   clearRemote,
   testRemote,
+  getBootEvents,
 } from "./store.js";
 import { icon } from "./ui.js";
 import { Sidebar } from "./components/sidebar.js";
@@ -104,18 +105,13 @@ const App = {
       remoteResult: null,
       remoteBusy: false,
     });
-    const booting = ref(true);
-    const bootError = ref("");
 
-    onMounted(async () => {
+    onMounted(() => {
       watchViewport();
-      try {
-        await bootstrap();
-      } catch (err) {
-        bootError.value = err.message || "falha ao iniciar";
-      } finally {
-        booting.value = false;
-      }
+
+      // A interface está montada: dispara o carregamento dos serviços sem bloquear a apresentação.
+      void bootstrap();
+
       window.addEventListener("keydown", onGlobalKey);
       window.addEventListener("callidus:new-project", newProject);
       window.addEventListener("callidus:rename-conversation", renameConversation);
@@ -123,12 +119,54 @@ const App = {
       window.addEventListener("callidus:auto", autoRun);
       window.addEventListener("callidus:pause", pauseRun);
       window.addEventListener("callidus:cancel", cancelRun);
+
+      // Handlers globais de erro: capturam exceções não tratadas e promessas rejeitadas
+      // sem engolir silenciosamente, preservando o console do navegador.
+      window.addEventListener("error", onGlobalError);
+      window.addEventListener("unhandledrejection", onGlobalUnhandledRejection);
     });
 
     onBeforeUnmount(() => {
       window.removeEventListener("keydown", onGlobalKey);
+      window.removeEventListener("error", onGlobalError);
+      window.removeEventListener("unhandledrejection", onGlobalUnhandledRejection);
       disconnectStream();
     });
+
+    /**
+     * Captura exceções não tratadas (window.onerror) e as registra como evento de boot.
+     *
+     * @param {Event} event Evento de erro.
+     * @returns {void}
+     */
+    function onGlobalError(event) {
+      try {
+        const msg = event.message || event.error?.message || String(event);
+        const filename = event.filename || "";
+        const lineno = event.lineno ?? "";
+        bootEvent("BOOT_MODULE_ERROR", { message: msg, filename, lineno });
+        // Não impede o comportamento padrão do console do navegador.
+      } catch {
+        /* evita erro no próprio handler */
+      }
+    }
+
+    /**
+     * Captura promessas rejeitadas sem handler (unhandledrejection).
+     *
+     * @param {event} event Evento de rejeição.
+     * @returns {void}
+     */
+    function onGlobalUnhandledRejection(event) {
+      try {
+        const reason = event.reason;
+        const msg = reason?.message || reason?.toString?.() || String(reason);
+        bootEvent("BOOT_API_ERROR", { message: msg });
+        // Não impede o comportamento padrão do console do navegador.
+      } catch {
+        /* evita erro no próprio handler */
+      }
+    }
 
     /**
      * Descobre se o foco está em um campo de digitação.
@@ -437,14 +475,33 @@ const App = {
       }
     }
 
+    /**
+     * Traduz o estado agregado da API para um rótulo legível.
+     *
+     * @param {string} api Estado da API ("unknown", "online", "offline" ou "partial").
+     * @returns {string} Rótulo exibido na barra de status.
+     */
+    function apiLabel(api) {
+      const labels = {
+        unknown: "API desconhecida",
+        online: "API online",
+        offline: "API off-line",
+        partial: "API parcial",
+      };
+      return labels[api] || api;
+    }
+
+    function apiClass(api) {
+      return `api-${api}`;
+    }
+
     const navItems = computed(() => NAV_ITEMS);
 
     return {
       state,
       modal,
-      booting,
-      bootError,
       navItems,
+      apiLabel,
       newProject,
       createProject,
       openFolder,
@@ -463,6 +520,7 @@ const App = {
       disconnectStream,
       openView,
       icon,
+      getBootEvents,
     };
   },
   template: `
@@ -492,11 +550,18 @@ const App = {
         <Sidebar :class="{ open: state.railOpen }" @new-project="newProject()" />
 
         <main class="main">
-          <div v-if="booting" class="boot">
+          <div v-if="state.initialization.bootstrap === 'loading'" class="boot">
             <span class="spinner"></span> Carregando o Callidus…
           </div>
-          <div v-else-if="bootError" class="boot error">
-            {{ bootError }}
+          <div v-else-if="state.initialization.bootstrap === 'error'" class="boot error">
+            <span>{{ state.initialization.errors.length }} falha(s) ao inicializar</span>
+            <button type="button" class="btn-ghost small" @click="bootstrap()">Tentar novamente</button>
+          </div>
+          <div v-else-if="state.initialization.degraded" class="boot warn">
+            <span>
+              Modo parcial — {{ state.initialization.errors.length }} recurso(s) indisponível(eis)
+            </span>
+            <button type="button" class="btn-ghost small" @click="bootstrap()">Tentar novamente</button>
           </div>
           <Transition v-else name="view" mode="out-in">
             <ChatView v-if="state.view === 'chat'" key="chat" />
@@ -524,6 +589,7 @@ const App = {
         <span class="dot" :class="state.currentRun ? 'dot-live' : 'dot-idle'"></span>
         <span>{{ state.currentRun ? 'Run ' + state.currentRun.status : 'idle' }}</span>
         <span class="muted">{{ state.provider }}<template v-if="state.modelId"> · {{ state.modelId }}</template></span>
+        <span class="muted" :class="apiClass(state.initialization.api)">{{ apiLabel(state.initialization.api) }}</span>
         <span class="muted right">{{ state.uiDefaults?.version || 'v0.5' }}</span>
       </footer>
 

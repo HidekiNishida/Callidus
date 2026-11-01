@@ -1,0 +1,12 @@
+{
+  "name": "callidus",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:web": "node --test tests/web/*.test.mjs",
+    "test:e2e": "node tests/web/e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}

@@ -31,6 +31,7 @@ backups/
 dist/
 lab/out/
 web/node_modules/
+node_modules/
 *.egg-info/
 
 # OS / tooling noise
