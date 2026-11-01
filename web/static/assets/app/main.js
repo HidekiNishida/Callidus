@@ -513,6 +513,21 @@ const App = {
       openView("intelligence");
     }
 
+    const intelligenceComponent = computed(() => {
+      switch (intelligenceSubView.value) {
+        case 'overview':
+          return CognitiveGraphView;
+        case 'performance':
+          return IntelligencePerformance;
+        case 'benchmarks':
+          return IntelligenceBenchmarks;
+        case 'diagnostics':
+          return IntelligenceDiagnostics;
+        default:
+          return CognitiveGraphView;
+      }
+    });
+
     return {
       state,
       modal,
@@ -620,12 +635,11 @@ const App = {
                   <span v-html="icon('alert-circle', 15)"></span><span>Diagnósticos</span>
                 </button>
               </nav>
-              <Transition name="fade" mode="default">
-                <CognitiveGraphView v-if="intelligenceSubView === 'overview'" key="intelligence-overview" :run-id="state.currentRun?.id" />
-                <IntelligencePerformance v-else-if="intelligenceSubView === 'performance'" key="intelligence-performance" :run-id="state.currentRun?.id" />
-                <IntelligenceBenchmarks v-else-if="intelligenceSubView === 'benchmarks'" key="intelligence-benchmarks" />
-                <IntelligenceDiagnostics v-else-if="intelligenceSubView === 'diagnostics'" key="intelligence-diagnostics" :run-id="state.currentRun?.id" />
-              </Transition>
+              <component
+                :is="intelligenceComponent"
+                :run-id="state.currentRun?.id"
+                :key="intelligenceSubView"
+              />
             </div>
             <ProvidersView v-else-if="state.view === 'providers'" key="providers" />
             <AutomationsView v-else-if="state.view === 'automations'" key="automations" />

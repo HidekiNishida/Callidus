@@ -173,6 +173,3 @@ def run() -> None:
         reload_dirs=[src_dir] if settings.api_reload else None,
         timeout_graceful_shutdown=settings.shutdown_grace_seconds,
     )
-
-
-_mount_web(read_settings())
