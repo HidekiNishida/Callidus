@@ -568,6 +568,9 @@ class RunOrchestrator:
         from agent.orchestrator.ledger import note_budget_pause
 
         step_started_at = None
+        # Definido antes do `try`: se o corpo levantar, o `finally` registra o passo como
+        # interrompido e o erro original sobe intacto (antes, um UnboundLocalError o escondia).
+        out: dict[str, Any] = {"action": "step_error"}
         try:
             with use_budget_settings(self._settings):
                 with observe(self._session, run_id=run.id, project_id=run.project_id):

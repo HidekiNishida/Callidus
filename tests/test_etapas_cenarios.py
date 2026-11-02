@@ -420,3 +420,53 @@ def test_rota_de_resumo_estruturado(tmp_path: Path):
         assert client.get(f"/tasks/{uuid.uuid4()}/summary").status_code == 404
     finally:
         app.dependency_overrides.clear()
+
+
+def test_validador_da_resposta_final_nao_reprova_codigo_nem_por_exemplo():
+    """Falsos negativos achados na avaliação real: f-string em bloco de código e "por exemplo"
+    reprovavam a resposta; espaço reservado de verdade continua reprovado."""
+    from agent.orchestrator.closing import validate_final_answer
+
+    assert validate_final_answer("Use, por exemplo, `soma(1, 2)`.")[0] is True
+    assert validate_final_answer("Código:\n```python\nprint(f'{nome}')\n```\nPronto.")[0] is True
+    assert validate_final_answer("O total é {total_vendas}.")[0] is False
+    assert validate_final_answer("Contato: [exemplo de e-mail]")[0] is False
+    assert validate_final_answer("")[0] is False
+
+
+@pytest.mark.asyncio
+async def test_resposta_final_invalida_vira_nova_tentativa_sem_derrubar_o_run(tmp_path: Path, monkeypatch):
+    """Regressão da avaliação real: o caminho "resposta final inválida" levantava AttributeError
+    e o passo escondia o erro atrás de UnboundLocalError. Agora vira falha registrada e nova tentativa."""
+    settings, factory, workspace = _env(tmp_path)
+    (workspace / "README.md").write_text("# Calc\n", encoding="utf-8")
+    session = factory()
+    project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(workspace)))
+    root = TaskService(session).create_task(
+        project.id, TaskCreate(title="Explicar", objective="Leia o arquivo README.md e explique seu conteúdo")
+    )
+    run = RunService(session).start_run(project.id, ExecutionRunCreate(root_task_id=root.id, config={"provider": "mock"}))
+    session.commit()
+    provider = _Scripted(["O total é {total_vendas}.", "O README apresenta a calculadora."])
+    monkeypatch.setattr("agent.orchestrator.runner._select_provider", lambda settings, config: provider)
+
+    log = await RunOrchestrator(session, settings).run_until_idle(run.id, max_steps=25)
+    actions = [x.get("action") for x in log]
+    assert "final_answer_invalid" in actions and "run_completed" in actions, actions
+    answer = next(k for k in children_of(session, root.id) if k.title == "Responder")
+    assert any("template" in str(f.get("detail")) for f in answer.metadata_json.get("failures") or [])
+
+
+@pytest.mark.asyncio
+async def test_erro_no_passo_sobe_intacto(tmp_path: Path, monkeypatch):
+    """Uma exceção no corpo do passo chega a quem chamou como ela é (não como UnboundLocalError)."""
+    settings, factory, workspace = _env(tmp_path)
+    session = factory()
+    _, root, leaf, run = _leaf_under_root(session, workspace, objective="x", metadata={"model_operation": True})
+
+    async def boom(self, run_id):
+        raise RuntimeError("falha original")
+
+    monkeypatch.setattr(RunOrchestrator, "_step_body", boom)
+    with pytest.raises(RuntimeError, match="falha original"):
+        await RunOrchestrator(session, settings).step(run.id)

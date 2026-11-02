@@ -853,7 +853,7 @@ class TaskExecutor:
                 project_id=project.id,
                 failure=failure,
             )
-            noted = self._executor.remember_failure(task, failure)
+            noted = self.remember_failure(task, failure)
             self.note_thought(
                 run,
                 task,

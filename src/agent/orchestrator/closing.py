@@ -215,7 +215,6 @@ def extract_sources(*chunks: str) -> list[str]:
 # preenchidas, placeholders genéricos ou valores claramente fabricados.
 _TEMPLATE_VAR = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}")
 _PLACEHOLDER_WORDS = (
-    "exemplo",
     "placeholder",
     "tbd",
     "a definir",
@@ -225,6 +224,11 @@ _PLACEHOLDER_WORDS = (
     "xx.xx",
     "00.00",
 )
+#: "exemplo" só é espaço reservado quando marcado como tal (`[exemplo]`, `<exemplo>`):
+#: "por exemplo" é português corrente e não pode reprovar a resposta.
+_PLACEHOLDER_MARKED = re.compile(r"[\[<]\s*exemplo", re.IGNORECASE)
+#: Código (bloco cercado ou trecho entre crases): `{nome}` ali é f-string, não variável esquecida.
+_CODE = re.compile(r"```.*?```|`[^`\n]*`", re.DOTALL)
 
 
 def validate_final_answer(text: str) -> tuple[bool, str | None]:
@@ -242,7 +246,7 @@ def validate_final_answer(text: str) -> tuple[bool, str | None]:
     """
     if not text or not text.strip():
         return False, "a resposta final está vazia"
-    body = text.strip()
+    body = _CODE.sub(" ", text.strip())
     # Variáveis de template não preenchidas: {total_transactions}, {vendor}, etc.
     for match in _TEMPLATE_VAR.findall(body):
         return False, f"variável de template não preenchida: {match}"
@@ -251,6 +255,8 @@ def validate_final_answer(text: str) -> tuple[bool, str | None]:
     for word in _PLACEHOLDER_WORDS:
         if word in lower:
             return False, f"resposta contém placeholder não preenchido: {word}"
+    if _PLACEHOLDER_MARKED.search(body):
+        return False, "resposta contém placeholder não preenchido: exemplo"
     return True, None
 
 
