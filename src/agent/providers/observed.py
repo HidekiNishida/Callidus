@@ -62,6 +62,9 @@ async def observed_chat(
     from agent.orchestrator.inference_usage import (
         estimate_messages,
         usage_from_response,
+        classify_inference_type,
+        TOKENIZER_VERSION,
+        TOKENIZER_STRATEGY,
     )
     from agent.orchestrator.ledger import record_inference
 
@@ -196,6 +199,7 @@ async def observed_chat(
                 project_id=obs.project_id,
                 agent=obs.agent,
                 purpose=purpose,
+                inference_type=classify_inference_type(purpose),
                 provider=provider.name,
                 model_id=model,
                 status=status,
@@ -209,6 +213,9 @@ async def observed_chat(
                 cache_write_tokens=cache_write,
                 estimated_prompt_tokens=estimated_prompt,
                 estimated_completion_tokens=estimated_completion,
+                context_window_size=int(request.profile.context_limit) if getattr(request.profile, "context_limit", None) else None,
+                tokenizer_version=TOKENIZER_VERSION,
+                tokenizer_strategy=TOKENIZER_STRATEGY,
                 cost_usd=cost,
                 provider_meta_json={
                     "finish_reason": finish,

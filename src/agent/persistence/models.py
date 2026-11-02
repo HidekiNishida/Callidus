@@ -436,15 +436,19 @@ class InferenceRecordModel(Base):
         UniqueConstraint("idempotency_key", name="uq_inference_idempotency"),
         Index("ix_inference_run", "run_id"),
         Index("ix_inference_task", "task_id"),
+        Index("ix_inference_parent_task", "parent_task_id"),
+        Index("ix_inference_type", "inference_type"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     idempotency_key: Mapped[str] = mapped_column(String(191), nullable=False)
     run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("execution_runs.id"), nullable=True)
     task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
+    parent_task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
     project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
     agent: Mapped[str | None] = mapped_column(String(64), nullable=True)
     purpose: Mapped[str] = mapped_column(String(64), nullable=False)
+    inference_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     model_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     call_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -460,6 +464,9 @@ class InferenceRecordModel(Base):
     cache_write_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     estimated_prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     estimated_completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    context_window_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokenizer_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tokenizer_strategy: Mapped[str | None] = mapped_column(String(64), nullable=True)
     context_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("context_snapshots.id"), nullable=True
     )

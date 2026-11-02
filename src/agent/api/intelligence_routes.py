@@ -24,6 +24,7 @@ from agent.intelligence import (
     DiagnosticEngine,
     TelemetryService,
 )
+from agent.intelligence.context_consumption import ContextConsumptionService
 from agent.learning.calibration import (
     CalibrationDecision,
     CalibrationMetrics,
@@ -779,6 +780,35 @@ def diagnostics_create(
     return diagnostic.to_dict()
 
 
+@router.post("/diagnostics")
+def diagnostics_create(
+    payload: DiagnosticIn,
+    session: Session = Depends(db_session),
+) -> dict[str, Any]:
+    """Cria um novo diagnóstico manualmente."""
+    from agent.intelligence.diagnostics import Diagnostic
+
+    diagnostic = Diagnostic(
+        id=f"diag-{uuid.uuid4().hex[:12]}",
+        run_id=payload.run_id,
+        task_id=payload.task_id,
+        category=payload.category,
+        severity=payload.severity,
+        state=payload.state,
+        evidence=payload.evidence or {},
+        metric_affected=payload.metric_affected,
+        observed_period=payload.observed_period,
+        probable_cause=payload.probable_cause,
+        confidence_level=payload.confidence_level,
+        recommendation=payload.recommendation,
+        recommendation_state=payload.recommendation_state,
+        kind=payload.kind,
+    )
+    engine = DiagnosticEngine(session)
+    engine.create_diagnostic(diagnostic)
+    return diagnostic.to_dict()
+
+
 @router.post("/diagnostics/runs/{run_id}/analyze")
 def diagnostics_analyze_run(
     run_id: uuid.UUID,
@@ -793,3 +823,125 @@ def diagnostics_analyze_run(
         "diagnostics": [d.to_dict() for d in diagnostics],
         "count": len(diagnostics),
     }
+
+
+# ── Consumo e gestão de contexto ───────────────────────────────────────
+
+class InferenceIn(BaseModel):
+    """Filtros opcionais para consultas de consumo de contexto."""
+
+    project_id: uuid.UUID | None = None
+    run_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
+    agent: str | None = None
+    model: str | None = None
+    provider: str | None = None
+    inference_type: str | None = None
+    status: str | None = None
+    period_start: str | None = None
+    period_end: str | None = None
+
+
+@router.get("/context-consumption/overview")
+def context_consumption_overview(
+    project_id: uuid.UUID | None = Query(default=None),
+    run_id: uuid.UUID | None = Query(default=None),
+    session: Session = Depends(db_session),
+) -> dict[str, Any]:
+    """Visão geral do consumo de contexto e tokens: totais, médias, janela, compactação."""
+    service = ContextConsumptionService(session)
+    return service.overview(project_id=project_id, run_id=run_id)
+
+
+@router.get("/context-consumption/by-type")
+def context_consumption_by_type(
+    project_id: uuid.UUID | None = Query(default=None),
+    run_id: uuid.UUID | None = Query(default=None),
+    session: Session = Depends(db_session),
+) -> dict[str, Any]:
+    """Consumo agregado por tipo de inferência (planejamento, execução, verificação, …)."""
+    service = ContextConsumptionService(session)
+    return service.by_inference_type(project_id=project_id, run_id=run_id)
+
+
+@router.get("/context-consumption/by-component")
+def context_consumption_by_component(
+    project_id: uuid.UUID | None = Query(default=None),
+    run_id: uuid.UUID | None = Query(default=None),
+    session: Session = Depends(db_session),
+) -> dict[str, Any]:
+    """Consumo por componente do contexto (categoria, tokens, percentual, otimização)."""
+    service = ContextConsumptionService(session)
+    return service.by_component(project_id=project_id, run_id=run_id)
+
+
+@router.get("/context-consumption/matrix")
+def context_consumption_matrix(
+    project_id: uuid.UUID | None = Query(default=None),
+    run_id: uuid.UUID | None = Query(default=None),
+    session: Session = Depends(db_session),
+) -> dict[str, Any]:
+    """Matriz que cruza tipo de inferência com componente do contexto."""
+    service = ContextConsumptionService(session)
+    return service.matrix(project_id=project_id, run_id=run_id)
+
+
+@router.get("/context-consumption/compare")
+def context_consumption_compare(
+    project_id: uuid.UUID | None = Query(default=None),
+    run_id: uuid.UUID | None = Query(default=None),
+    group_by: str = Query(default="model"),
+    session: Session = Depends(db_session),
+) -> dict[str, Any]:
+    """Compara consumo por modelo, agente, provedor, tarefa ou tipo de inferência."""
+    service = ContextConsumptionService(session)
+    return service.compare(project_id=project_id, run_id=run_id, group_by=group_by)
+
+
+@router.get("/context-consumption/timeline")
+def context_consumption_timeline(
+    project_id: uuid.UUID | None = Query(default=None),
+    run_id: uuid.UUID | None = Query(default=None),
+    period: str = Query(default="day"),
+    session: Session = Depends(db_session),
+) -> dict[str, Any]:
+    """Evolução temporal do consumo por período (dia, semana, mês)."""
+    service = ContextConsumptionService(session)
+    return service.timeline(project_id=project_id, run_id=run_id, period=period)
+
+
+@router.get("/context-consumption/opportunities")
+def context_consumption_opportunities(
+    project_id: uuid.UUID | None = Query(default=None),
+    run_id: uuid.UUID | None = Query(default=None),
+    session: Session = Depends(db_session),
+) -> dict[str, Any]:
+    """Oportunidades de otimização de contexto com evidência e amostra."""
+    service = ContextConsumptionService(session)
+    return service.opportunities(project_id=project_id, run_id=run_id)
+
+
+@router.get("/inferences/{inference_id}")
+def get_inference(
+    inference_id: uuid.UUID,
+    session: Session = Depends(db_session),
+) -> dict[str, Any]:
+    """Detalhe de uma inferência individual."""
+    service = ContextConsumptionService(session)
+    data = service.get_inference(inference_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="inferência não encontrada")
+    return data
+
+
+@router.get("/inferences/{inference_id}/components")
+def get_inference_components(
+    inference_id: uuid.UUID,
+    session: Session = Depends(db_session),
+) -> dict[str, Any]:
+    """Composição do contexto de uma inferência (categorias, tokens, origem)."""
+    service = ContextConsumptionService(session)
+    data = service.get_inference_components(inference_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="inferência não encontrada")
+    return data

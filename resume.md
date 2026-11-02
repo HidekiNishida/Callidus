@@ -1205,6 +1205,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `RunStatus(StrEnum)` — : ACTIVE, PAUSED, COMPLETED, FAILED, CANCELLED.
 - `TaskKind(StrEnum)` — : OBJECTIVE, SUBSYSTEM, OPERATION.
 - `TaskStatus(StrEnum)` — : PENDING, PLANNING, READY, RUNNING, VERIFYING, RETRY_PENDING, BLOCKED, COMPLETED, FAILED, CANCELLED.
+- `InferenceType(StrEnum)` — : PLANNING, TASK_DECOMPOSITION, EXECUTION, TOOL_SELECTION, TOOL_RESULT_ANALYSIS, VERIFICATION, ERROR_CORRECTION, RECOVERY, RESEARCH, MEMORY_RETRIEVAL, CONTEXT_SUMMARIZATION, FINAL_RESPONSE, DIAGNOSTIC, CALIBRATION, OTHER.
+- `ContextComponentCategory(StrEnum)` — : SYSTEM_INSTRUCTIONS, AGENT_INSTRUCTIONS, TASK_INSTRUCTIONS, CONVERSATION_HISTORY, PARENT_AGENT_CONTEXT, CHILD_AGENT_CONTEXT, SHORT_TERM_MEMORY, LONG_TERM_MEMORY, KNOWLEDGE_RETRIEVAL, TOOL_DEFINITIONS, TOOL_CALLS, TOOL_RESULTS, FILES_AND_DOCUMENTS, CODE_CONTEXT, RESEARCH_RESULTS, COMPACTION_SUMMARIES, OUTPUT_FORMAT_AND_SCHEMAS, PROVIDER_METADATA, OTHER.
 
 ### `src/agent/domain/failures.py`
 
@@ -1887,6 +1889,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [graph.py](/src/agent/intelligence/graph.py)
 - Arquivo: [benchmarks.py](/src/agent/intelligence/benchmarks.py)
 - Arquivo: [diagnostics.py](/src/agent/intelligence/diagnostics.py)
+- Arquivo: [context_consumption.py](/src/agent/intelligence/context_consumption.py)
 
 ### `src/agent/intelligence/__init__.py`
 
@@ -1985,9 +1988,33 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `Diagnostic` — Dados de um diagnóstico (id, category, severity, state, evidence, recommendation, kind, etc.).
 - `Diagnostic.to_dict() -> dict[str, Any]` — Exporta todos os campos do diagnóstico como dicionário.
 
+### `src/agent/intelligence/context_consumption.py`
+
+**Propósito:** Agregação, classificação e análise do consumo de contexto e tokens por inferência individual. **Quando/onde:** Usado pela API `/api/intelligence/context-consumption/*` para responder ao dashboard de consumo e gestão de contexto e à barra de observabilidade da conversa.
+
+- `ContextConsumptionService` — Símbolo da classe — ver a descrição do arquivo.
+- `ContextConsumptionService.__init__(session: Session) -> None` — Cria o serviço ligado a uma sessão SQLAlchemy.
+- `ContextConsumptionService.overview(*, project_id, run_id) -> dict` — Visão geral: totais de entrada/saída, média por inferência, janela média, compactação e tokens economizados.
+- `ContextConsumptionService.by_inference_type(*, project_id, run_id) -> dict` — Estatísticas (média, mediana, p90, p95, min, max) agrupadas por tipo de inferência.
+- `ContextConsumptionService.by_component(*, project_id, run_id) -> dict` — Tokens acumulados por categoria de componente, com percentual e potencial de otimização.
+- `ContextConsumptionService.matrix(*, project_id, run_id) -> dict` — Matriz que cruza tipo de inferência com componente do contexto.
+- `ContextConsumptionService.compare(*, project_id, run_id, group_by) -> dict` — Compara consumo por modelo, agente, provedor, tarefa ou tipo de inferência.
+- `ContextConsumptionService.timeline(*, project_id, run_id, period) -> dict` — Evolução temporal do consumo (dia, semana, mês).
+- `ContextConsumptionService.opportunities(*, project_id, run_id) -> dict` — Oportunidades de otimização com evidência, frequência, impacto e estratégia recomendada.
+- `ContextConsumptionService.get_inference(inference_id: uuid.UUID) -> dict | None` — Detalhe de uma inferência individual (colunas do registro de inferência).
+- `ContextConsumptionService.get_inference_components(inference_id: uuid.UUID) -> dict | None` — Composição do contexto de uma inferência (categorias, tokens, origem).
+- `classify_inference_type(purpose: str | None) -> str | None` — Mapeia a finalidade da chamada para o tipo de inferência da taxonomia (PLANNING, EXECUTION, VERIFICATION, …).
+- `TOKENIZER_STRATEGY` — Estratégia de contagem local (`chars_per_token:3`).
+- `TOKENIZER_VERSION` — Versão da estratégia de contagem (`callidus-local-v1`).
+- `_percentile(values: list[float], p: int) -> float | None` — Calcula o percentil `p` de uma lista ordenada.
+- `_stats(values: list[float]) -> dict` — Estatísticas descritivas (contagem, média, mediana, percentis, mínimo, máximo).
+- `_rows(session, *, project_id, run_id, task_id, agent, model, provider, inference_type, status, period_start, period_end) -> list[InferenceRecordModel]` — Lista inferências filtradas.
+- `_spend(row: InferenceRecordModel) -> tuple[int | None, str]` — Gasto considerado de uma inferência (entrada + saída).
+- `_group_key(row: InferenceRecordModel, by: str) -> str` — Chave de agrupamento de uma inferência.
+
 ## `src/agent/api/intelligence_routes.py`
 
-**Propósito:** Rotas unificadas de inteligência e observabilidade. **Quando/onde:** Registrada em `src/agent/api/main.py`, expõe métricas, telemetria, grafo cognitivo, benchmarks e diagnósticos por HTTP.
+**Propósito:** Rotas unificadas de inteligência e observabilidade. **Quando/onde:** Registrada em `src/agent/api/main.py`, expõe métricas, telemetria, grafo cognitivo, benchmarks, diagnósticos e consumo de contexto por HTTP.
 
 - `metrics_overview(project_id, session) -> dict` — Visão geral agregada do workspace (`GET /metrics/overview`).
 - `metrics_run(run_id, session) -> dict` — Métricas detalhadas de uma run (`GET /metrics/runs/{run_id}`).
@@ -2010,10 +2037,20 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `diagnostics_get(diagnostic_id, session) -> dict` — Detalhe de um diagnóstico (`GET /diagnostics/{id}`).
 - `diagnostics_create(payload, session) -> dict` — Cria diagnóstico (`POST /diagnostics`).
 - `diagnostics_analyze_run(run_id, session) -> dict` — Diagnóstico determinístico sobre uma run (`POST /diagnostics/runs/{run_id}/analyze`).
+- `context_consumption_overview(project_id, run_id, session) -> dict` — Visão geral do consumo de contexto e tokens (`GET /context-consumption/overview`).
+- `context_consumption_by_type(project_id, run_id, session) -> dict` — Consumo por tipo de inferência (`GET /context-consumption/by-type`).
+- `context_consumption_by_component(project_id, run_id, session) -> dict` — Consumo por componente do contexto (`GET /context-consumption/by-component`).
+- `context_consumption_matrix(project_id, run_id, session) -> dict` — Matriz tipo × componente (`GET /context-consumption/matrix`).
+- `context_consumption_compare(project_id, run_id, group_by, session) -> dict` — Compara consumo por dimensão (`GET /context-consumption/compare`).
+- `context_consumption_timeline(project_id, run_id, period, session) -> dict` — Evolução temporal do consumo (`GET /context-consumption/timeline`).
+- `context_consumption_opportunities(project_id, run_id, session) -> dict` — Oportunidades de otimização (`GET /context-consumption/opportunities`).
+- `get_inference(inference_id, session) -> dict | None` — Detalhe de uma inferência individual (`GET /inferences/{id}`).
+- `get_inference_components(inference_id, session) -> dict | None` — Composição do contexto de uma inferência (`GET /inferences/{id}/components`).
 - `diagnostics_summary(run_id, session) -> dict` — Resumo agregado (`GET /diagnostics/summary`).
 - `BenchmarkScenarioIn` — Schema Pydantic de entrada para criação de cenário (id, version, name, category, difficulty, prompt, etc.).
 - `BenchmarkRunIn` — Schema Pydantic de entrada para execução de benchmark (scenario_id, provider, model_id, config).
 - `DiagnosticIn` — Schema Pydantic de entrada para criação de diagnóstico (run_id, category, severity, evidence, recommendation, kind, etc.).
+- `InferenceIn` — Schema Pydantic de entrada para filtros de consumo de contexto (project_id, run_id, task_id, agent, model, provider, inference_type, status, period_start, period_end).
 - `_run_or_404(session, run_id) -> ExecutionRunModel` — Devolve a run ou levanta HTTP 404.
 - `_scenario_or_404(session, scenario_id) -> BenchmarkScenarioModel` — Devolve o cenário ou levanta HTTP 404.
 - `capabilities(settings) -> dict` — Capacidades observadas do provedor e ambiente (`GET /capabilities`).
@@ -2673,6 +2710,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `estimate_cost(prices: dict[str, Any] | None, provider: str, prompt: int | None, completion: int | None) -> tuple[float | None, str]` — Calcula o custo só quando `config.prices` traz o preço do provedor. Sem tabela, o custo é indisponível.
 - `spend_of(row: Any) -> tuple[int, str]` — Gasto da linha para o teto: número do provedor, senão a estimativa guardada. Cache e raciocínio não entram. Os dois lados ausentes não contribuem.
 - `fold_usage(rows: list[Any]) -> dict[str, Any]` — Soma as linhas. Cada campo informa valor, qualidade e quantos registros não trouxeram o número.
+- `classify_inference_type(purpose: str | None) -> str | None` — Mapeia a finalidade da chamada para o tipo de inferência da taxonomia (PLANNING, EXECUTION, VERIFICATION, …). Desconhecido fica `OTHER`; ausência fica `None`.
 
 ### `src/agent/orchestrator/ledger.py`
 
@@ -2688,6 +2726,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `task_reported_total(session: Session, task_id: uuid.UUID) -> tuple[int | None, str]` — Total que a API mostra: o livro, quando existe; senão o metadado legado com qualidade.
 - `note_budget_pause(session: Session, task: TaskModel | None, reason: str) -> None` — Registra no resumo operacional que a execução pausou por orçamento.
 - `iter_spend(rows: list[InferenceRecordModel]) -> list[tuple[InferenceRecordModel, int, str]]` — Gasto e qualidade de cada linha, para a conferência.
+- `_enrich_components(snap: ContextSnapshotModel, row: InferenceRecordModel, task: TaskModel | None) -> list[dict]` — Enriquece componentes do snapshot com agente, tarefa, janela, confiança e potencial de otimização.
 
 ### `src/agent/orchestrator/usage_report.py`
 
@@ -3695,6 +3734,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [test_attempt_loop.py](/tests/test_attempt_loop.py)
 - Arquivo: [test_consolidation.py](/tests/test_consolidation.py)
 - Arquivo: [test_context_budget.py](/tests/test_context_budget.py)
+- Arquivo: [test_context_consumption.py](/tests/test_context_consumption.py)
 - Arquivo: [test_context_recovery.py](/tests/test_context_recovery.py)
 - Arquivo: [test_contract_impact.py](/tests/test_contract_impact.py)
 - Arquivo: [test_contract_service.py](/tests/test_contract_service.py)
@@ -3979,6 +4019,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `tests/test_context_budget.py`
 
 **Propósito:** Testes do orçamento de tokens (ContextBudget, assemble_messages, truncagem).
+
+### `tests/test_context_consumption.py`
+
+**Propósito:** Testes da classificação de tipo de inferência e do serviço de consumo de contexto (overview, por tipo, por componente, matriz, comparação, timeline, oportunidades).
 
 ### `tests/test_context_recovery.py`
 
@@ -5649,6 +5693,15 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `reloadHealth()` → `Promise<void>` — Reexecuta o health check (recuperação individual) e recalcula o estado agregado.
 - `reloadProjects()` → `Promise<void>` — Recarrega apenas projetos (recuperação individual) e recalcula o estado agregado.
 - `reloadProviders()` → `Promise<void>` — Recarrega apenas provedores (recuperação individual) e recalcula o estado agregado.
+- `loadContextConsumptionOverview(runId, projectId)` — Carrega visão geral de consumo de contexto via `/api/intelligence/context-consumption/overview` e armazena em `state.contextConsumptionOverview`.
+- `loadContextConsumptionByType(runId, projectId)` — Carrega consumo por tipo de inferência via `/api/intelligence/context-consumption/by-type` e armazena em `state.contextConsumptionByType`.
+- `loadContextConsumptionByComponent(runId, projectId)` — Carrega consumo por componente do contexto via `/api/intelligence/context-consumption/by-component` e armazena em `state.contextConsumptionByComponent`.
+- `loadContextConsumptionMatrix(runId, projectId)` — Carrega matriz tipo × componente via `/api/intelligence/context-consumption/matrix` e armazena em `state.contextConsumptionMatrix`.
+- `loadContextConsumptionCompare(runId, projectId, groupBy)` — Carrega comparação de consumo por dimensão via `/api/intelligence/context-consumption/compare` e armazena em `state.contextConsumptionCompare`.
+- `loadContextConsumptionTimeline(runId, projectId, period)` — Carrega evolução temporal via `/api/intelligence/context-consumption/timeline` e armazena em `state.contextConsumptionTimeline`.
+- `loadContextConsumptionOpportunities(runId, projectId)` — Carrega oportunidades de otimização via `/api/intelligence/context-consumption/opportunities` e armazena em `state.contextConsumptionOpportunities`.
+- `loadInferenceDetail(inferenceId)` — Carrega detalhe de uma inferência individual via `/api/intelligence/inferences/{id}` e armazena em `state.inferenceDetail`.
+- `loadInferenceComponents(inferenceId)` — Carrega composição do contexto de uma inferência via `/api/intelligence/inferences/{id}/components` e armazena em `state.inferenceComponents`.
 
 ### `web/static/assets/app/components/intelligence-graph.js`
 

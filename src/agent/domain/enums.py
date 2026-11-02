@@ -63,3 +63,47 @@ class AttemptKind(StrEnum):
     MODEL = "model"
     TOOL = "tool"
     VERIFICATION = "verification"
+
+
+class InferenceType(StrEnum):
+    """Taxonomia da finalidade da inferência, atribuída pelo orquestrador conforme a operação."""
+
+    PLANNING = "planning"
+    TASK_DECOMPOSITION = "task_decomposition"
+    EXECUTION = "execution"
+    TOOL_SELECTION = "tool_selection"
+    TOOL_RESULT_ANALYSIS = "tool_result_analysis"
+    VERIFICATION = "verification"
+    ERROR_CORRECTION = "error_correction"
+    RECOVERY = "recovery"
+    RESEARCH = "research"
+    MEMORY_RETRIEVAL = "memory_retrieval"
+    CONTEXT_SUMMARIZATION = "context_summarization"
+    FINAL_RESPONSE = "final_response"
+    DIAGNOSTIC = "diagnostic"
+    CALIBRATION = "calibration"
+    OTHER = "other"
+
+
+class ContextComponentCategory(StrEnum):
+    """Categoria independente que identifica os componentes que formam o prompt do modelo."""
+
+    SYSTEM_INSTRUCTIONS = "system_instructions"
+    AGENT_INSTRUCTIONS = "agent_instructions"
+    TASK_INSTRUCTIONS = "task_instructions"
+    CONVERSATION_HISTORY = "conversation_history"
+    PARENT_AGENT_CONTEXT = "parent_agent_context"
+    CHILD_AGENT_CONTEXT = "child_agent_context"
+    SHORT_TERM_MEMORY = "short_term_memory"
+    LONG_TERM_MEMORY = "long_term_memory"
+    KNOWLEDGE_RETRIEVAL = "knowledge_retrieval"
+    TOOL_DEFINITIONS = "tool_definitions"
+    TOOL_CALLS = "tool_calls"
+    TOOL_RESULTS = "tool_results"
+    FILES_AND_DOCUMENTS = "files_and_documents"
+    CODE_CONTEXT = "code_context"
+    RESEARCH_RESULTS = "research_results"
+    COMPACTION_SUMMARIES = "compaction_summaries"
+    OUTPUT_FORMAT_AND_SCHEMAS = "output_format_and_schemas"
+    PROVIDER_METADATA = "provider_metadata"
+    OTHER = "other"

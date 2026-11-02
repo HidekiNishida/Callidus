@@ -606,7 +606,7 @@ class TaskExecutor:
                 FailureCause.INVALID_OUTPUT,
                 f"resposta final incompleta: {motivo_final}",
             )
-            attempts.record(
+            self._attempts.record(
                 run_id=run.id,
                 task_id=task.id,
                 kind=AttemptKind.MODEL,

@@ -7,7 +7,7 @@
  * Dependências: `../store.js` (estado e ações), `../api.js` (requisições HTTP), `../ui.js` (ícones).
  * Observações: gráficos em SVG leve, sem dependências externas; paginação e filtros via query params.
  */
-import { state, loadIntelligenceOverview, loadRunMetrics, loadBenchmarkScenarios, runBenchmark, loadBenchmarkResults, compareBenchmarks, loadDiagnostics, loadDiagnosticsSummary, analyzeRunDiagnostics } from "../store.js";
+import { state, loadIntelligenceOverview, loadRunMetrics, loadBenchmarkScenarios, runBenchmark, loadBenchmarkResults, compareBenchmarks, loadDiagnostics, loadDiagnosticsSummary, analyzeRunDiagnostics, loadContextConsumptionOverview, loadContextConsumptionByType, loadContextConsumptionByComponent, loadContextConsumptionMatrix, loadContextConsumptionCompare, loadContextConsumptionTimeline, loadContextConsumptionOpportunities } from "../store.js";
 import { icon } from "../ui.js";
 
 const PERCENTILE_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
@@ -526,6 +526,300 @@ export const IntelligenceDiagnostics = {
           </tbody>
         </table>
         <p v-else class="muted small">Nenhum diagnóstico para exibir.</p>
+      </div>
+    </div>
+  `,
+};
+
+/**
+ * Página Consumo e Gestão de Contexto: consumo e tokens por inferência.
+ */
+export const IntelligenceContextConsumption = {
+  name: "IntelligenceContextConsumption",
+  props: {
+    runId: { type: String, default: null },
+    projectId: { type: String, default: null },
+  },
+  setup(props) {
+    const loading = Vue.ref(false);
+
+    async function load() {
+      loading.value = true;
+      await Promise.all([
+        loadContextConsumptionOverview(props.runId || null, props.projectId || null),
+        loadContextConsumptionByType(props.runId || null, props.projectId || null),
+        loadContextConsumptionByComponent(props.runId || null, props.projectId || null),
+        loadContextConsumptionMatrix(props.runId || null, props.projectId || null),
+        loadContextConsumptionCompare(props.runId || null, props.projectId || null, "model"),
+        loadContextConsumptionTimeline(props.runId || null, props.projectId || null, "day"),
+        loadContextConsumptionOpportunities(props.runId || null, props.projectId || null),
+      ]);
+      loading.value = false;
+    }
+
+    Vue.onMounted(load);
+    Vue.watch(() => props.runId, load);
+    Vue.watch(() => props.projectId, load);
+
+    const barColor = (value, max) => (max ? Math.min(100, (value / max) * 100) : 0) + "%";
+    const maxTypeTotal = Vue.computed(() => {
+      const groups = state.contextConsumptionByType?.groups || [];
+      return groups.reduce((max, g) => Math.max(max, g.total_tokens.value || 0), 0);
+    });
+
+    return {
+      state,
+      loading,
+      load,
+      icon,
+      barColor,
+      maxTypeTotal,
+    };
+  },
+  template: `
+    <div class="intelligence-page">
+      <div class="page-header">
+        <h1>Consumo e Gestão de Contexto</h1>
+        <p class="page-sub">Medição, classificação e otimização do consumo de contexto e tokens por inferência.</p>
+        <button type="button" class="btn-primary" @click="load" :disabled="loading" v-html="icon('refresh', 16)"></button>
+      </div>
+
+      <div v-if="loading" class="skeleton-container">
+        <div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div>
+      </div>
+
+      <div v-if="!loading && !state.contextConsumptionOverview" class="empty-state">
+        <p>Nenhum dado de consumo disponível. Execute alguma tarefa para gerar inferências.</p>
+        <button type="button" class="btn-primary" @click="load" v-html="icon('refresh', 16)"></button>
+      </div>
+
+      <div v-if="!loading && state.contextConsumptionOverview" class="section-panel">
+        <h3>Visão geral</h3>
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-value">{{ state.contextConsumptionOverview.input_tokens.value ?? 0 }}</div>
+            <div class="metric-label">Tokens de entrada</div>
+            <div class="metric-note small">{{ state.contextConsumptionOverview.input_tokens.measurement }}</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value">{{ state.contextConsumptionOverview.output_tokens.value ?? 0 }}</div>
+            <div class="metric-label">Tokens de saída</div>
+            <div class="metric-note small">{{ state.contextConsumptionOverview.output_tokens.measurement }}</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value">{{ state.contextConsumptionOverview.total_tokens.value ?? 0 }}</div>
+            <div class="metric-label">Tokens totais</div>
+            <div class="metric-note small">{{ state.contextConsumptionOverview.total_tokens.measurement }}</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value">{{ state.contextConsumptionOverview.inferences_total }}</div>
+            <div class="metric-label">Inferências totais</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value">{{ (state.contextConsumptionOverview.avg_tokens_per_inference.mean ?? 0).toFixed(0) }}</div>
+            <div class="metric-label">Média de tokens por inferência</div>
+            <div class="metric-note small">{{ state.contextConsumptionOverview.avg_tokens_per_inference.count }} amostra(s)</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value">{{ state.contextConsumptionOverview.avg_window_occupancy_pct.value ?? 0 }}%</div>
+            <div class="metric-label">Janela média utilizada</div>
+            <div class="metric-note small">{{ state.contextConsumptionOverview.avg_window_occupancy_pct.count }} amostra(s)</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value">{{ state.contextConsumptionOverview.compaction.events }}</div>
+            <div class="metric-label">Compactações</div>
+            <div class="metric-note small">{{ state.contextConsumptionOverview.compaction.tokens_removed_estimated }} tokens removidos</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value">{{ state.contextConsumptionOverview.tokens_saved_estimated }}</div>
+            <div class="metric-label">Tokens economizados (est.)</div>
+          </div>
+        </div>
+
+        <div class="table-panel" style="margin-top: 16px;">
+          <h4>Consumo por status</h4>
+          <table class="data-table">
+            <thead>
+              <tr><th>Status</th><th>Quantidade</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="(count, status) in state.contextConsumptionOverview.by_status" :key="status">
+                <td>{{ status }}</td>
+                <td>{{ count }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div v-if="!loading && state.contextConsumptionByType" class="section-panel">
+        <h3>Consumo por tipo de inferência</h3>
+        <div class="charts-row">
+          <div class="chart-panel">
+            <h4>Tokens totais por tipo</h4>
+            <div class="bar-chart">
+              <div v-for="g in state.contextConsumptionByType.groups" :key="g.type" class="bar-item">
+                <span class="bar-label">{{ g.label }}</span>
+                <div class="bar-track">
+                  <div class="bar-fill" :style="{ width: barColor(g.total_tokens.value || 0, maxTypeTotal) + '%' }"></div>
+                </div>
+                <span class="bar-value">{{ g.total_tokens.value ?? 0 }}</span>
+              </div>
+            </div>
+            <p v-if="!state.contextConsumptionByType.groups?.length" class="muted small">Sem dados.</p>
+          </div>
+          <div class="chart-panel">
+            <h4>Estatísticas por tipo</h4>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Tipo</th><th>Amostras</th><th>Média</th><th>Mediana</th><th>P90</th><th>P95</th><th>Mín.</th><th>Máx.</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="g in state.contextConsumptionByType.groups" :key="g.type">
+                  <td>{{ g.label }}</td>
+                  <td>{{ g.total_tokens.count }}</td>
+                  <td class="mono">{{ g.total_tokens.mean ?? 0 }}</td>
+                  <td class="mono">{{ g.total_tokens.median ?? 0 }}</td>
+                  <td class="mono">{{ g.total_tokens.p90 ?? '—' }}</td>
+                  <td class="mono">{{ g.total_tokens.p95 ?? '—' }}</td>
+                  <td class="mono">{{ g.total_tokens.min ?? 0 }}</td>
+                  <td class="mono">{{ g.total_tokens.max ?? 0 }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="!loading && state.contextConsumptionByComponent" class="section-panel">
+        <h3>Composição do contexto</h3>
+        <div class="charts-row">
+          <div class="chart-panel" style="flex: 2;">
+            <h4>Tokens acumulados por categoria</h4>
+            <div class="bar-chart">
+              <div v-for="g in state.contextConsumptionByComponent.groups" :key="g.category" class="bar-item">
+                <span class="bar-label">{{ g.category }}</span>
+                <div class="bar-track">
+                  <div class="bar-fill" :style="{ width: barColor(g.tokens_total, state.contextConsumptionByComponent.grand_total_tokens) + '%' }"></div>
+                </div>
+                <span class="bar-value">{{ g.tokens_total }} ({{ g.percent_of_consumption }}%)</span>
+              </div>
+            </div>
+            <p v-if="!state.contextConsumptionByComponent.groups?.length" class="muted small">Sem dados.</p>
+          </div>
+          <div class="chart-panel">
+            <h4>Tabela de componentes</h4>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Categoria</th><th>Tokens</th><th>Média/inf.</th><th>% consumo</th><th>Ocorrências</th><th>Pot. otimização</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="g in state.contextConsumptionByComponent.groups" :key="g.category">
+                  <td>{{ g.category }}</td>
+                  <td class="mono">{{ g.tokens_total }}</td>
+                  <td class="mono">{{ g.avg_tokens_per_inference ?? 0 }}</td>
+                  <td>{{ g.percent_of_consumption }}%</td>
+                  <td>{{ g.occurrences }}</td>
+                  <td>{{ g.optimization_potential }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="!loading && state.contextConsumptionMatrix" class="section-panel">
+        <h3>Matriz de consumo (tipo × componente)</h3>
+        <div class="table-panel">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Tipo de inferência</th>
+                <th v-for="cat in state.contextConsumptionMatrix.categories" :key="cat">{{ cat }}</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in state.contextConsumptionMatrix.matrix" :key="row.type">
+                <td><strong>{{ row.type }}</strong></td>
+                <td v-for="cat in state.contextConsumptionMatrix.categories" :key="cat" class="mono">{{ row[cat] ?? 0 }}</td>
+                <td class="mono">{{ row.total }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div v-if="!loading && state.contextConsumptionCompare" class="section-panel">
+        <h3>Comparação por {{ state.contextConsumptionCompare.group_by }}</h3>
+        <div class="table-panel">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>{{ state.contextConsumptionCompare.group_by }}</th><th>Amostras</th><th>Total tokens</th><th>Média</th><th>Máx.</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="g in state.contextConsumptionCompare.groups" :key="g.key">
+                <td>{{ g.key }}</td>
+                <td>{{ g.total_tokens.count }}</td>
+                <td class="mono">{{ g.total_tokens.value ?? 0 }}</td>
+                <td class="mono">{{ g.total_tokens.mean ?? 0 }}</td>
+                <td class="mono">{{ g.total_tokens.max ?? 0 }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div v-if="!loading && state.contextConsumptionTimeline" class="section-panel">
+        <h3>Evolução temporal</h3>
+        <div class="table-panel">
+          <table class="data-table">
+            <thead>
+              <tr><th>Período</th><th>Inferências</th><th>Total tokens</th><th>Média/inf.</th><th>Entrada</th><th>Saída</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="s in state.contextConsumptionTimeline.series" :key="s.period">
+                <td>{{ s.period }}</td>
+                <td>{{ s.inferences }}</td>
+                <td class="mono">{{ s.total_tokens.value ?? 0 }}</td>
+                <td class="mono">{{ s.avg_tokens_per_inference ?? 0 }}</td>
+                <td class="mono">{{ s.input_tokens ?? 0 }}</td>
+                <td class="mono">{{ s.output_tokens ?? 0 }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div v-if="!loading && state.contextConsumptionOpportunities" class="section-panel">
+        <h3>Oportunidades de otimização</h3>
+        <div v-if="state.contextConsumptionOpportunities.opportunities.length" class="table-panel">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Problema</th><th>Evidência</th><th>Componente</th><th>Frequência</th><th>Impacto (tokens)</th><th>Estratégia</th><th>Risco</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="o in state.contextConsumptionOpportunities.opportunities" :key="o.problem">
+                <td>{{ o.problem }}</td>
+                <td>{{ o.evidence }}</td>
+                <td>{{ o.component }}</td>
+                <td>{{ o.frequency }}</td>
+                <td class="mono">{{ o.estimated_impact_tokens ?? 0 }}</td>
+                <td>{{ o.recommended_strategy }}</td>
+                <td>{{ o.information_loss_risk }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="muted small">Nenhuma oportunidade de otimização identificada.</p>
       </div>
     </div>
   `,

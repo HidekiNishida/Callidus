@@ -530,6 +530,13 @@ export const ChatView = {
         <span class="context-chip" v-if="changedFiles.length">
           <span v-html="icon('file', 12)"></span>{{ changedFiles.length }} arquivo(s) alterado(s)
         </span>
+        <span
+          v-if="state.runMetrics && (state.runMetrics.tokens.total_tokens || 0) > 0"
+          class="context-chip"
+        >
+          <span v-html="icon('spark', 12)"></span>
+          {{ state.runMetrics.tokens.total_tokens }} token(es)
+        </span>
       </div>
 
       <p class="composer-hint" v-if="state.running || state.currentRun?.status === 'ACTIVE'">

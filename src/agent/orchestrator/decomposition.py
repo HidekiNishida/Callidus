@@ -29,6 +29,7 @@ from agent.orchestrator.gap_analysis import (
     gap_requirements,
     wants_completion,
 )
+from agent.persistence.models import TaskModel
 from agent.orchestrator.plan_contract import normalize_plan_payload
 from agent.providers.base import ChatCompletionRequest, LLMProvider, ModelProfile
 from agent.providers.registry import build_provider_by_name

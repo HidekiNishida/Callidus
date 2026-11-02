@@ -24,6 +24,7 @@ Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 | [knowledge-graph.md](/docs/architecture/knowledge-graph.md) | Grafo do projeto |
 | [context-builder.md](/docs/architecture/context-builder.md) | Contexto por operação |
 | [orcamento-contexto.md](/docs/architecture/orcamento-contexto.md) | **Orçamento de tokens** — livro-razão por inferência, reserva de conclusão, memória em três níveis e painel |
+| [observabilidade-contexto.md](/docs/architecture/observabilidade-contexto.md) | **Observabilidade granular de contexto e tokens** — classificação de inferência, componentes do contexto, dashboard e API de consumo |
 | [execucao-autonoma.md](/docs/architecture/execucao-autonoma.md) | Worker autônomo |
 | [requisitos-verificacao-progresso.md](/docs/architecture/requisitos-verificacao-progresso.md) | Requisitos rastreáveis, validação do plano, verificação independente, progresso real |
 | [estrategia-resolucao.md](/docs/architecture/estrategia-resolucao.md) | **Estratégia de resolução** — memória de abordagem, detecção de estagnação, mudança de estratégia e limites coerentes |

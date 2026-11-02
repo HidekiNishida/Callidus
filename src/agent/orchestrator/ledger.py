@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from agent.memory.operational import remember_detail, upsert_operational
 from agent.orchestrator.inference_usage import fold_usage, spend_of
-from agent.persistence.models import InferenceRecordModel, TaskModel
+from agent.persistence.models import ContextSnapshotModel, InferenceRecordModel, TaskModel
 
 _SNAPSHOT: ContextVar[str | None] = ContextVar("inference_snapshot", default=None)
 
@@ -75,7 +75,9 @@ def record_inference(session: Session, *, idempotency_key: str, **fields: Any) -
 
     Observações:
         O flush acontece na hora. Repetir a chave, inclusive depois de uma falha
-        de recuperação, não soma os tokens de novo.
+        de recuperação, não soma os tokens de novo. O `parent_task_id` é derivado da
+        tarefa quando não é informado; os componentes do contexto são enriquecidos a
+        partir do snapshot vinculado.
     """
     existing = session.scalar(
         select(InferenceRecordModel).where(InferenceRecordModel.idempotency_key == idempotency_key)
@@ -83,12 +85,15 @@ def record_inference(session: Session, *, idempotency_key: str, **fields: Any) -
     if existing is not None:
         return existing
     snapshot_id = fields.pop("context_snapshot_id", None) or _SNAPSHOT.get()
+    parent_task_id = fields.pop("parent_task_id", None)
+    components_included = fields.pop("components_included_json", None)
     row = InferenceRecordModel(
         idempotency_key=idempotency_key,
         context_snapshot_id=_uuid(snapshot_id),
         run_id=_uuid(fields.pop("run_id", None)),
         task_id=_uuid(fields.pop("task_id", None)),
         project_id=_uuid(fields.pop("project_id", None)),
+        parent_task_id=_uuid(parent_task_id),
         **fields,
     )
     try:
@@ -104,12 +109,70 @@ def record_inference(session: Session, *, idempotency_key: str, **fields: Any) -
         raise
     task = session.get(TaskModel, row.task_id) if row.task_id else None
     if task is not None:
+        if row.parent_task_id is None:
+            row.parent_task_id = task.parent_id
+        if components_included is None and row.context_snapshot_id is not None:
+            snap = session.get(ContextSnapshotModel, row.context_snapshot_id)
+            if snap is not None:
+                row.components_included_json = _enrich_components(snap, row, task)
         note = f"{row.purpose}: {row.status}"
         if row.measurement == "unavailable":
             note += " (uso do provedor indisponível)"
         upsert_operational(session, task, status_note=note)
         reconcile_task_usage(session, task)
     return row
+
+
+def _enrich_components(
+    snap: ContextSnapshotModel, row: InferenceRecordModel, task: TaskModel | None
+) -> list[dict]:
+    """Enriquece os componentes do snapshot com dados da inferência para o painel de contexto.
+
+    Cada componente recebe categoria, identificação, tokens, origem, agente, tarefa e
+    confiança da medição. Campos indisponíveis ficam ausentes, nunca inventados.
+
+    Args:
+        snap: snapshot de contexto vinculado à inferência.
+        row: registro de inferência sendo gravado.
+        task: tarefa da inferência, quando disponível.
+
+    Returns:
+        Lista de componentes enriquecidos, pronta para `components_included_json`.
+    """
+    categories = snap.categories_json or []
+    strategy_notes = list(snap.strategy_notes_json or [])
+    compacted = any("compact" in str(n or "").lower() for n in strategy_notes)
+    enriched: list[dict] = []
+    for cat in categories:
+        if not isinstance(cat, dict):
+            continue
+        category = str(cat.get("category") or "other")
+        for comp in cat.get("components") or []:
+            if not isinstance(comp, dict):
+                continue
+            name = comp.get("name")
+            if not name:
+                continue
+            entry = {
+                "category": category,
+                "identification": name,
+                "tokens": comp.get("tokens"),
+                "measurement": comp.get("measurement") or "estimate",
+                "origin": "snapshot",
+                "agent": row.agent,
+                "task_id": str(row.task_id) if row.task_id else None,
+                "parent_task_id": str(row.parent_task_id) if row.parent_task_id else None,
+                "is_new": True,
+                "is_summarized": compacted,
+                "is_truncated": False,
+                "is_compacted": compacted,
+                "required": bool(comp.get("required")),
+                "inclusion_strategy": "obrigatorio" if comp.get("required") else "seletivo_por_prioridade",
+                "optimization_potential": not bool(comp.get("required")),
+                "confidence": "estimate",
+            }
+            enriched.append(entry)
+    return enriched
 
 
 def records_for(

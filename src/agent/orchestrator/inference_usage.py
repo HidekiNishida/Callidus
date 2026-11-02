@@ -13,7 +13,64 @@ from dataclasses import dataclass
 from typing import Any
 
 from agent.context.budget import estimate_tokens
+from agent.domain.enums import InferenceType
 from agent.providers.base import ChatCompletionResponse, ChatMessage
+
+# Estratégia de contagem local (ver providers.base.CHARS_PER_TOKEN). É gravada em cada
+# inferência para permitir comparações consistentes entre registros.
+TOKENIZER_STRATEGY = f"chars_per_token:3"
+TOKENIZER_VERSION = "callidus-local-v1"
+
+_PURPOSE_TO_INFERENCE_TYPE: dict[str, str] = {
+    "plan": InferenceType.PLANNING.value,
+    "planning": InferenceType.PLANNING.value,
+    "decompose": InferenceType.TASK_DECOMPOSITION.value,
+    "decomposition": InferenceType.TASK_DECOMPOSITION.value,
+    "task_decomposition": InferenceType.TASK_DECOMPOSITION.value,
+    "operation": InferenceType.EXECUTION.value,
+    "execute": InferenceType.EXECUTION.value,
+    "model_operation": InferenceType.EXECUTION.value,
+    "tool_selection": InferenceType.TOOL_SELECTION.value,
+    "tool_result": InferenceType.TOOL_RESULT_ANALYSIS.value,
+    "tool_result_analysis": InferenceType.TOOL_RESULT_ANALYSIS.value,
+    "verify": InferenceType.VERIFICATION.value,
+    "verification": InferenceType.VERIFICATION.value,
+    "error_correction": InferenceType.ERROR_CORRECTION.value,
+    "repair": InferenceType.ERROR_CORRECTION.value,
+    "recover": InferenceType.RECOVERY.value,
+    "recovery": InferenceType.RECOVERY.value,
+    "research": InferenceType.RESEARCH.value,
+    "memory": InferenceType.MEMORY_RETRIEVAL.value,
+    "memory_retrieval": InferenceType.MEMORY_RETRIEVAL.value,
+    "summary": InferenceType.CONTEXT_SUMMARIZATION.value,
+    "summarization": InferenceType.CONTEXT_SUMMARIZATION.value,
+    "context_summarization": InferenceType.CONTEXT_SUMMARIZATION.value,
+    "compact": InferenceType.CONTEXT_SUMMARIZATION.value,
+    "final_answer": InferenceType.FINAL_RESPONSE.value,
+    "final": InferenceType.FINAL_RESPONSE.value,
+    "diagnostic": InferenceType.DIAGNOSTIC.value,
+    "calibrate": InferenceType.CALIBRATION.value,
+    "calibration": InferenceType.CALIBRATION.value,
+    "agent_query": InferenceType.MEMORY_RETRIEVAL.value,
+    "automation": InferenceType.EXECUTION.value,
+}
+
+
+def classify_inference_type(purpose: str | None) -> str | None:
+    """Mapeia a finalidade da chamada (passada pelo orquestrador) para um tipo de inferência.
+
+    A classificação cabe ao orquestrador, nunca ao texto gerado pelo modelo. Quando a
+    finalidade não é reconhecida, usa `other`; quando não há finalidade, devolve `None`.
+
+    Args:
+        purpose: finalidade da chamada (`plan`, `operation`, `verify`, …).
+
+    Returns:
+        O tipo de inferência, ou `None` quando a finalidade não é informada.
+    """
+    if not purpose:
+        return None
+    return _PURPOSE_TO_INFERENCE_TYPE.get(str(purpose).strip().lower(), InferenceType.OTHER.value)
 
 
 def _opt_int(value: Any) -> int | None:

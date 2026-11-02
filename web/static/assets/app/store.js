@@ -112,6 +112,16 @@ export const state = reactive({
   diagnosticAnalysis: null,
   diagnosticsSummary: null,
 
+  contextConsumptionOverview: null,
+  contextConsumptionByType: null,
+  contextConsumptionByComponent: null,
+  contextConsumptionMatrix: null,
+  contextConsumptionCompare: null,
+  contextConsumptionTimeline: null,
+  contextConsumptionOpportunities: null,
+  inferenceDetail: null,
+  inferenceComponents: null,
+
   /** Estados independentes de cada recurso durante o bootstrap. */
   initialization: {
     interface: RESOURCE_STATES.ready,
@@ -1585,6 +1595,139 @@ export async function loadDiagnosticsSummary(runId) {
   const query = runId ? `?run_id=${encodeURIComponent(runId)}` : "";
   const data = await api(`/api/intelligence/diagnostics/summary${query}`).catch(() => null);
   state.diagnosticsSummary = data || null;
+}
+
+/**
+ * Carrega a visão geral de consumo de contexto e tokens.
+ *
+ * @param {string} [runId] Id da run para filtrar.
+ * @param {string} [projectId] Id do projeto para filtrar.
+ * @returns {Promise<void>}
+ */
+export async function loadContextConsumptionOverview(runId, projectId) {
+  const query = [];
+  if (runId) query.push(`run_id=${encodeURIComponent(runId)}`);
+  if (projectId) query.push(`project_id=${encodeURIComponent(projectId)}`);
+  const data = await api(`/api/intelligence/context-consumption/overview${query.length ? "?" + query.join("&") : ""}`).catch(() => null);
+  state.contextConsumptionOverview = data || null;
+}
+
+/**
+ * Carrega o consumo por tipo de inferência.
+ *
+ * @param {string} [runId] Id da run para filtrar.
+ * @param {string} [projectId] Id do projeto para filtrar.
+ * @returns {Promise<void>}
+ */
+export async function loadContextConsumptionByType(runId, projectId) {
+  const query = [];
+  if (runId) query.push(`run_id=${encodeURIComponent(runId)}`);
+  if (projectId) query.push(`project_id=${encodeURIComponent(projectId)}`);
+  const data = await api(`/api/intelligence/context-consumption/by-type${query.length ? "?" + query.join("&") : ""}`).catch(() => null);
+  state.contextConsumptionByType = data || null;
+}
+
+/**
+ * Carrega o consumo por componente do contexto.
+ *
+ * @param {string} [runId] Id da run para filtrar.
+ * @param {string} [projectId] Id do projeto para filtrar.
+ * @returns {Promise<void>}
+ */
+export async function loadContextConsumptionByComponent(runId, projectId) {
+  const query = [];
+  if (runId) query.push(`run_id=${encodeURIComponent(runId)}`);
+  if (projectId) query.push(`project_id=${encodeURIComponent(projectId)}`);
+  const data = await api(`/api/intelligence/context-consumption/by-component${query.length ? "?" + query.join("&") : ""}`).catch(() => null);
+  state.contextConsumptionByComponent = data || null;
+}
+
+/**
+ * Carrega a matriz tipo × componente.
+ *
+ * @param {string} [runId] Id da run para filtrar.
+ * @param {string} [projectId] Id do projeto para filtrar.
+ * @returns {Promise<void>}
+ */
+export async function loadContextConsumptionMatrix(runId, projectId) {
+  const query = [];
+  if (runId) query.push(`run_id=${encodeURIComponent(runId)}`);
+  if (projectId) query.push(`project_id=${encodeURIComponent(projectId)}`);
+  const data = await api(`/api/intelligence/context-consumption/matrix${query.length ? "?" + query.join("&") : ""}`).catch(() => null);
+  state.contextConsumptionMatrix = data || null;
+}
+
+/**
+ * Carrega a comparação de consumo por dimensão.
+ *
+ * @param {string} [runId] Id da run para filtrar.
+ * @param {string} [projectId] Id do projeto para filtrar.
+ * @param {string} [groupBy] Dimensão de agrupamento (model, agent, provider, task, inference_type).
+ * @returns {Promise<void>}
+ */
+export async function loadContextConsumptionCompare(runId, projectId, groupBy) {
+  const query = [];
+  if (runId) query.push(`run_id=${encodeURIComponent(runId)}`);
+  if (projectId) query.push(`project_id=${encodeURIComponent(projectId)}`);
+  if (groupBy) query.push(`group_by=${encodeURIComponent(groupBy)}`);
+  const data = await api(`/api/intelligence/context-consumption/compare${query.length ? "?" + query.join("&") : ""}`).catch(() => null);
+  state.contextConsumptionCompare = data || null;
+}
+
+/**
+ * Carrega a evolução temporal do consumo.
+ *
+ * @param {string} [runId] Id da run para filtrar.
+ * @param {string} [projectId] Id do projeto para filtrar.
+ * @param {string} [period] day, week ou month.
+ * @returns {Promise<void>}
+ */
+export async function loadContextConsumptionTimeline(runId, projectId, period) {
+  const query = [];
+  if (runId) query.push(`run_id=${encodeURIComponent(runId)}`);
+  if (projectId) query.push(`project_id=${encodeURIComponent(projectId)}`);
+  if (period) query.push(`period=${encodeURIComponent(period)}`);
+  const data = await api(`/api/intelligence/context-consumption/timeline${query.length ? "?" + query.join("&") : ""}`).catch(() => null);
+  state.contextConsumptionTimeline = data || null;
+}
+
+/**
+ * Carrega as oportunidades de otimização de contexto.
+ *
+ * @param {string} [runId] Id da run para filtrar.
+ * @param {string} [projectId] Id do projeto para filtrar.
+ * @returns {Promise<void>}
+ */
+export async function loadContextConsumptionOpportunities(runId, projectId) {
+  const query = [];
+  if (runId) query.push(`run_id=${encodeURIComponent(runId)}`);
+  if (projectId) query.push(`project_id=${encodeURIComponent(projectId)}`);
+  const data = await api(`/api/intelligence/context-consumption/opportunities${query.length ? "?" + query.join("&") : ""}`).catch(() => null);
+  state.contextConsumptionOpportunities = data || null;
+}
+
+/**
+ * Carrega o detalhe de uma inferência individual.
+ *
+ * @param {string} inferenceId Id da inferência.
+ * @returns {Promise<object|null>}
+ */
+export async function loadInferenceDetail(inferenceId) {
+  const data = await api(`/api/intelligence/inferences/${encodeURIComponent(inferenceId)}`).catch(() => null);
+  state.inferenceDetail = data || null;
+  return data;
+}
+
+/**
+ * Carrega a composição do contexto de uma inferência.
+ *
+ * @param {string} inferenceId Id da inferência.
+ * @returns {Promise<object|null>}
+ */
+export async function loadInferenceComponents(inferenceId) {
+  const data = await api(`/api/intelligence/inferences/${encodeURIComponent(inferenceId)}/components`).catch(() => null);
+  state.inferenceComponents = data || null;
+  return data;
 }
 
 /**
