@@ -840,22 +840,25 @@ export const ChatView = {
           <span class="stages-current">{{ currentTitle }}</span>
         </span>
 
-        <div class="stages-card" v-if="stagesOpen">
-          <div class="stages-header">
-            <span>Etapas do plano</span>
-            <span>{{ currentIndex }} de {{ activeStages.length }}</span>
+        <div class="stages-card-wrap" v-if="stagesOpen" @click.self="stagesOpen = false">
+          <div class="stages-overlay"></div>
+          <div class="stages-card">
+            <div class="stages-header">
+              <span>Etapas do plano</span>
+              <span>{{ currentIndex }} de {{ activeStages.length }}</span>
+            </div>
+            <ul class="stages-list">
+              <li
+                v-for="(stage, index) in activeStages"
+                :key="stage.id"
+                :class="['stage-item', 'stage-' + stage.status.toLowerCase(), { active: stage.active }]"
+              >
+                <span class="stage-ico" :class="'ico-' + stage.status" v-html="icon(stage.glyph, 12)"></span>
+                <span class="stage-title">{{ stage.title }}</span>
+                <span class="stage-status">{{ stage.statusText }}</span>
+              </li>
+            </ul>
           </div>
-          <ul class="stages-list">
-            <li
-              v-for="(stage, index) in activeStages"
-              :key="stage.id"
-              :class="['stage-item', 'stage-' + stage.status.toLowerCase(), { active: stage.active }]"
-            >
-              <span class="stage-ico" :class="'ico-' + stage.status" v-html="icon(stage.glyph, 12)"></span>
-              <span class="stage-title">{{ stage.title }}</span>
-              <span class="stage-status">{{ stage.statusText }}</span>
-            </li>
-          </ul>
         </div>
       </div>
 
