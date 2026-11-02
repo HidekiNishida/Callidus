@@ -1693,7 +1693,10 @@ pre,
   color: var(--muted);
   min-height: 26px;
   position: relative;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.context-bar::-webkit-scrollbar { display: none; }
 
 .context-chip {
   display: inline-flex;
@@ -1703,6 +1706,7 @@ pre,
   border-radius: 999px;
   background: var(--surface-2);
   border: 1px solid var(--border-soft);
+  flex-shrink: 0;
   animation: chip-in var(--dur-3) var(--spring) both;
 }
 
@@ -3177,6 +3181,7 @@ pre,
   transition: border-color var(--dur-2) var(--ease), background var(--dur-2) var(--ease), color var(--dur-2) var(--ease);
   width: fit-content;
   max-width: 100%;
+  flex-shrink: 0;
 }
 .stages-tag:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--text); }
 
