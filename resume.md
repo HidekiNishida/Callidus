@@ -2694,6 +2694,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `is_informative_test_result(tool_id, out) -> bool` — Indica que a suíte rodou e reprovou (resultado, não falha de ferramenta).
 - `test_summary(out) -> str` — Resumo curto do que a suíte contou (última linha da saída ou código de saída).
 - `as_dict(value) -> dict` — Normaliza o resultado de uma ferramenta em dicionário.
+- `environment_finding(tool_id: str, out: dict) -> str | None` — Inspeção (`git_status`, `git_diff`, `git_log`) que "falha" por resposta determinística do ambiente (ex.: não é repositório git) vira descoberta da etapa, em vez de falha repetida.
 
 ### `src/agent/orchestrator/execution/writes.py`
 

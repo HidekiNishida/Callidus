@@ -470,3 +470,59 @@ async def test_erro_no_passo_sobe_intacto(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(RunOrchestrator, "_step_body", boom)
     with pytest.raises(RuntimeError, match="falha original"):
         await RunOrchestrator(session, settings).step(run.id)
+
+
+def test_descoberta_do_ambiente_em_ferramenta_de_inspecao():
+    """`git_status` fora de repositório é a resposta da inspeção; falha de verdade não é."""
+    from agent.orchestrator.execution.tool_results import environment_finding
+
+    out = {"success": False, "stderr": "fatal: not a git repository (or any of the parent directories): .git\n"}
+    assert environment_finding("git_status", out) == "a pasta do projeto não é um repositório git"
+    assert environment_finding("run_command", out) is None
+    assert environment_finding("git_status", {"success": False, "stderr": "fatal: bad object"}) is None
+    assert environment_finding("git_status", {"success": True}) is None
+
+
+@pytest.mark.asyncio
+async def test_plano_com_git_status_fora_de_repositorio_segue_sem_repetir(tmp_path: Path):
+    """Regressão da avaliação real: a etapa `git_status` numa pasta sem git conclui com a
+    descoberta na primeira chamada; o plano segue sem estagnação nem replanejamento."""
+    import subprocess
+
+    settings, factory, workspace = _env(tmp_path)
+    inside = subprocess.run(["git", "rev-parse"], cwd=workspace, capture_output=True).returncode == 0
+    if inside:
+        pytest.skip("a pasta temporária está dentro de um repositório git")
+    (workspace / "calc.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    session = factory()
+    project = ProjectService(session).create_project(ProjectCreate(name="p", root_path=str(workspace)))
+    tasks = TaskService(session)
+    root = tasks.create_task(project.id, TaskCreate(title="Objetivo", objective="Inspecionar o projeto"))
+    root.status = TaskStatus.PLANNING.value
+    git = tasks.create_task(
+        project.id,
+        TaskCreate(title="Verificar status do repositório", objective="git status", parent_id=root.id,
+                   metadata={"tool": "git_status", "tool_args": {}}),
+    )
+    read = tasks.create_task(
+        project.id,
+        TaskCreate(title="Ler calc.py", objective="ler", parent_id=root.id,
+                   metadata={"tool": "read_file", "tool_args": {"path": "calc.py"},
+                             "verification": {"type": "file_exists", "path": "calc.py"}}),
+    )
+    tasks.add_dependency(read.id, TaskDependencyCreate(depends_on_task_id=git.id))
+    run = RunService(session).start_run(
+        project.id, ExecutionRunCreate(root_task_id=root.id, config={"provider": "mock", "approve_risky_tools": True})
+    )
+    session.commit()
+
+    log = await RunOrchestrator(session, settings).run_until_idle(run.id, max_steps=12)
+    actions = [x.get("action") for x in log]
+    assert "stagnation_replan" not in actions and "replanned" not in actions, actions
+    git_task = session.get(TaskModel, git.id)
+    assert git_task.status == TaskStatus.COMPLETED.value
+    assert git_task.metadata_json["environment_finding"] == "a pasta do projeto não é um repositório git"
+    calls = [a for a in session.scalars(select(OperationAttemptModel).where(OperationAttemptModel.task_id == git.id)).all()
+             if a.kind == AttemptKind.TOOL.value]
+    assert len(calls) == 1, "a mesma resposta do ambiente não é repetida"
+    assert session.get(TaskModel, read.id).status == TaskStatus.COMPLETED.value

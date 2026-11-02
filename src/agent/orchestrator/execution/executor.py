@@ -41,6 +41,7 @@ from agent.orchestrator.execution.providers import (
 )
 from agent.orchestrator.execution.runtime import ExecutionRuntime
 from agent.orchestrator.execution.tool_results import (
+    environment_finding,
     is_informative_test_result,
     test_summary,
 )
@@ -636,6 +637,18 @@ class TaskExecutor:
                         done["undone"] = restored
                     if plan_write_journal.conflicts:
                         done["rollback_conflicts"] = plan_write_journal.conflicts
+                return done
+            finding = environment_finding(tool_id, out)
+            if finding:
+                # A inspeção respondeu sobre o ambiente (ex.: não há repositório git). Isso é o
+                # resultado da etapa; repetir a chamada devolveria a mesma resposta.
+                task.consolidated_result_json = {"tool": tool_id, "result": out, "summary": finding}
+                task.metadata_json = {**(task.metadata_json or {}), "environment_finding": finding}
+                self.note_thought(run, task, f"Descoberta: {finding}. Sigo o plano com isso.", phase="tool")
+                self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                done = await self.finalize_verification(run, project, task, root_path)
+                done["tool"] = tool_id
+                done["finding"] = finding
                 return done
             if is_informative_test_result(tool_id, out):
                 # Rodar a suíte e ver os testes falharem **é o resultado**, não uma ferramenta

@@ -2709,6 +2709,7 @@
   "sym:src/agent/orchestrator/execution/runtime.py::ExecutionRuntime",
   "sym:src/agent/orchestrator/execution/runtime.py::ExecutionRuntime.build(session: Session, settings: Settings | None=None, *, tasks: TaskService | None=None, attempts: AttemptService | None=None, tools: ToolRegistry | None=None, provider_factory: Callable[[Settings, dict], LLMProvider] | None=None) -> ExecutionRuntime",
   "sym:src/agent/orchestrator/execution/tool_results.py::as_dict(value: Any) -> dict",
+  "sym:src/agent/orchestrator/execution/tool_results.py::environment_finding(tool_id: str, out: dict) -> str | None",
   "sym:src/agent/orchestrator/execution/tool_results.py::is_informative_test_result(tool_id: str, out: dict) -> bool",
   "sym:src/agent/orchestrator/execution/tool_results.py::test_summary(out: dict) -> str",
   "sym:src/agent/orchestrator/execution/workspace.py::work_root(session, project: ProjectModel, task: TaskModel | None) -> str",

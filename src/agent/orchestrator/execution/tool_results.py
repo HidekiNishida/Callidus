@@ -3,7 +3,7 @@ Arquivo: src/agent/orchestrator/execution/tool_results.py
 Nome: tool_results.py
 Propósito: interpretar o resultado de uma ferramenta determinística.
 Responsabilidade: camada de aplicação — distinguir "a ferramenta falhou" de "a ferramenta funcionou e o resultado foi negativo".
-Componentes: is_informative_test_result, test_summary.
+Componentes: is_informative_test_result, test_summary, environment_finding.
 Dependências: nenhuma (funções puras sobre o dicionário de resultado da ferramenta).
 Observações: rodar a suíte e ver os testes falharem é resultado, não falha de ferramenta — repetir a mesma chamada devolveria a mesma falha.
 """
@@ -13,6 +13,39 @@ from __future__ import annotations
 from typing import Any
 
 TEST_TOOLS = ("run_pytest", "pytest")
+
+#: Ferramentas que só inspecionam o ambiente: uma "falha" delas pode ser a própria resposta.
+INSPECTION_TOOLS = ("git_status", "git_diff", "git_log")
+
+#: Respostas determinísticas do ambiente → descoberta legível. Repetir a chamada devolve o mesmo.
+_ENVIRONMENT_ANSWERS: tuple[tuple[str, str], ...] = (
+    ("not a git repository", "a pasta do projeto não é um repositório git"),
+    ("não é um repositório git", "a pasta do projeto não é um repositório git"),
+)
+
+
+def environment_finding(tool_id: str, out: dict) -> str | None:
+    """A inspeção "falhou" porque o ambiente respondeu algo determinístico — isso é a descoberta.
+
+    Visto na avaliação real (`gpt-oss:20b` e `qwen3-vl:8b`): o plano começa com `git_status` numa
+    pasta que não é repositório; a etapa era repetida três vezes, idêntica, até a estagnação
+    descartar o plano inteiro e o run estourar o limite de passos. A pergunta da etapa ("qual o
+    estado do repositório?") já estava respondida: não há repositório.
+
+    Args:
+        tool_id: identificador da ferramenta executada.
+        out: resultado devolvido pela ferramenta.
+
+    Returns:
+        A descoberta em uma frase, ou `None` quando é falha de verdade (ou não é inspeção).
+    """
+    if tool_id not in INSPECTION_TOOLS or out.get("success"):
+        return None
+    text = f"{out.get('stderr') or ''} {out.get('error') or ''} {out.get('stdout') or ''}".casefold()
+    for needle, finding in _ENVIRONMENT_ANSWERS:
+        if needle in text:
+            return finding
+    return None
 
 
 def is_informative_test_result(tool_id: str, out: dict) -> bool:
