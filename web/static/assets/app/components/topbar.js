@@ -107,36 +107,63 @@ export const TopBar = {
       </div>
 
       <div class="topbar-right">
-        <div class="segmented" role="tablist" aria-label="Seção">
-          <button
-            type="button"
-            :class="{ active: state.view === 'chat' }"
-            title="Conversa"
-            aria-label="Conversa"
-            @click="openView('chat')"
-          >
-            <span v-html="icon('chat', 15)"></span><span class="seg-label">Conversa</span>
-          </button>
-          <button
-            type="button"
-            :class="{ active: state.view === 'live' }"
-            :disabled="!state.currentRun"
-            title="Acompanhamento"
-            aria-label="Acompanhamento"
-            @click="openView('live')"
-          >
-            <span v-html="icon('chart', 15)"></span><span class="seg-label">Acompanhamento</span>
-          </button>
-          <button
-            type="button"
-            :class="{ active: state.view === 'providers' }"
-            title="Provedores"
-            aria-label="Provedores"
-            @click="openView('providers')"
-          >
-            <span v-html="icon('server', 15)"></span><span class="seg-label">Provedores</span>
-          </button>
-        </div>
+          <div class="segmented" role="tablist" aria-label="Seção">
+            <button
+              type="button"
+              :class="{ active: state.view === 'chat' }"
+              title="Conversa"
+              aria-label="Conversa"
+              @click="openView('chat')"
+            >
+              <span v-html="icon('chat', 15)"></span><span class="seg-label">Conversa</span>
+            </button>
+            <button
+              type="button"
+              :class="{ active: state.view === 'live' }"
+              :disabled="!state.currentRun"
+              title="Acompanhamento"
+              aria-label="Acompanhamento"
+              @click="openView('live')"
+            >
+              <span v-html="icon('chart', 15)"></span><span class="seg-label">Acompanhamento</span>
+            </button>
+            <button
+              type="button"
+              :class="{ active: state.view === 'intelligence' }"
+              title="Inteligência"
+              aria-label="Inteligência"
+              @click="openView('intelligence')"
+            >
+              <span v-html="icon('layout', 15)"></span><span class="seg-label">Inteligência</span>
+            </button>
+            <button
+              type="button"
+              :class="{ active: state.view === 'providers' }"
+              title="Provedores"
+              aria-label="Provedores"
+              @click="openView('providers')"
+            >
+              <span v-html="icon('server', 15)"></span><span class="seg-label">Provedores</span>
+            </button>
+            <button
+              type="button"
+              :class="{ active: state.view === 'automations' }"
+              title="Automações"
+              aria-label="Automações"
+              @click="openView('automations')"
+            >
+              <span v-html="icon('clock', 15)"></span><span class="seg-label">Automações</span>
+            </button>
+            <button
+              type="button"
+              :class="{ active: state.view === 'settings' }"
+              title="Ajustes"
+              aria-label="Ajustes"
+              @click="openView('settings')"
+            >
+              <span v-html="icon('cog', 15)"></span><span class="seg-label">Ajustes</span>
+            </button>
+          </div>
 
         <div class="run-controls topbar-run" v-if="state.view === 'chat'">
           <button type="button" class="icon-btn" title="Um passo" aria-label="Um passo" :disabled="!busy" @click="stepRun()" v-html="icon('play', 15)"></button>

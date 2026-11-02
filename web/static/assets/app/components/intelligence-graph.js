@@ -236,6 +236,7 @@ export const CognitiveGraphView = {
       STATE_LABELS,
       prefersReducedMotion,
       NODE_RADIUS,
+      NODE_COLORS,
     };
   },
   template: `
@@ -267,7 +268,7 @@ export const CognitiveGraphView = {
             :disabled="!runId || historyEvents.length === 0"
             @click="togglePlayback"
             :title="isPlaying ? 'Pausar reprodução' : 'Reproduzir histórico'"
-            aria-label={isPlaying ? 'Pausar reprodução' : 'Reproduzir histórico'}
+            :aria-label="isPlaying ? 'Pausar reprodução' : 'Reproduzir histórico'"
           >
             <span v-html="isPlaying ? icon('pause', 16) : icon('play', 16)"></span>
           </button>

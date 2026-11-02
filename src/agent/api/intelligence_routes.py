@@ -727,6 +727,16 @@ def diagnostics_list(
     }
 
 
+@router.get("/diagnostics/summary")
+def diagnostics_summary(
+    run_id: uuid.UUID | None = Query(default=None),
+    session: Session = Depends(db_session),
+) -> dict[str, Any]:
+    """Resumo dos diagnósticos por categoria, severidade e estado."""
+    engine = DiagnosticEngine(session)
+    return engine.get_summary(run_id=run_id)
+
+
 @router.get("/diagnostics/{diagnostic_id}")
 def diagnostics_get(
     diagnostic_id: str,
@@ -783,13 +793,3 @@ def diagnostics_analyze_run(
         "diagnostics": [d.to_dict() for d in diagnostics],
         "count": len(diagnostics),
     }
-
-
-@router.get("/diagnostics/summary")
-def diagnostics_summary(
-    run_id: uuid.UUID | None = Query(default=None),
-    session: Session = Depends(db_session),
-) -> dict[str, Any]:
-    """Resumo dos diagnósticos por categoria, severidade e estado."""
-    engine = DiagnosticEngine(session)
-    return engine.get_summary(run_id=run_id)

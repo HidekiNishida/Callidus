@@ -425,6 +425,7 @@ export const IntelligenceDiagnostics = {
       load,
       analyze,
       icon,
+      runId: props.runId,
     };
   },
   template: `
@@ -435,13 +436,13 @@ export const IntelligenceDiagnostics = {
         <div class="page-actions">
           <button type="button" class="btn-primary" @click="load" :disabled="loading" v-html="icon('refresh', 16)"></button>
           <button
-            v-if="props.runId"
+            v-if="runId"
             type="button"
             class="btn-secondary"
             @click="analyze"
             :disabled="loading"
-            v-html="icon('bug', 16)"
           >
+            <span v-html="icon('bug', 16)"></span>
             Analisar run
           </button>
         </div>

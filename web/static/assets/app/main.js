@@ -39,10 +39,16 @@ import { LivePanel } from "./components/live.js";
 import { CommandPalette } from "./components/palette.js";
 import { AutomationsView } from "./components/automations.js";
 import { CognitiveGraphView } from "./components/intelligence-graph.js";
-import { IntelligenceOverview } from "./components/intelligence-pages.js";
-import { IntelligencePerformance } from "./components/intelligence-pages.js";
+import { IntelligenceOverview } from "./components/intelligence-overview.js";
+import { IntelligencePerformance } from "./components/intelligence-performance.js";
+import { IntelligenceReasoning } from "./components/intelligence-reasoning.js";
+import { IntelligenceKnowledge } from "./components/intelligence-knowledge.js";
+import { IntelligenceDiagnostics } from "./components/intelligence-diagnostics.js";
 import { IntelligenceBenchmarks } from "./components/intelligence-pages.js";
-import { IntelligenceDiagnostics } from "./components/intelligence-pages.js";
+import { IntelligenceEngineering } from "./components/intelligence-engineering.js";
+import { IntelligenceResources } from "./components/intelligence-resources.js";
+import { IntelligenceAgents } from "./components/intelligence-agents.js";
+import { IntelligenceOptimization } from "./components/intelligence-optimization.js";
 
 const { createApp, reactive, ref, computed, onMounted, onBeforeUnmount } = Vue;
 
@@ -77,8 +83,14 @@ const App = {
     CognitiveGraphView,
     IntelligenceOverview,
     IntelligencePerformance,
-    IntelligenceBenchmarks,
+    IntelligenceReasoning,
+    IntelligenceKnowledge,
     IntelligenceDiagnostics,
+    IntelligenceBenchmarks,
+    IntelligenceEngineering,
+    IntelligenceResources,
+    IntelligenceAgents,
+    IntelligenceOptimization,
   },
   setup() {
     const modal = reactive({
@@ -103,7 +115,7 @@ const App = {
       remoteBusy: false,
     });
 
-    const intelligenceSubView = ref("overview"); // overview, performance, benchmarks, diagnostics
+    const intelligenceSubView = ref("overview"); // overview, performance, reasoning, knowledge, diagnostics, benchmarks, engineering, resources, agents, optimization
 
     onMounted(() => {
       watchViewport();
@@ -582,80 +594,146 @@ const App = {
             </span>
             <button type="button" class="btn-ghost small" @click="bootstrap()">Tentar novamente</button>
           </div>
-          <Transition v-else name="view" mode="default">
-            <ChatView v-if="state.view === 'chat'" key="chat" />
-            <LivePanel v-else-if="state.view === 'live'" key="live" />
-            <ProvidersView v-else-if="state.view === 'providers'" key="providers" />
-            <AutomationsView v-else-if="state.view === 'automations'" key="automations" />
-            <SettingsView
-              v-else-if="state.view === 'settings'"
-              key="settings"
-              @new-project="newProject()"
-              @move-folder="moveFolderTo($event)"
-              @remote="openRemote($event)"
-            />
-            <div
-              v-else-if="state.view === 'intelligence'"
-              key="intelligence"
-              class="intelligence-container"
-            >
-              <nav class="intelligence-tabs" role="tablist" aria-label="Seções de inteligência">
-                <button
-                  role="tab"
-                  :class="{ active: intelligenceSubView === 'overview' }"
-                  @click="setIntelligenceSubView('overview')"
-                  aria-selected="intelligenceSubView === 'overview'"
-                >
-                  <span v-html="icon('layout', 15)"></span><span>Overview</span>
-                </button>
-                <button
-                  role="tab"
-                  :class="{ active: intelligenceSubView === 'performance' }"
-                  @click="setIntelligenceSubView('performance')"
-                  aria-selected="intelligenceSubView === 'performance'"
-                >
-                  <span v-html="icon('activity', 15)"></span><span>Desempenho</span>
-                </button>
-                <button
-                  role="tab"
-                  :class="{ active: intelligenceSubView === 'benchmarks' }"
-                  @click="setIntelligenceSubView('benchmarks')"
-                  aria-selected="intelligenceSubView === 'benchmarks'"
-                >
-                  <span v-html="icon('bar-chart', 15)"></span><span>Benchmarks</span>
-                </button>
-                <button
-                  role="tab"
-                  :class="{ active: intelligenceSubView === 'diagnostics' }"
-                  @click="setIntelligenceSubView('diagnostics')"
-                  aria-selected="intelligenceSubView === 'diagnostics'"
-                >
-                  <span v-html="icon('alert-circle', 15)"></span><span>Diagnósticos</span>
-                </button>
-              </nav>
-              <div class="intelligence-sub-views">
-                <CognitiveGraphView
-                  v-show="intelligenceSubView === 'overview'"
-                  :key="'intelligence-overview'"
-                  :run-id="state.currentRun?.id"
-                />
-                <IntelligencePerformance
-                  v-show="intelligenceSubView === 'performance'"
-                  :key="'intelligence-performance'"
-                  :run-id="state.currentRun?.id"
-                />
-                <IntelligenceBenchmarks
-                  v-show="intelligenceSubView === 'benchmarks'"
-                  :key="'intelligence-benchmarks'"
-                />
-                <IntelligenceDiagnostics
-                  v-show="intelligenceSubView === 'diagnostics'"
-                  :key="'intelligence-diagnostics'"
-                  :run-id="state.currentRun?.id"
-                />
+          <div v-else class="view-switch">
+            <div v-if="state.view === 'chat'" key="chat">
+              <ChatView key="chat" />
+            </div>
+            <div v-else-if="state.view === 'live'" key="live">
+              <LivePanel key="live" />
+            </div>
+            <div v-else-if="state.view === 'intelligence'" key="intelligence">
+              <div class="intelligence-container">
+                <nav class="intelligence-tabs" role="tablist" aria-label="Seções de inteligência">
+                  <button
+                    role="tab"
+                    :class="{ active: intelligenceSubView === 'overview' }"
+                    @click="setIntelligenceSubView('overview')"
+                    aria-selected="intelligenceSubView === 'overview'"
+                  >
+                    <span v-html="icon('layout', 15)"></span><span>Overview</span>
+                  </button>
+                  <button
+                    role="tab"
+                    :class="{ active: intelligenceSubView === 'performance' }"
+                    @click="setIntelligenceSubView('performance')"
+                    aria-selected="intelligenceSubView === 'performance'"
+                  >
+                    <span v-html="icon('activity', 15)"></span><span>Desempenho</span>
+                  </button>
+                  <button
+                    role="tab"
+                    :class="{ active: intelligenceSubView === 'benchmarks' }"
+                    @click="setIntelligenceSubView('benchmarks')"
+                    aria-selected="intelligenceSubView === 'benchmarks'"
+                  >
+                    <span v-html="icon('bar-chart', 15)"></span><span>Benchmarks</span>
+                  </button>
+                  <button
+                    role="tab"
+                    :class="{ active: intelligenceSubView === 'diagnostics' }"
+                    @click="setIntelligenceSubView('diagnostics')"
+                    aria-selected="intelligenceSubView === 'diagnostics'"
+                  >
+                    <span v-html="icon('alert-circle', 15)"></span><span>Diagnósticos</span>
+                  </button>
+                  <button
+                    role="tab"
+                    :class="{ active: intelligenceSubView === 'reasoning' }"
+                    @click="setIntelligenceSubView('reasoning')"
+                    aria-selected="intelligenceSubView === 'reasoning'"
+                  >
+                    <span v-html="icon('spark', 15)"></span><span>Raciocínio</span>
+                  </button>
+                  <button
+                    role="tab"
+                    :class="{ active: intelligenceSubView === 'knowledge' }"
+                    @click="setIntelligenceSubView('knowledge')"
+                    aria-selected="intelligenceSubView === 'knowledge'"
+                  >
+                    <span v-html="icon('layers', 15)"></span><span>Conhecimento</span>
+                  </button>
+                  <button
+                    role="tab"
+                    :class="{ active: intelligenceSubView === 'engineering' }"
+                    @click="setIntelligenceSubView('engineering')"
+                    aria-selected="intelligenceSubView === 'engineering'"
+                  >
+                    <span v-html="icon('wrench', 15)"></span><span>Engenharia</span>
+                  </button>
+                  <button
+                    role="tab"
+                    :class="{ active: intelligenceSubView === 'resources' }"
+                    @click="setIntelligenceSubView('resources')"
+                    aria-selected="intelligenceSubView === 'resources'"
+                  >
+                    <span v-html="icon('server', 15)"></span><span>Recursos</span>
+                  </button>
+                  <button
+                    role="tab"
+                    :class="{ active: intelligenceSubView === 'agents' }"
+                    @click="setIntelligenceSubView('agents')"
+                    aria-selected="intelligenceSubView === 'agents'"
+                  >
+                    <span v-html="icon('clock', 15)"></span><span>Agentes</span>
+                  </button>
+                  <button
+                    role="tab"
+                    :class="{ active: intelligenceSubView === 'optimization' }"
+                    @click="setIntelligenceSubView('optimization')"
+                    aria-selected="intelligenceSubView === 'optimization'"
+                  >
+                    <span v-html="icon('refresh', 15)"></span><span>Otimização</span>
+                  </button>
+                </nav>
+                <div class="intelligence-sub-views">
+                  <div v-if="intelligenceSubView === 'overview'" key="intelligence-overview">
+                    <IntelligenceOverview />
+                  </div>
+                  <div v-else-if="intelligenceSubView === 'performance'" key="intelligence-performance">
+                    <IntelligencePerformance :run-id="state.currentRun?.id" />
+                  </div>
+                  <div v-else-if="intelligenceSubView === 'reasoning'" key="intelligence-reasoning">
+                    <IntelligenceReasoning :run-id="state.currentRun?.id" />
+                  </div>
+                  <div v-else-if="intelligenceSubView === 'knowledge'" key="intelligence-knowledge">
+                    <IntelligenceKnowledge />
+                  </div>
+                  <div v-else-if="intelligenceSubView === 'diagnostics'" key="intelligence-diagnostics">
+                    <IntelligenceDiagnostics :run-id="state.currentRun?.id" />
+                  </div>
+                  <div v-else-if="intelligenceSubView === 'benchmarks'" key="intelligence-benchmarks">
+                    <IntelligenceBenchmarks />
+                  </div>
+                  <div v-else-if="intelligenceSubView === 'engineering'" key="intelligence-engineering">
+                    <IntelligenceEngineering />
+                  </div>
+                  <div v-else-if="intelligenceSubView === 'resources'" key="intelligence-resources">
+                    <IntelligenceResources />
+                  </div>
+                  <div v-else-if="intelligenceSubView === 'agents'" key="intelligence-agents">
+                    <IntelligenceAgents />
+                  </div>
+                  <div v-else-if="intelligenceSubView === 'optimization'" key="intelligence-optimization">
+                    <IntelligenceOptimization />
+                  </div>
+                </div>
               </div>
             </div>
-          </Transition>
+            <div v-else-if="state.view === 'providers'" key="providers">
+              <ProvidersView key="providers" />
+            </div>
+            <div v-else-if="state.view === 'automations'" key="automations">
+              <AutomationsView key="automations" />
+            </div>
+            <div v-else-if="state.view === 'settings'" key="settings">
+              <SettingsView
+                key="settings"
+                @new-project="newProject()"
+                @move-folder="moveFolderTo($event)"
+                @remote="openRemote($event)"
+              />
+            </div>
+          </div>
         </main>
 
         <DetailsPanel v-if="state.view === 'chat'" :class="{ open: state.detailsOpen }" />
