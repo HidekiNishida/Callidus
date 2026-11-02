@@ -1,7 +1,7 @@
 """
 Arquivo: src/agent/orchestrator/consolidation.py
 Nome: consolidation.py
-Propósito: consolidação bottom-up.
+Propósito: consolidação bottom-up — o pai junta os filhos, confere evidências e arquivos compartilhados.
 Responsabilidade: camada de aplicação.
 Componentes: verification_spec, latest_verification_failed, verification_evidence_ok, superseded, is_optional, inherits_read_only, remember_final_answer, surface_final_answer.
 Dependências: agent.domain.enums, agent.domain.schemas, agent.persistence.models, agent.services.agent_service, agent.services.task_service, agent.verification.fingerprint….
@@ -21,6 +21,7 @@ from agent.domain.schemas import TaskStatusUpdate
 from agent.persistence.models import EvidenceModel, TaskDependencyModel, TaskModel
 from agent.services.agent_service import AgentNotFoundError, AgentService
 from agent.services.task_service import TaskService
+from agent.orchestrator.subtask_summary import shared_files, structured_summary
 from agent.verification.fingerprint import is_current
 
 
@@ -219,6 +220,7 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
                 "optional": is_optional(c),
                 "status": c.status,
                 "result": c.consolidated_result_json or {"status": c.status},
+                "summary": structured_summary(session, c),
             }
         )
     achieved = not gaps and not failed_critical and not cancelled
@@ -231,6 +233,7 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
             for c in failed_optional
         ],
         "children": summaries,
+        "shared_files": shared_files(session, kids),
         "evidences": collect_evidences(session, parent_id),
         "pending": [
             {"task_id": str(c.id), "title": c.title, "status": c.status, "reason": pending_reason(c)}
@@ -258,11 +261,21 @@ def consolidate_parent(session: Session, parent_id: uuid.UUID) -> dict[str, Any]
     if current not in _TO_VERIFYING:
         return report
     if report["achieved"]:
+        declared = (parent.metadata_json or {}).get("verification")
+        if isinstance(declared, dict) and declared:
+            # O pai declara o próprio critério: filhos aprovados não bastam. Ele para em
+            # VERIFYING e o orquestrador o passa pelo mesmo portão (`finalize_verification`).
+            _walk(ts, parent_id, list(_TO_VERIFYING[current]), "filhos concluídos; falta o critério do pai")
+            return report
         _walk(ts, parent_id, [*_TO_VERIFYING[current], TaskStatus.COMPLETED])
         return report
     if gaps:
         for c in gaps:
-            _walk(ts, c.id, [TaskStatus.VERIFYING, TaskStatus.RETRY_PENDING], "evidência insuficiente")
+            # Evidência ausente ou desatualizada (uma irmã reescreveu o arquivo) pede nova
+            # **medição**, não nova execução: refazer a etapa sobrescreveria o trabalho da irmã.
+            # Em VERIFYING o orquestrador reverifica contra o disco atual; só se o critério
+            # reprovar a etapa volta a executar, pela recuperação normal.
+            _walk(ts, c.id, [TaskStatus.VERIFYING], "reverificar: evidência ausente ou desatualizada")
         if current != TaskStatus.PLANNING:
             _walk(ts, parent_id, [*_TO_VERIFYING[current], TaskStatus.PLANNING], "filhos sem evidência")
     return report

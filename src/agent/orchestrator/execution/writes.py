@@ -4,12 +4,13 @@ Nome: writes.py
 Propósito: transformar a resposta do modelo em uma escrita de arquivo e em um critério de verificação.
 Responsabilidade: camada de aplicação — mapeamento payload→ferramenta, spec implícita e registro de recusa.
 Componentes: write_tool_from_payload, implicit_spec, model_refusal_result, tool_refusal_result, WriteJournal.
-Dependências: nenhuma (funções puras sobre dicionários).
+Dependências: hashlib, pathlib (funções puras sobre dicionários e o diário de escritas).
 Observações: a recusa de escrita vira **resultado** da etapa — repetir o mesmo pedido não muda a permissão.
 """
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -111,39 +112,79 @@ class WriteJournal:
     do arquivo quebrado. Com o diário, uma escrita reprovada é desfeita: o projeto nunca fica pior
     do que estava antes da etapa.
 
+    O rollback só devolve o que **pertence à tentativa**: depois de cada escrita, o diário anota o
+    hash do que a etapa gravou (`settle`). Se, na hora de desfazer, o arquivo já não tem esse
+    conteúdo, outra mão o alterou (a pessoa no editor, outra ferramenta) — sobrescrever apagaria
+    esse trabalho, então o arquivo fica como está e entra em `conflicts`.
+
     Atributos:
         root: raiz do projeto (caminhos relativos são resolvidos a partir dela).
         originals: caminho absoluto → conteúdo antes da primeira escrita da etapa.
+        written: caminho absoluto → SHA-256 do conteúdo que a etapa deixou depois da última escrita.
+        created: arquivos que não existiam antes da etapa (nunca são apagados no rollback).
+        conflicts: arquivos que o rollback deixou intocados porque mudaram depois da escrita da etapa.
     """
 
     def __init__(self, root: str) -> None:
         """Começa vazio, para a raiz informada."""
         self.root = Path(root)
         self.originals: dict[Path, bytes] = {}
+        self.written: dict[Path, str] = {}
+        self.created: set[Path] = set()
+        self.conflicts: list[str] = []
+
+    def _resolve(self, path: Any) -> Path | None:
+        """Caminho absoluto resolvido, ou `None` quando o caminho é inválido."""
+        if not isinstance(path, str) or not path.strip():
+            return None
+        full = Path(path) if Path(path).is_absolute() else self.root / path
+        try:
+            return full.resolve()
+        except OSError:
+            return None
 
     def remember(self, tool: str, path: Any) -> None:
-        """Guarda o conteúdo do arquivo antes da primeira escrita nele (só arquivo que já existe).
+        """Guarda o conteúdo do arquivo antes da primeira escrita nele.
 
         Args:
             tool: ferramenta prestes a rodar; só `write_file` e `edit_file` contam.
             path: caminho alvo, relativo à raiz ou absoluto.
         """
-        if tool not in _WRITE_TOOLS or not isinstance(path, str) or not path.strip():
+        if tool not in _WRITE_TOOLS:
             return
-        full = Path(path) if Path(path).is_absolute() else self.root / path
-        try:
-            full = full.resolve()
-        except OSError:
+        full = self._resolve(path)
+        if full is None or full in self.originals or full in self.created:
             return
-        if full in self.originals or not full.is_file():
+        if not full.is_file():
+            self.created.add(full)
             return
         try:
             self.originals[full] = full.read_bytes()
         except OSError:
             return
 
+    def settle(self, tool: str, path: Any) -> None:
+        """Anota o que a etapa acabou de gravar (chamado depois de uma escrita bem-sucedida).
+
+        Args:
+            tool: ferramenta que acabou de rodar.
+            path: caminho escrito.
+        """
+        if tool not in _WRITE_TOOLS:
+            return
+        full = self._resolve(path)
+        if full is None or not full.is_file():
+            return
+        try:
+            self.written[full] = hashlib.sha256(full.read_bytes()).hexdigest()
+        except OSError:
+            return
+
     def restore(self) -> list[str]:
-        """Devolve cada arquivo ao conteúdo original. Arquivos novos ficam (apagar é decisão do dono).
+        """Devolve cada arquivo ao conteúdo original, só quando o disco ainda tem o que a etapa gravou.
+
+        Arquivos novos ficam (apagar é decisão do dono). Arquivo alterado por terceiros depois da
+        escrita da etapa também fica, e entra em `conflicts`.
 
         Returns:
             Os caminhos restaurados.
@@ -151,9 +192,15 @@ class WriteJournal:
         restored = []
         for full, content in self.originals.items():
             try:
-                if full.read_bytes() != content:
-                    full.write_bytes(content)
-                    restored.append(str(full))
+                current = full.read_bytes()
+                if current == content:
+                    continue
+                expected = self.written.get(full)
+                if expected is not None and hashlib.sha256(current).hexdigest() != expected:
+                    self.conflicts.append(str(full))
+                    continue
+                full.write_bytes(content)
+                restored.append(str(full))
             except OSError:
                 continue
         return restored

@@ -582,6 +582,8 @@ class RunOrchestrator:
                         root = self._tasks.get_task(run.root_task_id)
                         note_budget_pause(self._session, root, exc.reason)
                         out = self._pause_run(run, root, exc.as_hit(), exc.next_action)
+                    if out.get("action") == "awaiting_approval":
+                        out = self._await_approval(run, out)
                     out = self._check_stagnation(run_id, out) or out
                     self._record_action(run_id, out)
         finally:
@@ -884,6 +886,47 @@ class RunOrchestrator:
             category="alert",
         )
         return {"action": "run_paused", "run_id": str(run.id), "reason": reason, "next_action": next_action}
+
+    def _await_approval(self, run: ExecutionRunModel, out: dict[str, Any]) -> dict[str, Any]:
+        """Uma etapa espera aprovação: o run pausa (retomável) em vez de replanejar ou repetir.
+
+        A pausa é marcada com `kind = approval`; a decisão em `ApprovalService.decide` retoma o
+        run quando não sobra pedido pendente. Nenhuma etapa concluída é refeita.
+
+        Args:
+            run: execução em curso.
+            out: ação `awaiting_approval` devolvida pelo executor.
+
+        Returns:
+            A ação original, acrescida do estado `run_paused`.
+        """
+        from agent.services.approval_service import PAUSE_KIND_APPROVAL
+
+        root = self._tasks.get_task(run.root_task_id)
+        tool = str(out.get("tool") or "ferramenta")
+        next_action = f"aprovar ou negar a operação {tool} (pedido {out.get('approval_id')})"
+        pause = {
+            "kind": PAUSE_KIND_APPROVAL,
+            "reason": f"aguardando aprovação para {tool}",
+            "approval_id": out.get("approval_id"),
+            "task_id": out.get("task_id"),
+            "next_action": next_action,
+            "at": datetime.now(UTC).isoformat(),
+            "progress": progress_state(self._session, root.id),
+        }
+        root.metadata_json = {**(root.metadata_json or {}), "pause": pause}
+        root.consolidated_result_json = {**(root.consolidated_result_json or {}), "paused": pause}
+        run.status = RunStatus.PAUSED.value
+        self._session.add(
+            EventLogModel(
+                project_id=run.project_id,
+                run_id=run.id,
+                task_id=root.id,
+                event_type="run.paused",
+                payload_json={"reason": pause["reason"], "kind": PAUSE_KIND_APPROVAL, "next_action": next_action},
+            )
+        )
+        return {**out, "run_status": RunStatus.PAUSED.value, "next_action": next_action}
 
     def _record_action(self, run_id: uuid.UUID, out: dict[str, Any]) -> None:
         """Grava a ação do passo no histórico e publica o progresso quando ele muda.
@@ -1602,6 +1645,7 @@ class RunOrchestrator:
                 "blocked_context",
                 "run_stalled",
                 "run_paused",
+                "awaiting_approval",
                 "global_verify_failed",
             }:
                 break

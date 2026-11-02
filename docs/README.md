@@ -33,6 +33,7 @@ desça até o detalhe. Quem procura uma funcionalidade em código deve usar os
 | [architecture/requisitos-verificacao-progresso.md](/docs/architecture/requisitos-verificacao-progresso.md) | Requisitos, validação do plano, verificação independente, progresso | Ao mexer em critério de aceite ou evidência |
 | [architecture/execucao-local.md](/docs/architecture/execucao-local.md) | Instalação e execução local (Ollama por padrão) | Ao configurar o ambiente |
 | [architecture/execucao-remota.md](/docs/architecture/execucao-remota.md) | Projeto em servidor remoto por SSH | Ao operar o agente em outra máquina |
+| [architecture/confiabilidade-decomposicao.md](/docs/architecture/confiabilidade-decomposicao.md) | Portão de verificação, recuperação, aprovação granular, retomada e consolidação | Ao mexer na conclusão, na verificação, nas aprovações ou na decomposição |
 | [architecture/execucao-autonoma.md](/docs/architecture/execucao-autonoma.md) | Worker autônomo e escalonador | Ao mexer no laço em background |
 | [architecture/provedores.md](/docs/architecture/provedores.md) | Ollama, llama.cpp, OpenRouter, OpenAI-compatível, Anthropic, Gemini, mock | Ao adicionar ou trocar provedor |
 | [architecture/ferramentas.md](/docs/architecture/ferramentas.md) | Registro, execução e permissões das ferramentas | Ao criar ou ajustar uma ferramenta |

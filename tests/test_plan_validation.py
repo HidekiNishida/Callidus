@@ -173,8 +173,10 @@ def test_external_dependency_is_identified_but_plan_still_runs(session, tmp_path
     result = _apply(session, project, root, [_write("A", "R1", "a.py"), shell, FINAL])
 
     assert result.verdict == PlanVerdict.WARNINGS
-    assert len(result.blocked) == 1
-    assert "requirement_blocked" in {i.code for i in result.issues}
+    # A aprovação é pedida na execução, para esta operação: a etapa é sinalizada, não bloqueada.
+    assert result.blocked == []
+    codes = {i.code for i in result.issues}
+    assert "approval_pending" in codes and "requirement_blocked" not in codes
 
 
 def test_decomposition_cannot_drop_an_inherited_requirement(session, tmp_path):

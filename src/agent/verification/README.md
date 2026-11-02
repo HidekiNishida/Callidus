@@ -9,6 +9,8 @@ Verificação proporcional ao risco: quem executa **não** aprova o próprio res
 | [`runner.py`](runner.py) | `run_verification`, `VerificationResult`, `VerificationResult(verifier, passed, summary, detail)` | **Runner principal** — executa spec de verificação e retorna resultado estruturado |
 | [`recovery.py`](recovery.py) | `diagnose_verification_failure`, `plan_recovery`, `recovery_signature`, `RecoveryDiagnosis` | **Ciclo de recuperação** — classifica a causa da reprovação e decide diagnóstico → correção → re-verificação |
 | [`fingerprint.py`](fingerprint.py) | `snapshot(root, spec, tool_args)` | **Impressão digital** — SHA256 dos arquivos avaliados; detecta evidência desatualizada na retomada |
+| [`gate.py`](gate.py) | `VerificationGate`, `GateResult`, `VerificationStage` | **Fachada do portão único** — delega a `TaskExecutor.finalize_verification` e traduz o desfecho em estágio, diagnóstico e plano de recuperação |
+| [`alternatives.py`](alternatives.py) | `run_alternative_verification`, `select_alternatives` | **Complemento somente-leitura** (sintaxe, existência, análise estática) que estreita a causa de uma reprovação — **nunca aprova** a etapa |
 
 ## 🧪 Verificadores Suportados (`runner.py`)
 
@@ -22,7 +24,7 @@ Verificação proporcional ao risco: quem executa **não** aprova o próprio res
 | `file_exists` | Leitura direta (`_read_whole`) | Artefato que precisa existir | Arquivo existe e tem ao menos `min_bytes` bytes |
 | `static_analysis` / `ast_check` | `ast.parse` por arquivo | Lint estático sem depender de ferramenta externa | Nenhum erro sintático no caminho (ou nos `.py` recursivos) |
 | `acceptance_manual` | — | Critério subjetivo humano | `passed=None` (inconclusivo → `BLOCKED`) |
-| `stages` | — | Etapas anteriores concluídas | `passed=True` (atalho) |
+| `stages` | — | Etapas das quais a tarefa depende concluídas com evidência válida | sem dependência declarada → inconclusivo |
 
 ## 🔄 Fluxo de Verificação (`TaskExecutor.finalize_verification`)
 
@@ -67,6 +69,12 @@ async def finalize_verification(run, project, task, work_root_path=None, implici
         update_status(task, BLOCKED, reason="verificação inconclusiva")
         return {"action": "verify_inconclusive"}
 ```
+
+## 🚫 Sem verificador não é aprovado
+
+Etapa sem verificação declarada nem implícita (leitura, explicação) conclui com `verified: None` e
+`verification_absent` no resultado e o evento `verification.skipped`. A aceitação por requisito na raiz
+continua exigindo prova. Detalhes: [confiabilidade-decomposicao.md](/docs/architecture/confiabilidade-decomposicao.md#-portão-de-verificação-único).
 
 ## 🔄 Ciclo de Recuperação (`recovery.py`)
 

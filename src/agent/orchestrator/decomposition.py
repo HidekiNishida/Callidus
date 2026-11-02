@@ -11,6 +11,7 @@ Observações: o estado canônico é o SQLite; a verificação é independente d
 from __future__ import annotations
 
 import re
+from pathlib import Path
 import uuid
 from typing import Any
 
@@ -504,6 +505,67 @@ def direct_answer_plan(objective: str) -> DecompositionResult | None:
     )
 
 
+_READ_EXPLAIN = re.compile(
+    r"\b(leia|ler|lê|explique|explica|explicar|resuma|resumir|descreva|descrever|analise|o que faz|"
+    r"read|explain|summari[sz]e|describe)\b",
+    re.IGNORECASE,
+)
+_MUTATION_VERB = re.compile(
+    r"\b(corrij|corrig|alter|implement|cri[ae]|adicion|remov|apag|refator|mud[ae]|edit|escrev|reescrev|"
+    r"conserte|ajuste|fix|change|implement|create|add|remove|delete|refactor|edit|write|rewrite)\w*",
+    re.IGNORECASE,
+)
+_FILE_TOKEN = re.compile(r"[\w./-]+\.[A-Za-z0-9]{1,8}\b")
+
+
+def read_explain_plan(objective: str, project_root: str) -> DecompositionResult | None:
+    """Pedido simples de leitura e explicação de arquivos existentes: plano direto, sem árvore.
+
+    "Leia o README.md e explique" não precisa de inspeção genérica, alteração e verificação de
+    código: são N leituras (uma por arquivo citado que existe) e a resposta. Pedido que também
+    manda alterar algo não entra aqui.
+
+    Args:
+        objective: pedido do usuário.
+        project_root: raiz do projeto, para conferir que os arquivos citados existem.
+
+    Returns:
+        O plano direto, ou `None` quando o pedido não é só leitura e explicação.
+    """
+    text = " ".join((objective or "").split())
+    if not text or len(text) > 400 or not _READ_EXPLAIN.search(text) or _MUTATION_VERB.search(text):
+        return None
+    root = Path(project_root or ".")
+    files: list[str] = []
+    for token in _FILE_TOKEN.findall(text):
+        candidate = token.strip("./") if not token.startswith("../") else ""
+        if candidate and candidate not in files and (root / candidate).is_file():
+            files.append(candidate)
+    if not files or len(files) > 3:
+        return None
+    reads = [
+        SubTaskSpec(
+            title=f"Ler {path}",
+            objective=f"Ler {path}",
+            acceptance_criteria=f"{path} lido",
+            metadata={
+                "tool": "read_file",
+                "tool_args": {"path": path},
+                "read_only": True,
+                "verification": {"type": "file_exists", "path": path},
+            },
+        )
+        for path in files
+    ]
+    answer = SubTaskSpec(
+        title="Responder",
+        objective=text,
+        metadata={"final_answer": True, "read_only": True},
+        depends_on_indices=list(range(len(reads))),
+    )
+    return DecompositionResult(subtasks=[*reads, answer])
+
+
 def automation_plan(objective: str) -> DecompositionResult:
     """Plano de uma única etapa para pedidos sobre tarefas agendadas.
 
@@ -651,6 +713,8 @@ async def resolve_decomposition_plan(
         return automation_plan(objective), "automation"
     if direct := direct_answer_plan(objective):
         return direct, "direct-answer"
+    if reading := read_explain_plan(objective, project_root):
+        return reading, "direct-read"
 
     from agent.orchestrator.closing import ensure_closing_stages
 

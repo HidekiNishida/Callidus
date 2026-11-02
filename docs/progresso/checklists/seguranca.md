@@ -11,7 +11,7 @@ Voltar: [checklists/](/docs/progresso/checklists/README.md)
 | Item | Esperado | Estado | Status / horas |
 |------|----------|--------|----------------|
 | Pedido somente leitura | nenhuma escrita | vira permissão de ferramenta; 3/3 (*medido*) | ✅ |
-| Ferramenta arriscada | aprovação item a item | só a flag `approve_risky_tools` por run | ☐ [G4](/docs/progresso/gaps.md#g4-aprovação-granular-de-ferramentas-arriscadas-na-ui) · 8 h |
+| Ferramenta arriscada | aprovação item a item | por operação no backend (API); falta a UI | 🟡 [G4](/docs/progresso/gaps.md#g4-aprovação-granular-de-ferramentas-arriscadas-na-ui) · 4 h |
 | Credenciais de provedor | nunca expostas | testes de segurança de provedor | ✅ |
 | Banco do usuário | nunca apagado nem migrado à força | testes em banco temporário; sem fiscal automático | 🟡 [G6](/docs/progresso/gaps.md#g6-fiscais-automáticos-das-regras-de-engenharia) |
 | Remoção em cascata | sem linha pendurada; 409 em vez de 500 | implementado | ✅ |

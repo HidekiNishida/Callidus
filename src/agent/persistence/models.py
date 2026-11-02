@@ -3,7 +3,7 @@ Arquivo: src/agent/persistence/models.py
 Nome: models.py
 Propósito: definir os modelos SQLAlchemy que mapeiam o estado canônico do Callidus no SQLite.
 Responsabilidade: camada de infraestrutura — esquema relacional do agente, das execuções e das automações.
-Componentes: Base e os modelos Project, Conversation, Task, Branch, ExecutionRun, Automation, AutomationFiring, AutomationEvent, OperationAttempt, EventLog, MemoryRecord, KgNode, KgEdge, TaskContract, ContextSnapshot, InferenceRecord, Evidence, Agent, AgentExecution, AgentQuery.
+Componentes: Base e os modelos Project, Conversation, Task, Branch, ExecutionRun, Automation, AutomationFiring, AutomationEvent, OperationAttempt, EventLog, MemoryRecord, KgNode, KgEdge, TaskContract, ContextSnapshot, InferenceRecord, Evidence, ToolApproval, Agent, AgentExecution, AgentQuery.
 Dependências: sqlalchemy, agent.domain.agent_enums, agent.domain.enums.
 Observações: o SQLite é a fonte da verdade; o formato das evidências e do histórico de tentativas é contrato.
 """
@@ -499,6 +499,30 @@ class EvidenceModel(Base):
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     detail_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ToolApprovalModel(Base):
+    """Pedido de aprovação de **uma** operação de ferramenta: a decisão vale só para a
+    mesma ferramenta com os mesmos argumentos (`operation_key`) na mesma etapa, e é
+    consumida na execução — não vira permissão para chamadas futuras."""
+
+    __tablename__ = "tool_approvals"
+    __table_args__ = (Index("ix_tool_approvals_task_key", "task_id", "operation_key"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("execution_runs.id"), nullable=True)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
+    tool: Mapped[str] = mapped_column(String(128), nullable=False)
+    operation_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    args_preview_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    risk: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AgentModel(Base):

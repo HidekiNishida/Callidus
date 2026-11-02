@@ -3,7 +3,7 @@ Arquivo: src/agent/api/task_routes.py
 Nome: task_routes.py
 Propósito: expor as tarefas, suas dependências, contratos, tentativas, evidências e snapshots de contexto.
 Responsabilidade: camada de apresentação/transport — rotas de tarefa; delega as regras ao serviço.
-Componentes: criação e leitura de tarefas, status, dependências, contrato, contexto, tentativas e evidências.
+Componentes: criação e leitura de tarefas, status, dependências, contrato, contexto, tentativas, evidências e resumo estruturado (task_summary).
 Dependências: agent.services.task_service, agent.services.contract_service, agent.orchestrator.resume, agent.api.presenters.
 Observações: a transição de status é validada pela máquina de estados — o conflito vira 409, não 500.
 """
@@ -492,3 +492,27 @@ def task_evidences(task_id: uuid.UUID, session: Session = Depends(db_session)) -
         }
         for r in rows
     ]
+
+
+@router.get("/tasks/{task_id}/summary")
+def task_summary(task_id: uuid.UUID, session: Session = Depends(db_session)) -> dict:
+    """Resumo estruturado de uma subtarefa, lido do estado persistido (sem inferência).
+
+    Args:
+        task_id: identificador da tarefa consultada.
+        session: sessão do banco da requisição.
+
+    Returns:
+        Objetivo, descobertas, arquivos analisados e alterados, decisões, resultado, verificações,
+        evidências, problemas, pendências, riscos e próximas ações, com referências ao detalhe.
+
+    Raises:
+        HTTPException: com status 404 quando a tarefa não existe.
+    """
+    from agent.orchestrator.subtask_summary import structured_summary
+    from agent.persistence.models import TaskModel
+
+    task = session.get(TaskModel, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="tarefa não encontrada")
+    return structured_summary(session, task)

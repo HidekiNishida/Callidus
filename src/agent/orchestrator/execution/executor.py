@@ -3,7 +3,7 @@ Arquivo: src/agent/orchestrator/execution/executor.py
 Nome: executor.py
 Propósito: executar uma única tarefa da árvore e registrar o desfecho dela.
 Responsabilidade: camada de aplicação — despacho da etapa (MCP, modelo, ferramenta, verificação) e a evidência.
-Componentes: TaskExecutor (execute, finalize_verification, write_final_answer, save_requested_memory).
+Componentes: TaskExecutor (execute, finalize_verification, diagnostic_complement, approval_gate, inflight_guard, clear_inflight, await_approval, write_final_answer, save_requested_memory), unmet_criterion, stage_finding.
 Dependências: agent.orchestrator.execution.*, agent.services.*, agent.verification.*, agent.tools.registry.
 Observações: o executor decide **como** a etapa roda; o orquestrador decide **quando** ela roda.
 """
@@ -65,6 +65,52 @@ from agent.verification.fingerprint import snapshot as artifact_snapshot
 from agent.verification.runner import VerificationResult, run_verification
 
 ENVIRONMENT_FAILURES = (FailureCategory.CONFIGURATION, FailureCategory.EXTERNAL_UNAVAILABLE)
+
+
+#: Orçamento (caracteres) do que as etapas descobriram, levado à resposta final: por etapa e no total.
+_FINAL_ANSWER_FINDING_CHARS = 1500
+_FINAL_ANSWER_FINDINGS_BUDGET = 4500
+
+
+def stage_finding(result: dict[str, Any]) -> str:
+    """Trecho do resultado de uma etapa que vale levar à resposta final.
+
+    Args:
+        result: resultado consolidado da etapa.
+
+    Returns:
+        O texto produzido pela etapa (resumo, conteúdo lido, saída), ou vazio.
+    """
+    if not isinstance(result, dict):
+        return ""
+    if isinstance(result.get("markdown"), str) and result["markdown"].strip():
+        return result["markdown"].strip()
+    inner = result.get("result") if isinstance(result.get("result"), dict) else {}
+    for key in ("content", "stdout", "summary", "text"):
+        if isinstance(inner.get(key), str) and inner[key].strip():
+            return inner[key].strip()
+    summary = result.get("summary")
+    return summary.strip() if isinstance(summary, str) else ""
+
+
+def unmet_criterion(spec: dict[str, Any], summary: str) -> str:
+    """Descreve, em uma linha, o critério de verificação que não foi satisfeito.
+
+    Args:
+        spec: critério de verificação que reprovou.
+        summary: resumo devolvido pelo verificador.
+
+    Returns:
+        O tipo do verificador e o alvo (arquivo, trecho, comando), seguidos do resumo.
+    """
+    kind = str(spec.get("type") or "verificação")
+    target = spec.get("path") or spec.get("command") or ""
+    if isinstance(target, list):
+        target = " ".join(str(part) for part in target)
+    contains = spec.get("contains")
+    parts = [kind, str(target)] + ([f"contém {str(contains)[:60]!r}"] if contains else [])
+    head = " ".join(part for part in parts if part)
+    return f"{head}: {summary[:160]}" if summary else head
 
 # Natureza possível de uma etapa: cada uma leva a um ramo diferente do despacho.
 _ACTION_KEYS = ("mcp_tool", "final_answer", "model_operation", "automation_operation", "tool", "verification")
@@ -147,6 +193,173 @@ class TaskExecutor:
             A falha registrada, com assinatura e estratégia.
         """
         return remember_failure(task, failure)
+
+    def approval_gate(self, run: ExecutionRunModel, project: ProjectModel | None, task: TaskModel):
+        """Portão de aprovação granular desta etapa, entregue ao contexto da ferramenta.
+
+        Args:
+            run: execução em curso.
+            project: projeto da execução.
+            task: etapa que fará as chamadas.
+
+        Returns:
+            Função `(tool, args, risk, reason) -> veredito` que consulta o pedido de aprovação
+            persistido da operação, consome uma aprovação concedida e abre o pedido quando
+            ainda não existe (registrando o evento `approval.requested`).
+        """
+        from agent.observability import emit
+        from agent.services.approval_service import ApprovalService
+
+        def _gate(tool: str, args: dict[str, Any], risk: str, reason: str) -> dict[str, Any]:
+            verdict = ApprovalService(self._session).check(
+                tool=tool,
+                args=args,
+                task_id=task.id,
+                run_id=run.id,
+                project_id=project.id if project is not None else None,
+                risk=risk,
+                reason=reason,
+            )
+            if verdict.get("created"):
+                emit(
+                    "approval.requested",
+                    {"approval_id": verdict["approval_id"], "tool": tool, "risk": risk, "reason": reason},
+                    task_id=task.id,
+                    commit=True,
+                )
+            return verdict
+
+        return _gate
+
+    def inflight_guard(
+        self,
+        run: ExecutionRunModel,
+        project: ProjectModel | None,
+        task: TaskModel,
+        tool_id: str,
+        args: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Torna a retomada idempotente para operações que não podem ser repetidas com segurança.
+
+        Antes de uma operação não repetível (a que exige aprovação ou mexe em configuração), a
+        etapa grava — e confirma no banco — o marcador `inflight_operation`. Se a execução cair
+        no meio, a retomada reencontra o marcador: a operação pode já ter produzido efeito, então
+        ela não é repetida às cegas; abre-se um pedido de confirmação para esta operação.
+
+        Args:
+            run: execução em curso.
+            project: projeto da execução.
+            task: etapa que fará a chamada.
+            tool_id: ferramenta pedida.
+            args: argumentos da chamada.
+
+        Returns:
+            `None` quando a operação é repetível ou não havia marcador (o marcador é gravado);
+            senão o veredito do pedido de confirmação (`approved`, `approval_id`, `status`).
+        """
+        from agent.services.approval_service import ApprovalService, operation_key
+
+        try:
+            spec = self._tools.get_spec(tool_id)
+        except Exception:  # ferramenta desconhecida: o registro devolve o erro adequado
+            return None
+        if not (spec.requires_approval or spec.risk in {"configure", "privileged"}):
+            return None
+        key = operation_key(tool_id, args)
+        meta = dict(task.metadata_json or {})
+        marker = meta.get("inflight_operation")
+        if isinstance(marker, dict) and marker.get("key") == key:
+            verdict = ApprovalService(self._session).check(
+                tool=tool_id,
+                args={**args, "_resume_after_interruption": True},
+                task_id=task.id,
+                run_id=run.id,
+                project_id=project.id if project is not None else None,
+                risk=spec.risk,
+                reason="a execução foi interrompida durante esta operação; ela pode já ter produzido efeito",
+            )
+            if verdict.get("created"):
+                from agent.observability import emit
+
+                emit(
+                    "approval.requested",
+                    {"approval_id": verdict["approval_id"], "tool": tool_id, "reason": "retomada após interrupção"},
+                    task_id=task.id,
+                    commit=True,
+                )
+            return verdict
+        meta["inflight_operation"] = {"tool": tool_id, "key": key}
+        task.metadata_json = meta
+        # O marcador precisa estar no disco **antes** do efeito: é ele que a retomada lê.
+        self._session.commit()
+        return None
+
+    def clear_inflight(self, task: TaskModel) -> None:
+        """Remove o marcador de operação em voo depois que a chamada voltou (com sucesso ou não).
+
+        Args:
+            task: etapa que fez a chamada.
+        """
+        meta = task.metadata_json or {}
+        if "inflight_operation" in meta:
+            task.metadata_json = {k: v for k, v in meta.items() if k != "inflight_operation"}
+
+    def await_approval(
+        self,
+        run: ExecutionRunModel,
+        task: TaskModel,
+        tool_id: str,
+        out: dict[str, Any],
+        failure: Failure | None,
+    ) -> dict[str, Any]:
+        """A operação do plano exige aprovação: a etapa espera a decisão em vez de repetir a chamada.
+
+        Repetir uma chamada recusada por falta de aprovação devolve a mesma recusa e só
+        consome tentativas. A etapa fica BLOCKED com o pedido anotado (`awaiting_approval`);
+        o orquestrador pausa o run, e a decisão (`ApprovalService.decide`) a devolve ao fluxo.
+        Uma operação **negada** também bloqueia, mas sem espera: o replanejamento decide.
+
+        Args:
+            run: execução em curso.
+            task: etapa que pediu a operação.
+            tool_id: ferramenta recusada.
+            out: recusa devolvida pelo registro, com `approval_id` e `approval_status`.
+            failure: falha classificada da recusa.
+
+        Returns:
+            Ação `awaiting_approval` (pedido pendente) ou `approval_denied` (negado).
+        """
+        approval_id = str(out.get("approval_id"))
+        denied = out.get("approval_status") == "denied"
+        if failure is not None:
+            self.remember_failure(task, failure)
+        meta = dict(task.metadata_json or {})
+        if denied:
+            meta.pop("awaiting_approval", None)
+            reason = f"operação negada por quem aprova: {tool_id}"
+        else:
+            meta["awaiting_approval"] = approval_id
+            reason = f"aguardando aprovação para {tool_id}"
+        meta["blocked_reason"] = reason
+        task.metadata_json = meta
+        self.note_thought(
+            run,
+            task,
+            (
+                f"A operação {tool_id} foi negada. Não vou executá-la; o plano precisa de outro caminho."
+                if denied
+                else f"A operação {tool_id} é arriscada e precisa de aprovação. Vou esperar a decisão, sem repetir a chamada."
+            ),
+            phase="block",
+            category="alert",
+        )
+        self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.BLOCKED, reason=reason))
+        return {
+            "action": "approval_denied" if denied else "awaiting_approval",
+            "task_id": str(task.id),
+            "approval_id": approval_id,
+            "tool": tool_id,
+        }
 
     def _provider(self, settings, config: dict):
         """Provedor do run segundo a política da execução.
@@ -287,6 +500,7 @@ class TaskExecutor:
             # pedir o catálogo e o detalhe de uma ferramenta sob demanda.
             policy=tool_policy(self._settings),
             scratch={"registry": self._tools},
+            approval_gate=self.approval_gate(run, project, task),
         )
         approved = bool(config.get("approve_risky_tools") or meta.get("approved"))
 
@@ -352,7 +566,19 @@ class TaskExecutor:
             plan_write_journal = WriteJournal(root_path) if tool_id in {"write_file", "edit_file"} else None
             if plan_write_journal is not None:
                 plan_write_journal.remember(tool_id, args.get("path"))
-            out = await self._tools.execute(tool_id, ctx, args, approved=approved)
+            guarded = self.inflight_guard(run, project, task, tool_id, args)
+            if guarded is not None and not guarded.get("approved"):
+                return self.await_approval(
+                    run,
+                    task,
+                    tool_id,
+                    {"approval_id": guarded.get("approval_id"), "approval_status": guarded.get("status")},
+                    None,
+                )
+            out = await self._tools.execute(tool_id, ctx, args, approved=approved or bool(guarded))
+            self.clear_inflight(task)
+            if plan_write_journal is not None and out.get("success"):
+                plan_write_journal.settle(tool_id, args.get("path"))
             fp = AttemptService.fingerprint({"tool": tool_id, "result": out})
             if self._attempts.repeated_output_detected(task.id, fp, kind=AttemptKind.TOOL):
                 noted = self.remember_failure(
@@ -385,6 +611,8 @@ class TaskExecutor:
                 failure=failure,
             )
             task.consolidated_result_json = {"tool": tool_id, "result": out}
+            if out.get("error") == "approval_required" and out.get("approval_id"):
+                return self.await_approval(run, task, tool_id, out, failure)
             if out.get("success") and tool_id in {"write_file", "edit_file", "move_file"}:
                 p = args.get("path") or args.get("to") or args.get("dest")
                 if isinstance(p, str):
@@ -406,6 +634,8 @@ class TaskExecutor:
                             run, task, "A verificação reprovou a edição do plano; desfiz a escrita.", phase="recover"
                         )
                         done["undone"] = restored
+                    if plan_write_journal.conflicts:
+                        done["rollback_conflicts"] = plan_write_journal.conflicts
                 return done
             if is_informative_test_result(tool_id, out):
                 # Rodar a suíte e ver os testes falharem **é o resultado**, não uma ferramenta
@@ -545,18 +775,24 @@ class TaskExecutor:
 
         siblings = children_of(self._session, task.parent_id) if task.parent_id else []
         stages: list[dict] = []
+        budget = _FINAL_ANSWER_FINDINGS_BUDGET
         for sibling in siblings:
             if sibling.id == task.id:
                 continue
             result = sibling.consolidated_result_json or {}
             blob = str(result)
-            stages.append(
-                {
-                    "title": sibling.title,
-                    "status": sibling.status,
-                    "sources": extract_sources(blob, sibling.objective or ""),
-                }
-            )
+            stage = {
+                "title": sibling.title,
+                "status": sibling.status,
+                "sources": extract_sources(blob, sibling.objective or ""),
+            }
+            # O que a etapa descobriu (o arquivo lido, a saída do comando), dentro de um orçamento
+            # fixo: sem isso a resposta final de "leia e explique" seria escrita sem o conteúdo.
+            finding = stage_finding(result)[: min(_FINAL_ANSWER_FINDING_CHARS, budget)]
+            if finding and sibling.status == TaskStatus.COMPLETED.value:
+                stage["finding"] = finding
+                budget -= len(finding)
+            stages.append(stage)
         parent = self._tasks.get_task(task.parent_id) if task.parent_id else task
         objective = parent.objective if parent else task.objective
         provider = self._provider(settings=self._settings, config=config)
@@ -681,9 +917,21 @@ class TaskExecutor:
             # Tratar como ausente é melhor do que derrubar a etapa com uma exceção.
             spec = None
         if not isinstance(spec, dict) or not spec:
+            # Etapa sem verificador automático aplicável (leitura, explicação, operação externa):
+            # conclui, mas a limitação fica **registrada** — ausência de verificação não é
+            # aprovação. A aceitação por requisito continua exigindo prova na raiz.
+            from agent.observability import emit
+
+            reason = "a etapa não declara verificação e não alterou arquivos que gerem uma implícita"
+            task.consolidated_result_json = {
+                **(task.consolidated_result_json or {}),
+                "verified": None,
+                "verification_absent": reason,
+            }
+            emit("verification.skipped", {"reason": reason}, task_id=task.id)
             self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.COMPLETED))
             consolidate_parent(self._session, task.parent_id) if task.parent_id else None
-            return {"action": "completed_without_verification", "task_id": str(task.id)}
+            return {"action": "completed_without_verification", "task_id": str(task.id), "verified": None}
 
         config = run.config_json or {}
         approved = bool(config.get("approve_risky_tools"))
@@ -722,6 +970,10 @@ class TaskExecutor:
         )
         if failure is not None:
             detail["reason"] = failure.detail[:500]
+        if vresult.passed is False and not blocked and not meta.get("final_answer"):
+            complement = await self.diagnostic_complement(root_path, spec, vresult, detail, tool_args)
+            if complement:
+                detail["complement"] = complement
         attempt = self._attempts.record(
             run_id=run.id,
             task_id=task.id,
@@ -746,7 +998,10 @@ class TaskExecutor:
         self._session.flush()
 
         if vresult.passed is True:
+            # O veredito se soma ao resultado da etapa (o arquivo lido, a saída): substituí-lo
+            # apagaria o que a etapa produziu e que o pai e a resposta final precisam ler.
             task.consolidated_result_json = {
+                **(task.consolidated_result_json or {}),
                 "verified": True,
                 "summary": vresult.summary,
             }
@@ -853,6 +1108,57 @@ class TaskExecutor:
         )
         return {"action": "verify_inconclusive", "task_id": str(task.id), "failure": noted}
 
+    async def diagnostic_complement(
+        self,
+        root_path: str,
+        spec: dict[str, Any],
+        vresult: Any,
+        detail: dict[str, Any],
+        tool_args: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Roda uma verificação complementar somente-leitura para estreitar a causa da reprovação.
+
+        Um complemento que passa (o arquivo existe, a sintaxe é válida) **não aprova** a etapa:
+        ele diz que a falha está em outro lugar (comportamento, conteúdo), e isso vai para a
+        orientação da próxima tentativa.
+
+        Args:
+            root_path: pasta de trabalho.
+            spec: critério que reprovou.
+            vresult: resultado reprovado.
+            detail: detalhe da reprovação.
+            tool_args: argumentos da ferramenta da etapa.
+
+        Returns:
+            `{"verifier", "passed", "summary"}` do complemento que passou, ou `None`.
+        """
+        from agent.observability import emit
+        from agent.verification.alternatives import run_alternative_verification
+        from agent.verification.recovery import diagnose_verification_failure
+
+        diagnosis = diagnose_verification_failure(
+            verifier=vresult.verifier, summary=vresult.summary, detail=detail, spec=spec
+        )
+        try:
+            alt = await run_alternative_verification(
+                project_root=root_path,
+                spec=spec,
+                primary_verifier=vresult.verifier,
+                diagnosis=diagnosis,
+                attempted=[vresult.verifier],
+                tool_args=tool_args,
+                approved=False,
+            )
+        except Exception:  # o complemento é diagnóstico: falhar nele não muda o veredito
+            return None
+        if alt is None:
+            return None
+        emit(
+            "verification.alternative",
+            {"verifier": alt.verifier, "primary_verifier": vresult.verifier, "passed": alt.passed},
+        )
+        return {"verifier": alt.verifier, "passed": alt.passed, "summary": str(alt.summary)[:300]}
+
     def plan_verification_recovery(
         self,
         task: TaskModel,
@@ -894,6 +1200,15 @@ class TaskExecutor:
         )
         plan["signature"] = signature
         plan["recoveries"] = recoveries
+        plan["diagnosis"] = diagnosis.as_dict()
+        plan["unmet_criterion"] = unmet_criterion(spec, vresult.summary)
+        complement = detail.get("complement")
+        if isinstance(complement, dict) and complement.get("passed") is True:
+            plan["guidance"] = (
+                f"{plan.get('guidance') or ''} Conferido à parte ({complement['verifier']}): "
+                f"{complement['summary']} — a reprovação não vem daí; corrija o comportamento que "
+                f"o critério «{plan['unmet_criterion']}» mede."
+            ).strip()
         if previous and previous == signature and plan.get("retry"):
             # A **mesma causa** de reprovação voltou. Um contador cru deixaria a recuperação
             # consumir o orçamento de novo como se fosse um problema diferente; a assinatura

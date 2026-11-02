@@ -19,7 +19,7 @@ from agent.domain.enums import TaskKind, TaskStatus
 from agent.domain.failures import classify_verification
 from agent.domain.schemas import ProjectCreate, TaskCreate
 from agent.persistence.database import build_session_factory, init_db
-from agent.persistence.models import ExecutionRunModel, TaskModel
+from agent.persistence.models import EvidenceModel, ExecutionRunModel, TaskModel
 from agent.services.attempt_service import AttemptService
 from agent.services.project_service import ProjectService
 from agent.services.task_service import TaskService
@@ -247,8 +247,14 @@ def test_classify_verification_none_when_passed():
 
 @pytest.mark.asyncio
 async def test_gate_blocks_when_verification_fails(session, project, run, tmp_path):
+    """Verificação declarada que reprova: não conclui, diagnostica e planeja a recuperação."""
     settings = Settings(data_dir=tmp_path)
-    task = _make_task(session, project, acceptance="arquivo inexistente")
+    task = _make_task(
+        session,
+        project,
+        acceptance="arquivo inexistente",
+        metadata={"verification": {"type": "file_exists", "path": "nao_existe.py"}},
+    )
     session.commit()
 
     executor = _make_executor(session, settings, task)
@@ -264,13 +270,60 @@ async def test_gate_blocks_when_verification_fails(session, project, run, tmp_pa
 
     assert result.passed is False
     assert result.stage == "executed"
-    assert result.blocked is True
     assert result.diagnosis is not None
     assert result.recovery is not None
+    assert result.recovery.get("unmet_criterion", "").startswith("file_exists nao_existe.py")
     assert result.evidence_id is not None
 
     updated = session.get(TaskModel, task.id)
     assert updated.status in {TaskStatus.BLOCKED.value, TaskStatus.RETRY_PENDING.value}
+    assert result.blocked == (updated.status == TaskStatus.BLOCKED.value)
+
+
+@pytest.mark.asyncio
+async def test_gate_without_verifier_records_limitation(session, project, run, tmp_path):
+    """Sem verificador aplicável, a etapa conclui marcada como não verificada (não como aprovada)."""
+    settings = Settings(data_dir=tmp_path)
+    task = _make_task(session, project, acceptance="explicar o arquivo")
+    session.commit()
+
+    result = await VerificationGate(_make_executor(session, settings, task)).gate(
+        run=run, project=project, task=task, root_path=str(project.root_path)
+    )
+
+    assert result.passed is False
+    assert result.unverified is True
+    updated = session.get(TaskModel, task.id)
+    assert updated.consolidated_result_json["verified"] is None
+    assert updated.consolidated_result_json["verification_absent"]
+
+
+@pytest.mark.asyncio
+async def test_weaker_check_never_approves_failed_verification(session, project, run, tmp_path):
+    """Regressão do verde falso: o arquivo existe e a sintaxe é válida, mas o critério declarado
+    (o trecho esperado) não está lá — a etapa continua reprovada; o complemento só orienta."""
+    import pathlib
+
+    (pathlib.Path(project.root_path) / "calc.py").write_text("def soma(a, b):\n    return a - b\n", encoding="utf-8")
+    settings = Settings(data_dir=tmp_path)
+    task = _make_task(
+        session,
+        project,
+        metadata={"verification": {"type": "file_contains", "path": "calc.py", "contains": "return a + b"}},
+    )
+    session.commit()
+
+    result = await VerificationGate(_make_executor(session, settings, task)).gate(
+        run=run, project=project, task=task, root_path=str(project.root_path)
+    )
+
+    assert result.passed is False
+    updated = session.get(TaskModel, task.id)
+    assert updated.status != TaskStatus.COMPLETED.value
+    evidence = session.get(EvidenceModel, result.evidence_id)
+    assert evidence.passed is False
+    assert evidence.detail_json["complement"]["passed"] is True
+    assert "a reprovação não vem daí" in result.recovery["guidance"]
 
 
 @pytest.mark.asyncio

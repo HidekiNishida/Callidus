@@ -34,7 +34,7 @@ def session(tmp_path: Path):
 
 
 def test_parent_not_completed_without_verification_evidence(session, tmp_path: Path):
-    """Sem evidência de verificação, o pai volta ao planejamento e o filho fica pendente de nova tentativa."""
+    """Sem evidência de verificação, o pai volta ao planejamento e o filho é reverificado (não reexecutado)."""
     project = ProjectService(session).create_project(
         ProjectCreate(name="p", root_path=str(tmp_path))
     )
@@ -56,7 +56,8 @@ def test_parent_not_completed_without_verification_evidence(session, tmp_path: P
     assert report is not None
     assert report["achieved"] is False
     assert TaskStatus(ts.get_task(parent.id).status) == TaskStatus.PLANNING
-    assert TaskStatus(ts.get_task(child.id).status) == TaskStatus.RETRY_PENDING
+    # Medir de novo antes de refazer: reexecutar sobrescreveria o que uma etapa irmã gravou.
+    assert TaskStatus(ts.get_task(child.id).status) == TaskStatus.VERIFYING
 
 
 def test_parent_completed_when_evidence_present(session, tmp_path: Path):

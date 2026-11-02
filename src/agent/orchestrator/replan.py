@@ -149,7 +149,16 @@ def replan_parent(session: Session, parent: TaskModel) -> dict | None:
     """
     meta = dict(parent.metadata_json or {})
     kids = children_of(session, parent.id)
-    stopped = next((kid for kid in kids if kid.status in _STOP and not superseded(kid)), None)
+    # Etapa que só espera decisão humana (aprovação) não é um plano errado: replanejar
+    # contornaria a aprovação pedida.
+    stopped = next(
+        (
+            kid
+            for kid in kids
+            if kid.status in _STOP and not superseded(kid) and not (kid.metadata_json or {}).get("awaiting_approval")
+        ),
+        None,
+    )
     if stopped is None:
         return None
     if any((kid.metadata_json or {}).get("replan") and kid.status not in {*_STOP, TaskStatus.CANCELLED.value, TaskStatus.COMPLETED.value} for kid in kids):

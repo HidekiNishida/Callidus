@@ -45,9 +45,12 @@ Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) 
 | `POST` | `/runs/{id}/step` | **Um passo do orquestrador** |
 | `POST` | `/runs/{id}/execute` | Múltiplos passos (`run_until_idle`) |
 | `POST` | `/runs/{id}/pause\|resume\|cancel\|autonomous/enable\|disable` | Controle de run |
+| `GET` | `/runs/{id}/approvals` | Pedidos de aprovação granular do run (ferramenta, argumentos redigidos, risco, estado) |
+| `POST` | `/approvals/{id}/approve\|deny` | Decide **uma** operação pendente; aprovada, a etapa volta ao fluxo e o run é retomado (404 inexistente, 409 já decidido) |
 | `GET` | `/projects/{id}/live` | Estado atual para UI (thoughts, focus, action) |
 | `GET` | `/projects/{id}/overview` | Resumo (tasks por status, run ativa) |
 | `GET` | `/tasks/{id}/attempts\|evidences\|context-snapshots\|contract` | Detalhes da tarefa |
+| `GET` | `/tasks/{id}/summary` | Resumo estruturado da subtarefa, lido do estado persistido (sem inferência) |
 | `GET/POST` | `/projects/{id}/memory` | CRUD memória |
 | `POST` | `/projects/{id}/knowledge/reindex\|search\|neighbors` | Grafo de conhecimento |
 | `GET` | `/projects/{id}/metrics\|events` | Métricas + timeline de eventos |

@@ -4,7 +4,7 @@ Em que estágio o Callidus está e quanto falta para o próximo.
 
 Detalhes: [docs/progresso/](/docs/progresso/README.md) · Fila: [gaps.md](/docs/progresso/gaps.md) · Formato: [progresso.md](/docs/regras/progresso.md)
 
-> **Revisado em:** 2026-10-22 · **Atualizado em:** 2026-10-22 · **Mudança:** minor (adaptação ao qwen3:8b; contagem de testes)
+> **Revisado em:** 2026-11-02 · **Atualizado em:** 2026-11-02 · **Mudança:** minor (Etapas 1 e 2: portão único, aprovação granular, retomada idempotente, consolidação)
 
 **Estágio:** alpha · **Próximo:** beta (critérios propostos, aguardando o dono)
 
@@ -14,10 +14,10 @@ Detalhes: [docs/progresso/](/docs/progresso/README.md) · Fila: [gaps.md](/docs/
 |---|-------|------|
 | Fluxos centrais que passam no portão do alpha | 6 / 6 (1 com ressalvas) | medido |
 | Cenários aceitos com o modelo local (`gpt-oss:20b`) | 15 / 15 | medido (2026-10-20) |
-| Testes Python / testes da interface | 1 398 casos passam / 124 passam | medido (2026-11-02) |
-| Qualidade geral | ~61 % | estimado |
-| Horas até o beta | ~43 h | estimado |
-| Horas para fechar toda a fila | ~114 h | estimado |
+| Testes Python / testes da interface | 1 420 casos passam / 124 passam | medido (2026-11-02) |
+| Qualidade geral | ~63 % | estimado |
+| Horas até o beta | ~34 h | estimado |
+| Horas para fechar toda a fila | ~105 h | estimado |
 
 ## 📐 Por dimensão
 
@@ -41,6 +41,7 @@ Detalhes: [docs/progresso/](/docs/progresso/README.md) · Fila: [gaps.md](/docs/
 
 | Data | O que entrou |
 |------|--------------|
+| 2026-11-02 | Etapas 1 e 2 — confiabilidade e decomposição: portão de verificação único (o gate paralelo aprovava por verificador mais fraco), conclusão sem verificador registrada, critério não satisfeito na recuperação, aprovação granular por operação com pausa e retomada, retomada sem repetir operação não repetível, rollback que preserva alteração de terceiros, pai com critério próprio passa pelo portão, irmã desatualizada é reverificada (não reexecutada), plano direto para "leia e explique", resumos estruturados; 8 cenários de integração ([confiabilidade-decomposicao.md](/docs/architecture/confiabilidade-decomposicao.md)) |
 | 2026-11-02 | Narração do agente em tempo real: a fala pública do modelo chega à Atividade do agente fragmento a fragmento, sem inferência extra (primeiro trecho a 355 ms com `qwen3-vl:8b`, *medido*); chamadas de ferramenta deixaram de se perder nos streams de OpenAI-compatível, llama.cpp, Anthropic e Gemini ([narracao-tempo-real.md](/docs/architecture/narracao-tempo-real.md)) |
 | 2026-10-27 | `qwen3-vl:8b` real na tarefa média: o run deixou de quebrar (antes: 3 de 3 com exceção) e passou a escrever o código certo; plano de 2 048 tokens vazios para ~500 tokens úteis, operação concluída de 15–295 s para 6–27 s (bloco de raciocínio vazio, janela que acompanha a reserva, prova por arquivo, `pytest` sem testes, chamadas em JSON solto); conclusão comprovada ainda pendente ([avaliacao.md](/docs/architecture/avaliacao.md)) |
 | 2026-10-22 | Adaptação ao `qwen3:8b`: janela e saída explícitas no Ollama, estimativa de tokens calibrada (real/estimado era 1,30), conversa do ciclo de ferramentas dentro da janela, reparo único do plano com esquema, estado de tarefas irmãs fora das regras do projeto; medição com servidor simulado ([avaliacao.md](/docs/architecture/avaliacao.md#-qwen38b--servidor-ollama-simulado)) |
@@ -53,5 +54,6 @@ Detalhes: [docs/progresso/](/docs/progresso/README.md) · Fila: [gaps.md](/docs/
 
 | Data | Mudança | Resumo |
 |------|---------|--------|
+| 2026-11-02 | minor | Etapas 1 e 2; G3 e G4 parciais; contagem de testes |
 | 2026-10-22 | minor | Adaptação ao `qwen3:8b` e contagem de testes refeita |
 | 2026-10-21 | major | Criação a partir do kit de agentes de IA |

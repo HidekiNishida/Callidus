@@ -102,6 +102,9 @@ class ToolContext:
     cancel_event: asyncio.Event | None = None
     # Estado livre para ferramentas que precisam compartilhar memória entre chamadas.
     scratch: dict[str, Any] = field(default_factory=dict)
+    # Aprovação granular: `(tool, args, risk, reason) -> {"approved", "approval_id", "status"}`.
+    # Consultada só quando a chamada exige aprovação; a decisão vale para esta operação.
+    approval_gate: Callable[[str, dict[str, Any], str, str], dict[str, Any]] | None = None
 
     @property
     def cancelled(self) -> bool:
@@ -398,6 +401,8 @@ class ToolRegistry:
             }
 
         policy = ctx.policy
+        needs_approval = spec.requires_approval and not approved
+        reason = ""
         if policy is not None:
             risk = ToolRisk(spec.risk) if spec.risk in {item.value for item in ToolRisk} else ToolRisk.READ
             decision = policy.decide(tool_id, risk=risk, family=spec.family, approved=approved)
@@ -412,7 +417,13 @@ class ToolRegistry:
                     },
                 )
                 return {"success": False, "error": "bloqueado pela política", "tool": tool_id, "reason": decision.reason}
-            if (spec.requires_approval or decision.requires_approval) and not approved:
+            needs_approval = (spec.requires_approval or decision.requires_approval) and not approved
+            reason = decision.reason
+        if needs_approval:
+            # A política é avaliada aqui, na hora da execução: a aprovação granular vale
+            # só para esta ferramenta com estes argumentos (e é consumida ao ser usada).
+            verdict = ctx.approval_gate(tool_id, args, spec.risk, reason) if ctx.approval_gate else None
+            if not (verdict and verdict.get("approved")):
                 emit(
                     "tool.failed",
                     {
@@ -420,26 +431,15 @@ class ToolRegistry:
                         "tool": tool_id,
                         "error": "approval_required",
                         "executed": False,
-                        "reason": decision.reason,
+                        **({"reason": reason} if reason else {}),
                     },
                 )
-                return {
-                    "success": False,
-                    "error": "approval_required",
-                    "tool": tool_id,
-                    "reason": decision.reason,
-                    "risk": spec.risk,
-                }
-        elif spec.requires_approval and not approved:
-            emit(
-                "tool.failed",
-                {"call_id": uuid.uuid4().hex[:12], "tool": tool_id, "error": "approval_required", "executed": False},
-            )
-            return {
-                "success": False,
-                "error": "approval_required",
-                "tool": tool_id,
-            }
+                refusal: dict[str, Any] = {"success": False, "error": "approval_required", "tool": tool_id}
+                if policy is not None:
+                    refusal.update(reason=reason, risk=spec.risk)
+                if verdict:
+                    refusal.update(approval_id=verdict.get("approval_id"), approval_status=verdict.get("status"))
+                return refusal
         if ctx.cancelled:
             emit(
                 "tool.failed",

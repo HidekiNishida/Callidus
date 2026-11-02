@@ -296,8 +296,9 @@ def validate_children(
                 blocked.append(str(kid.id))
                 issues.append(Issue("external_blocked", PlanVerdict.WARNINGS, f"«{kid.title}» precisa do navegador, que está desligado", str(kid.id)))
             elif build_default_registry().get_spec(tool).requires_approval and not config.get("approve_risky_tools"):
-                blocked.append(str(kid.id))
-                issues.append(Issue("external_blocked", PlanVerdict.WARNINGS, f"«{kid.title}» depende de aprovação para {tool}", str(kid.id)))
+                # A aprovação é pedida na hora da execução, para esta operação (ApprovalService):
+                # a etapa não é inviável, só vai esperar a decisão humana.
+                issues.append(Issue("approval_pending", PlanVerdict.WARNINGS, f"«{kid.title}» vai pedir aprovação para {tool}", str(kid.id)))
             path = (meta.get("tool_args") or {}).get("path")
             if tool in _READS_PATH and isinstance(path, str) and path and not (Path(project_root) / path).exists():
                 if not _produced_before(session, kid, path):

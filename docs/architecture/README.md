@@ -27,6 +27,7 @@ Hub técnico do **Callidus** (código em [/src/agent/](/src/agent/README.md)).
 | [observabilidade-contexto.md](/docs/architecture/observabilidade-contexto.md) | **Observabilidade granular de contexto e tokens** — classificação de inferência, componentes do contexto, dashboard e API de consumo |
 | [narracao-tempo-real.md](/docs/architecture/narracao-tempo-real.md) | **Narração do agente em tempo real** — fala pública do modelo, fragmento a fragmento, na linha do tempo; eventos `agent.narration.*`, filtro, reconexão e provedores |
 | [execucao-autonoma.md](/docs/architecture/execucao-autonoma.md) | Worker autônomo |
+| [confiabilidade-decomposicao.md](/docs/architecture/confiabilidade-decomposicao.md) | **Confiabilidade e decomposição** — portão de verificação único, recuperação, aprovação granular, retomada idempotente, rollback seguro, resumos estruturados e cenários de integração |
 | [requisitos-verificacao-progresso.md](/docs/architecture/requisitos-verificacao-progresso.md) | Requisitos rastreáveis, validação do plano, verificação independente, progresso real |
 | [estrategia-resolucao.md](/docs/architecture/estrategia-resolucao.md) | **Estratégia de resolução** — memória de abordagem, detecção de estagnação, mudança de estratégia e limites coerentes |
 | [avaliacao.md](/docs/architecture/avaliacao.md) | **Avaliação reproduzível** — cenários com critérios objetivos e resultado medido com o modelo local |

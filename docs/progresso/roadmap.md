@@ -29,8 +29,8 @@ Critérios propostos, ainda **não aprovados pelo dono**:
 |----------|-----|-------|
 | Avaliação com ≥ 15 cenários, incluindo uma sessão longa, em ≥ 3 rodadas | [G1](/docs/progresso/gaps.md#g1-avaliação-real-ampla-e-repetível) | 10 |
 | Decomposição útil num repositório grande real | [G2](/docs/progresso/gaps.md#g2-decomposição-em-repositórios-grandes) | 16 |
-| Recuperação de verificação reprovada sem repetir o mesmo verificador | [G3](/docs/progresso/gaps.md#g3-recuperação-quando-a-verificação-reprova) | 8 |
-| Aprovação de ferramenta arriscada item a item na UI | [G4](/docs/progresso/gaps.md#g4-aprovação-granular-de-ferramentas-arriscadas-na-ui) | 8 |
+| Recuperação de verificação reprovada sem repetir o mesmo verificador | [G3](/docs/progresso/gaps.md#g3-recuperação-quando-a-verificação-reprova) | 3 |
+| Aprovação de ferramenta arriscada item a item na UI | [G4](/docs/progresso/gaps.md#g4-aprovação-granular-de-ferramentas-arriscadas-na-ui) | 4 |
 | Versão única e licença definida | [G13](/docs/progresso/gaps.md#g13-versão-e-licença) | 1 |
 
 ## 🎯 Foco atual

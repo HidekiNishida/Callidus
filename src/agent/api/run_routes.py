@@ -3,7 +3,7 @@ Arquivo: src/agent/api/run_routes.py
 Nome: run_routes.py
 Propósito: expor as execuções: iniciar, avançar, pausar, retomar, cancelar e medir.
 Responsabilidade: camada de apresentação/transport — rotas de execução; delega o passo ao orquestrador.
-Componentes: start_run, list_runs, run_step, run_execute, pause_run, resume_run, cancel_run, autônomo, métricas.
+Componentes: start_run, list_runs, run_step, run_execute, pause_run, resume_run, cancel_run, autônomo, métricas, aprovações granulares (list_run_approvals, approve_operation, deny_operation).
 Dependências: agent.services.run_service, agent.services.autonomous_worker, agent.orchestrator.runner, agent.services.metrics_service.
 Observações: o passo é o mesmo que o worker autônomo usa — a verificação não depende de quem executa.
 """
@@ -346,3 +346,89 @@ def cancel_run(run_id: uuid.UUID, session: Session = Depends(db_session)) -> dic
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"id": str(run.id), "status": run.status}
+
+
+class ApprovalDecisionBody(BaseModel):
+    """Decisão sobre um pedido de aprovação.
+
+    Atributos:
+        note: observação opcional de quem decidiu (fica no registro auditável).
+    """
+
+    note: str | None = None
+
+
+@router.get("/runs/{run_id}/approvals")
+def list_run_approvals(run_id: uuid.UUID, session: Session = Depends(db_session)) -> list[dict]:
+    """Lista os pedidos de aprovação de operações arriscadas de uma execução.
+
+    Args:
+        run_id: execução consultada.
+        session: sessão do banco da requisição.
+
+    Returns:
+        Os pedidos, com ferramenta, argumentos redigidos, risco, estado e datas.
+
+    Raises:
+        HTTPException: com status 404 quando a run não existe.
+    """
+    from agent.services.approval_service import ApprovalService, approval_view
+
+    if session.get(ExecutionRunModel, run_id) is None:
+        raise HTTPException(status_code=404, detail="run não encontrado")
+    return [approval_view(row) for row in ApprovalService(session).list_for_run(run_id)]
+
+
+def _decide_approval(approval_id: uuid.UUID, approve: bool, body: ApprovalDecisionBody | None, session: Session) -> dict:
+    """Aplica a decisão e traduz os erros do serviço em respostas HTTP."""
+    from agent.services.approval_service import ApprovalService, approval_view
+
+    try:
+        row = ApprovalService(session).decide(approval_id, approve=approve, note=body.note if body else None)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="pedido de aprovação não encontrado") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    session.commit()
+    run = session.get(ExecutionRunModel, row.run_id) if row.run_id else None
+    return {**approval_view(row), "run_status": run.status if run is not None else None}
+
+
+@router.post("/approvals/{approval_id}/approve")
+def approve_operation(
+    approval_id: uuid.UUID, body: ApprovalDecisionBody | None = None, session: Session = Depends(db_session)
+) -> dict:
+    """Aprova **uma** operação pendente; a execução que esperava por ela é retomada.
+
+    Args:
+        approval_id: pedido aprovado.
+        body: observação opcional.
+        session: sessão do banco da requisição.
+
+    Returns:
+        O pedido com a decisão e o estado atual da run.
+
+    Raises:
+        HTTPException: 404 quando o pedido não existe; 409 quando já foi decidido.
+    """
+    return _decide_approval(approval_id, True, body, session)
+
+
+@router.post("/approvals/{approval_id}/deny")
+def deny_operation(
+    approval_id: uuid.UUID, body: ApprovalDecisionBody | None = None, session: Session = Depends(db_session)
+) -> dict:
+    """Nega uma operação pendente; a etapa continua bloqueada e o plano procura outro caminho.
+
+    Args:
+        approval_id: pedido negado.
+        body: observação opcional.
+        session: sessão do banco da requisição.
+
+    Returns:
+        O pedido com a decisão e o estado atual da run.
+
+    Raises:
+        HTTPException: 404 quando o pedido não existe; 409 quando já foi decidido.
+    """
+    return _decide_approval(approval_id, False, body, session)

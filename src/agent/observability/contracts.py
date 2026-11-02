@@ -134,6 +134,18 @@ EVENT_SPECS: dict[str, EventSpec] = {
         _spec("budget.granted", ("tokens", "reason"), description="autorização explícita de mais tokens para a execução"),
         _spec("verification.recovery_planned", ("cause", "action"), description="recuperação da verificação planejada"),
         _spec(
+            "verification.alternative",
+            ("verifier", "primary_verifier", "passed"),
+            description="verificador alternativo rodou depois que o principal reprovou",
+        ),
+        _spec(
+            "verification.skipped",
+            ("reason",),
+            description="etapa concluída sem verificador automático; a limitação fica registrada, não vira aprovação",
+        ),
+        _spec("approval.requested", ("approval_id", "tool"), description="operação arriscada aguarda aprovação"),
+        _spec("approval.decided", ("approval_id", "status"), description="aprovação concedida ou negada para uma operação"),
+        _spec(
             "context.history_compacted",
             ("purpose", "results"),
             description="resultados antigos do ciclo de ferramentas resumidos para a conversa caber na janela do modelo",

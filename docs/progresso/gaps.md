@@ -14,8 +14,8 @@ Voltar: [docs/progresso/](/docs/progresso/README.md) · Formato: [progresso.md](
 |------|-----|-------|------------------|-----------|
 | 1 | [G1 Avaliação real ampla e repetível](#g1-avaliação-real-ampla-e-repetível) | 10 | Sim | [desempenho](/docs/progresso/checklists/desempenho.md) |
 | 2 | [G2 Decomposição em repositórios grandes](#g2-decomposição-em-repositórios-grandes) | 16 | Sim | [funcionalidades](/docs/progresso/checklists/funcionalidades.md) |
-| 3 | [G3 Recuperação quando a verificação reprova](#g3-recuperação-quando-a-verificação-reprova) | 8 | Sim | [funcionalidades](/docs/progresso/checklists/funcionalidades.md) |
-| 4 | [G4 Aprovação granular de ferramentas arriscadas na UI](#g4-aprovação-granular-de-ferramentas-arriscadas-na-ui) | 8 | Sim | [segurança](/docs/progresso/checklists/seguranca.md) |
+| 3 | [G3 Recuperação quando a verificação reprova](#g3-recuperação-quando-a-verificação-reprova) | 3 | Sim | [funcionalidades](/docs/progresso/checklists/funcionalidades.md) |
+| 4 | [G4 Aprovação granular de ferramentas arriscadas na UI](#g4-aprovação-granular-de-ferramentas-arriscadas-na-ui) | 4 | Sim | [segurança](/docs/progresso/checklists/seguranca.md) |
 | 5 | [G5 Defeitos conhecidos do feed](#g5-defeitos-conhecidos-do-feed) | 5 | Não | [interface](/docs/progresso/checklists/interface.md) |
 | 6 | [G6 Fiscais automáticos das regras de engenharia](#g6-fiscais-automáticos-das-regras-de-engenharia) | 6 | Não | [qualidade](/docs/progresso/checklists/qualidade.md) |
 | 7 | [G7 Seleção lexical de skills, estratégia e consulta](#g7-seleção-lexical-de-skills-estratégia-e-consulta) | 12 | Não | [funcionalidades](/docs/progresso/checklists/funcionalidades.md) |
@@ -28,7 +28,7 @@ Voltar: [docs/progresso/](/docs/progresso/README.md) · Formato: [progresso.md](
 | 14 | [G14 Documentação de limitações desatualizada](#g14-documentação-de-limitações-desatualizada) | 1 | Não | [qualidade](/docs/progresso/checklists/qualidade.md) |
 | 15 | [G15 Servidores MCP pesados](#g15-servidores-mcp-pesados) | 3 | Não | [plataformas](/docs/progresso/checklists/plataformas.md) |
 
-**Total estimado:** 114 h · **Bloqueiam o beta:** G1, G2, G3, G4, G13 (43 h).
+**Total estimado:** 105 h · **Bloqueiam o beta:** G1, G2, G3, G4, G13 (34 h).
 
 Fora de escopo por decisão registrada: serializar inferência entre **processos** ([limitacoes.md](/docs/architecture/limitacoes.md), item 3).
 
@@ -45,13 +45,13 @@ Fora de escopo por decisão registrada: serializar inferência entre **processos
 
 ## G3 Recuperação quando a verificação reprova
 
-- **Faltando:** a recuperação reexecuta o mesmo verificador; não há verificação alternativa nem leitura semântica da causa ([limitacoes.md](/docs/architecture/limitacoes.md), item 12).
-- **Feito:** estagnação, replanejamento dirigido, pausa e retomada (`tests/test_orchestrator_recovery.py`, `tests/test_stagnation_limits.py`).
+- **Faltando:** leitura semântica da causa pelo modelo (o diagnóstico é por padrões da saída); medir com o modelo real quantas reprovações a recuperação converte em aprovação.
+- **Feito:** portão único (`VerificationGate` é fachada de `finalize_verification`); reprovação registra o critério não satisfeito, o diagnóstico e um complemento somente-leitura que estreita a causa — sem nunca aprovar por um verificador mais fraco (o verde falso do gate antigo foi removido); escrita reprovada é desfeita e a orientação chega à nova tentativa (`tests/test_etapas_cenarios.py::test_cenario2_*`, `tests/test_verification_gate.py`). Estagnação, replanejamento, pausa e retomada (`tests/test_orchestrator_recovery.py`, `tests/test_stagnation_limits.py`).
 
 ## G4 Aprovação granular de ferramentas arriscadas na UI
 
-- **Faltando:** só existe a flag `approve_risky_tools` por run; a interface não pede aprovação item a item ([limitacoes.md](/docs/architecture/limitacoes.md), item 6).
-- **Feito:** política de ferramentas e permissões por pedido (`src/agent/tools/policy.py`, `tests/test_request_permissions.py`).
+- **Faltando:** a interface ainda não lista os pedidos nem oferece aprovar/negar ([limitacoes.md](/docs/architecture/limitacoes.md), item 6).
+- **Feito:** backend completo — pedido persistido por operação (`tool_approvals`), avaliado na hora da execução, uso único, negação, pausa do run e retomada pela decisão, rotas `GET /runs/{id}/approvals` e `POST /approvals/{id}/approve|deny`, retomada sem repetir operação não repetível após queda (`tests/test_granular_approval.py`). Política por pedido (`src/agent/tools/policy.py`, `tests/test_request_permissions.py`).
 
 ## G5 Defeitos conhecidos do feed
 

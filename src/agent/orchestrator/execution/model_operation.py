@@ -236,6 +236,8 @@ class ModelOperation:
         async def _on_tool_call(entry: dict[str, Any], result: dict[str, Any]) -> None:
             """Registra a chamada de ferramenta feita pelo modelo durante o ciclo."""
             tool_log.append(entry)
+            if result.get("success"):
+                journal.settle(str(entry.get("tool")), (entry.get("args") or {}).get("path"))
             inspections.append(
                 {
                     "tool": entry.get("tool"),
@@ -514,6 +516,8 @@ class ModelOperation:
             return done
         journal.remember(tool_name, payload.get("path"))
         out = await tools.execute(tool_name, ctx, payload, approved=bool(config.get("approve_risky_tools") or meta.get("approved")))
+        if out.get("success"):
+            journal.settle(tool_name, payload.get("path"))
         task.consolidated_result_json = {
             "model_operation": True,
             "tool": tool_name,
@@ -630,6 +634,17 @@ class ModelOperation:
                 run, task, f"A verificação reprovou a alteração; desfiz a escrita em {names} para o projeto continuar funcionando.", phase="recover"
             )
             done["undone"] = restored
+        if journal.conflicts:
+            # Arquivo mudou por outra mão depois da escrita da etapa: o rollback não sobrescreve
+            # esse trabalho; fica registrado para a próxima tentativa reler antes de editar.
+            done["rollback_conflicts"] = list(journal.conflicts)
+            self._executor.note_thought(
+                run,
+                task,
+                "Não desfiz a escrita em arquivo alterado depois da etapa, para não apagar trabalho de outra pessoa.",
+                phase="recover",
+                category="alert",
+            )
 
     def _context_overflow(
         self,

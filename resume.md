@@ -447,6 +447,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** narração do agente em tempo real: fluxo do fragmento do modelo à linha do tempo, contrato `agent.narration.*`, o que o filtro descarta (raciocínio, ferramenta, JSON), responsabilidade de cada adaptador, persistência, interrupção, reconexão, interface, medidas com o Ollama real, testes e limitações.
 
+### `docs/architecture/confiabilidade-decomposicao.md`
+
+**Propósito:** confiabilidade da execução e decomposição: auditoria (o que existia e o que faltava), fluxo real de uma tarefa, portão de verificação único, recuperação, aprovação granular, retomada idempotente, rollback seguro, decomposição de tarefas simples, consolidação com resumos e arquivos compartilhados, cenários de integração e limitações.
+
 ### `docs/architecture/observabilidade-contexto.md`
 
 **Propósito:** observabilidade de contexto e tokens por inferência: modelo de dados (`inference_records` estendido), componentes do contexto, rotas de consumo e onde aparece na interface (página Consumo e Gestão de Contexto e barra por inferência no chat).
@@ -1063,6 +1067,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `create_task(project_id, body, session) → TaskRead` — Cria uma tarefa no projeto, materializando anexos e memórias pedidas no objetivo.
 - `list_tasks(project_id, session) → list[TaskRead]` — Lista as tarefas de um projeto.
+- `task_summary(task_id: uuid.UUID, session: Session=Depends(db_session)) -> dict` — `GET /tasks/{id}/summary`: resumo estruturado da subtarefa (sem inferência); 404 se não existir.
+
 ### `src/agent/api/run_routes.py`
 
 **Propósito:** Rotas de execução — iniciar, avançar, pausar, retomar, cancelar, modo autônomo e métricas do run. **Quando/onde:** a cada ação sobre uma execução.
@@ -1081,6 +1087,12 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `list_runs(project_id, session) → list[ExecutionRunRead]` — Lista as execuções de um projeto.
 - `run_step(run_id, session, settings) → dict` — Executa um único passo do orquestrador sobre a run.
 - `run_execute(run_id, max_steps, session, settings) → dict` — Avança a run em vários passos até ela parar ou o orçamento acabar.
+- `ApprovalDecisionBody(BaseModel)` — corpo opcional da decisão de aprovação (`note`).
+- `list_run_approvals(run_id: uuid.UUID, session: Session=Depends(db_session)) -> list[dict]` — `GET /runs/{run_id}/approvals`: pedidos de aprovação granular do run; 404 se a run não existir.
+- `_decide_approval(approval_id: uuid.UUID, approve: bool, body: ApprovalDecisionBody | None, session: Session) -> dict` — aplica a decisão pelo `ApprovalService`, faz commit e devolve o pedido com o estado da run; 404 inexistente, 409 já decidido.
+- `approve_operation(approval_id: uuid.UUID, body: ApprovalDecisionBody | None=None, session: Session=Depends(db_session)) -> dict` — `POST /approvals/{id}/approve`: aprova uma operação; a etapa volta ao fluxo e o run pausado é retomado.
+- `deny_operation(approval_id: uuid.UUID, body: ApprovalDecisionBody | None=None, session: Session=Depends(db_session)) -> dict` — `POST /approvals/{id}/deny`: nega a operação; a etapa fica bloqueada com `approval_denied`.
+
 ### `src/agent/api/presenters.py`
 
 **Propósito:** Montagem dos payloads de leitura (tarefa e conversa) devolvidos pela API. **Quando/onde:** em toda resposta de leitura de tarefa ou conversa.
@@ -2292,6 +2304,18 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_answer_markdown(task: TaskModel) -> str` — Markdown gravado em `consolidated_result_json.markdown`, sem espaços nas pontas, ou string vazia.
 - `remember_final_answer(session: Session, task: TaskModel) -> bool` — Copia o markdown da etapa `final_answer` para `final_answer` da raiz, sem mudar estados. Entrada: sessão e etapa que acabou de escrever; saída: `True` quando a raiz passou a exibir o texto. Texto vazio não apaga resposta anterior.
 - `surface_final_answer(session: Session, root: TaskModel) -> bool` — Se a raiz ainda não tem texto em `final_answer`, copia o markdown da etapa `final_answer` concluída mais recente. Entrada: sessão e raiz; saída: `True` quando copiou. Não muda o estado da raiz nem do run.
+
+### `src/agent/orchestrator/subtask_summary.py`
+
+**Propósito:** Resumo estruturado de uma subtarefa, montado do estado persistido, e arquivos alterados por mais de uma irmã. **Quando/onde:** na consolidação do pai e em `GET /tasks/{id}/summary`.
+
+- `_paths(request: dict[str, Any] | None) -> list[str]` — Caminhos citados nos argumentos de uma chamada.
+- `_attempts(session: Session, task_id: uuid.UUID) -> list[OperationAttemptModel]` — Tentativas da etapa em ordem.
+- `_written_paths(attempt: OperationAttemptModel) -> list[str]` — Arquivos alterados por uma tentativa de escrita bem-sucedida.
+- `files_changed_by(session: Session, task: TaskModel) -> list[str]` — Arquivos que a etapa alterou com sucesso.
+- `structured_summary(session: Session, task: TaskModel) -> dict[str, Any]` — Objetivo, descobertas, arquivos analisados e alterados, decisões, resultado, verificações, evidências, problemas, pendências, riscos e próximas ações, com referências ao detalhe.
+- `shared_files(session: Session, kids: list[TaskModel]) -> list[dict[str, Any]]` — Arquivos alterados por mais de uma irmã, com as etapas na ordem.
+
 ### `src/agent/orchestrator/decomposition.py`
 
 **Propósito:** define o modelo de dados do plano (subtarefas) e resolve a decomposição hierárquica do objetivo, via modelo ou templates de fallback. **Quando/onde:** usado pelo `RunOrchestrator` no estado PLANNING para gerar o plano de subetapas de uma tarefa.
@@ -2325,6 +2349,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_plan_from_content(content: str) -> DecompositionResult | None` — interpreta, normaliza e valida o plano devolvido pelo modelo; `None` quando não há plano utilizável.
 - `_repair_plan(provider: LLMProvider, profile: ModelProfile, messages: list, previous: str) -> DecompositionResult | None` — recuperação **única**: o mesmo pedido + a resposta inválida + a ordem de entregar só o JSON, com `response_format` = `PLAN_SCHEMA`; falha devolve `None` (o template assume).
 - `_supports_structured_output(provider) -> bool` — o provedor declara saída estruturada (decodificação restrita a um esquema).
+- `read_explain_plan(objective: str, project_root: str) -> DecompositionResult | None` — Pedido só de leitura e explicação de arquivos existentes (até 3): uma leitura verificada por arquivo + a resposta; `None` quando o pedido também manda alterar algo.
 
 ### `src/agent/orchestrator/engine.py`
 
@@ -2561,6 +2586,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `_widen_output_budget(self, task, *, factor) → int` — Aumenta o orçamento de resposta da etapa (o modelo gastou tudo e devolveu nada).
 - `_sync_agent_execution(self, task, run_id) → None` — Alinha o estado do agente lógico com o estado da tarefa.
+- `RunOrchestrator._await_approval(run: ExecutionRunModel, out: dict[str, Any]) -> dict[str, Any]` — Etapa espera aprovação: o run pausa com `pause.kind = approval` (retomado pela decisão), sem replanejar nem repetir.
 
 ### `src/agent/orchestrator/task_ir.py`
 
@@ -2616,6 +2642,14 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 
 - `TaskExecutor.__init__(self, runtime) → None` — Guarda os colaboradores da execução.
+- `TaskExecutor.approval_gate(run: ExecutionRunModel, project: ProjectModel | None, task: TaskModel)` — Portão de aprovação granular entregue ao `ToolContext`: consulta/consome/abre o pedido da operação e emite `approval.requested`.
+- `TaskExecutor.await_approval(run: ExecutionRunModel, task: TaskModel, tool_id: str, out: dict[str, Any], failure: Failure | None) -> dict[str, Any]` — Etapa espera a decisão em `BLOCKED` (`awaiting_approval`) em vez de repetir a recusa; negada, bloqueia sem espera.
+- `TaskExecutor.inflight_guard(run: ExecutionRunModel, project: ProjectModel | None, task: TaskModel, tool_id: str, args: dict[str, Any]) -> dict[str, Any] | None` — Grava e confirma o marcador `inflight_operation` antes de uma operação não repetível; reencontrado na retomada, pede confirmação.
+- `TaskExecutor.clear_inflight(task: TaskModel) -> None` — Remove o marcador depois que a chamada voltou.
+- `TaskExecutor.diagnostic_complement(root_path: str, spec: dict[str, Any], vresult: Any, detail: dict[str, Any], tool_args: dict[str, Any]) -> dict[str, Any] | None` — Verificação complementar somente-leitura depois de uma reprovação; diagnóstico, nunca aprovação.
+- `unmet_criterion(spec: dict[str, Any], summary: str) -> str` — Descreve em uma linha o critério de verificação não satisfeito.
+- `stage_finding(result: dict[str, Any]) -> str` — Trecho do resultado de uma etapa levado à resposta final (dentro do orçamento fixo).
+
 ### `src/agent/orchestrator/execution/model_operation.py`
 
 **Propósito:** Executa a etapa de operação de modelo (contexto, ciclo de ferramentas, protocolo JSON da alteração e recusa de escrita). **Quando/onde:** chamado por `TaskExecutor.execute` quando a etapa é `model_operation`.
@@ -2673,6 +2707,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `WriteJournal.__init__(root: str) -> None` — Inicializa o diário de gravações com a raiz do projeto.
 - `WriteJournal.remember(tool: str, path: Any) -> None` — Registra uma gravação (ferramenta e caminho) para possível reversão.
 - `WriteJournal.restore() -> list[str]` — Desfaz as gravações registradas, devolvendo os caminhos restaurados.
+- `WriteJournal._resolve(path: Any) -> Path | None` — Caminho absoluto resolvido, ou `None` quando inválido.
+- `WriteJournal.settle(tool: str, path: Any) -> None` — Anota o hash do que a etapa acabou de gravar; o rollback não sobrescreve arquivo que mudou depois disso (vai para `conflicts`).
 
 ### `src/agent/orchestrator/execution/journal.py`
 
@@ -2858,6 +2894,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `KnowledgeUsageModel(Base)` — `knowledge_usage`: registro de uso de um item de conhecimento em uma tarefa ou run (resultado, sucesso, evidências).
 - `KnowledgeValidationModel(Base)` — `knowledge_validations`: validação de um item de conhecimento (método, critérios, passou, notas, validador).
 - `KnowledgeVersionModel(Base)` — `knowledge_versions`: versão de um item de conhecimento (conteúdo, resumo, confiança, motivo da mudança).
+- `ToolApprovalModel(Base)` — Pedido de aprovação de uma operação (`tool_approvals`): etapa, ferramenta, `operation_key`, prévia redigida dos argumentos, risco, motivo, estado (`pending`/`approved`/`denied`/`consumed`) e datas.
 
 ## `src/agent/providers/`
 
@@ -3224,6 +3261,23 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `RunService.start_run(project_id: uuid.UUID, data: ExecutionRunCreate) -> ExecutionRunModel` — Símbolo do módulo — ver a descrição do arquivo.
 
 - `RunService._usage(run: ExecutionRunModel) -> dict[str, Any]` — Consumo acumulado do run. A retomada não zera esse consumo e não amplia o teto de tokens; isso só acontece com autorização explícita.
+
+### `src/agent/services/approval_service.py`
+
+**Propósito:** Aprovação granular de operações arriscadas — pedir, decidir, consumir e auditar. **Quando/onde:** no registro de ferramentas (na hora da execução) e nas rotas de aprovação.
+
+- `operation_key(tool: str, args: dict[str, Any] | None) -> str` — SHA-256 estável de ferramenta + argumentos.
+- `ApprovalService` — Pedidos e decisões de aprovação de operações de ferramenta.
+- `ApprovalService.__init__(session: Session) -> None` — Liga o serviço à sessão.
+- `ApprovalService.check(*, tool: str, args: dict[str, Any] | None, task_id: uuid.UUID | None, run_id: uuid.UUID | None, project_id: uuid.UUID | None, risk: str | None=None, reason: str | None=None) -> dict[str, Any]` — Consome aprovação concedida (uso único), mantém um pedido por operação, respeita a negação, abre o pedido quando falta.
+- `ApprovalService.get(approval_id: uuid.UUID) -> ToolApprovalModel` — Lê um pedido; `LookupError` se não existir.
+- `ApprovalService.list_for_run(run_id: uuid.UUID) -> list[ToolApprovalModel]` — Pedidos de uma execução.
+- `ApprovalService.decide(approval_id: uuid.UUID, *, approve: bool, note: str | None=None) -> ToolApprovalModel` — Grava a decisão, devolve a etapa ao fluxo (ou a mantém bloqueada) e retoma o run pausado sem pedidos pendentes; `ValueError` se já decidido.
+- `ApprovalService._release_task(task: TaskModel, row: ToolApprovalModel, approve: bool) -> None` — Tira a etapa da espera conforme a decisão.
+- `ApprovalService._resume_if_waiting(run_id: uuid.UUID | None) -> None` — Retoma o run pausado por aprovação.
+- `_preview(args: dict[str, Any] | None) -> dict[str, Any]` — Prévia auditável dos argumentos (segredos redigidos, textos cortados).
+- `approval_view(row: ToolApprovalModel) -> dict[str, Any]` — Serialização do pedido para a API.
+
 ### `src/agent/services/scheduler.py`
 
 **Propósito:** Serviço de agendamento cron que dispara execuções automáticas. **Quando/onde:** usado pelo servidor da API quando há `ScheduledRunModel` habilitados.
@@ -7873,21 +7927,12 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `src/agent/verification/gate.py`
 
-**Propósito:** Portão de verificação independente — garante que tarefa não seja concluída sem verificação determinística.
+**Propósito:** Fachada do portão de verificação único — delega a `TaskExecutor.finalize_verification` (o mesmo caminho do orquestrador) e traduz o desfecho em estágio, diagnóstico e plano de recuperação. **Quando/onde:** quem precisa de um veredito estruturado sobre uma etapa.
 
-- `GateResult(BaseModel)` — Resultado de um portão de verificação.
-- `VerificationGate` — Portão de verificação independente.
-- `VerificationGate.__init__(executor: TaskExecutor) -> None` — Inicializa com executor.
-- `VerificationGate._approve(_run: ExecutionRunModel, _project: ProjectModel, task: TaskModel, evidence_id: UUID, vresult: VerificationResult | AlternativeVerification) -> GateResult` — Aprova verificação independente.
-- `VerificationGate._attempts() -> int` — Devolve número de tentativas.
-- `VerificationGate._blocked_status(action: str, diagnosis: RecoveryDiagnosis | None, summary: str) -> TaskStatus` — Devolve status de bloqueio.
-- `VerificationGate._classify(passed: bool | None, summary: str, output: str) -> Failure | None` — Classifica resultado de verificação.
-- `VerificationGate._criteria_of(task: TaskModel) -> dict[str, Any]` — Devolve critérios de uma tarefa.
-- `VerificationGate._retry_status(diagnosis: RecoveryDiagnosis, summary: str) -> TaskStatus` — Devolve status de retry.
-- `VerificationGate._session()` — Devolve sessão do banco.
-- `VerificationGate._status_for(stage: VerificationStage, reason: str) -> TaskStatus` — Devolve status para um estágio.
-- `VerificationGate._tasks() -> list[TaskModel]` — Devolve tarefas.
-- `VerificationGate.gate(*, run: ExecutionRunModel, project: ProjectModel, task: TaskModel, root_path: str, config: dict[str, Any] | None=None) -> GateResult` — Executa portão de verificação.
+- `GateResult(BaseModel)` — Estágio atingido, aprovação, verificador, resumo, diagnóstico, plano de recuperação, bloqueio, evidência, `unverified` (concluiu sem verificador) e a ação devolvida.
+- `VerificationGate` — Fachada do portão; não tem implementação própria de verificação (a anterior aprovava a etapa quando um verificador mais fraco passava — verde falso).
+- `VerificationGate.__init__(executor: TaskExecutor | Any) -> None` — Usa o `TaskExecutor` informado ou monta um sobre o `runtime` do objeto.
+- `VerificationGate.gate(*, run: ExecutionRunModel, project: ProjectModel, task: TaskModel, root_path: str, config: dict[str, Any] | None=None) -> GateResult` — Roda `finalize_verification` e lê a evidência mais recente; `config` fica por compatibilidade.
 - `VerificationStage(str)` — Estágio de verificação de uma etapa.
 
 ### `test.db`
@@ -7944,7 +7989,19 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `tests/test_verification_gate.py`
 
-**Propósito:** Testes do portão de verificação independente.
+**Propósito:** Testes do portão de verificação (fachada do caminho real), do diagnóstico de recuperação e da regressão do verde falso.
+
+### `tests/test_etapas_cenarios.py`
+
+**Propósito:** Cenários de integração das Etapas 1 e 2 pelo orquestrador real: ferramenta que falha, verificação que reprova, retomada após queda, dependências com arquivo compartilhado, pai com critério próprio, tarefa simples e rota de resumo.
+
+### `tests/test_granular_approval.py`
+
+**Propósito:** Aprovação granular: chave da operação, uso único, negação, pausa e retomada pelo orquestrador, rotas, compatibilidade da flag do run e retomada após queda durante operação não repetível.
+
+### `tests/test_write_journal_rollback.py`
+
+**Propósito:** Rollback da tentativa: desfaz só o que ela gravou, preserva alteração de terceiros e arquivos novos.
 
 ### `src/agent/knowledge/learning/`
 

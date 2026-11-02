@@ -4,13 +4,13 @@ A nota de cada área do Callidus, o que falta e a evidência por trás.
 
 Voltar: [docs/progresso/](/docs/progresso/README.md) · Formato: [progresso.md](/docs/regras/progresso.md)
 
-> **Revisado em:** 2026-10-22 · **Atualizado em:** 2026-10-22 · **Mudança:** minor (contagem de testes refeita)
+> **Revisado em:** 2026-11-02 · **Atualizado em:** 2026-11-02 · **Mudança:** minor (Etapas 1 e 2)
 
 Este documento é o **placar do projeto**. A medição do comportamento com o modelo real continua em [docs/architecture/avaliacao.md](/docs/architecture/avaliacao.md) (`lab/avaliar.py`); aqui ela vira nota por área.
 
 ## 📌 Resumo
 
-O núcleo (pedido → plano → execução → verificação → resposta) funciona com o modelo local e passou em 15/15 cenários (*medido*). As áreas mais fracas são decomposição em repositório grande, recuperação de verificação, aprovação granular e desktop fora do macOS. Qualidade geral: **~61 %** (*estimado*, média simples das áreas).
+O núcleo (pedido → plano → execução → verificação → resposta) funciona com o modelo local e passou em 15/15 cenários (*medido*). As áreas mais fracas são decomposição em repositório grande, recuperação de verificação, aprovação granular e desktop fora do macOS. Qualidade geral: **~63 %** (*estimado*, média simples das áreas).
 
 ## 📏 Como foi medido
 
@@ -36,10 +36,10 @@ O núcleo (pedido → plano → execução → verificação → resposta) funci
 
 | Área | Nota % | Faltando | Horas | Tipo |
 |------|--------|----------|-------|------|
-| Orquestração e verificação | 75 | [G3](/docs/progresso/gaps.md#g3-recuperação-quando-a-verificação-reprova) | 8 | estimado (aceite *medido*) |
+| Orquestração e verificação | 80 | [G3](/docs/progresso/gaps.md#g3-recuperação-quando-a-verificação-reprova) | 3 | estimado (aceite e cenários de integração *medidos*) |
 | Decomposição e contexto | 55 | [G2](/docs/progresso/gaps.md#g2-decomposição-em-repositórios-grandes) | 16 | estimado |
 | Interface (SPA) | 70 | [G5](/docs/progresso/gaps.md#g5-defeitos-conhecidos-do-feed), [G10](/docs/progresso/gaps.md#g10-streaming-de-tokens-na-interface) | 7 | estimado (narração *medida* com `qwen3-vl:8b`) |
-| Ferramentas e segurança | 60 | [G4](/docs/progresso/gaps.md#g4-aprovação-granular-de-ferramentas-arriscadas-na-ui) | 8 | estimado |
+| Ferramentas e segurança | 65 | [G4](/docs/progresso/gaps.md#g4-aprovação-granular-de-ferramentas-arriscadas-na-ui) | 4 | estimado (aprovação granular *medida* em teste) |
 | Provedores | 70 | [G11](/docs/progresso/gaps.md#g11-paridade-entre-provedores) | 10 | estimado |
 | Conhecimento, skills e hierarquia | 50 | [G7](/docs/progresso/gaps.md#g7-seleção-lexical-de-skills-estratégia-e-consulta), [G8](/docs/progresso/gaps.md#g8-grafo-de-conhecimento-multi-linguagem), [G9](/docs/progresso/gaps.md#g9-propagação-de-impacto-de-contratos) | 34 | estimado |
 | Automações, sistema e desktop | 50 | [G12](/docs/progresso/gaps.md#g12-automação-de-desktop-nas-três-plataformas), [G15](/docs/progresso/gaps.md#g15-servidores-mcp-pesados) | 13 | estimado |
@@ -67,10 +67,10 @@ Do `git log` (*estimado*): 113 commits entre 2026-10-17 e 2026-10-21, num interv
 
 | Área | Arquivos e testes |
 |------|-------------------|
-| Orquestração e verificação | `src/agent/orchestrator/`, `tests/test_e2e_orchestrator.py`, `tests/test_independent_verification.py`, `tests/test_global_acceptance.py` |
+| Orquestração e verificação | `src/agent/orchestrator/`, `tests/test_e2e_orchestrator.py`, `tests/test_independent_verification.py`, `tests/test_global_acceptance.py`, `tests/test_etapas_cenarios.py`, `tests/test_verification_gate.py` |
 | Decomposição e contexto | `src/agent/context/`, `tests/test_hierarchical_decompose.py`, `tests/test_context_budget.py` |
 | Interface | `web/static/assets/app/`, `tests/web/`, `tests/test_web_frontend.py` |
-| Ferramentas e segurança | `src/agent/tools/`, `src/agent/security/`, `tests/test_tool_contracts.py`, `tests/test_provider_security.py` |
+| Ferramentas e segurança | `src/agent/tools/`, `src/agent/security/`, `src/agent/services/approval_service.py`, `tests/test_tool_contracts.py`, `tests/test_provider_security.py`, `tests/test_granular_approval.py` |
 | Provedores | `src/agent/providers/`, `tests/test_ollama_provider.py`, `tests/test_openai_compatible_provider.py` |
 | Conhecimento, skills e hierarquia | `src/agent/knowledge/`, `src/agent/skills/`, `tests/test_knowledge_graph.py`, `tests/test_agent_hierarchy_e2e.py` |
 | Automações, sistema e desktop | `src/agent/automation/`, `src/agent/desktop/`, `tests/test_automation_end_to_end.py`, `tests/test_desktop_automation.py` |
@@ -81,5 +81,6 @@ Do `git log` (*estimado*): 113 commits entre 2026-10-17 e 2026-10-21, num interv
 
 | Data | Mudança | Resumo |
 |------|---------|--------|
+| 2026-11-02 | minor | Etapas 1 e 2: 1 420 testes Python aprovados; orquestração 75→80, ferramentas e segurança 60→65 (*estimado*) |
 | 2026-10-22 | minor | Suíte Python rodada de novo (929 aprovados, 1 pulado) na adaptação ao `qwen3:8b` |
 | 2026-10-21 | major | Criação: contagens medidas no commit `6868a30`, notas estimadas por área |
