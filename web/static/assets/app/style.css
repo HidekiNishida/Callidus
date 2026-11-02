@@ -1672,6 +1672,152 @@ pre,
 
 .context-chip .dot { width: 6px; height: 6px; }
 
+/* ── Barra de consumo por inferência (conversa) ────────────────────────── */
+
+.inferences {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 0;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 10px;
+}
+
+.inference {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.inference-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-soft);
+  transition: background var(--dur-2) var(--ease);
+}
+
+.inference-head:hover {
+  background: var(--surface-2);
+}
+
+.inference-head .inference-kind {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.inference-head .inference-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--text);
+  min-width: 260px;
+}
+
+.inference-head .inference-meta b {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.inference-chip {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.inference-chip.measure-exact { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, var(--border-soft)); }
+.inference-chip.measure-estimate { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, var(--border-soft)); }
+.inference-chip.measure-partial { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, var(--border-soft)); }
+.inference-chip.measure-unavailable { color: var(--muted); }
+
+.inference-chevron {
+  font-size: 11px;
+  color: var(--muted);
+  transition: transform var(--dur-2) var(--ease);
+}
+.inference-head.open .inference-chevron { transform: rotate(-180deg); }
+
+.inference-body {
+  padding: 10px 12px 12px;
+  display: none;
+  border-top: 1px solid var(--border-soft);
+}
+.inference-head.open + .inference-body,
+.inference-body.open { display: block; }
+
+.inference-bar {
+  height: 14px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+  margin: 6px 0 4px;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.inference-segment {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  font-size: 10.5px;
+  color: #fff;
+  white-space: nowrap;
+  padding: 0 6px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.inference-segment.est { opacity: 0.85; }
+
+.inference-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 6px;
+}
+
+.inference-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.inference-legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+
+.inference-table {
+  margin-top: 8px;
+}
+
+/* ── Responsividade ────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .inference-head .inference-meta { min-width: auto; flex-wrap: wrap; }
+  .inference-legend { gap: 6px 10px; }
+  .inference-legend-item { font-size: 11px; gap: 4px; }
+}
+
 /* ── Composer ──────────────────────────────────────────────────────────── */
 
 .composer {

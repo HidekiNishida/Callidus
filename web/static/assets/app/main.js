@@ -44,7 +44,7 @@ import { IntelligencePerformance } from "./components/intelligence-performance.j
 import { IntelligenceReasoning } from "./components/intelligence-reasoning.js";
 import { IntelligenceKnowledge } from "./components/intelligence-knowledge.js";
 import { IntelligenceDiagnostics } from "./components/intelligence-diagnostics.js";
-import { IntelligenceBenchmarks } from "./components/intelligence-pages.js";
+import { IntelligenceBenchmarks, IntelligenceContextConsumption } from "./components/intelligence-pages.js";
 import { IntelligenceEngineering } from "./components/intelligence-engineering.js";
 import { IntelligenceResources } from "./components/intelligence-resources.js";
 import { IntelligenceAgents } from "./components/intelligence-agents.js";
@@ -87,6 +87,7 @@ const App = {
     IntelligenceKnowledge,
     IntelligenceDiagnostics,
     IntelligenceBenchmarks,
+    IntelligenceContextConsumption,
     IntelligenceEngineering,
     IntelligenceResources,
     IntelligenceAgents,
@@ -684,6 +685,14 @@ const App = {
                   >
                     <span v-html="icon('refresh', 15)"></span><span>Otimização</span>
                   </button>
+                  <button
+                    role="tab"
+                    :class="{ active: intelligenceSubView === 'consumo' }"
+                    @click="setIntelligenceSubView('consumo')"
+                    aria-selected="intelligenceSubView === 'consumo'"
+                  >
+                    <span v-html="icon('layers', 15)"></span><span>Consumo de Contexto</span>
+                  </button>
                 </nav>
                 <div class="intelligence-sub-views">
                   <div v-if="intelligenceSubView === 'overview'" key="intelligence-overview">
@@ -715,6 +724,9 @@ const App = {
                   </div>
                   <div v-else-if="intelligenceSubView === 'optimization'" key="intelligence-optimization">
                     <IntelligenceOptimization />
+                  </div>
+                  <div v-else-if="intelligenceSubView === 'consumo'" key="intelligence-consumo">
+                    <IntelligenceContextConsumption />
                   </div>
                 </div>
               </div>

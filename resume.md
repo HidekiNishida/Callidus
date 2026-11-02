@@ -505,7 +505,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `docs/intelligence/frontend.md`
 
-**Propósito:** Páginas da interface (Overview, Live Architecture, Performance, Benchmarks, Diagnostics) e integração com a API.
+**Propósito:** Páginas da interface (Overview, Live Architecture, Performance, Benchmarks, Diagnostics e Consumo de Contexto), integração com a API e barra de observabilidade por inferência na conversa.
 
 ### `docs/intelligence/testing.md`
 

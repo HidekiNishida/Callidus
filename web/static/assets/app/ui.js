@@ -749,6 +749,8 @@ export function describeActivity(event) {
         ...base,
         kind: "model",
         icon: "spark",
+        output_id: data.output_id,
+        inference_id: data.inference_id,
         title: `Chamando o modelo ${data.model || ""}`.trim(),
         detail: data.streaming ? "resposta em tempo real" : "resposta completa",
         explanation: `inferência no ${data.provider || "provedor"}`,
@@ -758,9 +760,23 @@ export function describeActivity(event) {
         ...base,
         kind: "model",
         icon: "check",
+        output_id: data.output_id,
+        inference_id: data.inference_id,
         title: `Resposta do modelo (${data.chars ?? 0} caracteres)`,
         detail: data.tool_calls?.length ? `${data.tool_calls.length} chamada(s) de ferramenta` : "",
         explanation: "o modelo respondeu",
+      };
+    case "agent.output.failed":
+      return {
+        ...base,
+        kind: "model",
+        icon: "alert",
+        output_id: data.output_id,
+        inference_id: data.inference_id,
+        status: "error",
+        title: `Falha na inferência${data.error ? ": " + data.error : ""}`,
+        detail: data.error || "",
+        explanation: data.cancelled ? "cancelada" : "falhou",
       };
     case "tool.started": {
       const label = TOOL_LABEL[data.tool] || data.tool || "Ferramenta";

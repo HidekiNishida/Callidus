@@ -24,6 +24,8 @@ import {
   resumeRun,
   cancelQueued,
   setFeedOpen,
+  loadInferenceDetail,
+  loadInferenceComponents,
 } from "../store.js";
 import {
   icon,
@@ -42,6 +44,7 @@ import {
   thoughtsOutsideNarration,
   brandSrc,
   visibleFinalAnswer,
+  formatTokenCount,
 } from "../ui.js";
 import { filesList, currentTask } from "../live-state.js";
 import { createScrollFollow } from "../chat-scroll.js";
@@ -60,11 +63,33 @@ export const ChatView = {
         const pause = (root.metadata_json || {}).pause || null;
         const isLast = roots().length > 0 && root.id === roots()[roots().length - 1].id;
         const feed = state.feeds[root.id] || [];
+        const modelEntries = feed.filter((entry) => entry.kind === "model");
+        const byInference = new Map();
+        for (const entry of modelEntries) {
+          const key = entry.inference_id || entry.output_id || entry.id;
+          let group = byInference.get(key);
+          if (!group) {
+            group = {
+              id: key,
+              inference_id: entry.inference_id || null,
+              output_id: entry.output_id || null,
+              started: null,
+              completed: null,
+              failed: null,
+            };
+            byInference.set(key, group);
+          }
+          if (entry.id.startsWith("agent.started")) group.started = entry;
+          else if (entry.id.startsWith("agent.output.completed")) group.completed = entry;
+          else if (entry.id.startsWith("agent.output.failed")) group.failed = entry;
+        }
+        const inferences = Array.from(byInference.values());
         return {
           id: root.id,
           title: root.display_title || root.title,
           pause,
           activity: integrateNarrative(feed),
+          inferences,
           summary: summarizeActivity(feed),
           objective: String(root.objective || "").split("\n\nAnexos do usuário:")[0],
           attachments: meta.attachments || [],
@@ -192,6 +217,88 @@ export const ChatView = {
     const openIds = Vue.reactive(new Set());
     const closedIds = Vue.reactive(new Set());
     const collapsedTurns = Vue.reactive(new Set());
+
+    // Cache de detalhes de inferência carregados sob demanda a partir dos eventos
+    // `agent.output.completed` / `agent.output.failed`, indexados por inference_id.
+    const inferenceCache = Vue.reactive({});
+    const loadingInference = Vue.reactive(new Set());
+    const openInferences = Vue.reactive(new Set());
+
+    const toggleInference = (inferenceId) => {
+      if (openInferences.has(inferenceId)) openInferences.delete(inferenceId);
+      else openInferences.add(inferenceId);
+    };
+
+    const cachedInference = (inferenceId) => inferenceCache[inferenceId] || null;
+
+    const inferenceComponents = (inferenceId) => {
+      const entry = inferenceCache[inferenceId];
+      return entry ? entry.components : null;
+    };
+
+    const inferenceSegments = (inferenceId) => {
+      const comps = inferenceComponents(inferenceId);
+      if (!comps || !comps.length) return [];
+      const total = comps.reduce((sum, c) => sum + (c.tokens || 0), 0) || 1;
+      const colors = [
+        "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899",
+        "#14b8a6", "#f97316",
+      ];
+      return comps.map((c, i) => ({
+        category: c.category,
+        tokens: c.tokens || 0,
+        pct: Math.round(((c.tokens || 0) / total) * 100),
+        color: colors[i % colors.length],
+        measurement: c.measurement || "estimate",
+        origin: c.origin || "snapshot",
+      }));
+    };
+
+    const totalTokens = (inferenceId) => {
+      const comps = inferenceComponents(inferenceId);
+      if (!comps) return 0;
+      return comps.reduce((sum, c) => sum + (c.tokens || 0), 0);
+    };
+
+    const measurementLabel = (measurement) => {
+      if (measurement === "exact") return "real";
+      if (measurement === "estimate") return "estimativa";
+      if (measurement === "partial") return "parcial";
+      if (measurement === "unavailable") return "sem medição";
+      return "carregando…";
+    };
+
+    // Carrega o detalhe e os componentes de cada inferência assim que o evento de
+    // conclusão/falha chega (o registro só existe depois da resposta do provedor).
+    Vue.watch(
+      () => state.feeds,
+      () => {
+        for (const feed of Object.values(state.feeds || {})) {
+          for (const entry of feed || []) {
+            if (
+              entry.kind === "model" &&
+              entry.inference_id &&
+              !inferenceCache[entry.inference_id] &&
+              !loadingInference.has(entry.inference_id)
+            ) {
+              loadingInference.add(entry.inference_id);
+              loadInferenceDetail(entry.inference_id).then((detail) => {
+                loadingInference.delete(entry.inference_id);
+                if (!detail) return;
+                inferenceCache[entry.inference_id] = { detail };
+                return loadInferenceComponents(entry.inference_id);
+              }).then((components) => {
+                const entryCache = inferenceCache[entry.inference_id];
+                if (entryCache) entryCache.components = components || null;
+              }).catch(() => {
+                loadingInference.delete(entry.inference_id);
+              });
+            }
+          }
+        }
+      },
+      { deep: true }
+    );
 
     Vue.watch(
       () => state.feedOpen,
@@ -352,6 +459,15 @@ export const ChatView = {
       icon,
       stamp,
       brandSrc,
+      formatTokenCount,
+      inferenceCache,
+      loadingInference,
+      openInferences,
+      toggleInference,
+      cachedInference,
+      inferenceSegments,
+      totalTokens,
+      measurementLabel,
     };
   },
   template: `
@@ -471,6 +587,104 @@ export const ChatView = {
                   </Transition>
                 </div>
               </TransitionGroup>
+            </div>
+
+            <div class="inferences" v-if="message.inferences.length">
+              <h4 class="inferences-title">Inferências do agente</h4>
+              <div class="inference" v-for="inf in message.inferences" :key="inf.id">
+                <div
+                  class="inference-head"
+                  :class="{ open: openInferences.has(inf.id) }"
+                  @click="toggleInference(inf.id)"
+                  role="button"
+                  tabindex="0"
+                  @keydown.enter="toggleInference(inf.id)"
+                  @keydown.space.stop="toggleInference(inf.id)"
+                >
+                  <span class="inference-kind">{{ inf.inference_id ? 'inferência' : 'chamada' }}</span>
+                  <span class="inference-meta">
+                    <template v-if="cachedInference(inf.id)">
+                      <span><b>{{ cachedInference(inf.id).purpose || '—' }}</b></span>
+                      <span>{{ cachedInference(inf.id).inference_type || '—' }}</span>
+                      <span>{{ cachedInference(inf.id).model || '—' }}</span>
+                      <span>{{ cachedInference(inf.id).provider || '—' }}</span>
+                    </template>
+                    <template v-else>
+                      <span>{{ inf.started?.provider || '—' }}</span>
+                      <span>{{ inf.started?.model || '—' }}</span>
+                      <span class="muted">em execução…</span>
+                    </template>
+                  </span>
+                  <span class="inference-chip" :class="['measure-' + (cachedInference(inf.id)?.measurement || 'unavailable')]">
+                    {{ measurementLabel(cachedInference(inf.id)?.measurement) }}
+                  </span>
+                  <span class="inference-chevron" :class="{ open: openInferences.has(inf.id) }}" aria-hidden="true">▼</span>
+                </div>
+
+                <div class="inference-body" :class="{ open: openInferences.has(inf.id) }">
+                  <template v-if="cachedInference(inf.id)">
+                    <div class="inference-meta-row">
+                      <span><b>Finalidade:</b> {{ cachedInference(inf.id).purpose || '—' }}</span>
+                      <span><b>Tipo:</b> {{ cachedInference(inf.id).inference_type || '—' }}</span>
+                      <span><b>Modelo:</b> {{ cachedInference(inf.id).model || '—' }}</span>
+                      <span><b>Provedor:</b> {{ cachedInference(inf.id).provider || '—' }}</span>
+                    </div>
+                    <div class="inference-meta-row">
+                      <span><b>Entrada:</b> {{ formatTokenCount(cachedInference(inf.id).prompt_tokens) }}</span>
+                      <span><b>Saída:</b> {{ formatTokenCount(cachedInference(inf.id).completion_tokens) }}</span>
+                      <span><b>Janela:</b> {{ cachedInference(inf.id).context_window_size || '—' }}</span>
+                      <span><b>Duração:</b> {{ cachedInference(inf.id).duration_ms }} ms</span>
+                      <span v-if="cachedInference(inf.id).status"><b>Status:</b> {{ cachedInference(inf.id).status }}</span>
+                    </div>
+                    <div class="inference-bar" v-if="inferenceSegments(inf.id).length">
+                      <div
+                        v-for="(seg, i) in inferenceSegments(inf.id)"
+                        :key="i"
+                        class="inference-segment"
+                        :style="{ width: seg.pct + '%', backgroundColor: seg.color }"
+                        :title="seg.category + ' · ' + seg.tokens + ' tokens (' + seg.measurement + ', ' + seg.origin + ')'"
+                      ></div>
+                    </div>
+                    <div class="inference-legend">
+                      <span
+                        v-for="(seg, i) in inferenceSegments(inf.id)"
+                        :key="i"
+                        class="inference-legend-item"
+                      >
+                        <span class="inference-legend-dot" :style="{ backgroundColor: seg.color }"></span>
+                        {{ seg.category }} · {{ seg.tokens }} {{ seg.measurement === 'reported' ? 'real' : 'estimado' }}
+                      </span>
+                    </div>
+                    <table class="data-table inference-table" v-if="inferenceComponents(inf.id)?.length">
+                      <thead>
+                        <tr>
+                          <th>Categoria</th><th>Identificação</th><th>Tokens</th><th>%</th><th>Origem</th><th>Medição</th><th>Obrigatório</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="(comp, i) in inferenceComponents(inf.id)" :key="i">
+                          <td>{{ comp.category }}</td>
+                          <td class="mono">{{ comp.identification || comp.name || '—' }}</td>
+                          <td class="mono">{{ comp.tokens ?? 0 }}</td>
+                          <td>{{ ((comp.tokens || 0) / totalTokens(inf.id) * 100).toFixed(1) }}%</td>
+                          <td>{{ comp.origin || '—' }}</td>
+                          <td><span class="inference-chip" :class="['measure-' + (comp.measurement || 'estimate')]" style="font-size:10px;padding:1px 5px">{{ comp.measurement || 'estimado' }}</span></td>
+                          <td>{{ comp.required ? 'sim' : 'não' }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <p
+                      v-if="cachedInference(inf.id).context_window_size && cachedInference(inf.id).prompt_tokens"
+                      class="muted small"
+                    >
+                      Ocupação da janela: {{ (cachedInference(inf.id).prompt_tokens / cachedInference(inf.id).context_window_size * 100).toFixed(1) }}%
+                    </p>
+                  </template>
+                  <template v-else>
+                    <p class="muted small">Detalhe da inferência indisponível ainda.</p>
+                  </template>
+                </div>
+              </div>
             </div>
 
             <ul class="thoughts" v-if="thoughts.length && message.id === thoughtHostId">

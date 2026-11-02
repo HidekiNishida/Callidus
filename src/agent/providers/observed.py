@@ -118,12 +118,13 @@ async def observed_chat(
         received.append(piece)
         batcher.add(piece)
 
-    def failed(error: str, *, cancelled: bool = False) -> None:
+    def failed(error: str, *, cancelled: bool = False, inference_id: str | None = None) -> None:
         """Publica o desfecho de falha, preservando o texto parcial recebido.
 
         Args:
             error: mensagem do erro.
             cancelled: quando `True`, marca a falha como cancelamento.
+            inference_id: identificador do registro de inferência, quando gravado.
         """
         batcher.flush()
         partial = "".join(received)
@@ -131,6 +132,7 @@ async def observed_chat(
             "agent.output.failed",
             {
                 "output_id": output_id,
+                "inference_id": inference_id,
                 "error": error,
                 "cancelled": cancelled,
                 "partial_chars": len(partial),
@@ -140,7 +142,13 @@ async def observed_chat(
             commit=True,
         )
 
-    def _account(response: ChatCompletionResponse | None, *, failed_call: bool = False, timeout: bool = False, error: str = "") -> None:
+    def _account(
+        response: ChatCompletionResponse | None,
+        *,
+        failed_call: bool = False,
+        timeout: bool = False,
+        error: str = "",
+    ) -> None:
         """Grava a inferência assim que a resposta ou a falha existe.
 
         Args:
@@ -148,7 +156,13 @@ async def observed_chat(
             failed_call: a chamada não produziu resposta utilizável.
             timeout: o provedor estourou o tempo.
             error: motivo curto, sem o texto do prompt.
+
+        Returns:
+            O registro de inferência gravado (ou `None` quando a gravação falhou),
+            necessário para correlacionar o evento de desfecho com o snapshot de
+            contexto vinculado.
         """
+        from agent.persistence.models import InferenceRecordModel
         reporting = False
         capabilities = getattr(provider, "capabilities", None)
         if callable(capabilities):
@@ -190,8 +204,9 @@ async def observed_chat(
         run = obs.session.get(ExecutionRunModel, obs.run_id)
         prices = (run.config_json or {}).get("prices") if run is not None and isinstance(run.config_json, dict) else {}
         cost, cost_quality = estimate_cost(prices if isinstance(prices, dict) else {}, provider.name, parsed_prompt, parsed_completion)
+        row = None
         try:
-            record_inference(
+            row = record_inference(
                 obs.session,
                 idempotency_key=f"{obs.run_id}:{output_id}",
                 run_id=obs.run_id,
@@ -226,11 +241,12 @@ async def observed_chat(
             )
         except Exception:
             # A resposta já foi paga. Perder a linha é ruim; repetir a chamada ao modelo seria pior.
-            return
+            return None
         try:
             obs.session.commit()
         except Exception:
-            return
+            return None
+        return row
 
     try:
         if streaming:
@@ -238,22 +254,29 @@ async def observed_chat(
         else:
             response = await provider.chat(request)
     except asyncio.CancelledError:
-        failed("cancelado", cancelled=True)
-        _account(None, failed_call=True, error="cancelado")
+        row = _account(None, failed_call=True, error="cancelado")
+        failed("cancelado", cancelled=True, inference_id=str(row.id) if row is not None else None)
         raise
     except Exception as exc:
         from agent.providers.base import ProviderTimeoutError
 
-        failed(str(exc) or type(exc).__name__)
-        _account(None, failed_call=True, timeout=isinstance(exc, ProviderTimeoutError), error=type(exc).__name__)
+        row = _account(
+            None,
+            failed_call=True,
+            timeout=isinstance(exc, ProviderTimeoutError),
+            error=type(exc).__name__,
+        )
+        failed(str(exc) or type(exc).__name__, inference_id=str(row.id) if row is not None else None)
         raise
     batcher.flush()
     content = response.content or ""
     tool_calls = [call.model_dump() for call in (getattr(response, "tool_calls", None) or [])]
+    inference_row = _account(response)
     emit(
         "agent.output.completed",
         {
             "output_id": output_id,
+            "inference_id": str(inference_row.id) if inference_row is not None else None,
             "content": content,
             "chars": len(content),
             "streamed": streaming,
@@ -264,5 +287,4 @@ async def observed_chat(
             "duration_ms": int((time.monotonic() - started) * 1000),
         },
     )
-    _account(response)
     return response
