@@ -610,13 +610,13 @@ export const ChatView = {
                       <span>{{ cachedInference(inf.id).provider || '—' }}</span>
                     </template>
                     <template v-else>
-                      <span>{{ inf.started?.provider || '—' }}</span>
-                      <span>{{ inf.started?.model || '—' }}</span>
+                      <span>{{ (inf.started || {}).provider || '—' }}</span>
+                      <span>{{ (inf.started || {}).model || '—' }}</span>
                       <span class="muted">em execução…</span>
                     </template>
                   </span>
-                  <span class="inference-chip" :class="['measure-' + (cachedInference(inf.id)?.measurement || 'unavailable')]">
-                    {{ measurementLabel(cachedInference(inf.id)?.measurement) }}
+                  <span class="inference-chip" :class="['measure-' + ((cachedInference(inf.id) || {}).measurement || 'unavailable')]">
+                    {{ measurementLabel((cachedInference(inf.id) || {}).measurement) }}
                   </span>
                   <span class="inference-chevron" :class="{ open: openInferences.has(inf.id) }}" aria-hidden="true">▼</span>
                 </div>
@@ -655,7 +655,7 @@ export const ChatView = {
                         {{ seg.category }} · {{ seg.tokens }} {{ seg.measurement === 'reported' ? 'real' : 'estimado' }}
                       </span>
                     </div>
-                    <table class="data-table inference-table" v-if="inferenceComponents(inf.id)?.length">
+                    <table class="data-table inference-table" v-if="(inferenceComponents(inf.id) || []).length">
                       <thead>
                         <tr>
                           <th>Categoria</th><th>Identificação</th><th>Tokens</th><th>%</th><th>Origem</th><th>Medição</th><th>Obrigatório</th>
@@ -753,7 +753,7 @@ export const ChatView = {
         </span>
       </div>
 
-      <p class="composer-hint" v-if="state.running || state.currentRun?.status === 'ACTIVE'">
+      <p class="composer-hint" v-if="state.running || (state.currentRun || {}).status === 'ACTIVE'">
         <span class="spinner"></span> Execução em andamento — o agente segue sozinho até o fim.
       </p>
 
