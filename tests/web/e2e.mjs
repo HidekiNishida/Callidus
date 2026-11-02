@@ -141,13 +141,24 @@ function delayRoute(page, path, ms) {
 }
 
 /**
- * Aguarda a montagem da Vue e devolve o estado de inicialização.
+ * Aguarda a montagem da Vue e o fim do bootstrap, e devolve o estado de inicialização.
+ *
+ * Observações: o `.shell` existe desde o primeiro quadro e `.boot` é a própria tela
+ * "Carregando…", então esperar por eles lia o estado no meio do carregamento. Aqui
+ * espera o bootstrap sair de `loading`; se ele nunca sair, o tempo estoura e o
+ * cenário reprova — é o carregamento infinito que o teste existe para pegar.
  */
 async function mountAndCheck(page) {
   await page.waitForFunction(() => {
     const app = document.querySelector("#app");
-    return app && (app.querySelector(".shell") || app.querySelector(".boot.error") || app.querySelector(".boot"));
+    return app && (app.querySelector(".shell") || app.querySelector(".boot"));
   }, { timeout: 15000 });
+  await page
+    .waitForFunction(() => {
+      const state = window.__callidus?.state;
+      return state && state.initialization?.bootstrap !== "loading";
+    }, { timeout: 15000 })
+    .catch(() => {});
   return await readInitState(page);
 }
 
@@ -313,10 +324,13 @@ async function scenarioFNavigation() {
   try {
     await page.goto(`${BASE_URL}/`, { waitUntil: "domcontentloaded" });
     await mountAndCheck(page);
-    const providersNav = page.locator(".bottom-nav button").filter((el) => el.innerText().includes("Provedores")).first();
-    if ((await providersNav.count()) > 0) {
+    // O botão visível depende da largura: barra de cima no desktop, barra de baixo no celular.
+    const providersNav = page.getByRole("button", { name: "Provedores", exact: true }).locator("visible=true").first();
+    if ((await providersNav.count()) === 0) {
+      ok = false; detail = "botão de Provedores não encontrado";
+    } else {
       await providersNav.click();
-      await page.waitForTimeout(1000);
+      await page.waitForFunction(() => window.__callidus?.state?.view === "providers", { timeout: 5000 });
     }
     const shell = await page.locator(".shell").isVisible().catch(() => false);
     if (!shell) { ok = false; detail = "interface sumiu após navegação"; }

@@ -1808,7 +1808,7 @@ pre,
 }
 
 .inference-chip.measure-exact { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, var(--border-soft)); }
-.inference-chip.measure-estimate { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, var(--border-soft)); }
+.inference-chip.measure-estimate { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border-soft)); }
 .inference-chip.measure-partial { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, var(--border-soft)); }
 .inference-chip.measure-unavailable { color: var(--muted); }
 
@@ -2607,6 +2607,24 @@ pre,
 
 .boot { flex: 1; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); }
 .boot.error { color: var(--danger); }
+
+/* Aviso de falha/modo parcial: faixa acima das telas, que continuam utilizáveis. */
+.boot-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 6px 16px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-soft);
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg));
+  color: var(--warn);
+}
+.boot-banner.error {
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg));
+  color: var(--danger);
+}
 
 /* ── Alertas de recuperação ─────────────────────────────────────────────── */
 

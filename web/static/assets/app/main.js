@@ -636,17 +636,23 @@ const App = {
           <div v-if="state.initialization.bootstrap === 'loading'" class="boot">
             <span class="spinner"></span> Carregando o Callidus…
           </div>
-          <div v-else-if="state.initialization.bootstrap === 'error'" class="boot error">
-            <span>{{ state.initialization.errors.length }} falha(s) ao inicializar</span>
-            <button type="button" class="btn-ghost small" @click="bootstrap()">Tentar novamente</button>
-          </div>
-          <div v-else-if="state.initialization.degraded" class="boot warn">
-            <span>
+          <!-- Falha ou modo parcial é um aviso acima das telas, não no lugar delas:
+               com a API fora ou parcial, o chat e os ajustes continuam acessíveis. -->
+          <div
+            v-if="state.initialization.bootstrap !== 'loading' && (state.initialization.bootstrap === 'error' || state.initialization.degraded)"
+            class="boot-banner"
+            :class="state.initialization.bootstrap === 'error' ? 'error' : 'warn'"
+            role="status"
+          >
+            <span v-if="state.initialization.bootstrap === 'error'">
+              {{ state.initialization.errors.length }} falha(s) ao inicializar — a API não respondeu
+            </span>
+            <span v-else>
               Modo parcial — {{ state.initialization.errors.length }} recurso(s) indisponível(eis)
             </span>
             <button type="button" class="btn-ghost small" @click="bootstrap()">Tentar novamente</button>
           </div>
-          <div v-else class="view-switch">
+          <div v-if="state.initialization.bootstrap !== 'loading'" class="view-switch">
             <div v-if="state.view === 'chat'" key="chat">
               <ChatView key="chat" />
             </div>
