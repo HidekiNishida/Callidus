@@ -817,10 +817,12 @@ export const ChatView = {
           </span>
 
           <div class="stages-card-wrap" v-if="stagesOpen" @click.self="stagesOpen = false">
+            <div class="stages-overlay"></div>
             <div class="stages-card">
               <div class="stages-header">
                 <span>Etapas do plano</span>
                 <span>{{ currentIndex }} de {{ activeStages.length }}</span>
+                <button type="button" class="stages-close" @click="stagesOpen = false" aria-label="Fechar">×</button>
               </div>
               <ul class="stages-list">
                 <li

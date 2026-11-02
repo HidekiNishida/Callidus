@@ -3216,7 +3216,6 @@ pre,
   z-index: 52;
   width: min(420px, 92vw);
   max-height: 70vh;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-soft);
@@ -3249,6 +3248,18 @@ pre,
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 .stages-card .stages-header span:first-child { color: var(--muted); font-weight: 500; }
+
+.stages-card .stages-close {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 6px;
+}
+.stages-card .stages-close:hover { color: var(--text); background: color-mix(in srgb, var(--text) 10%, transparent); }
 
 .stages-card .stages-list {
   display: flex;
