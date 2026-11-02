@@ -561,6 +561,25 @@ pre,
 
 /* ── Tabelas ─────────────────────────────────────────────────────────── */
 
+/* Contêiner de toda tabela de dados: em tela estreita a tabela rola na horizontal
+   dentro dele em vez de empurrar o balão ou o painel para fora da tela. */
+.table-scroll {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* No celular as colunas não se espremem até quebrar letra por letra: a linha fica inteira
+   e a tabela rola. No desktop o texto continua quebrando normalmente. */
+@media (max-width: 899px) {
+  .table-scroll > .data-table td,
+  .md-table-wrap > .md-table td {
+    white-space: nowrap;
+  }
+}
+
 .table-panel {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
@@ -1235,6 +1254,29 @@ pre,
   height: 26px;
   width: auto;
 }
+
+.side-new-chat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 12px 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-2) var(--ease), border-color var(--dur-2) var(--ease);
+}
+
+.side-new-chat:hover {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.side-new-chat span:first-child { display: inline-flex; color: var(--accent); }
 
 .search-box {
   position: relative;

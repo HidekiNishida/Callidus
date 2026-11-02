@@ -773,24 +773,26 @@ export const ChatView = {
                             <span class="inference-chevron" :class="{ open: openTables.has(entry.inference_id) }" aria-hidden="true">▼</span>
                             {{ openTables.has(entry.inference_id) ? 'Ocultar' : 'Ver' }} os {{ inferenceComponents(entry.inference_id).length }} componentes do contexto
                           </button>
-                          <table class="data-table inference-table" v-if="openTables.has(entry.inference_id)">
-                            <thead>
-                              <tr>
-                                <th>Categoria</th><th>Identificação</th><th>Tokens</th><th>%</th><th>Origem</th><th>Medição</th><th>Obrigatório</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              <tr v-for="(comp, i) in inferenceComponents(entry.inference_id)" :key="i">
-                                <td>{{ comp.category }}</td>
-                                <td class="mono">{{ comp.identification || comp.name || '—' }}</td>
-                                <td class="mono">{{ comp.tokens ?? 0 }}</td>
-                                <td>{{ totalTokens(entry.inference_id) ? ((comp.tokens || 0) / totalTokens(entry.inference_id) * 100).toFixed(1) : '0.0' }}%</td>
-                                <td>{{ comp.origin || '—' }}</td>
-                                <td><span class="inference-chip" :class="['measure-' + (comp.measurement || 'estimate')]" style="font-size:10px;padding:1px 5px">{{ measurementLabel(comp.measurement || 'estimate') }}</span></td>
-                                <td>{{ comp.required ? 'sim' : 'não' }}</td>
-                              </tr>
-                            </tbody>
-                          </table>
+                          <div class="table-scroll" v-if="openTables.has(entry.inference_id)">
+                            <table class="data-table inference-table">
+                              <thead>
+                                <tr>
+                                  <th>Categoria</th><th>Identificação</th><th>Tokens</th><th>%</th><th>Origem</th><th>Medição</th><th>Obrigatório</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr v-for="(comp, i) in inferenceComponents(entry.inference_id)" :key="i">
+                                  <td>{{ comp.category }}</td>
+                                  <td class="mono">{{ comp.identification || comp.name || '—' }}</td>
+                                  <td class="mono">{{ comp.tokens ?? 0 }}</td>
+                                  <td>{{ totalTokens(entry.inference_id) ? ((comp.tokens || 0) / totalTokens(entry.inference_id) * 100).toFixed(1) : '0.0' }}%</td>
+                                  <td>{{ comp.origin || '—' }}</td>
+                                  <td><span class="inference-chip" :class="['measure-' + (comp.measurement || 'estimate')]" style="font-size:10px;padding:1px 5px">{{ measurementLabel(comp.measurement || 'estimate') }}</span></td>
+                                  <td>{{ comp.required ? 'sim' : 'não' }}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
                         </template>
                         <p class="muted small" v-else>Sem composição de contexto registrada para esta inferência.</p>
                         <p v-if="cachedInference(entry.inference_id).occupancy != null" class="muted small">

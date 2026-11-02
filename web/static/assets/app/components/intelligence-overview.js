@@ -166,26 +166,28 @@ export const IntelligenceOverview = {
 
         <div class="table-panel">
           <h3>Runs recentes</h3>
-          <table class="data-table" v-if="state.intelligenceOverview.recent_runs?.length">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Status</th>
-                <th>Provedor</th>
-                <th>Modelo</th>
-                <th>Criada em</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="run in state.intelligenceOverview.recent_runs" :key="run.id">
-                <td class="mono">{{ run.id.slice(0, 8) }}</td>
-                <td><span class="status-badge" :class="'status-' + run.status.toLowerCase()">{{ run.status }}</span></td>
-                <td>{{ run.provider || '—' }}</td>
-                <td>{{ run.model || '—' }}</td>
-                <td>{{ run.created_at || '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-scroll" v-if="state.intelligenceOverview.recent_runs?.length">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Status</th>
+                  <th>Provedor</th>
+                  <th>Modelo</th>
+                  <th>Criada em</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="run in state.intelligenceOverview.recent_runs" :key="run.id">
+                  <td class="mono">{{ run.id.slice(0, 8) }}</td>
+                  <td><span class="status-badge" :class="'status-' + run.status.toLowerCase()">{{ run.status }}</span></td>
+                  <td>{{ run.provider || '—' }}</td>
+                  <td>{{ run.model || '—' }}</td>
+                  <td>{{ run.created_at || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <p v-else class="muted small">Nenhuma run recente.</p>
         </div>
       </div>

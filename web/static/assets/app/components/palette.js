@@ -8,7 +8,7 @@
  * Observações: os comandos contextuais (renomear, apagar) só entram na lista quando há conversa
  * ou projeto selecionado.
  */
-import { state, openView, toast, deleteConversation, deleteProject, setTheme } from "../store.js";
+import { state, openView, deleteConversation, deleteProject, setTheme, newConversation } from "../store.js";
 import { icon } from "../ui.js";
 
 /**
@@ -126,18 +126,6 @@ export const CommandPalette = {
         event.preventDefault();
         close();
       }
-    }
-
-    /**
-     * Prepara uma conversa nova, limpando o contexto atual.
-     *
-     * @returns {void}
-     */
-    function newConversation() {
-      openView("chat");
-      state.conversation = null;
-      state.tasks = [];
-      toast("Nova conversa — escreva o objetivo abaixo", "ok");
     }
 
     /**

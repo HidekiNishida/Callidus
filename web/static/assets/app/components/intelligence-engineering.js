@@ -100,24 +100,26 @@ export const IntelligenceEngineering = {
 
         <div class="table-panel">
           <h3>Histórico de commits</h3>
-          <table class="data-table" v-if="gitLog?.length">
-            <thead>
-              <tr>
-                <th>Hash</th>
-                <th>Autor</th>
-                <th>Data</th>
-                <th>Mensagem</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="c in gitLog" :key="c.hash">
-                <td class="mono">{{ c.hash.slice(0, 7) }}</td>
-                <td>{{ c.author || '—' }}</td>
-                <td class="mono">{{ c.date || '—' }}</td>
-                <td>{{ c.message || '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-scroll" v-if="gitLog?.length">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Hash</th>
+                  <th>Autor</th>
+                  <th>Data</th>
+                  <th>Mensagem</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="c in gitLog" :key="c.hash">
+                  <td class="mono">{{ c.hash.slice(0, 7) }}</td>
+                  <td>{{ c.author || '—' }}</td>
+                  <td class="mono">{{ c.date || '—' }}</td>
+                  <td>{{ c.message || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <p v-else class="muted small">Nenhum commit disponível.</p>
         </div>
 

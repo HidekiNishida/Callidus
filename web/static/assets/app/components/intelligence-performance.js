@@ -129,26 +129,28 @@ export const IntelligencePerformance = {
 
           <div class="table-panel">
             <h3>Consumo por provedor</h3>
-            <table class="data-table" v-if="state.runMetrics.inference.by_provider && Object.keys(state.runMetrics.inference.by_provider).length">
-              <thead>
-                <tr>
-                  <th>Provedor</th>
-                  <th>Chamadas</th>
-                  <th>Falhas</th>
-                  <th>Timeouts</th>
-                  <th>Taxa de erro</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(data, provider) in state.runMetrics.inference.by_provider" :key="provider">
-                  <td>{{ provider }}</td>
-                  <td>{{ data.calls }}</td>
-                  <td>{{ data.failed }}</td>
-                  <td>{{ data.timeout }}</td>
-                  <td>{{ (data.error_rate * 100).toFixed(1) }}%</td>
-                </tr>
-              </tbody>
-            </table>
+            <div class="table-scroll" v-if="state.runMetrics.inference.by_provider && Object.keys(state.runMetrics.inference.by_provider).length">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Provedor</th>
+                    <th>Chamadas</th>
+                    <th>Falhas</th>
+                    <th>Timeouts</th>
+                    <th>Taxa de erro</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(data, provider) in state.runMetrics.inference.by_provider" :key="provider">
+                    <td>{{ provider }}</td>
+                    <td>{{ data.calls }}</td>
+                    <td>{{ data.failed }}</td>
+                    <td>{{ data.timeout }}</td>
+                    <td>{{ (data.error_rate * 100).toFixed(1) }}%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
             <p v-else class="muted small">Nenhum dado de provedor disponível.</p>
           </div>
         </div>

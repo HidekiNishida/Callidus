@@ -142,28 +142,30 @@ export const IntelligenceDiagnostics = {
 
         <div class="table-panel">
           <h3>Detalhes dos diagnósticos</h3>
-          <table class="data-table" v-if="state.diagnostics?.length">
-            <thead>
-              <tr>
-                <th>Categoria</th>
-                <th>Severidade</th>
-                <th>Estado</th>
-                <th>Métrica afetada</th>
-                <th>Causa provável</th>
-                <th>Recomendação</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="d in state.diagnostics" :key="d.id">
-                <td>{{ d.category }}</td>
-                <td><span class="severity-badge" :class="'sev-' + d.severity">{{ d.severity }}</span></td>
-                <td><span class="status-badge" :class="'status-' + d.state">{{ d.state }}</span></td>
-                <td class="mono">{{ d.metric_affected || '—' }}</td>
-                <td>{{ d.probable_cause || '—' }}</td>
-                <td>{{ d.recommendation || '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-scroll" v-if="state.diagnostics?.length">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Categoria</th>
+                  <th>Severidade</th>
+                  <th>Estado</th>
+                  <th>Métrica afetada</th>
+                  <th>Causa provável</th>
+                  <th>Recomendação</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="d in state.diagnostics" :key="d.id">
+                  <td>{{ d.category }}</td>
+                  <td><span class="severity-badge" :class="'sev-' + d.severity">{{ d.severity }}</span></td>
+                  <td><span class="status-badge" :class="'status-' + d.state">{{ d.state }}</span></td>
+                  <td class="mono">{{ d.metric_affected || '—' }}</td>
+                  <td>{{ d.probable_cause || '—' }}</td>
+                  <td>{{ d.recommendation || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <p v-else class="muted small">Nenhum diagnóstico para exibir.</p>
         </div>
       </div>

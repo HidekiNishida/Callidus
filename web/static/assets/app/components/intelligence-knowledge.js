@@ -170,26 +170,28 @@ export const IntelligenceKnowledge = {
 
         <div v-if="searchResults.length" class="table-panel">
           <h3>Resultados da busca ({{ searchResults.length }})</h3>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Símbolo</th>
-                <th>Tipo</th>
-                <th>Arquivo</th>
-                <th>Linha</th>
-                <th>Confiança</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in searchResults" :key="r.symbol + r.file">
-                <td class="mono">{{ r.symbol || r.name || '—' }}</td>
-                <td>{{ r.kind || r.type || '—' }}</td>
-                <td class="mono">{{ r.file || '—' }}</td>
-                <td class="mono">{{ r.line !== undefined ? r.line : '—' }}</td>
-                <td>{{ r.confidence !== undefined ? (r.confidence * 100).toFixed(0) + '%' : '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Símbolo</th>
+                  <th>Tipo</th>
+                  <th>Arquivo</th>
+                  <th>Linha</th>
+                  <th>Confiança</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in searchResults" :key="r.symbol + r.file">
+                  <td class="mono">{{ r.symbol || r.name || '—' }}</td>
+                  <td>{{ r.kind || r.type || '—' }}</td>
+                  <td class="mono">{{ r.file || '—' }}</td>
+                  <td class="mono">{{ r.line !== undefined ? r.line : '—' }}</td>
+                  <td>{{ r.confidence !== undefined ? (r.confidence * 100).toFixed(0) + '%' : '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div v-if="selectedNode" class="node-detail-panel">

@@ -5550,7 +5550,6 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `close`
 - `run`
 - `onKeydown`
-- `newConversation`
 - `toggleTheme`
 
 ### `web/static/assets/app/components/providers.js`
@@ -5581,7 +5580,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `web/static/assets/app/components/sidebar.js`
 
-**Propósito:** barra lateral. O lockup usa `brandSrc('lockup', tema)`, trocando o SVG quando o tema muda, sem filtro de brilho.
+**Propósito:** barra lateral. O lockup usa `brandSrc('lockup', tema)`, trocando o SVG quando o tema muda, sem filtro de brilho. O botão «Nova conversa», logo abaixo da marca, chama `newConversation()` do store.
 
 ### `web/static/assets/app/components/topbar.js`
 
@@ -5724,6 +5723,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `loadProviders`
 - `selectProject`
 - `selectConversation`
+- `newConversation()` — Abre o chat em branco mantendo o projeto; a conversa só nasce no servidor no primeiro envio. Usada pela sidebar e pela paleta.
 - `deleteConversation`
 - `refreshTasks()` — Recarrega tarefas da conversa ou projeto e chama `hydrateFeedsFromHistory()` para repor feeds a partir de `/observe`.
 - `hydrateFeedsFromHistory()` — Para cada mensagem raiz sem feed em memória, reaplica eventos da run mais recente (`replayFeedFromRun`).

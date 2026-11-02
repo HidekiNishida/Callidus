@@ -919,6 +919,25 @@ export async function selectConversation(conversation) {
 }
 
 /**
+ * Abre uma conversa em branco no chat, mantendo o projeto selecionado.
+ *
+ * @returns {void}
+ * Observações: a conversa só é criada no servidor quando a primeira mensagem é enviada
+ * (`sendMessage`); dentro de um projeto ela nasce no projeto, fora dele fica avulsa.
+ */
+export function newConversation() {
+  openView("chat");
+  state.conversation = null;
+  state.selectedTaskId = null;
+  state.inspector = null;
+  state.feeds = {};
+  state.currentRootId = null;
+  state.tasks = [];
+  state.currentRun = null;
+  toast("Nova conversa — escreva o objetivo abaixo", "ok");
+}
+
+/**
  * Apaga uma conversa, com o histórico dela.
  *
  * @param {object} conversation Conversa apagada.

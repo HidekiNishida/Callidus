@@ -85,28 +85,30 @@ export const IntelligenceAgents = {
 
         <div class="table-panel">
           <h3>Automações registradas</h3>
-          <table class="data-table" v-if="state.automations?.length">
-            <thead>
-              <tr>
-                <th>Nome</th>
-                <th>Estado</th>
-                <th>Próxima execução</th>
-                <th>Última execução</th>
-                <th>Tentativas</th>
-                <th>Sucesso</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="a in state.automations" :key="a.id">
-                <td>{{ a.name || a.id }}</td>
-                <td><span class="status-badge" :class="'status-' + a.state">{{ a.state }}</span></td>
-                <td class="mono">{{ a.next_run_at || '—' }}</td>
-                <td class="mono">{{ a.last_run_at || '—' }}</td>
-                <td>{{ a.max_attempts || '—' }}</td>
-                <td>{{ a.success_rate !== undefined ? (a.success_rate * 100).toFixed(1) + '%' : '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-scroll" v-if="state.automations?.length">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>Estado</th>
+                  <th>Próxima execução</th>
+                  <th>Última execução</th>
+                  <th>Tentativas</th>
+                  <th>Sucesso</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="a in state.automations" :key="a.id">
+                  <td>{{ a.name || a.id }}</td>
+                  <td><span class="status-badge" :class="'status-' + a.state">{{ a.state }}</span></td>
+                  <td class="mono">{{ a.next_run_at || '—' }}</td>
+                  <td class="mono">{{ a.last_run_at || '—' }}</td>
+                  <td>{{ a.max_attempts || '—' }}</td>
+                  <td>{{ a.success_rate !== undefined ? (a.success_rate * 100).toFixed(1) + '%' : '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <p v-else class="muted small">Nenhuma automação registrada.</p>
         </div>
 

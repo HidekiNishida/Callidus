@@ -104,26 +104,28 @@ export const IntelligenceOverview = {
 
       <div v-if="!loading && state.intelligenceOverview" class="table-panel">
         <h3>Runs recentes</h3>
-        <table class="data-table" v-if="state.intelligenceOverview.recent_runs?.length">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Status</th>
-              <th><span class="picker-ico" v-html="icon('server', 13)"></span></th>
-              <th><span class="picker-ico" v-html="icon('spark', 13)"></span></th>
-              <th>Criada em</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="run in state.intelligenceOverview.recent_runs" :key="run.id">
-              <td class="mono">{{ run.id.slice(0, 8) }}</td>
-              <td><span class="status-badge" :class="'status-' + run.status.toLowerCase()">{{ run.status }}</span></td>
-              <td>{{ run.provider }}</td>
-              <td>{{ run.model }}</td>
-              <td>{{ run.created_at }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="table-scroll" v-if="state.intelligenceOverview.recent_runs?.length">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Status</th>
+                <th><span class="picker-ico" v-html="icon('server', 13)"></span></th>
+                <th><span class="picker-ico" v-html="icon('spark', 13)"></span></th>
+                <th>Criada em</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="run in state.intelligenceOverview.recent_runs" :key="run.id">
+                <td class="mono">{{ run.id.slice(0, 8) }}</td>
+                <td><span class="status-badge" :class="'status-' + run.status.toLowerCase()">{{ run.status }}</span></td>
+                <td>{{ run.provider }}</td>
+                <td>{{ run.model }}</td>
+                <td>{{ run.created_at }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <p v-else class="muted small">Nenhuma run recente.</p>
       </div>
     </div>
@@ -219,26 +221,28 @@ export const IntelligencePerformance = {
 
       <div v-if="!loading && state.runMetrics" class="table-panel">
         <h3>Consumo por provedor</h3>
-        <table class="data-table" v-if="state.runMetrics.inference.by_provider && Object.keys(state.runMetrics.inference.by_provider).length">
-          <thead>
-            <tr>
-              <th><span class="picker-ico" v-html="icon('server', 13)"></span></th>
-              <th>Chamadas</th>
-              <th>Falhas</th>
-              <th>Timeouts</th>
-              <th>Taxa de erro</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(data, provider) in state.runMetrics.inference.by_provider" :key="provider">
-              <td>{{ provider }}</td>
-              <td>{{ data.calls }}</td>
-              <td>{{ data.failed }}</td>
-              <td>{{ data.timeout }}</td>
-              <td>{{ (data.error_rate * 100).toFixed(1) }}%</td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="table-scroll" v-if="state.runMetrics.inference.by_provider && Object.keys(state.runMetrics.inference.by_provider).length">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th><span class="picker-ico" v-html="icon('server', 13)"></span></th>
+                <th>Chamadas</th>
+                <th>Falhas</th>
+                <th>Timeouts</th>
+                <th>Taxa de erro</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(data, provider) in state.runMetrics.inference.by_provider" :key="provider">
+                <td>{{ provider }}</td>
+                <td>{{ data.calls }}</td>
+                <td>{{ data.failed }}</td>
+                <td>{{ data.timeout }}</td>
+                <td>{{ (data.error_rate * 100).toFixed(1) }}%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <p v-else class="muted small">Nenhum dado de provedor disponível.</p>
       </div>
     </div>
@@ -359,28 +363,30 @@ export const IntelligenceBenchmarks = {
 
             <div v-if="state.benchmarkResults.length" class="table-panel">
               <h3>Resultados</h3>
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Execução</th>
-                    <th><span class="picker-ico" v-html="icon('server', 13)"></span></th>
-                    <th><span class="picker-ico" v-html="icon('spark', 13)"></span></th>
-                    <th>Status</th>
-                    <th>Tokens</th>
-                    <th>Tempo (s)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="r in state.benchmarkResults" :key="r.execution_id">
-                    <td class="mono">{{ r.execution_id.slice(0, 8) }}</td>
-                    <td>{{ r.provider }}</td>
-                    <td>{{ r.model_id }}</td>
-                    <td>{{ r.status }}</td>
-                    <td>{{ r.total_tokens }}</td>
-                    <td>{{ r.total_time_seconds.toFixed(2) }}</td>
-                  </tr>
-                </tbody>
-              </table>
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Execução</th>
+                      <th><span class="picker-ico" v-html="icon('server', 13)"></span></th>
+                      <th><span class="picker-ico" v-html="icon('spark', 13)"></span></th>
+                      <th>Status</th>
+                      <th>Tokens</th>
+                      <th>Tempo (s)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="r in state.benchmarkResults" :key="r.execution_id">
+                      <td class="mono">{{ r.execution_id.slice(0, 8) }}</td>
+                      <td>{{ r.provider }}</td>
+                      <td>{{ r.model_id }}</td>
+                      <td>{{ r.status }}</td>
+                      <td>{{ r.total_tokens }}</td>
+                      <td>{{ r.total_time_seconds.toFixed(2) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
             <p v-else class="muted small">Nenhum resultado ainda. Execute o benchmark para ver resultados.</p>
           </div>
@@ -503,28 +509,30 @@ export const IntelligenceDiagnostics = {
 
       <div v-if="!loading" class="table-panel">
         <h3>Detalhes</h3>
-        <table class="data-table" v-if="state.diagnostics?.length">
-          <thead>
-            <tr>
-              <th>Categoria</th>
-              <th>Severidade</th>
-              <th>Estado</th>
-              <th>Métrica afetada</th>
-              <th>Causa provável</th>
-              <th>Recomendação</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="d in state.diagnostics" :key="d.id">
-              <td>{{ d.category }}</td>
-              <td><span class="severity-badge" :class="'sev-' + d.severity">{{ d.severity }}</span></td>
-              <td><span class="status-badge" :class="'status-' + d.state">{{ d.state }}</span></td>
-              <td class="mono">{{ d.metric_affected || '—' }}</td>
-              <td>{{ d.probable_cause || '—' }}</td>
-              <td>{{ d.recommendation || '—' }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="table-scroll" v-if="state.diagnostics?.length">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Categoria</th>
+                <th>Severidade</th>
+                <th>Estado</th>
+                <th>Métrica afetada</th>
+                <th>Causa provável</th>
+                <th>Recomendação</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="d in state.diagnostics" :key="d.id">
+                <td>{{ d.category }}</td>
+                <td><span class="severity-badge" :class="'sev-' + d.severity">{{ d.severity }}</span></td>
+                <td><span class="status-badge" :class="'status-' + d.state">{{ d.state }}</span></td>
+                <td class="mono">{{ d.metric_affected || '—' }}</td>
+                <td>{{ d.probable_cause || '—' }}</td>
+                <td>{{ d.recommendation || '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <p v-else class="muted small">Nenhum diagnóstico para exibir.</p>
       </div>
     </div>
@@ -638,17 +646,19 @@ export const IntelligenceContextConsumption = {
 
         <div class="table-panel" style="margin-top: 16px;">
           <h4>Consumo por status</h4>
-          <table class="data-table">
-            <thead>
-              <tr><th>Status</th><th>Quantidade</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="(count, status) in state.contextConsumptionOverview.by_status" :key="status">
-                <td>{{ status }}</td>
-                <td>{{ count }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr><th>Status</th><th>Quantidade</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(count, status) in state.contextConsumptionOverview.by_status" :key="status">
+                  <td>{{ status }}</td>
+                  <td>{{ count }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -670,25 +680,27 @@ export const IntelligenceContextConsumption = {
           </div>
           <div class="chart-panel">
             <h4>Estatísticas por tipo</h4>
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Tipo</th><th>Amostras</th><th>Média</th><th>Mediana</th><th>P90</th><th>P95</th><th>Mín.</th><th>Máx.</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="g in state.contextConsumptionByType.groups" :key="g.type">
-                  <td>{{ g.label }}</td>
-                  <td>{{ g.total_tokens.count }}</td>
-                  <td class="mono">{{ g.total_tokens.mean ?? 0 }}</td>
-                  <td class="mono">{{ g.total_tokens.median ?? 0 }}</td>
-                  <td class="mono">{{ g.total_tokens.p90 ?? '—' }}</td>
-                  <td class="mono">{{ g.total_tokens.p95 ?? '—' }}</td>
-                  <td class="mono">{{ g.total_tokens.min ?? 0 }}</td>
-                  <td class="mono">{{ g.total_tokens.max ?? 0 }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Tipo</th><th>Amostras</th><th>Média</th><th>Mediana</th><th>P90</th><th>P95</th><th>Mín.</th><th>Máx.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="g in state.contextConsumptionByType.groups" :key="g.type">
+                    <td>{{ g.label }}</td>
+                    <td>{{ g.total_tokens.count }}</td>
+                    <td class="mono">{{ g.total_tokens.mean ?? 0 }}</td>
+                    <td class="mono">{{ g.total_tokens.median ?? 0 }}</td>
+                    <td class="mono">{{ g.total_tokens.p90 ?? '—' }}</td>
+                    <td class="mono">{{ g.total_tokens.p95 ?? '—' }}</td>
+                    <td class="mono">{{ g.total_tokens.min ?? 0 }}</td>
+                    <td class="mono">{{ g.total_tokens.max ?? 0 }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -711,23 +723,25 @@ export const IntelligenceContextConsumption = {
           </div>
           <div class="chart-panel">
             <h4>Tabela de componentes</h4>
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Categoria</th><th>Tokens</th><th>Média/inf.</th><th>% consumo</th><th>Ocorrências</th><th>Pot. otimização</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="g in state.contextConsumptionByComponent.groups" :key="g.category">
-                  <td>{{ g.category }}</td>
-                  <td class="mono">{{ g.tokens_total }}</td>
-                  <td class="mono">{{ g.avg_tokens_per_inference ?? 0 }}</td>
-                  <td>{{ g.percent_of_consumption }}%</td>
-                  <td>{{ g.occurrences }}</td>
-                  <td>{{ g.optimization_potential }}</td>
-                </tr>
-              </tbody>
-            </table>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Categoria</th><th>Tokens</th><th>Média/inf.</th><th>% consumo</th><th>Ocorrências</th><th>Pot. otimização</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="g in state.contextConsumptionByComponent.groups" :key="g.category">
+                    <td>{{ g.category }}</td>
+                    <td class="mono">{{ g.tokens_total }}</td>
+                    <td class="mono">{{ g.avg_tokens_per_inference ?? 0 }}</td>
+                    <td>{{ g.percent_of_consumption }}%</td>
+                    <td>{{ g.occurrences }}</td>
+                    <td>{{ g.optimization_potential }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -735,89 +749,97 @@ export const IntelligenceContextConsumption = {
       <div v-if="!loading && state.contextConsumptionMatrix" class="section-panel">
         <h3>Matriz de consumo (tipo × componente)</h3>
         <div class="table-panel">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Tipo de inferência</th>
-                <th v-for="cat in state.contextConsumptionMatrix.categories" :key="cat">{{ cat }}</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in state.contextConsumptionMatrix.matrix" :key="row.type">
-                <td><strong>{{ row.type }}</strong></td>
-                <td v-for="cat in state.contextConsumptionMatrix.categories" :key="cat" class="mono">{{ row[cat] ?? 0 }}</td>
-                <td class="mono">{{ row.total }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Tipo de inferência</th>
+                  <th v-for="cat in state.contextConsumptionMatrix.categories" :key="cat">{{ cat }}</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in state.contextConsumptionMatrix.matrix" :key="row.type">
+                  <td><strong>{{ row.type }}</strong></td>
+                  <td v-for="cat in state.contextConsumptionMatrix.categories" :key="cat" class="mono">{{ row[cat] ?? 0 }}</td>
+                  <td class="mono">{{ row.total }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
       <div v-if="!loading && state.contextConsumptionCompare" class="section-panel">
         <h3>Comparação por {{ state.contextConsumptionCompare.group_by }}</h3>
         <div class="table-panel">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>{{ state.contextConsumptionCompare.group_by }}</th><th>Amostras</th><th>Total tokens</th><th>Média</th><th>Máx.</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="g in state.contextConsumptionCompare.groups" :key="g.key">
-                <td>{{ g.key }}</td>
-                <td>{{ g.total_tokens.count }}</td>
-                <td class="mono">{{ g.total_tokens.value ?? 0 }}</td>
-                <td class="mono">{{ g.total_tokens.mean ?? 0 }}</td>
-                <td class="mono">{{ g.total_tokens.max ?? 0 }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>{{ state.contextConsumptionCompare.group_by }}</th><th>Amostras</th><th>Total tokens</th><th>Média</th><th>Máx.</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="g in state.contextConsumptionCompare.groups" :key="g.key">
+                  <td>{{ g.key }}</td>
+                  <td>{{ g.total_tokens.count }}</td>
+                  <td class="mono">{{ g.total_tokens.value ?? 0 }}</td>
+                  <td class="mono">{{ g.total_tokens.mean ?? 0 }}</td>
+                  <td class="mono">{{ g.total_tokens.max ?? 0 }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
       <div v-if="!loading && state.contextConsumptionTimeline" class="section-panel">
         <h3>Evolução temporal</h3>
         <div class="table-panel">
-          <table class="data-table">
-            <thead>
-              <tr><th>Período</th><th>Inferências</th><th>Total tokens</th><th>Média/inf.</th><th>Entrada</th><th>Saída</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="s in state.contextConsumptionTimeline.series" :key="s.period">
-                <td>{{ s.period }}</td>
-                <td>{{ s.inferences }}</td>
-                <td class="mono">{{ s.total_tokens.value ?? 0 }}</td>
-                <td class="mono">{{ s.avg_tokens_per_inference ?? 0 }}</td>
-                <td class="mono">{{ s.input_tokens ?? 0 }}</td>
-                <td class="mono">{{ s.output_tokens ?? 0 }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr><th>Período</th><th>Inferências</th><th>Total tokens</th><th>Média/inf.</th><th>Entrada</th><th>Saída</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="s in state.contextConsumptionTimeline.series" :key="s.period">
+                  <td>{{ s.period }}</td>
+                  <td>{{ s.inferences }}</td>
+                  <td class="mono">{{ s.total_tokens.value ?? 0 }}</td>
+                  <td class="mono">{{ s.avg_tokens_per_inference ?? 0 }}</td>
+                  <td class="mono">{{ s.input_tokens ?? 0 }}</td>
+                  <td class="mono">{{ s.output_tokens ?? 0 }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
       <div v-if="!loading && state.contextConsumptionOpportunities" class="section-panel">
         <h3>Oportunidades de otimização</h3>
         <div v-if="state.contextConsumptionOpportunities.opportunities.length" class="table-panel">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Problema</th><th>Evidência</th><th>Componente</th><th>Frequência</th><th>Impacto (tokens)</th><th>Estratégia</th><th>Risco</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="o in state.contextConsumptionOpportunities.opportunities" :key="o.problem">
-                <td>{{ o.problem }}</td>
-                <td>{{ o.evidence }}</td>
-                <td>{{ o.component }}</td>
-                <td>{{ o.frequency }}</td>
-                <td class="mono">{{ o.estimated_impact_tokens ?? 0 }}</td>
-                <td>{{ o.recommended_strategy }}</td>
-                <td>{{ o.information_loss_risk }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Problema</th><th>Evidência</th><th>Componente</th><th>Frequência</th><th>Impacto (tokens)</th><th>Estratégia</th><th>Risco</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="o in state.contextConsumptionOpportunities.opportunities" :key="o.problem">
+                  <td>{{ o.problem }}</td>
+                  <td>{{ o.evidence }}</td>
+                  <td>{{ o.component }}</td>
+                  <td>{{ o.frequency }}</td>
+                  <td class="mono">{{ o.estimated_impact_tokens ?? 0 }}</td>
+                  <td>{{ o.recommended_strategy }}</td>
+                  <td>{{ o.information_loss_risk }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
         <p v-else class="muted small">Nenhuma oportunidade de otimização identificada.</p>
       </div>
