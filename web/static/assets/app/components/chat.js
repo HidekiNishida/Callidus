@@ -518,6 +518,10 @@ export const ChatView = {
       inferenceComponents,
       totalTokens,
       measurementLabel,
+      stagesOpen,
+      activeStages,
+      currentIndex,
+      currentTitle,
     };
   },
   template: `
