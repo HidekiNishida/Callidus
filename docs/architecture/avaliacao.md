@@ -307,6 +307,43 @@ Leitura honesta:
 - **A narração com modelo real foi medida à parte**, com `qwen3-vl:8b`
   ([medidas](/docs/architecture/narracao-tempo-real.md#-medidas)).
 
+## 🎯 Etapas 1 e 2 — confiabilidade e decomposição (02/11/2026)
+
+Estado medido: `c545a8e` (Etapas 1 e 2) e, nos cenários `verificacao_reprova` e
+`pergunta_simples`, `d10f247`. A primeira rodada com `gpt-oss:20b` caiu no quinto cenário por um
+defeito **anterior** a esta entrega, que a medição revelou: o caminho "resposta final inválida"
+chamava um atributo inexistente, e o passo escondia o erro. Ele foi corrigido em `d10f247`, e os dois
+cenários que faltavam rodaram de novo. Mesmo provedor (`meu_ollama`), 40 passos, uma rodada por
+modelo. O `qwen3:8b` não estava instalado; o modelo pequeno medido foi o `qwen3-vl:8b`. Saída:
+`lab/out/avaliacao-etapas12-*.json`. A primeira rodada do `gpt-oss:20b` não gravou o JSON, porque o
+processo caiu; os números dela vêm do log do terminal.
+
+| Cenário | `gpt-oss:20b` | `qwen3-vl:8b` |
+|---------|---------------|---------------|
+| funcional | concluído · 1/1 · 2 chamadas · 181 s | concluído · 1/1 · 9 chamadas · 95 s |
+| bug | **ativo no limite** · 0/1 · 14 chamadas · 212 s | **ativo no limite** · 0/1 · 11 chamadas · 298 s |
+| arquivo_grande | **ativo no limite** · 0/1 · 24 chamadas · 377 s | **ativo no limite** · 0/1 · 11 chamadas · 1 325 s |
+| multirequisito | concluído · 2/2 · 9 chamadas · 317 s | concluído · 2/2 · 17 chamadas · 154 s |
+| verificacao_reprova | concluído · 1/1 · 157 s | concluído · 1/1 · 4 chamadas · 156 s |
+| pergunta_simples | concluído · 1/1 · 20 s | concluído · 1/1 · 2 s |
+
+| Resumo (*medido*) | `gpt-oss:20b` | `qwen3-vl:8b` |
+|-------------------|---------------|---------------|
+| Aceite objetivo | 6/6 | 6/6 |
+| Conclusões falsas | 0 | 0 |
+| Runs concluídos | 4/6 | 4/6 |
+| Requisitos comprovados | 5/7 | 5/7 |
+
+Leitura honesta:
+
+- **Nenhuma conclusão falsa nos dois modelos**, e o modelo de 8B fecha os mesmos cenários que o de
+  20B, sem trocar de modelo nem inferir em paralelo.
+- **`bug` e `arquivo_grande` não fecham em 40 passos nos dois modelos**: o código fica certo (o aceite
+  objetivo passa), mas o requisito não é comprovado antes do limite. Na medição de `9a225ab` com
+  `gpt-oss:20b` os dois concluíram; na de `440954c`, estagnaram. Com uma rodada por modelo, não dá
+  para separar a variação do modelo de uma regressão desta entrega. **A investigação está pendente.**
+- O `qwen3-vl:8b` levou ~22 min no `arquivo_grande`; para onde vai esse tempo ainda não foi medido.
+
 ## 🧪 Testes determinísticos
 
 A avaliação real depende do Ollama. Os testes de unidade cobrem os mesmos comportamentos sem
