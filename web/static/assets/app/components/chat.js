@@ -839,17 +839,24 @@ export const ChatView = {
           <strong>Etapa {{ currentIndex }} de {{ activeStages.length }}</strong>
           <span class="stages-current">{{ currentTitle }}</span>
         </span>
-        <ul class="stages-list" v-if="stagesOpen">
-          <li
-            v-for="(stage, index) in activeStages"
-            :key="stage.id"
-            :class="['stage-item', 'stage-' + stage.status.toLowerCase(), { active: stage.active }]"
-          >
-            <span class="stage-ico" :class="'ico-' + stage.status" v-html="icon(stage.glyph, 12)"></span>
-            <span class="stage-title">{{ stage.title }}</span>
-            <span class="stage-status">{{ stage.statusText }}</span>
-          </li>
-        </ul>
+
+        <div class="stages-card" v-if="stagesOpen">
+          <div class="stages-header">
+            <span>Etapas do plano</span>
+            <span>{{ currentIndex }} de {{ activeStages.length }}</span>
+          </div>
+          <ul class="stages-list">
+            <li
+              v-for="(stage, index) in activeStages"
+              :key="stage.id"
+              :class="['stage-item', 'stage-' + stage.status.toLowerCase(), { active: stage.active }]"
+            >
+              <span class="stage-ico" :class="'ico-' + stage.status" v-html="icon(stage.glyph, 12)"></span>
+              <span class="stage-title">{{ stage.title }}</span>
+              <span class="stage-status">{{ stage.statusText }}</span>
+            </li>
+          </ul>
+        </div>
       </div>
 
       <form class="composer" @submit.prevent="onSend()">

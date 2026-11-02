@@ -3156,12 +3156,13 @@ pre,
 .plan-tag.plan-blocked .plan-tag-status,
 .plan-tag.plan-failed .plan-tag-status { color: var(--danger); }
 
-/* ── Tag expansível de etapas (acima do prompt) ─────────────────────────── */
+/* ── Card pop-up de etapas (acima do prompt) ─────────────────────────── */
 
 .stages-tag {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid var(--border-soft);
@@ -3170,58 +3171,103 @@ pre,
   font-size: 12px;
   cursor: pointer;
   transition: border-color var(--dur-2) var(--ease), background var(--dur-2) var(--ease), color var(--dur-2) var(--ease);
+  width: fit-content;
+  max-width: 100%;
 }
 .stages-tag:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--text); }
-
-.stages-chevron { flex: none; transition: transform var(--dur-2) var(--ease); }
-.stages-tag[aria-expanded="true"] .stages-chevron { transform: rotate(180deg); }
 
 .stages-summary { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .stages-summary strong { color: var(--text); font-size: 11.5px; }
 .stages-current { font-size: 11.5px; color: var(--accent); }
 
-.stages-list {
+.stages-chevron { flex: none; width: 12px; height: 12px; transition: transform var(--dur-2) var(--ease); }
+.stages-tag[aria-expanded="true"] .stages-chevron { transform: rotate(180deg); }
+
+/* Card pop-up com a lista de etapas em sequência. */
+.stages-card {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  width: min(420px, 92vw);
+  max-height: 260px;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid color-mix(in srgb, var(--border-soft) 50%, transparent);
-  max-height: 220px;
-  overflow-y: auto;
-  scrollbar-width: thin;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--surface-1);
+  color: var(--text);
+  box-shadow: 0 10px 30px color-mix(in srgb, black 35%);
+  animation: card-in var(--dur-3) var(--ease) both;
 }
-.stages-list::-webkit-scrollbar { width: 6px; }
-.stages-list::-webkit-scrollbar-thumb { background: var(--border-soft); border-radius: 999px; }
 
-.stage-item {
-  display: inline-flex;
+@keyframes card-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-6px); scale(0.96); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); scale(1); }
+}
+
+.stages-card .stages-header {
+  display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  cursor: default;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
-.stage-item.stage-completed { color: var(--ok); }
-.stage-item.stage-active { color: var(--text); font-weight: 600; background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.stage-item.stage-pending,
-.stage-item.stage-planning,
-.stage-item.stage-ready { color: var(--muted); }
+.stages-card .stages-header span:first-child { color: var(--muted); font-weight: 500; }
 
-.stage-ico { flex: none; width: 13px; height: 13px; }
-.stage-ico.ico-COMPLETED { color: var(--ok); }
-.stage-ico.ico-RUNNING,
-.stage-ico.ico-PLANNING,
-.stage-ico.ico-VERIFYING,
-.stage-ico.ico-RETRY_PENDING { color: var(--accent); }
-.stage-ico.ico-FAILED,
-.stage-ico.ico-BLOCKED,
-.stage-ico.ico-CANCELLED { color: var(--danger); }
-.stage-ico.ico-PENDING { color: var(--faint); }
+.stages-card .stages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow-y: auto;
+  max-height: calc(100% - 44px);
+  padding: 4px 0;
+}
+.stages-card .stages-list::-webkit-scrollbar { width: 6px; }
+.stages-card .stages-list::-webkit-scrollbar-thumb { background: var(--border-soft); border-radius: 999px; }
 
-.stage-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stage-status { font-size: 10px; color: var(--faint); text-transform: lowercase; flex: none; }
+.stages-card .stage-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: default;
+  border-radius: 0;
+}
+.stages-card .stage-item:first-child { border-top-left-radius: 11px; border-top-right-radius: 11px; }
+.stages-card .stage-item:last-child { border-bottom-left-radius: 11px; border-bottom-right-radius: 11px; }
+.stages-card .stage-item:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
+.stages-card .stage-item.stage-completed { color: var(--ok); }
+.stages-card .stage-item.stage-active { color: var(--text); font-weight: 600; background: color-mix(in srgb, var(--accent) 14%, transparent); border-left: 3px solid var(--accent); padding-left: 9px; }
+.stages-card .stage-item.stage-pending,
+.stages-card .stage-item.stage-planning,
+.stages-card .stage-item.stage-ready { color: var(--muted); }
+
+.stages-card .stage-ico { flex: none; width: 14px; height: 14px; }
+.stages-card .stage-ico.ico-COMPLETED { color: var(--ok); }
+.stages-card .stage-ico.ico-RUNNING,
+.stages-card .stage-ico.ico-PLANNING,
+.stages-card .stage-ico.ico-VERIFYING,
+.stages-card .stage-ico.ico-RETRY_PENDING { color: var(--accent); }
+.stages-card .stage-ico.ico-FAILED,
+.stages-card .stage-ico.ico-BLOCKED,
+.stages-card .stage-ico.ico-CANCELLED { color: var(--danger); }
+.stages-card .stage-ico.ico-PENDING { color: var(--faint); }
+
+.stages-card .stage-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stages-card .stage-status { font-size: 10px; color: var(--faint); text-transform: lowercase; flex: none; }
+
+/* Apenas o número da etapa vigente fica discreto no resumo fechado. */
+.stages-tag .stages-summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
 
 /* ── Automações ─────────────────────────────────────────────────────────── */
 .auto-pane { display: flex; flex-direction: column; gap: 16px; padding: 18px; }
