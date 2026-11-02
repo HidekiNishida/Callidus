@@ -1970,9 +1970,9 @@ pre,
 
 /* botão de rolar para o fim */
 .scroll-bottom {
-  position: absolute;
-  right: 22px;
-  bottom: 132px;
+  position: fixed;
+  right: 14px;
+  bottom: calc(90px + env(safe-area-inset-bottom));
   width: 34px;
   height: 34px;
   border-radius: 50%;
@@ -1988,7 +1988,7 @@ pre,
   transform: translateY(8px) scale(0.9);
   pointer-events: none;
   transition: opacity var(--dur-2) var(--ease), transform var(--dur-2) var(--spring), background var(--dur-1) var(--ease);
-  z-index: 5;
+  z-index: 60;
 }
 
 .scroll-bottom.show {
@@ -1998,6 +1998,10 @@ pre,
 }
 
 .scroll-bottom:hover { background: var(--surface-3); border-color: var(--accent); }
+
+@media (max-width: 880px) {
+  .scroll-bottom { bottom: calc(100px + env(safe-area-inset-bottom)); }
+}
 
 /* ── Painel de detalhes ────────────────────────────────────────────────── */
 
@@ -2664,7 +2668,6 @@ pre,
   .composer-pickers::-webkit-scrollbar { display: none; }
   .statusbar { display: none; }
   .toast-stack { left: 12px; right: 12px; bottom: calc(78px + env(safe-area-inset-bottom)); max-width: none; }
-  .scroll-bottom { bottom: calc(150px + env(safe-area-inset-bottom)); right: 14px; }
 
   .providers { padding: 14px 12px 40px; }
   .providers-grid { grid-template-columns: minmax(0, 1fr); }

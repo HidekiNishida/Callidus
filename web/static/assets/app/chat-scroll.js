@@ -114,8 +114,9 @@ export function createScrollFollow({ threshold = DEFAULT_THRESHOLD, onChange = (
     element = next || element;
     if (!element || !following) return false;
     autoScrolling = true;
-    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
-    // A posição de referência é a de agora: a rolagem suave só pode ir para baixo.
+    // No Safari o `scrollTo({ behavior: "smooth" })` pode não chegar ao fim no
+    // primeiro tentativa: define scrollTop diretamente e confirma com retry.
+    element.scrollTop = element.scrollHeight;
     lastTop = element.scrollTop;
     clearTimer();
     autoTimer = timers.setTimeout(() => {
@@ -127,12 +128,14 @@ export function createScrollFollow({ threshold = DEFAULT_THRESHOLD, onChange = (
         setFollowing(true);
         return;
       }
-      // A rolagem suave não chegou ao fim (conteúdo grande): continua acompanhando.
+      // A rolagem não chegou ao fim (conteúdo grande ou layout ainda ajustando):
+      // tenta novamente algumas vezes.
       if (retries >= MAX_RETRIES) {
         setFollowing(nearBottom());
         return;
       }
       retries += 1;
+      element.scrollTop = element.scrollHeight;
       followContent(element);
     }, SMOOTH_MS);
     return true;
@@ -143,6 +146,7 @@ export function createScrollFollow({ threshold = DEFAULT_THRESHOLD, onChange = (
     element = next || element;
     if (!element) return;
     setFollowing(true);
+    element.scrollTop = element.scrollHeight;
     followContent(element);
   }
 
