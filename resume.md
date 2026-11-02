@@ -443,6 +443,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Arquitetura das skills sob demanda, da estratégia profissional, da decomposição recursiva e do ciclo de recuperação da verificação.
 
+### `docs/architecture/narracao-tempo-real.md`
+
+**Propósito:** narração do agente em tempo real: fluxo do fragmento do modelo à linha do tempo, contrato `agent.narration.*`, o que o filtro descarta (raciocínio, ferramenta, JSON), responsabilidade de cada adaptador, persistência, interrupção, reconexão, interface, medidas com o Ollama real, testes e limitações.
+
 ### `docs/architecture/observabilidade-contexto.md`
 
 **Propósito:** observabilidade de contexto e tokens por inferência: modelo de dados (`inference_records` estendido), componentes do contexto, rotas de consumo e onde aparece na interface (página Consumo e Gestão de Contexto e barra por inferência no chat).
@@ -1791,6 +1795,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [bus.py](/src/agent/observability/bus.py)
 - Arquivo: [contracts.py](/src/agent/observability/contracts.py)
 - Arquivo: [emitter.py](/src/agent/observability/emitter.py)
+- Arquivo: [narration.py](/src/agent/observability/narration.py)
 - Arquivo: [sanitize.py](/src/agent/observability/sanitize.py)
 - Arquivo: [snapshot.py](/src/agent/observability/snapshot.py)
 
@@ -1874,6 +1879,25 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `observe(session: Session, *, run_id: uuid.UUID, project_id: uuid.UUID | None=None, task_id: uuid.UUID | None=None, agent: str='orchestrator') -> Iterator[Observation]` — Gerenciador de contexto que define a observação corrente (run, projeto, tarefa, agente) para que tudo emitido dentro do bloco saia associado a ela; restaura o contexto anterior ao sair.
 - `scoped(*, task_id: Any=_UNSET, agent: str | None=None) -> Iterator[Observation | None]` — Gerenciador de contexto que troca temporariamente a tarefa e/ou o agente do contexto atual (sobre uma cópia, para não vazar); sem contexto ativo, não faz nada e devolve `None`.
 - `set_task(task_id: uuid.UUID | None) -> None` — Troca a tarefa da observação corrente, dentro do bloco que a criou, de modo que os eventos seguintes fiquem vinculados a ela.
+
+### `src/agent/observability/narration.py`
+
+**Propósito:** transforma o texto público da resposta do modelo, fragmento a fragmento, em narração na linha do tempo, sem chamada extra ao modelo. **Quando/onde:** chamado por `observed_chat` a cada fragmento; emite `agent.narration.started`/`delta`/`completed`.
+
+- `NARRATION_PERSIST_CHARS` — teto do texto gravado no fim de uma narração (8 000).
+- `narrates(purpose: str | None) -> bool` — `False` para `final_answer` e `agent_query` (a resposta já aparece na conversa); `True` para o resto.
+- `NarrationFilter` — filtro incremental do texto público: descarta `<think>…</think>` (mesmo partido), encerra em chamada de ferramenta escrita no texto (`<tool_call>`, `<function-call>`, `<|…`) e em linha que abre carga (`{`, `[`, ```` ``` ````, tag).
+- `NarrationFilter.__init__() -> None` — começa no início de linha, fora de raciocínio, sem nada retido.
+- `NarrationFilter.closed() -> bool` — a resposta virou carga: nada mais vira narração.
+- `NarrationFilter.feed(piece: str) -> str` — devolve a parte pública do fragmento; retém só o mínimo para decidir (começo de linha, `<` que pode abrir tag).
+- `NarrationFilter._count(out: list[str]) -> str` — junta a saída e soma o total publicado.
+- `NarrationStream` — uma narração: nasce no primeiro texto público, publica trechos em lote com deslocamento e fecha com texto e estado.
+- `NarrationStream.__init__(output_id: str, *, purpose: str='', streamed: bool=True, interval_ms: int | None=None, clock: Callable[[], float]=time.monotonic) -> None` — liga a narração à chamada (`output_id`); `streamed=False` marca provedor sem streaming.
+- `NarrationStream.started() -> bool` — houve texto público.
+- `NarrationStream.text() -> str` — texto público acumulado.
+- `NarrationStream.feed(piece: str) -> None` — filtra o fragmento; no primeiro texto emite `agent.narration.started` (gravado).
+- `NarrationStream._publish(text: str) -> None` — emite `agent.narration.delta` (efêmero) com o trecho novo e o deslocamento.
+- `NarrationStream.finish(status: str='completed', *, error: str='') -> None` — idempotente; grava `agent.narration.completed` com o texto (parcial em `interrupted`/`failed`), `chars` e `truncated`.
 
 ### `src/agent/observability/sanitize.py`
 
@@ -3798,6 +3822,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [test_database_url.py](/tests/test_database_url.py)
 - Arquivo: [test_requirements.py](/tests/test_requirements.py)
 - Arquivo: [test_multirequisito_regressions.py](/tests/test_multirequisito_regressions.py)
+- Arquivo: [test_narration_stream.py](/tests/test_narration_stream.py)
 - Arquivo: [test_resume.py](/tests/test_resume.py)
 - Arquivo: [test_resume_integrity.py](/tests/test_resume_integrity.py)
 - Arquivo: [test_retry_strategy.py](/tests/test_retry_strategy.py)
@@ -3878,6 +3903,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `tests/web/work-explained.test.mjs`
 
 **Propósito:** verificar que `describeActivity` mostra o texto de `work.explained`, ignora evento sem texto e que `integrateNarrative` acopla a narração ao item operacional seguinte dentro do feed (sem lista separada no topo).
+
+### `tests/web/live-narration.test.mjs`
+
+**Propósito:** verifica que a fala do agente cresce na linha do tempo com os fragmentos reais: ordem, reconexão sem duplicar (anel e foto ao vivo), buraco fechado pelo texto final, emoji (code points), interrupção, posição entre ferramentas fora da seção expansível, etapa filha, ausência de temporizador e estilos por token de tema.
 
 ### `tests/web/narrative-replay.test.mjs`
 
@@ -4189,6 +4218,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `tests/test_observability_executor.py`
 
 **Propósito:** Testes do executor com observabilidade (streaming, operations live).
+
+### `tests/test_narration_stream.py`
+
+**Propósito:** verifica a narração em tempo real de ponta a ponta: filtro (raciocínio, ferramenta, JSON, tags reais do qwen3), fragmentos entregues antes do fim (A), resposta longa sem gravação por token (C), ordem narração → ferramenta (D), interrupção (E), reconexão pela foto ao vivo (F), runs simultâneas (G), conteúdo privado e ferramentas remontadas nos streams Ollama, OpenAI, Anthropic e Gemini (H), provedor sem streaming, resposta final e resposta só JSON (I).
 
 ### `tests/test_observability_streaming.py`
 
@@ -5058,6 +5091,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** http — módulo do projeto.
 
+- `OpenAIDeltaAccumulator` — junta os `choices[].delta` do streaming OpenAI: devolve o `content` na hora e guarda à parte as chamadas de ferramenta (remontadas por `index`) e o raciocínio (`reasoning_content`/`reasoning`).
+- `OpenAIDeltaAccumulator.__init__() -> None` — sem texto, raciocínio nem chamadas.
+- `OpenAIDeltaAccumulator.add(delta: dict[str, Any]) -> str` — incorpora um `delta` e devolve só o texto público novo.
+- `OpenAIDeltaAccumulator.message() -> dict[str, Any]` — mensagem final no formato não-streaming (`content` + `tool_calls`).
+- `OpenAIDeltaAccumulator.reasoning_text() -> str | None` — raciocínio recebido, ou `None`.
 - `redact(text, secrets) → str` — Tira segredos de uma mensagem de log/erro: chaves explícitas e formatos conhecidos.
 - `validate_base_url(url, *, allow_private_hosts) → str` — Valida a URL base de um provedor. Endereços privados só são recusados quando o operador.
 - `HttpClientConfig` — Política HTTP comum: tempo limite, cabeçalhos, credencial e política de retry.
@@ -5543,6 +5581,12 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Sub-view de inteligência da interface (dashboard de desempenho, calibração, capacidades e perfis). **Quando/onde:** consumida pela SPA para exibir métricas de qualidade, eficiência, recursos e autonomia.
 
+### `web/static/assets/app/components/narration.js`
+
+**Propósito:** `NarrationEntry`, a linha de narração da Atividade do agente: único leitor de `entry.text` (cada fragmento redesenha só esta linha), cursor de geração ativa, estados concluída/interrompida/falha e o nome da etapa filha que fala.
+
+- `narrationState(entry, busy)` — `streaming` enquanto a mensagem trabalha; uma narração aberta numa mensagem parada aparece como `interrupted`; `error` vira `failed`; o resto, `done`.
+
 ### `web/static/assets/app/components/palette.js`
 
 **Propósito:** palette — módulo do projeto.
@@ -5701,6 +5745,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** store — módulo do projeto.
 
+- `seedLiveNarrations(live)` — recoloca no feed o texto das narrações em curso (foto ao vivo de `/observe` e do evento SSE `live`); os fragmentos reenviados depois são descartados pelo deslocamento.
 - `toast`
 - `workspaceId`
 - `roots`
@@ -5835,6 +5880,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** ui — módulo do projeto.
 
+- `codePoints(text)` — comprimento em code points, a unidade dos deslocamentos do servidor.
+- `mergeNarration(feed, entry)` — aplica `agent.narration.*` à linha da narração sem recriá-la: acrescenta só o trecho novo pelo `offset`, marca buraco, aceita a semente ao vivo e o texto final com o estado.
 - `icon`
 - `flattenInferenceComponents` — achata a composição do contexto (lista ou agrupada por categoria).
 - `inferenceView` — detalhe da inferência no formato do chat: metadados, tokens (com estimativa) e a barra por categoria.
@@ -5967,6 +6014,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `lab/avaliar.py`
 
 **Propósito:** Avaliação reproduzível do Callidus com o modelo local de referência.
+
+### `lab/medir_narracao.py`
+
+**Propósito:** mede com o Ollama local, num banco isolado, uma chamada real da operação com ferramentas: tempo até o primeiro fragmento do modelo e até o primeiro trecho de narração entregue, lotes, texto da narração, raciocínio separado e pico de memória. Saída em `lab/out/narracao-<label>.json`. Fora da suíte (teste B).
 
 ### `lab/out/baseline-root/src/main.js`
 

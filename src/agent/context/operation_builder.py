@@ -65,6 +65,13 @@ GLOBAL_RULES = (
     "Não invente arquivos ou testes executados."
 )
 
+# A narração da linha do tempo é o texto público da própria resposta (nenhuma chamada extra ao
+# modelo): pedir uma frase curta antes da ferramenta é o que faz a pessoa ver o porquê do passo.
+NARRATION_HINT = (
+    "Antes de chamar uma ferramenta, escreva uma frase curta para quem acompanha: o que vai "
+    "examinar ou mudar e por quê. Não afirme resultados que ainda não viu."
+)
+
 
 class OperationContextBuilder:
     """Monta o contexto de cada operação do agente a partir do estado persistido.
@@ -128,7 +135,8 @@ class OperationContextBuilder:
             output_format = (
                 "Esta etapa é SOMENTE LEITURA: inspecione o projeto com as ferramentas de leitura "
                 "e reporte o que encontrou. Não altere nenhum arquivo — a escrita é recusada. "
-                "Responda em texto, direto, dizendo o que observou."
+                "Responda em texto, direto, dizendo o que observou. "
+                f"{NARRATION_HINT}"
             )
         else:
             output_format = (
@@ -140,6 +148,7 @@ class OperationContextBuilder:
                     "Inspecione o projeto com as ferramentas e faça a alteração com write_file ou edit_file. "
                     "Para um arquivo de até 200 linhas, prefira write_file com o arquivo inteiro já com todas as mudanças. "
                     f"Você pode pedir no máximo {self._inspection_budget()} leituras; depois disso, faça a alteração. "
+                    f"{NARRATION_HINT} "
                     'Se preferir responder em JSON: criar {"path":"...","content":"..."}, '
                     'editar {"path":"...","old_string":"...","new_string":"..."}. '
                     "Responda só JSON, sem explicação."

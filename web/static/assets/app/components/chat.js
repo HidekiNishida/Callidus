@@ -4,7 +4,8 @@
  * Propósito: conversa — pedido, atividade e resposta final.
  * Responsabilidade: frontend/componente — monta as mensagens e envia o pedido.
  * Componentes: ChatView (componente Vue).
- * Dependências: `../store.js` (estado e ações), `../ui.js` (`brandSrc`, `visibleFinalAnswer`, markdown).
+ * Dependências: `../store.js` (estado e ações), `../ui.js` (`brandSrc`, `visibleFinalAnswer`, markdown),
+ *   `./narration.js` (fala do agente na linha do tempo).
  * Observações: o avatar e o estado vazio usam o símbolo do tema ativo; a resposta
  * visível vem da raiz ou, se a cópia não chegou, da etapa de resposta final concluída.
  */
@@ -50,9 +51,11 @@ import {
 } from "../ui.js";
 import { filesList, currentTask } from "../live-state.js";
 import { createScrollFollow } from "../chat-scroll.js";
+import { NarrationEntry } from "./narration.js";
 
 export const ChatView = {
   name: "ChatView",
+  components: { NarrationEntry },
   emits: ["new-project"],
   setup() {
     const messages = Vue.computed(() => {
@@ -133,6 +136,9 @@ export const ChatView = {
     // A conversa está no ponto mais baixo? Vem da posição real da rolagem: é o que
     // decide se o botão "rolar para o fim" aparece.
     const atBottom = Vue.ref(true);
+    // Chegou conteúdo enquanto o usuário lia mais acima: o botão avisa, sem puxar a rolagem.
+    const hasNews = Vue.ref(false);
+    let lastHeight = 0;
     // Quem manda na rolagem: o estado segue a posição real da conversa, então
     // voltar ao fim sempre religa o acompanhamento do feed.
     const scrollFollow = createScrollFollow();
@@ -142,6 +148,7 @@ export const ChatView = {
     function updateAtBottom() {
       const element = logRef.value;
       atBottom.value = !element || scrollFollow.isNearBottom(element);
+      if (atBottom.value) hasNews.value = false;
     }
 
     function jumpIfPending() {
@@ -157,8 +164,11 @@ export const ChatView = {
     function keepAtBottom() {
       const element = logRef.value;
       if (!element) return;
+      const grew = element.scrollHeight > lastHeight;
+      lastHeight = element.scrollHeight;
       if (pendingJump) jumpIfPending();
-      else scrollFollow.stick(element);
+      else if (scrollFollow.isFollowing()) scrollFollow.stick(element);
+      else if (grew && messages.value.some((message) => message.busy)) hasNews.value = true;
       updateAtBottom();
     }
 
@@ -519,6 +529,7 @@ export const ChatView = {
       planTags,
       currentStage,
       atBottom,
+      hasNews,
       onScroll,
       onWheel,
       onTouchStart,
@@ -636,6 +647,13 @@ export const ChatView = {
                   class="activity-row"
                   :class="['activity-' + entry.kind, 'state-' + entry.status]"
                 >
+                  <NarrationEntry
+                    v-if="entry.kind === 'narration'"
+                    :entry="entry"
+                    :busy="message.busy"
+                    :root-id="message.id"
+                  />
+                  <template v-else>
                   <button
                     type="button"
                     class="activity-toggle"
@@ -803,6 +821,7 @@ export const ChatView = {
                       <p class="muted small" v-else>A inferência ainda está em execução; o detalhe aparece quando o modelo responder.</p>
                     </div>
                   </div>
+                  </template>
                 </div>
               </TransitionGroup>
             </div>
@@ -840,12 +859,11 @@ export const ChatView = {
       <button
         type="button"
         class="scroll-bottom"
-        :class="{ show: !atBottom }"
-        title="Rolar para o fim"
-        aria-label="Rolar para o fim"
+        :class="{ show: !atBottom, 'has-news': hasNews && !atBottom }"
+        :title="hasNews ? 'Novas atividades — rolar para o fim' : 'Rolar para o fim'"
+        :aria-label="hasNews ? 'Novas atividades — rolar para o fim' : 'Rolar para o fim'"
         @click="scrollToBottom"
-        v-html="icon('down', 16)"
-      ></button>
+      ><span v-html="icon('down', 16)"></span><span class="scroll-bottom-label">Novas atividades</span></button>
 
       <div class="context-bar" :class="{ 'context-bar-always': true }">
         <div class="run-controls compact-run" v-if="state.currentRun || state.compact">

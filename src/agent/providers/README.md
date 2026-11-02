@@ -19,7 +19,7 @@ streaming real e catálogo configurável. A camada não conhece skills, memória
 | [`anthropic.py`](anthropic.py) | `AnthropicProvider` | **Anthropic** — Messages API nativa (`x-api-key`, prompt de sistema em campo próprio, blocos de conteúdo) |
 | [`gemini.py`](gemini.py) | `GeminiProvider` | **Gemini** — `generateContent` nativo (`x-goog-api-key`, `contents`/`parts`, `generationConfig`) |
 | [`mock.py`](mock.py) | `MockProvider` | Testes e execução offline — determinístico, sem rede |
-| [`observed.py`](observed.py) | `observed_chat` | **Wrapper** — chama o provider + emite eventos no EventBus (`agent.started`, `agent.output.delta`, `agent.output.completed/failed`) |
+| [`observed.py`](observed.py) | `observed_chat` | **Wrapper** — chama o provider + emite eventos no EventBus (`agent.started`, `agent.output.delta`, `agent.output.completed/failed`) e a narração (`agent.narration.*`) a partir dos mesmos fragmentos |
 
 ## 🔌 Interface Comum (`base.py`)
 
@@ -188,6 +188,7 @@ fallback quando `ALLOW_MOCK_FALLBACK=true` (opt-in explícito).
 
 1. Crie `src/agent/providers/<nome>.py` com uma classe que herda de `LLMProvider`.
 2. Implemente `list_models()` e `_chat()`; `_chat_streaming()` só se o serviço transmitir de verdade. Não sobrescreva `chat`: a exclusividade de inferência mora no contrato base.
+   No `_chat_streaming()`, `on_delta` recebe **só o texto público**; chamadas de ferramenta e raciocínio são acumulados e voltam na resposta final (`tool_calls`, `reasoning`) — no formato OpenAI, use `OpenAIDeltaAccumulator` de `http.py`. Descartá-los quebra o ciclo de ferramentas com streaming; mandá-los ao `on_delta` vaza para a narração.
 3. Declare `capabilities()` com o que a API realmente oferece.
 4. Reutilize `HttpClientConfig`/`client_kwargs`/`get_json`/`post_json`/`stream_lines` para ter
    tempo limite, erros tipados, redação e retry sem duplicar lógica.

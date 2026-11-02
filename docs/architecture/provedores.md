@@ -44,7 +44,7 @@ flowchart TB
 | `http.py` | Política HTTP comum: tempo limite, TLS, sem redirecionamento, mapa de erros, redação de segredos, retry só em falha transitória, validação de URL |
 | `registry.py` | Configuração declarativa (`ProviderSpec`, `ProviderCatalog`), interpolação `${VAR}`, fábrica por tipo |
 | Adaptadores | Um arquivo por família de API; cada um fala o dialeto do seu serviço |
-| `observed.py` | Emite `agent.started` / `agent.output.delta` / `agent.output.completed` / `agent.output.failed` no EventBus |
+| `observed.py` | Emite `agent.started` / `agent.output.delta` / `agent.output.completed` / `agent.output.failed` no EventBus, e a narração `agent.narration.*` ([narração em tempo real](/docs/architecture/narracao-tempo-real.md)) |
 
 Regras de projeto:
 

@@ -88,6 +88,18 @@ EVENT_SPECS: dict[str, EventSpec] = {
         _spec("agent.output.delta", ("output_id", "text", "offset"), persist=False, description="fragmento"),
         _spec("agent.output.completed", ("output_id", "content"), description="resposta final"),
         _spec("agent.output.failed", ("output_id", "error"), description="chamada ao modelo falhou"),
+        _spec("agent.narration.started", ("narration_id", "output_id"), description="o agente começou a falar com a pessoa"),
+        _spec(
+            "agent.narration.delta",
+            ("narration_id", "text", "offset"),
+            persist=False,
+            description="trecho novo da narração, na ordem em que o modelo gerou",
+        ),
+        _spec(
+            "agent.narration.completed",
+            ("narration_id", "content", "status"),
+            description="narração encerrada (concluída, interrompida ou com falha) com o texto recebido",
+        ),
         _spec("tool.started", ("call_id", "tool"), description="ferramenta iniciada"),
         _spec("tool.output", ("call_id", "text"), persist=False, description="saída parcial"),
         _spec("tool.completed", ("call_id", "tool"), description="ferramenta concluída"),

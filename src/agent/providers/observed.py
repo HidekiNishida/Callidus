@@ -4,8 +4,9 @@ Nome: observed.py
 Propósito: envolver a chamada ao modelo para que ela seja acompanhada em tempo real pelos eventos.
 Responsabilidade: camada de aplicação — emissão dos eventos de início, fragmentos e desfecho da inferência.
 Componentes: observed_chat.
-Dependências: agent.observability, agent.observability.batching, agent.providers.base.
+Dependências: agent.observability, agent.observability.batching, agent.observability.narration, agent.providers.base.
 Observações: provedor sem streaming não inventa fragmentos: marca `streaming: false` e publica a resposta inteira.
+A narração (`agent.narration.*`) sai dos mesmos fragmentos, sem outra chamada ao modelo.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ import uuid
 
 from agent.observability import current, emit
 from agent.observability.batching import DeltaBatcher
+from agent.observability.narration import NarrationStream, narrates
 from agent.providers.base import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -108,6 +110,8 @@ async def observed_chat(
         offset += len(text)
 
     batcher = DeltaBatcher(publish)
+    # A fala do agente para a pessoa: o texto público desta mesma resposta, filtrado.
+    narration = NarrationStream(output_id, purpose=purpose, streamed=streaming) if narrates(purpose) else None
 
     def on_delta(piece: str) -> None:
         """Acumula um fragmento e agenda sua publicação em lote.
@@ -117,6 +121,8 @@ async def observed_chat(
         """
         received.append(piece)
         batcher.add(piece)
+        if narration is not None:
+            narration.feed(piece)
 
     def failed(error: str, *, cancelled: bool = False, inference_id: str | None = None) -> None:
         """Publica o desfecho de falha, preservando o texto parcial recebido.
@@ -127,6 +133,8 @@ async def observed_chat(
             inference_id: identificador do registro de inferência, quando gravado.
         """
         batcher.flush()
+        if narration is not None:
+            narration.finish("interrupted" if cancelled else "failed", error=error)
         partial = "".join(received)
         emit(
             "agent.output.failed",
@@ -270,6 +278,11 @@ async def observed_chat(
         raise
     batcher.flush()
     content = response.content or ""
+    if narration is not None:
+        if not streaming:
+            # Sem streaming não há fragmentos: a fala aparece inteira, quando a resposta chega.
+            narration.feed(content)
+        narration.finish("completed")
     tool_calls = [call.model_dump() for call in (getattr(response, "tool_calls", None) or [])]
     inference_row = _account(response)
     emit(

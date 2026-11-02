@@ -38,6 +38,7 @@ desça até o detalhe. Quem procura uma funcionalidade em código deve usar os
 | [architecture/ferramentas.md](/docs/architecture/ferramentas.md) | Registro, execução e permissões das ferramentas | Ao criar ou ajustar uma ferramenta |
 | [architecture/automacao-sistema.md](/docs/architecture/automacao-sistema.md) | Sistema, desktop, engenharia, navegador e skills autorais | Ao automatizar o computador ou criar uma skill |
 | [architecture/ciclo-ferramentas.md](/docs/architecture/ciclo-ferramentas.md) | Inspeção com ferramentas antes da resposta | Ao mexer no protocolo da operação |
+| [architecture/narracao-tempo-real.md](/docs/architecture/narracao-tempo-real.md) | Narração do agente em tempo real (streaming da fala pública do modelo) | Ao mexer em streaming, provedores ou na Atividade do agente |
 | [architecture/context-builder.md](/docs/architecture/context-builder.md) | Montagem e orçamento de contexto | Ao mexer no prompt ou no orçamento |
 | [architecture/mcp.md](/docs/architecture/mcp.md) | MCP stdio | Ao integrar um servidor MCP |
 | [architecture/knowledge-graph.md](/docs/architecture/knowledge-graph.md) | Grafo do projeto | Ao mexer no índice de código |

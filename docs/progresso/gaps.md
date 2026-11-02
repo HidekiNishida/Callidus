@@ -21,14 +21,14 @@ Voltar: [docs/progresso/](/docs/progresso/README.md) · Formato: [progresso.md](
 | 7 | [G7 Seleção lexical de skills, estratégia e consulta](#g7-seleção-lexical-de-skills-estratégia-e-consulta) | 12 | Não | [funcionalidades](/docs/progresso/checklists/funcionalidades.md) |
 | 8 | [G8 Grafo de conhecimento multi-linguagem](#g8-grafo-de-conhecimento-multi-linguagem) | 14 | Não | [funcionalidades](/docs/progresso/checklists/funcionalidades.md) |
 | 9 | [G9 Propagação de impacto de contratos](#g9-propagação-de-impacto-de-contratos) | 8 | Não | [funcionalidades](/docs/progresso/checklists/funcionalidades.md) |
-| 10 | [G10 Streaming de tokens na interface](#g10-streaming-de-tokens-na-interface) | 5 | Não | [interface](/docs/progresso/checklists/interface.md) |
+| 10 | [G10 Streaming de tokens na interface](#g10-streaming-de-tokens-na-interface) | 2 | Não | [interface](/docs/progresso/checklists/interface.md) |
 | 11 | [G11 Paridade entre provedores](#g11-paridade-entre-provedores) | 10 | Não | [plataformas](/docs/progresso/checklists/plataformas.md) |
 | 12 | [G12 Automação de desktop nas três plataformas](#g12-automação-de-desktop-nas-três-plataformas) | 10 | Não | [plataformas](/docs/progresso/checklists/plataformas.md) |
 | 13 | [G13 Versão e licença](#g13-versão-e-licença) | 1 | Sim | [qualidade](/docs/progresso/checklists/qualidade.md) |
 | 14 | [G14 Documentação de limitações desatualizada](#g14-documentação-de-limitações-desatualizada) | 1 | Não | [qualidade](/docs/progresso/checklists/qualidade.md) |
 | 15 | [G15 Servidores MCP pesados](#g15-servidores-mcp-pesados) | 3 | Não | [plataformas](/docs/progresso/checklists/plataformas.md) |
 
-**Total estimado:** 117 h · **Bloqueiam o beta:** G1, G2, G3, G4, G13 (43 h).
+**Total estimado:** 114 h · **Bloqueiam o beta:** G1, G2, G3, G4, G13 (43 h).
 
 Fora de escopo por decisão registrada: serializar inferência entre **processos** ([limitacoes.md](/docs/architecture/limitacoes.md), item 3).
 
@@ -80,14 +80,14 @@ Fora de escopo por decisão registrada: serializar inferência entre **processos
 
 ## G10 Streaming de tokens na interface
 
-- **Faltando:** os tokens do modelo não são mostrados enquanto chegam ([limitacoes.md](/docs/architecture/limitacoes.md), item 4).
-- **Feito:** streaming SSE de eventos da run (`/runs/{id}/stream`).
+- **Faltando:** avaliação ampla antes/depois do pedido de narração no prompt da operação (`lab/avaliar.py`); narração com o `gpt-oss:20b` (o Ollama devolve o preâmbulo só no canal de raciocínio); checkpoint do texto parcial quando o processo morre no meio da geração.
+- **Feito:** streaming SSE de eventos da run (`/runs/{id}/stream`). Narração do agente em tempo real ([narracao-tempo-real.md](/docs/architecture/narracao-tempo-real.md)): eventos `agent.narration.*` filtrados dos mesmos fragmentos (sem inferência extra), linha própria na Atividade do agente, reconexão sem duplicar, histórico ao recarregar; com `qwen3-vl:8b` real, primeiro trecho visível a 355 ms (*medido*, `lab/medir_narracao.py`); `tests/test_narration_stream.py`, `tests/web/live-narration.test.mjs`.
 
 ## G11 Paridade entre provedores
 
 - **Faltando:** Anthropic e Gemini fora do ciclo de ferramentas (`tool_loop`); Anthropic sem JSON estruturado nativo; sem `embeddings`, `audio` nem lote no modo OpenAI-compatível; visão só com `supports_vision` ([limitacoes.md](/docs/architecture/limitacoes.md), itens 2 e 13).
 - **Faltando (janela):** o llama.cpp e o OpenAI-compatível não recebem a política de janela e saída do Ollama — no llama.cpp a janela é a do `--ctx-size` do servidor, que o Callidus não confere.
-- **Feito:** Ollama, OpenAI-compatível, llama.cpp, OpenRouter, Anthropic e Gemini com testes de provedor. Ollama com política por família (`ollama_policy.py`): `num_ctx`/`num_predict` explícitos, amostragem do `qwen3` por finalidade, `<think>` e `<tool_call>` no texto corrigidos (`tests/test_qwen3_ollama_policy.py`).
+- **Feito:** Ollama, OpenAI-compatível, llama.cpp, OpenRouter, Anthropic e Gemini com testes de provedor. Streams de OpenAI-compatível, llama.cpp, Anthropic e Gemini passaram a remontar as chamadas de ferramenta (antes descartadas com streaming ligado) e a separar o raciocínio (`tests/test_narration_stream.py`). Ollama com política por família (`ollama_policy.py`): `num_ctx`/`num_predict` explícitos, amostragem do `qwen3` por finalidade, `<think>` e `<tool_call>` no texto corrigidos (`tests/test_qwen3_ollama_policy.py`).
 
 ## G12 Automação de desktop nas três plataformas
 
@@ -110,5 +110,6 @@ Fora de escopo por decisão registrada: serializar inferência entre **processos
 
 | Data | Mudança | Resumo |
 |------|---------|--------|
+| 2026-11-02 | minor | G10: narração do agente em tempo real (horas de 5 para 2); G11: ferramentas e raciocínio nos streams de quatro provedores |
 | 2026-10-22 | minor | Adaptação ao `qwen3:8b`: janela e saída explícitas no Ollama, estimativa calibrada, conversa do ciclo na janela, reparo do plano; G1 com a medição simulada e a real pendente; G11 com a política por família |
 | 2026-10-21 | major | Criação: 15 gaps tirados das limitações, do diagnóstico, da avaliação e da auditoria |

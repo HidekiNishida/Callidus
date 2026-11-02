@@ -51,6 +51,7 @@ class _RunState:
         ring: anel dos últimos eventos publicados.
         outputs: saídas de modelo ainda em curso.
         operations: ferramentas, comandos e testes ainda em curso.
+        narrations: narrações ainda em curso, com o texto já publicado (para quem reconecta).
         published: total de eventos publicados.
         ephemeral: total de eventos efêmeros publicados.
     """
@@ -59,6 +60,7 @@ class _RunState:
     ring: deque = field(default_factory=deque)
     outputs: dict[str, dict[str, Any]] = field(default_factory=dict)
     operations: dict[str, dict[str, Any]] = field(default_factory=dict)
+    narrations: dict[str, dict[str, Any]] = field(default_factory=dict)
     published: int = 0
     ephemeral: int = 0
 
@@ -265,10 +267,11 @@ class EventBus:
         with self._lock:
             st = self._runs.get(run_id)
             if st is None:
-                return {"outputs": [], "operations": [], "seq": None, "stats": {}}
+                return {"outputs": [], "operations": [], "narrations": [], "seq": None, "stats": {}}
             return {
                 "outputs": copy.deepcopy(list(st.outputs.values())),
                 "operations": copy.deepcopy(list(st.operations.values())),
+                "narrations": copy.deepcopy(list(st.narrations.values())),
                 "seq": st.seq,
                 "stats": {"published": st.published, "ephemeral": st.ephemeral},
             }
@@ -356,6 +359,25 @@ class EventBus:
                 out["seq"] = env["seq"]
         elif t in ("agent.output.completed", "agent.output.failed"):
             st.outputs.pop(d.get("output_id"), None)
+        elif t == "agent.narration.started":
+            st.narrations[d["narration_id"]] = {
+                "narration_id": d["narration_id"],
+                "output_id": d.get("output_id"),
+                "task_id": env.get("task_id"),
+                "agent": env.get("agent"),
+                "text": "",
+                "started_at": env.get("ts"),
+                "started_seq": env["seq"],
+                "seq": env["seq"],
+            }
+        elif t == "agent.narration.delta":
+            nar = st.narrations.get(d["narration_id"])
+            # Só o trecho que continua o texto: um deslocamento fora de ordem não corrompe a cópia.
+            if nar is not None and int(d.get("offset") or 0) == len(nar["text"]):
+                nar["text"] = _append(nar["text"], d.get("text", ""), _OUTPUT_KEEP, tail=False)
+                nar["seq"] = env["seq"]
+        elif t == "agent.narration.completed":
+            st.narrations.pop(d.get("narration_id"), None)
         elif t in ("tool.started", "command.started", "test.started"):
             kind = t.split(".", 1)[0]
             st.operations[f"{kind}:{d['call_id']}"] = {
@@ -378,6 +400,7 @@ class EventBus:
         elif t in ("run.completed", "run.failed", "run.cancelled", "run.paused"):
             st.outputs.clear()
             st.operations.clear()
+            st.narrations.clear()
 
 
 _BUS: EventBus | None = None

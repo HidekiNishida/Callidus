@@ -5,7 +5,7 @@ O que o Callidus ainda não faz — e por quê.
 1. **Decomposição LLM** — depende de Ollama reachable; fallback template genérico pode ser grosso em repos grandes.
 2. **Visão** — referências preparadas; envio multimodal ao provedor requer perfil `supports_vision`.
 3. **Concorrência** — uma inferência ativa por vez no executor compartilhado (`MAX_CONCURRENT_INFERENCES=1`), garantida para todas as sessões e threads do **processo**. **Dois processos** inferem em paralelo (medido): serializar exigiria trava externa, não justificada na instalação local. Ferramentas externas (compilador, testes, terminal) têm ciclo de vida próprio e podem rodar fora desse limite.
-4. **Streaming de tokens** — não exposto na UI.
+4. **Narração em tempo real** — a fala pública do modelo aparece na linha do tempo, fragmento a fragmento ([narracao-tempo-real.md](/docs/architecture/narracao-tempo-real.md)); só existe quando o modelo escreve prosa junto da ferramenta (o `gpt-oss:20b` pelo Ollama não escreve), e o texto parcial de um processo que morre no meio da geração não é gravado.
 5. **MCP** — servidores pesados (npm) podem falhar por timeout; ajuste comando/cwd.
 6. **Aprovações** — flag `approve_risky_tools` no run; UI granular pendente.
 7. **Grafo** — indexação Python-first; relações `imports`/`calls` ainda heurísticas.

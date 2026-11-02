@@ -26,6 +26,7 @@ from agent.providers.base import (
 )
 from agent.providers.http import (
     HttpClientConfig,
+    OpenAIDeltaAccumulator,
     client_kwargs,
     get_json,
     post_json,
@@ -379,7 +380,7 @@ class OpenAICompatibleProvider(LLMProvider):
         """
         url = f"{self._base_url}/chat/completions"
         body = {**self._body(request), "stream": True, "stream_options": {"include_usage": True}}
-        parts: list[str] = []
+        acc = OpenAIDeltaAccumulator()
         usage: dict = {}
         finish: str | None = None
         done = False
@@ -408,9 +409,9 @@ class OpenAICompatibleProvider(LLMProvider):
                             raise ProviderError(f"Falha na inferência {self.name}: {message}")
                         usage = data.get("usage") or usage
                         for choice in data.get("choices") or []:
-                            piece = (choice.get("delta") or {}).get("content") or ""
+                            # Só o texto público vai para `on_delta`; ferramenta e raciocínio ficam à parte.
+                            piece = acc.add(choice.get("delta") or {})
                             if piece:
-                                parts.append(piece)
                                 on_delta(piece)
                             finish = choice.get("finish_reason") or finish
                     if done:
@@ -419,18 +420,15 @@ class OpenAICompatibleProvider(LLMProvider):
             raise ProviderError(f"Falha na inferência {self.name}: {exc}") from exc
         if not done and finish is None:
             raise ProviderError(f"Falha na inferência {self.name}: a transmissão terminou antes do fim")
-        content = "".join(parts)
+        message = acc.message()
         response = ChatCompletionResponse(
-            content=content,
-            raw={
-                "choices": [
-                    {"message": {"role": "assistant", "content": content}, "finish_reason": finish}
-                ],
-                "usage": usage,
-            },
+            content=message["content"],
+            raw={"choices": [{"message": message, "finish_reason": finish}], "usage": usage},
             prompt_tokens_estimate=usage.get("prompt_tokens"),
             completion_tokens_estimate=usage.get("completion_tokens"),
+            tool_calls=parse_tool_calls(message),
             finish_reason=finish,
+            reasoning=acc.reasoning_text,
         )
         from agent.orchestrator.usage import remember_usage
 

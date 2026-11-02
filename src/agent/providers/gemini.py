@@ -313,7 +313,8 @@ class GeminiProvider(LLMProvider):
             candidate = candidates[0]
             finish = candidate.get("finishReason")
             for part in (candidate.get("content") or {}).get("parts") or []:
-                if part.get("text"):
+                # `thought: true` marca o resumo do raciocínio: não é texto da resposta.
+                if part.get("text") and not part.get("thought"):
                     parts.append(part["text"])
                 call = part.get("functionCall")
                 if call and call.get("name"):
@@ -388,6 +389,7 @@ class GeminiProvider(LLMProvider):
         url = f"{self._base_url}/models/{model}:streamGenerateContent?alt=sse"
         body = self._body(request)
         parts: list[str] = []
+        calls: list[ToolCall] = []
         usage: dict = {}
         finish: str | None = None
         try:
@@ -410,10 +412,12 @@ class GeminiProvider(LLMProvider):
                             error = data["error"]
                             message = error.get("message") if isinstance(error, dict) else str(error)
                             raise ProviderError(f"Falha na inferência {self.name}: {message}")
-                        text, _, candidate_finish = self._parse(data)
+                        text, candidate_calls, candidate_finish = self._parse(data)
                         if text:
                             parts.append(text)
                             on_delta(text)
+                        # Cada `functionCall` vem inteiro em um bloco: só falta não descartá-lo.
+                        calls.extend(candidate_calls or [])
                         finish = candidate_finish or finish
                         if data.get("usageMetadata"):
                             usage = data["usageMetadata"]
@@ -425,6 +429,7 @@ class GeminiProvider(LLMProvider):
             raw={"candidates": [{"content": {"parts": [{"text": content}]}, "finishReason": finish}], "usageMetadata": usage},
             prompt_tokens_estimate=usage.get("promptTokenCount"),
             completion_tokens_estimate=usage.get("candidatesTokenCount"),
+            tool_calls=calls or None,
             finish_reason=finish,
         )
         from agent.orchestrator.usage import remember_usage

@@ -25,6 +25,7 @@ from agent.providers.base import (
 )
 from agent.providers.http import (
     HttpClientConfig,
+    OpenAIDeltaAccumulator,
     client_kwargs,
     get_json,
     post_json,
@@ -252,7 +253,7 @@ class LlamaCppProvider(LLMProvider):
         """
         url = f"{self._base_url}/v1/chat/completions"
         body = {**self._body(request), "stream": True, "stream_options": {"include_usage": True}}
-        parts: list[str] = []
+        acc = OpenAIDeltaAccumulator()
         usage: dict = {}
         finish: str | None = None
         done = False
@@ -281,22 +282,24 @@ class LlamaCppProvider(LLMProvider):
                         raise ProviderError(f"Falha na inferência llama.cpp: {data['error']}")
                     usage = data.get("usage") or usage
                     for choice in data.get("choices") or []:
-                        piece = (choice.get("delta") or {}).get("content") or ""
+                        # Só o texto público vai para `on_delta`; ferramenta e raciocínio ficam à parte.
+                        piece = acc.add(choice.get("delta") or {})
                         if piece:
-                            parts.append(piece)
                             on_delta(piece)
                         finish = choice.get("finish_reason") or finish
         except httpx.HTTPError as exc:
             raise ProviderError(f"Falha na inferência llama.cpp: {exc}") from exc
         if not done and finish is None:
             raise ProviderError("Falha na inferência llama.cpp: a transmissão terminou antes do fim")
-        content = "".join(parts)
+        message = acc.message()
         response = ChatCompletionResponse(
-            content=content,
-            raw={"choices": [{"message": {"role": "assistant", "content": content}, "finish_reason": finish}], "usage": usage},
+            content=message["content"],
+            raw={"choices": [{"message": message, "finish_reason": finish}], "usage": usage},
             prompt_tokens_estimate=usage.get("prompt_tokens"),
             completion_tokens_estimate=usage.get("completion_tokens"),
+            tool_calls=_tool_calls(message),
             finish_reason=finish,
+            reasoning=acc.reasoning_text,
         )
         from agent.orchestrator.usage import remember_usage
 

@@ -1337,6 +1337,7 @@ export async function connectStream(runId) {
     await replayFeedFromRun(runId, replayRoot);
     state.currentRootId = state.currentRootId || replayRoot;
   }
+  seedLiveNarrations(snapshot?.live);
   state.liveState.data = reducer;
   state.liveState.version += 1;
   stream = createStream({
@@ -1353,6 +1354,7 @@ export async function connectStream(runId) {
     },
     onLive: (snapshot) => {
       applyLive(reducer, snapshot);
+      seedLiveNarrations(snapshot);
       state.live = snapshot;
       state.liveState.version += 1;
     },
@@ -1853,6 +1855,29 @@ function pushActivity(envelope) {
   state.feed = feed;
   mergeActivity(feed, entry);
   if (feed.length > 120) feed.splice(0, feed.length - 120);
+}
+
+/**
+ * Recoloca no feed o texto das narrações ainda em curso no servidor.
+ *
+ * Os fragmentos não são gravados no banco: quem conecta (ou reconecta) no meio de
+ * uma fala recebe o texto já publicado pela foto ao vivo, e os fragmentos que o
+ * anel reenviar são descartados pelo deslocamento — nada some e nada se repete.
+ *
+ * @param {{narrations?: Array<object>}|null} live Foto ao vivo da run.
+ * @returns {void}
+ */
+function seedLiveNarrations(live) {
+  for (const item of live?.narrations || []) {
+    if (!item?.narration_id) continue;
+    const rootId = state.currentRootId || rootIdOf(item.task_id) || item.task_id || "live";
+    if (!state.feeds[rootId]) state.feeds[rootId] = [];
+    mergeActivity(state.feeds[rootId], {
+      narrationId: item.narration_id,
+      taskId: item.task_id || null,
+      seed: String(item.text || ""),
+    });
+  }
 }
 
 /**

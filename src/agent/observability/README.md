@@ -8,6 +8,7 @@ Barramento de eventos em memória para entrega tempo real (SSE), anel de histór
 |---------|---------|-----------|
 | [`bus.py`](bus.py) | `EventBus`, `Subscription`, `get_bus()` | **Coração** — ring buffer (seq monotônico/run), assinantes SSE com queue, operations live (model streaming, tool output), `publish()`, `subscribe()`, `recent()`, `live()` |
 | [`emitter.py`](emitter.py) | `emit(type, data, task_id, commit)` | **Emissor único** — publica no EventBus + opcionalmente grava `EventLogModel` (se `commit=True`) |
+| [`narration.py`](narration.py) | `NarrationFilter`, `NarrationStream`, `narrates` | **Narração** — filtra o texto público da resposta (sem raciocínio, ferramenta ou JSON) e emite `agent.narration.*`; ver [narração em tempo real](/docs/architecture/narracao-tempo-real.md) |
 | [`batching.py`](batching.py) | `DeltaBatcher` | **Agrupamento de fragmentos** — buffer por intervalo/tamanho (`stream_delta_interval_ms`, `stream_delta_max_chars`) → `emit` único |
 | [`snapshot.py`](snapshot.py) | `build_run_snapshot(run_id, session, bus)` | **Foto do estado** — run, tasks, events, outputs, operations, seq (para `/snapshot` API) |
 | [`sanitize.py`](sanitize.py) | `is_sensitive_path(path)`, `sanitize_event_data(data)` | **Sanitização** — remove diff de paths sensíveis (`.env`, `secrets`, `keys`, `passwords`, `tokens`) |
@@ -61,6 +62,8 @@ def emit(event_type: str, data: dict, task_id: UUID|None=None, commit: bool=Fals
 | `agent.started` | Início inferência | `output_id`, `task_id`, `agent`, `provider`, `model`, `streaming`, `purpose` |
 | `agent.output.delta` | Fragmento streaming | `output_id`, `text` (batched) |
 | `agent.output.completed/failed` | Fim inferência | `output_id` |
+| `agent.narration.started/completed` | Fala pública do modelo (gravados) | `narration_id`, `output_id`, `content`, `status` (`completed`/`interrupted`/`failed`) |
+| `agent.narration.delta` | Trecho novo da fala (efêmero) | `narration_id`, `text`, `offset` |
 | `tool.started/completed/failed` | Execução tool | `call_id`, `tool`, `args` (preview), `duration_ms`, `summary` |
 | `command.started/output/completed/failed` | Comando shell | `call_id`, `command`, `stream`, `text` (streaming) |
 | `test.started/output/completed/failed` | Pytest/script | `call_id`, `counts` (passed/failed/skipped) |

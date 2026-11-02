@@ -167,6 +167,7 @@ pre,
 .topbar {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: 12px;
   padding: 10px 16px;
   min-height: var(--topbar-h);
@@ -201,6 +202,8 @@ pre,
 }
 
 .topbar-sub {
+  /* Sem `min-width: 0` o caminho longo da pasta não encolhe e empurra a página para o lado. */
+  min-width: 0;
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1582,6 +1585,63 @@ pre,
 .activity-narration.narration-error { color: var(--danger, var(--text)); }
 .activity-row.activity-narrative .activity-toggle { cursor: default; }
 .activity-row.activity-narrative .activity-chevron { visibility: hidden; }
+
+/* Fala do agente na linha do tempo: prosa legível, entre as ferramentas, sem expandir nada.
+   O texto cresce conforme os fragmentos chegam; o cursor só indica que a geração está ativa. */
+.activity-row.activity-narration:hover { background: transparent; }
+.narration {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 0;
+  padding: 6px 8px 6px 10px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  color: var(--text);
+}
+.narration-ico { display: inline-flex; margin-top: 3px; color: var(--accent); flex: none; }
+.narration-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.narration-speaker { font-size: 11px; color: var(--muted); }
+.narration-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.narration-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  background: var(--accent);
+  animation: narration-blink 1s steps(2, start) infinite;
+}
+.narration-note { font-size: 11px; color: var(--muted); }
+.narration-interrupted { border-left-color: color-mix(in srgb, var(--muted) 60%, transparent); background: transparent; }
+.narration-failed { border-left-color: color-mix(in srgb, var(--danger) 60%, transparent); }
+.narration-failed .narration-note { color: var(--danger); }
+@keyframes narration-blink { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) {
+  .narration-cursor { animation: none; opacity: 0.6; }
+}
+@media (max-width: 640px) {
+  .narration { padding: 6px 6px 6px 8px; }
+  .narration-text { font-size: 13px; }
+}
+
+.scroll-bottom-label { display: none; }
+.scroll-bottom.has-news {
+  width: auto;
+  padding: 0 12px;
+  gap: 6px;
+  border-radius: 17px;
+  border-color: var(--accent);
+}
+.scroll-bottom.has-news .scroll-bottom-label { display: inline; font-size: 12px; }
 
 .thoughts {
   list-style: none;

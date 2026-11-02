@@ -387,6 +387,8 @@ function reduceTask(state, env, d, fresh) {
  * @returns {boolean} `false` quando o fragmento é atrasado e foi descartado.
  */
 function reduceAgent(state, env, d, persisted) {
+  // A narração cita a chamada (`output_id`) mas não é a saída dela: a linha do tempo da conversa a trata.
+  if (env.type.startsWith("agent.narration.")) return true;
   const id = d.output_id;
   if (!id) return true;
   let out = state.outputs.get(id);
@@ -867,6 +869,7 @@ export function describe(env) {
     case "agent.started": return `Modelo chamado (${d.provider || "?"} · ${d.model || "?"}${d.streaming ? ", transmitindo" : ", resposta inteira"})`;
     case "agent.output.completed": return `Resposta do modelo (${d.chars ?? String(d.content || "").length} caracteres)`;
     case "agent.output.failed": return `Modelo falhou: ${d.error || ""}`;
+    case "agent.narration.completed": return `Narração (${d.status || "completed"}): ${String(d.content || "").slice(0, 120)}`;
     case "tool.started": return `Ferramenta ${d.tool}`;
     case "tool.completed": return `Ferramenta ${d.tool} concluída${d.duration_ms != null ? ` em ${d.duration_ms} ms` : ""}`;
     case "tool.failed": return `Ferramenta ${d.tool} falhou: ${d.error || ""}${d.executed === false ? " (não executada)" : ""}`;

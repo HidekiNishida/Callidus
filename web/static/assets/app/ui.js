@@ -4,7 +4,7 @@
  * Propósito: ícones, markdown leve e formatadores compartilhados pelos componentes.
  * Responsabilidade: frontend/apresentação — funções puras de formatação e tradução de eventos.
  * Componentes: ICONS, icon(), escapeHtml(), renderMarkdown(), describeActivity(), integrateNarrative(),
- *   mergeActivity(), summarizeActivity(), diffLines(), brandSrc(), visibleFinalAnswer(), inferenceView(),
+ *   mergeActivity(), mergeNarration(), summarizeActivity(), diffLines(), brandSrc(), visibleFinalAnswer(), inferenceView(),
  *   helpers de rótulo e tempo.
  * Dependências: nenhuma (módulo puro, sem DOM e sem API).
  * Observações: o HTML do markdown é escapado antes de qualquer marcação — o conteúdo do modelo
@@ -565,6 +565,12 @@ export function integrateNarrative(activity) {
   let pending = [];
   for (const item of activity || []) {
     if (!item) continue;
+    if (item.kind === "narration") {
+      // A fala do agente é uma linha própria da linha do tempo. O objeto vai sem cópia: o
+      // texto que cresce a cada fragmento é lido só pelo componente da narração.
+      rows.push(item);
+      continue;
+    }
     if (NARRATIVE_KINDS.has(item.kind)) {
       const prev = pending[pending.length - 1];
       if (prev?.kind === "thought" && item.kind !== "thought" && prev.title === item.title) pending.pop();
@@ -574,8 +580,9 @@ export function integrateNarrative(activity) {
     rows.push({ ...item, narrations: pending.length ? pending.slice() : item.narrations || [] });
     pending = [];
   }
-  if (pending.length && rows.length) {
-    const last = rows[rows.length - 1];
+  const host = [...rows].reverse().find((row) => row.kind !== "narration");
+  if (pending.length && host) {
+    const last = host;
     const existing = last.narrations || [];
     const seen = new Set(existing.map((note) => note.eventId || note.id));
     last.narrations = [...existing, ...pending.filter((note) => !seen.has(note.eventId || note.id))];
@@ -606,6 +613,10 @@ export function integrateNarrative(activity) {
  */
 export function mergeActivity(feed, entry) {
   if (!entry) return;
+  if (entry.narrationId) {
+    mergeNarration(feed, entry);
+    return;
+  }
   if (entry.eventId) {
     const index = feed.findIndex((item) => item.eventId === entry.eventId && item.kind === entry.kind);
     if (index >= 0) {
@@ -630,6 +641,85 @@ export function mergeActivity(feed, entry) {
     }
   }
   feed.push(entry);
+}
+
+/**
+ * Comprimento em code points — a unidade dos deslocamentos do servidor (Python).
+ * `String.length` conta unidades UTF-16 e erraria a conta em emojis.
+ *
+ * @param {string} text Texto.
+ * @returns {number} Número de code points.
+ */
+function codePoints(text) {
+  let count = 0;
+  for (const _ of text) count += 1;
+  return count;
+}
+
+/**
+ * Aplica um evento de narração à linha correspondente, sem recriar a linha.
+ *
+ * O texto cresce no próprio objeto (só o componente da narração redesenha). O
+ * deslocamento de cada fragmento decide o que é novo: trecho já recebido (reconexão,
+ * replay do anel) é ignorado e nada se duplica; um buraco espera o texto do fim.
+ *
+ * @param {Array<object>} feed Feed da mensagem.
+ * @param {object} entry Entrada de narração descrita por `describeActivity`.
+ * @returns {object} A linha de narração atualizada.
+ */
+export function mergeNarration(feed, entry) {
+  let row = feed.find((item) => item.kind === "narration" && item.narrationId === entry.narrationId);
+  if (!row) {
+    row = {
+      id: `narration-${entry.narrationId}`,
+      kind: "narration",
+      narrationId: entry.narrationId,
+      icon: "spark",
+      title: "Narração",
+      text: "",
+      received: 0,
+      gap: false,
+      status: "running",
+      narrativeOnly: true,
+      taskId: entry.taskId || null,
+      streamed: true,
+    };
+    feed.push(row);
+    // O objeto guardado no feed reativo é o que deve mudar daqui em diante.
+    row = feed[feed.length - 1];
+  }
+  if (entry.delta != null) {
+    if (row.status !== "running") return row;
+    const offset = Number(entry.offset) || 0;
+    const text = String(entry.delta || "");
+    if (offset > row.received) {
+      row.gap = true;
+      return row;
+    }
+    const skip = row.received - offset;
+    const fresh = skip > 0 ? Array.from(text).slice(skip).join("") : text;
+    if (fresh) {
+      row.text += fresh;
+      row.received += codePoints(fresh);
+    }
+    return row;
+  }
+  if (entry.taskId && !row.taskId) row.taskId = entry.taskId;
+  if (entry.streamed === false) row.streamed = false;
+  if (entry.seed != null && row.status === "running" && codePoints(entry.seed) > row.received) {
+    // Texto já publicado antes desta conexão (foto ao vivo do servidor).
+    row.text = entry.seed;
+    row.received = codePoints(entry.seed);
+    row.gap = false;
+  }
+  if (entry.final != null) {
+    row.text = entry.final;
+    row.received = codePoints(entry.final);
+    row.gap = false;
+    row.status = entry.status || "ok";
+    row.truncated = Boolean(entry.truncated);
+  }
+  return row;
 }
 
 /**
@@ -725,6 +815,30 @@ export function describeActivity(event) {
   const base = { id, status: "ok", kind: "tool", icon: "wrench", title: "", detail: "", explanation: "" };
 
   switch (type) {
+    case "agent.narration.started":
+      return {
+        ...base,
+        narrationId: data.narration_id,
+        taskId: event.task_id || null,
+        streamed: data.streamed !== false,
+      };
+    case "agent.narration.delta":
+      return {
+        ...base,
+        narrationId: data.narration_id,
+        taskId: event.task_id || null,
+        delta: String(data.text || ""),
+        offset: Number(data.offset) || 0,
+      };
+    case "agent.narration.completed":
+      return {
+        ...base,
+        narrationId: data.narration_id,
+        taskId: event.task_id || null,
+        final: String(data.content || ""),
+        truncated: Boolean(data.truncated),
+        status: data.status === "completed" ? "ok" : data.status === "interrupted" ? "interrupted" : "error",
+      };
     case "agent.thought": {
       const text = data.text || data.thought || "Pensando";
       return { ...base, kind: "thought", icon: "spark", title: text, explanation: "raciocínio do agente" };

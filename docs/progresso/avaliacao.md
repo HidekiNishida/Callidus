@@ -38,7 +38,7 @@ O núcleo (pedido → plano → execução → verificação → resposta) funci
 |------|--------|----------|-------|------|
 | Orquestração e verificação | 75 | [G3](/docs/progresso/gaps.md#g3-recuperação-quando-a-verificação-reprova) | 8 | estimado (aceite *medido*) |
 | Decomposição e contexto | 55 | [G2](/docs/progresso/gaps.md#g2-decomposição-em-repositórios-grandes) | 16 | estimado |
-| Interface (SPA) | 65 | [G5](/docs/progresso/gaps.md#g5-defeitos-conhecidos-do-feed), [G10](/docs/progresso/gaps.md#g10-streaming-de-tokens-na-interface) | 10 | estimado |
+| Interface (SPA) | 70 | [G5](/docs/progresso/gaps.md#g5-defeitos-conhecidos-do-feed), [G10](/docs/progresso/gaps.md#g10-streaming-de-tokens-na-interface) | 7 | estimado (narração *medida* com `qwen3-vl:8b`) |
 | Ferramentas e segurança | 60 | [G4](/docs/progresso/gaps.md#g4-aprovação-granular-de-ferramentas-arriscadas-na-ui) | 8 | estimado |
 | Provedores | 70 | [G11](/docs/progresso/gaps.md#g11-paridade-entre-provedores) | 10 | estimado |
 | Conhecimento, skills e hierarquia | 50 | [G7](/docs/progresso/gaps.md#g7-seleção-lexical-de-skills-estratégia-e-consulta), [G8](/docs/progresso/gaps.md#g8-grafo-de-conhecimento-multi-linguagem), [G9](/docs/progresso/gaps.md#g9-propagação-de-impacto-de-contratos) | 34 | estimado |

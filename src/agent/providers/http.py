@@ -3,7 +3,7 @@ Arquivo: src/agent/providers/http.py
 Nome: http.py
 Propósito: fornecer o transporte HTTP compartilhado por todos os provedores de inferência.
 Responsabilidade: camada de infraestrutura — política de conexão, retry, tratamento de erro e streaming.
-Componentes: HttpClientConfig, validate_base_url, client_kwargs, redact, map_http_error, get_json, post_json, stream_lines, sse_payloads.
+Componentes: HttpClientConfig, validate_base_url, client_kwargs, redact, map_http_error, get_json, post_json, stream_lines, sse_payloads, OpenAIDeltaAccumulator.
 Dependências: httpx, agent.providers.base.
 Observações: só falha anterior ao processamento do servidor é repetida; streaming nunca é repetido.
 """
@@ -422,3 +422,81 @@ def sse_payloads(lines: Iterable[str]) -> Iterator[str]:
         payload = text[5:].strip()
         if payload:
             yield payload
+
+
+class OpenAIDeltaAccumulator:
+    """Junta os blocos `choices[].delta` do streaming no formato OpenAI.
+
+    O texto público (`content`) é devolvido na hora, para seguir para a interface. As chamadas de
+    ferramenta chegam em pedaços (`tool_calls[].function.arguments` partido, indexado por `index`)
+    e o raciocínio (`reasoning_content`/`reasoning`) vem em campo próprio: os dois são guardados
+    à parte e nunca entram no texto público.
+    """
+
+    def __init__(self) -> None:
+        """Começa sem texto, sem raciocínio e sem chamadas."""
+        self.parts: list[str] = []
+        self.reasoning: list[str] = []
+        self._calls: dict[int, dict[str, Any]] = {}
+
+    def add(self, delta: dict[str, Any]) -> str:
+        """Incorpora um `delta` e devolve o texto público novo.
+
+        Args:
+            delta: objeto `choices[i].delta` de um bloco do stream.
+
+        Returns:
+            O trecho de `content` deste bloco (vazio quando não há).
+        """
+        for key in ("reasoning_content", "reasoning"):
+            thought = delta.get(key)
+            if isinstance(thought, str) and thought:
+                self.reasoning.append(thought)
+        for position, item in enumerate(delta.get("tool_calls") or []):
+            if not isinstance(item, dict):
+                continue
+            index = item.get("index")
+            index = int(index) if isinstance(index, int) else position
+            slot = self._calls.setdefault(index, {"id": None, "name": "", "arguments": ""})
+            if item.get("id"):
+                slot["id"] = item["id"]
+            function = item.get("function") or {}
+            if function.get("name"):
+                slot["name"] = function["name"]
+            arguments = function.get("arguments")
+            if isinstance(arguments, str):
+                slot["arguments"] += arguments
+            elif isinstance(arguments, dict):
+                slot["arguments"] = json.dumps(arguments)
+        piece = delta.get("content") or ""
+        if not isinstance(piece, str):
+            return ""
+        if piece:
+            self.parts.append(piece)
+        return piece
+
+    def message(self) -> dict[str, Any]:
+        """Mensagem final no formato não-streaming (`content` + `tool_calls`).
+
+        Returns:
+            Dicionário com o texto inteiro e as chamadas na ordem do `index`.
+        """
+        calls = [
+            {
+                "id": slot["id"],
+                "type": "function",
+                "function": {"name": slot["name"], "arguments": slot["arguments"] or "{}"},
+            }
+            for _, slot in sorted(self._calls.items())
+            if slot["name"]
+        ]
+        message: dict[str, Any] = {"role": "assistant", "content": "".join(self.parts)}
+        if calls:
+            message["tool_calls"] = calls
+        return message
+
+    @property
+    def reasoning_text(self) -> str | None:
+        """Raciocínio recebido, ou `None` quando o servidor não mandou."""
+        return "".join(self.reasoning) or None
+

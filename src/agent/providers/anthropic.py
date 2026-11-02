@@ -356,6 +356,9 @@ class AnthropicProvider(LLMProvider):
         url = f"{self._base_url}/v1/messages"
         body = {**self._body(request), "stream": True}
         parts: list[str] = []
+        thoughts: list[str] = []
+        # Blocos `tool_use` por índice: o `input` chega em pedaços de JSON (`input_json_delta`).
+        tool_blocks: dict[int, dict[str, Any]] = {}
         usage: dict = {}
         stop_reason: str | None = None
         try:
@@ -375,11 +378,29 @@ class AnthropicProvider(LLMProvider):
                                 f"Falha na inferência {self.name} (stream): bloco inválido ({exc})"
                             ) from exc
                         kind = event.get("type")
-                        if kind == "content_block_delta":
-                            piece = (event.get("delta") or {}).get("text") or ""
-                            if piece:
-                                parts.append(piece)
-                                on_delta(piece)
+                        if kind == "content_block_start":
+                            block = event.get("content_block") or {}
+                            if block.get("type") == "tool_use":
+                                tool_blocks[int(event.get("index") or 0)] = {
+                                    "id": block.get("id"),
+                                    "name": block.get("name") or "",
+                                    "json": "",
+                                }
+                        elif kind == "content_block_delta":
+                            delta = event.get("delta") or {}
+                            delta_kind = delta.get("type")
+                            if delta_kind == "input_json_delta":
+                                slot = tool_blocks.get(int(event.get("index") or 0))
+                                if slot is not None:
+                                    slot["json"] += delta.get("partial_json") or ""
+                            elif delta_kind == "thinking_delta":
+                                # Raciocínio estendido: guardado à parte, nunca no texto público.
+                                thoughts.append(delta.get("thinking") or "")
+                            elif delta_kind in (None, "text_delta"):
+                                piece = delta.get("text") or ""
+                                if piece:
+                                    parts.append(piece)
+                                    on_delta(piece)
                         elif kind == "message_delta":
                             delta = event.get("delta") or {}
                             stop_reason = delta.get("stop_reason") or stop_reason
@@ -394,12 +415,23 @@ class AnthropicProvider(LLMProvider):
         except httpx.HTTPError as exc:
             raise ProviderError(f"Falha na inferência {self.name}: {exc}") from exc
         content = "".join(parts)
+        calls: list[ToolCall] = []
+        for _, slot in sorted(tool_blocks.items()):
+            try:
+                arguments = json.loads(slot["json"]) if slot["json"] else {}
+            except json.JSONDecodeError:
+                arguments = {"raw": slot["json"]}
+            calls.append(
+                ToolCall(id=slot["id"], name=slot["name"], arguments=arguments if isinstance(arguments, dict) else {})
+            )
         response = ChatCompletionResponse(
             content=content,
             raw={"content": [{"type": "text", "text": content}], "usage": usage},
             prompt_tokens_estimate=usage.get("input_tokens"),
             completion_tokens_estimate=usage.get("output_tokens"),
+            tool_calls=calls or None,
             finish_reason=stop_reason,
+            reasoning="".join(thoughts) or None,
         )
         from agent.orchestrator.usage import remember_usage
 
