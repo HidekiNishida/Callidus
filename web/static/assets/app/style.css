@@ -3197,13 +3197,13 @@ pre,
   animation: fade-in var(--dur-2) var(--ease) both;
 }
 
-/* Overlay de fundo: desfoca e permite fechar ao clicar fora. */
+/* Overlay de fundo: escuro semi-transparente e desfocado. */
 .stages-overlay {
   position: fixed;
   inset: 0;
   z-index: 51;
-  background: color-mix(in srgb, black 45%);
-  backdrop-filter: blur(4px);
+  background: color-mix(in srgb, black 68%);
+  backdrop-filter: blur(8px);
 }
 
 .stages-card {
@@ -3216,9 +3216,9 @@ pre,
   flex-direction: column;
   border: 1px solid var(--border-soft);
   border-radius: 12px;
-  background: var(--surface-1);
+  background: color-mix(in srgb, var(--surface-1) 90%, black);
   color: var(--text);
-  box-shadow: 0 10px 30px color-mix(in srgb, black 35%);
+  box-shadow: 0 10px 30px color-mix(in srgb, black 40%);
   animation: card-in var(--dur-3) var(--ease) both;
 }
 
