@@ -585,3 +585,27 @@ def test_criterio_implicito_so_protege_arquivo_existente_e_grande():
     assert "preserve_lines" not in implicit_spec("a.py", "x = 1", lines_before=None)
     assert "preserve_lines" not in implicit_spec("a.py", "x = 1", lines_before=5)
     assert implicit_spec("a.py", "x = 1", lines_before=120)["preserve_lines"] == 120
+
+
+
+@pytest.mark.asyncio
+async def test_reescrita_inteira_de_arquivo_grande_e_recusada(tmp_path: Path):
+    """Regressão da avaliação real: reescrever de memória um arquivo grande alterava funções que
+    não deviam mudar. A ferramenta recusa sem tocar o disco; arquivo novo ou pequeno continua livre."""
+    from agent.domain.failures import FailureCause, classify_tool_result
+    from agent.tools.builtins import LARGE_REWRITE_LINES
+    from agent.tools.registry import ToolContext, build_default_registry
+
+    big = "".join(f"x{i} = {i}\n" for i in range(LARGE_REWRITE_LINES))
+    (tmp_path / "big.py").write_text(big, encoding="utf-8")
+    (tmp_path / "small.py").write_text("a = 1\n", encoding="utf-8")
+    registry = build_default_registry()
+    ctx = ToolContext(project_root=str(tmp_path))
+
+    refused = await registry.execute("write_file", ctx, {"path": "big.py", "content": "x0 = 0\n"})
+    assert refused["success"] is False and "edit_file" in refused["error"]
+    assert (tmp_path / "big.py").read_text(encoding="utf-8") == big
+    assert classify_tool_result(refused).cause == FailureCause.TOOL_INPUT
+    assert (await registry.execute("write_file", ctx, {"path": "small.py", "content": "a = 2\n"}))["success"]
+    assert (await registry.execute("write_file", ctx, {"path": "novo.py", "content": big + big}))["success"]
+    assert (await registry.execute("edit_file", ctx, {"path": "big.py", "old_string": "x1 = 1", "new_string": "x1 = 11"}))["success"]

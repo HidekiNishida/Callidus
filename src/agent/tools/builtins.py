@@ -270,6 +270,10 @@ async def _read_file(ctx: ToolContext, args: dict) -> dict:
     }
 
 
+#: A partir deste tamanho, um arquivo existente só muda por trecho (`edit_file`).
+LARGE_REWRITE_LINES = 150
+
+
 async def _write_file(ctx: ToolContext, args: dict) -> dict:
     """Grava um arquivo do projeto, criando as pastas necessárias.
 
@@ -278,7 +282,8 @@ async def _write_file(ctx: ToolContext, args: dict) -> dict:
         args: argumentos da chamada (`path`, `content`).
 
     Returns:
-        O caminho gravado, a quantidade de bytes e o diff da alteração.
+        O caminho gravado, a quantidade de bytes e o diff da alteração; recusa (sem tocar o disco)
+        a reescrita inteira de arquivo existente com `LARGE_REWRITE_LINES` linhas ou mais.
     """
     if getattr(ctx, "remote", None):
         from agent.remote import tools as remote_tools
@@ -298,6 +303,20 @@ async def _write_file(ctx: ToolContext, args: dict) -> dict:
         return {"success": False, "error": str(exc)}
     existed = full.is_file()
     before = full.read_text(encoding="utf-8", errors="replace") if existed else ""
+    lines_before = before.count("\n") + 1 if existed else 0
+    if existed and lines_before >= LARGE_REWRITE_LINES and before != content:
+        # Reescrever de memória um arquivo grande troca o que o modelo não devia tocar (visto com
+        # o qwen3-vl:8b: calc.py de 360 linhas regravado inteiro, com outras funções alteradas).
+        # A mudança vai por trecho, onde só o que muda é escrito.
+        return {
+            "success": False,
+            "error": (
+                f"{path} já existe e tem {lines_before} linhas: não reescreva o arquivo inteiro; "
+                "use edit_file com old_string e new_string só no trecho que muda"
+            ),
+            "path": path,
+            "lines": lines_before,
+        }
     full.parent.mkdir(parents=True, exist_ok=True)
     full.write_text(content, encoding="utf-8")
     _drop_stale_bytecode(full)

@@ -77,6 +77,7 @@ raiz, os filhos e os pais com critério próprio.
 |---|---|
 | Declara `verification` | o verificador declarado (pytest, file_contains, syntax, stages, ...) |
 | Escreveu arquivo sem declarar | implícita: o trecho gravado está no arquivo, a sintaxe é válida e, se o arquivo já existia com 20+ linhas, a escrita não apagou mais da metade dele |
+| `write_file` sobre arquivo existente com 150+ linhas | recusado pela própria ferramenta, sem tocar o disco: a mudança vai por `edit_file` (reescrever de memória alterava o que não devia mudar) |
 | Rodou a suíte de testes (`run_pytest`) e passou | implícita: `pytest` no mesmo caminho, gravado como evidência |
 | Inspeção que o ambiente responde (`git_status` fora de repositório) | a resposta vira a descoberta da etapa, sem repetir a chamada |
 | Só leu / explicou / operação externa | nenhuma automática: conclui com `verified: None` e `verification_absent` (a aceitação por requisito continua exigindo prova na raiz) |

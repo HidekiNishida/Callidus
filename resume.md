@@ -3516,7 +3516,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `_system_info(ctx: ToolContext, args: dict) -> dict` — descreve a máquina: sistema, release, arquitetura, versão do Python, usuário, pasta pessoal, hora local e raiz do workspace. Entrada: contexto; saída: dicionário com os dados do ambiente.
 - `_test_counts(stdout: str) -> dict[str, int]` — extrai do último resumo do pytest as quantidades de passed/failed/error/skipped. Entrada: stdout do pytest; saída: dicionário `{"passed": n, "failed": n, ...}`.
-- `_write_file(ctx: ToolContext, args: dict) -> dict` — grava o conteúdo no arquivo, criando diretórios quando preciso, remove o bytecode obsoleto e emite `file.created`/`file.changed` com o diff. Entrada: `path` e `content`; saída: dicionário com `bytes`, `created` e o diff.
+- `_write_file(ctx: ToolContext, args: dict) -> dict` — grava o conteúdo no arquivo, criando diretórios quando preciso, remove o bytecode obsoleto e emite `file.created`/`file.changed` com o diff. Entrada: `path` e `content`; saída: dicionário com `bytes`, `created` e o diff. Recusa a reescrita inteira de arquivo existente com 150+ linhas (`LARGE_REWRITE_LINES`): a mudança vai por `edit_file`.
 - `python_for(project_root: str) -> str` — escolhe o interpretador do projeto: o `python` do `.venv`/`venv` se existir, senão o `sys.executable` do agente. Entrada: raiz do projeto; saída: caminho do interpretador. Quando `_run_command`, `_run_script` e `_run_pytest` montam o argv.
 - `register_all(registry: ToolRegistry) -> None` — registra todas builtins.
 - `_glob_scan(root: Path, pattern: str) -> dict` — escaneia arquivos do projeto correspondentes a um padrão glob.
