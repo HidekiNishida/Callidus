@@ -188,5 +188,6 @@ chamada da operação com ferramentas de inspeção). *Medido* em 2026-11-02:
   não é gravado (fica `started` sem `completed`). Narrações são curtas; o custo de gravar
   checkpoints não se pagou.
 - **Linha que abre com tag HTML** (`<b>…`) é tratada como carga e encerra a narração.
-- **Avaliação de comportamento**: o pedido de narração mudou o prompt da operação; a avaliação
-  ampla (`lab/avaliar.py`) antes/depois ainda não foi rodada.
+- **Avaliação de comportamento**: medida antes/depois com `gpt-oss:20b`, sem regressão (uma
+  rodada por lado, [avaliacao.md](/docs/architecture/avaliacao.md#-narração-em-tempo-real--antes-e-depois-02112026-gpt-oss20b));
+  com esse modelo, nenhuma narração foi emitida.

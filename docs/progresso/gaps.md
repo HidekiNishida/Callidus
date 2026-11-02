@@ -80,8 +80,8 @@ Fora de escopo por decisão registrada: serializar inferência entre **processos
 
 ## G10 Streaming de tokens na interface
 
-- **Faltando:** avaliação ampla antes/depois do pedido de narração no prompt da operação (`lab/avaliar.py`); narração com o `gpt-oss:20b` (o Ollama devolve o preâmbulo só no canal de raciocínio); checkpoint do texto parcial quando o processo morre no meio da geração.
-- **Feito:** streaming SSE de eventos da run (`/runs/{id}/stream`). Narração do agente em tempo real ([narracao-tempo-real.md](/docs/architecture/narracao-tempo-real.md)): eventos `agent.narration.*` filtrados dos mesmos fragmentos (sem inferência extra), linha própria na Atividade do agente, reconexão sem duplicar, histórico ao recarregar; com `qwen3-vl:8b` real, primeiro trecho visível a 355 ms (*medido*, `lab/medir_narracao.py`); `tests/test_narration_stream.py`, `tests/web/live-narration.test.mjs`.
+- **Faltando:** narração com o `gpt-oss:20b` (o Ollama devolve o preâmbulo só no canal de raciocínio); checkpoint do texto parcial quando o processo morre no meio da geração.
+- **Feito:** streaming SSE de eventos da run (`/runs/{id}/stream`). Narração do agente em tempo real ([narracao-tempo-real.md](/docs/architecture/narracao-tempo-real.md)): eventos `agent.narration.*` filtrados dos mesmos fragmentos (sem inferência extra), linha própria na Atividade do agente, reconexão sem duplicar, histórico ao recarregar; com `qwen3-vl:8b` real, primeiro trecho visível a 355 ms (*medido*, `lab/medir_narracao.py`); `tests/test_narration_stream.py`, `tests/web/live-narration.test.mjs`. Avaliação antes/depois com `gpt-oss:20b`: sem regressão, 6/6 aceitos depois (*medido*, uma rodada por lado, [avaliacao.md](/docs/architecture/avaliacao.md#-narração-em-tempo-real--antes-e-depois-02112026-gpt-oss20b)).
 
 ## G11 Paridade entre provedores
 

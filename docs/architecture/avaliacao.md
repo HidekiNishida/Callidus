@@ -275,6 +275,38 @@ O que cada achado mudou:
 Pendente: rodar `TAG=qwen3vl-final2 LADOS=depois ROUNDS=3 scripts/medir-multirequisito.sh` com o
 código atual. O modelo de referência da avaliação continua `gpt-oss:20b` (decisão do dono).
 
+## 🎯 Narração em tempo real — antes e depois (02/11/2026, `gpt-oss:20b`)
+
+Mudança medida: o pedido de narração no formato de saída da operação
+([`NARRATION_HINT`](/src/agent/context/operation_builder.py)) e o filtro de narração
+([narracao-tempo-real.md](/docs/architecture/narracao-tempo-real.md)). "Antes" é o commit `440954c`
+(worktree separado), "depois" é `9a225ab`; mesmo modelo, mesmo provedor, 40 passos, uma rodada por
+lado. Saída: `lab/out/avaliacao-narracao-antes.json` e `lab/out/avaliacao-narracao-depois.json`.
+
+| Medida (*medido*) | Antes | Depois |
+|-------------------|-------|--------|
+| Aceite | 5/6 | 6/6 |
+| Runs concluídos | 4/6 | 5/6 |
+| Requisitos comprovados | 5/7 | 7/7 |
+| Conclusões falsas | 0 | 0 |
+| Chamadas ao modelo | 125 | 38 |
+| Falhas do modelo | 17 | 1 |
+| Estagnações / replanejamentos | 2 / 2 | 0 / 1 |
+| Tokens de saída | 37 435 | 16 441 |
+| Tempo total | 1 046 s | 443 s |
+| Narrações emitidas | — | 0 (em 33 chamadas de operação) |
+
+Leitura honesta:
+
+- **Nenhuma regressão.** Era o que esta medição precisava mostrar: o pedido de narração não piorou
+  aceite, conclusões nem custo.
+- **A melhora não deve ser creditada à narração.** O `gpt-oss:20b` não escreveu nenhuma narração
+  (pelo Ollama, o preâmbulo vai para o canal de raciocínio), então o filtro não mudou nada, e o
+  pedido no prompt foi ignorado. Com uma rodada por lado, a diferença em `bug` e `arquivo_grande`
+  (que no "antes" estagnaram) está dentro da variação já vista entre rodadas deste modelo.
+- **A narração com modelo real foi medida à parte**, com `qwen3-vl:8b`
+  ([medidas](/docs/architecture/narracao-tempo-real.md#-medidas)).
+
 ## 🧪 Testes determinísticos
 
 A avaliação real depende do Ollama. Os testes de unidade cobrem os mesmos comportamentos sem

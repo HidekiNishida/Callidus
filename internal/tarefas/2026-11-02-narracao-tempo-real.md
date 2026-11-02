@@ -18,7 +18,7 @@ sem expor raciocínio ou argumentos de ferramenta.
 
 ## Próxima ação
 
-Rodar `lab/avaliar.py` antes/depois do pedido de narração no prompt da operação (G10, faltando).
+Nenhuma nesta atividade; o que falta do G10 está em [gaps.md](/docs/progresso/gaps.md#g10-streaming-de-tokens-na-interface).
 
 ## 🔄 Etapas
 
@@ -32,7 +32,7 @@ Rodar `lab/avaliar.py` antes/depois do pedido de narração no prompt da operaç
 - [x] Regressão visual no navegador: claro, escuro, celular, interrompida, rolagem
 - [x] Documentação: arquitetura, READMEs, limitações, `resume.md`, progresso
 - [x] `python scripts/ci.py` verde
-- [ ] Avaliação ampla antes/depois (`lab/avaliar.py`)
+- [x] Avaliação ampla antes/depois (`lab/avaliar.py`, `gpt-oss:20b`): sem regressão
 
 ## Bloqueios
 
