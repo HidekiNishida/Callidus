@@ -344,6 +344,37 @@ Leitura honesta:
   para separar a variação do modelo de uma regressão desta entrega. **A investigação está pendente.**
 - O `qwen3-vl:8b` levou ~22 min no `arquivo_grande`; para onde vai esse tempo ainda não foi medido.
 
+### Investigação de `bug` e `arquivo_grande` (02/11/2026)
+
+Três defeitos achados nos runs que não fecharam, corrigidos com regressão:
+
+| Defeito | Correção | Commit |
+|---------|----------|--------|
+| `git_status` numa pasta sem git devolvia "not a git repository"; a etapa repetia três vezes, idêntica, e a estagnação descartava o plano inteiro | a resposta determinística do ambiente vira a descoberta da etapa (`environment_finding`) | `6622705` |
+| `run_pytest` verde concluía "sem verificador"; o requisito ficava sem prova e o trabalho era refeito até o limite | etapa que roda a suíte e passa grava a evidência do pytest | `5b74810` |
+| `write_file` trocou `calc.py` (362 linhas) por 1 linha e a verificação implícita aprovou; depois, o modelo regravou o arquivo inteiro de memória alterando outras funções | escrita que apaga mais da metade de um arquivo existente reprova e é desfeita; `write_file` sobre arquivo existente com 150+ linhas é recusado (vai por `edit_file`) | `5b74810`, `27470a9` |
+
+Medição depois das correções (uma rodada por cenário, 40 passos):
+
+| Cenário | Antes | Depois |
+|---------|-------|--------|
+| `gpt-oss:20b` · bug | ativo no limite, 212 s | **concluído**, 1/1, 42 s |
+| `gpt-oss:20b` · arquivo_grande | ativo no limite, 377 s | concluído, 1/1, 44 s (`6622705`); **pausado** por estagnação, aceite cumprido (`27470a9`) |
+| `qwen3-vl:8b` · bug | ativo no limite, 298 s | **concluído**, 1/1, 114 s |
+| `qwen3-vl:8b` · arquivo_grande | ativo no limite, outras funções apagadas | ativo no limite; com `27470a9`, funções preservadas, mas o plano não incluiu a correção |
+
+Leitura honesta:
+
+- **`bug` passou a fechar nos dois modelos.**
+- **`arquivo_grande` continua instável.** Com `27470a9`, a recusa barrou duas reescritas
+  destrutivas do `gpt-oss:20b` (uma checagem de tipos não pedida e uma etapa replanejada "trocar
+  `calc.py` por uma implementação mínima"), e as 45 funções ficaram intactas. O que impede o run de
+  fechar é um problema **anterior**: uma etapa "executar testes" vira operação de modelo, que exige
+  uma escrita como entrega, e cada resposta sem escrita é recusada como inválida. Somam-se chamadas
+  de ferramenta malformadas que o Ollama não interpreta. No `qwen3-vl:8b`, a variação entre rodadas
+  domina (numa rodada o plano não trouxe a etapa de correção).
+- Nenhuma rodada desta investigação terminou em conclusão falsa.
+
 ## 🧪 Testes determinísticos
 
 A avaliação real depende do Ollama. Os testes de unidade cobrem os mesmos comportamentos sem
