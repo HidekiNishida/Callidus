@@ -119,6 +119,20 @@ def diagnose_verification_failure(
     if summary:
         evidence.append(summary.strip()[:300])
 
+    if (detail or {}).get("destructive_write"):
+        path = str(spec.get("path") or "o arquivo")
+        return RecoveryDiagnosis(
+            cause="destructive_write",
+            action=ACTION_RETRY,
+            automatic=True,
+            guidance=(
+                f"A escrita substituiu {path} inteiro e apagou o resto do conteúdo. O arquivo foi "
+                "restaurado. Use edit_file trocando só o trecho necessário (old_string → new_string); "
+                "não reescreva o arquivo inteiro."
+            ),
+            evidence=evidence,
+        )
+
     if any(hint in text for hint in _SYNTAX_HINTS):
         return RecoveryDiagnosis(
             cause=CAUSE_SYNTAX,

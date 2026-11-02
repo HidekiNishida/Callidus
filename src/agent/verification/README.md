@@ -19,7 +19,7 @@ Verificação proporcional ao risco: quem executa **não** aprova o próprio res
 | `pytest` | `run_pytest` tool | Projetos Python com testes | `exit_code == 0` + testes coletados |
 | `script` / `run_script` | `run_script` tool | Script Python custom | `exit_code == 0` |
 | `command` / `run_command` | `run_command` tool | Comando shell arbitrário | `exit_code == 0` |
-| `file_contains` | Leitura direta (`_read_whole`) | Escrita de arquivo (edit/write) | `needle in content` (+ `syntax: true` → `ast.parse`/JSON) |
+| `file_contains` | Leitura direta (`_read_whole`) | Escrita de arquivo (edit/write) | `needle in content` (+ `syntax: true` → `ast.parse`/JSON; + `preserve_lines: N` → o arquivo não pode ter ficado com menos da metade das N linhas) |
 | `syntax` | `ast.parse` / `json.loads` | Validação sintática standalone | Sem `SyntaxError` / `ValueError` |
 | `file_exists` | Leitura direta (`_read_whole`) | Artefato que precisa existir | Arquivo existe e tem ao menos `min_bytes` bytes |
 | `static_analysis` / `ast_check` | `ast.parse` por arquivo | Lint estático sem depender de ferramenta externa | Nenhum erro sintático no caminho (ou nos `.py` recursivos) |

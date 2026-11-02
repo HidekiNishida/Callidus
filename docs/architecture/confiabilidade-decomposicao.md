@@ -76,7 +76,9 @@ raiz, os filhos e os pais com critério próprio.
 | Natureza da etapa | Verificação aplicada |
 |---|---|
 | Declara `verification` | o verificador declarado (pytest, file_contains, syntax, stages, ...) |
-| Escreveu arquivo sem declarar | implícita: o trecho gravado está no arquivo e a sintaxe é válida |
+| Escreveu arquivo sem declarar | implícita: o trecho gravado está no arquivo, a sintaxe é válida e, se o arquivo já existia com 20+ linhas, a escrita não apagou mais da metade dele |
+| Rodou a suíte de testes (`run_pytest`) e passou | implícita: `pytest` no mesmo caminho, gravado como evidência |
+| Inspeção que o ambiente responde (`git_status` fora de repositório) | a resposta vira a descoberta da etapa, sem repetir a chamada |
 | Só leu / explicou / operação externa | nenhuma automática: conclui com `verified: None` e `verification_absent` (a aceitação por requisito continua exigindo prova na raiz) |
 
 Uma verificação reprovada **nunca** é aprovada por outra mais fraca. O complemento

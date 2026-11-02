@@ -405,7 +405,11 @@ class ModelOperation:
                     payload.get("new_string") if tool_name == "edit_file" else payload.get("content") or ""
                 )
                 done = await self._executor.finalize_verification(
-                    run, project, task, root_path, implicit_spec=implicit_spec(path, written)
+                    run,
+                    project,
+                    task,
+                    root_path,
+                    implicit_spec=implicit_spec(path, written, lines_before=journal.lines_before(path)),
                 )
                 await self._after_verification(run, task, journal, done, root_path, path)
                 if excerpt:
@@ -530,7 +534,13 @@ class ModelOperation:
             tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
             written = str(payload.get("new_string") if tool_name == "edit_file" else payload.get("content") or "")
             done = await self._executor.finalize_verification(
-                run, project, task, root_path, implicit_spec=implicit_spec(payload.get("path"), written)
+                run,
+                project,
+                task,
+                root_path,
+                implicit_spec=implicit_spec(
+                    payload.get("path"), written, lines_before=journal.lines_before(payload.get("path"))
+                ),
             )
             await self._after_verification(run, task, journal, done, root_path, payload.get("path"))
             if excerpt:

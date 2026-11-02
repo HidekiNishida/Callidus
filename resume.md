@@ -2701,7 +2701,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** Traduz a resposta do modelo em escrita de arquivo, em critério de verificação e em resultado de recusa. **Quando/onde:** no fim da operação de modelo.
 
 - `write_tool_from_payload(data) -> tuple[str, dict[str, Any]]` — Decide entre `edit_file` (há trecho a substituir) e `write_file` (conteúdo inteiro) e devolve os argumentos.
-- `implicit_spec(path, written) -> dict[str, Any] | None` — Critério implícito de verificação de uma escrita (`file_contains` com o que foi gravado, com checagem de sintaxe).
+- `implicit_spec(path, written, *, lines_before=None) -> dict[str, Any] | None` — Critério implícito de verificação de uma escrita (`file_contains` com o que foi gravado, com checagem de sintaxe); para arquivo existente com 20+ linhas, exige que a escrita não apague mais da metade dele (`preserve_lines`).
 - `model_refusal_result(tool_name, path, reason, *, report, snapshot_id=None) -> dict[str, Any]` — Resultado consolidado de uma escrita recusada vinda do modelo.
 - `tool_refusal_result(tool_id, path, reason) -> dict[str, Any]` — Resultado consolidado de uma escrita recusada vinda do plano da etapa.
 - `WriteJournal` — Registra gravações de arquivos para permitir desfazer (undo) quando o modelo recusa ou o guard bloqueia a alteração.
@@ -2710,6 +2710,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `WriteJournal.restore() -> list[str]` — Desfaz as gravações registradas, devolvendo os caminhos restaurados.
 - `WriteJournal._resolve(path: Any) -> Path | None` — Caminho absoluto resolvido, ou `None` quando inválido.
 - `WriteJournal.settle(tool: str, path: Any) -> None` — Anota o hash do que a etapa acabou de gravar; o rollback não sobrescreve arquivo que mudou depois disso (vai para `conflicts`).
+- `WriteJournal.lines_before(path: Any) -> int | None` — Linhas do arquivo antes da primeira escrita da etapa; alimenta a proteção contra escrita destrutiva.
 
 ### `src/agent/orchestrator/execution/journal.py`
 

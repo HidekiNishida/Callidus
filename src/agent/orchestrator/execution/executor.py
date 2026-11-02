@@ -41,6 +41,7 @@ from agent.orchestrator.execution.providers import (
 )
 from agent.orchestrator.execution.runtime import ExecutionRuntime
 from agent.orchestrator.execution.tool_results import (
+    TEST_TOOLS,
     environment_finding,
     is_informative_test_result,
     test_summary,
@@ -620,13 +621,23 @@ class TaskExecutor:
                     KnowledgeGraphService(self._session).touch_file(project.id, root_path, p)
             if failure is None:
                 self._tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                if tool_id in TEST_TOOLS and not meta.get("verification"):
+                    # Rodar a suíte e vê-la passar **é** verificação: sem a evidência, a etapa
+                    # concluía "sem verificador" e o requisito ficava sem prova (visto com o
+                    # qwen3-vl:8b: pytest verde, requisito reaberto e o trabalho refeito).
+                    test_path = args.get("path") if isinstance(args.get("path"), str) else "."
+                    return await self.finalize_verification(
+                        run, project, task, root_path, implicit_spec={"type": "pytest", "path": test_path or "."}
+                    )
                 if plan_write_journal is None or meta.get("verification"):
                     return await self.finalize_verification(run, project, task, root_path)
                 # Escrita sem verificação declarada: a mesma régua das escritas do modelo
                 # (o trecho gravado, a sintaxe e a integridade do projeto); reprovada, desfeita.
                 written = args.get("new_string") if tool_id == "edit_file" else args.get("content")
                 done = await self.finalize_verification(
-                    run, project, task, root_path, implicit_spec=implicit_spec(args.get("path"), str(written or ""))
+                    run, project, task, root_path, implicit_spec=implicit_spec(
+                        args.get("path"), str(written or ""), lines_before=plan_write_journal.lines_before(args.get("path"))
+                    )
                 )
                 if done.get("action") != "verified_ok" and plan_write_journal.originals:
                     restored = plan_write_journal.restore()

@@ -526,3 +526,62 @@ async def test_plano_com_git_status_fora_de_repositorio_segue_sem_repetir(tmp_pa
              if a.kind == AttemptKind.TOOL.value]
     assert len(calls) == 1, "a mesma resposta do ambiente não é repetida"
     assert session.get(TaskModel, read.id).status == TaskStatus.COMPLETED.value
+
+
+@pytest.mark.asyncio
+async def test_etapa_que_roda_os_testes_e_passa_grava_evidencia(tmp_path: Path):
+    """Regressão da avaliação real (qwen3-vl:8b): `run_pytest` verde concluía "sem verificador",
+    o requisito ficava sem prova e era reaberto. Agora a etapa grava a evidência do pytest."""
+    settings, factory, workspace = _env(tmp_path)
+    (workspace / "calc.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    (workspace / "test_calc.py").write_text("import calc\n\n\ndef test_add():\n    assert calc.add(2, 3) == 5\n", encoding="utf-8")
+    session = factory()
+    _, root, leaf, run = _leaf_under_root(
+        session, workspace, objective="Rodar os testes", metadata={"tool": "run_pytest", "tool_args": {}}
+    )
+    await RunOrchestrator(session, settings).run_until_idle(run.id, max_steps=6)
+    task = session.get(TaskModel, leaf.id)
+    assert task.status == TaskStatus.COMPLETED.value
+    evs = _evidences(session, leaf.id)
+    assert evs and evs[-1].verifier == "pytest" and evs[-1].passed is True
+    assert task.metadata_json["implicit_verification"]["type"] == "pytest"
+
+
+@pytest.mark.asyncio
+async def test_escrita_que_apaga_o_arquivo_e_reprovada_e_desfeita(tmp_path: Path, monkeypatch):
+    """Regressão da avaliação real (qwen3-vl:8b, arquivo_grande): `write_file` trocou um arquivo de
+    362 linhas pelo trecho corrigido e a verificação implícita aprovou. Agora a escrita destrutiva
+    reprova, o arquivo é restaurado, a orientação pede edit_file e a nova tentativa preserva o resto."""
+    settings, factory, workspace = _env(tmp_path)
+    funcs = "".join(f"def f{i}(x):\n    return x + {i}\n\n\n" for i in range(30))
+    original = "def add(a, b):\n    return a * b\n\n\n" + funcs
+    (workspace / "calc.py").write_text(original, encoding="utf-8")
+    session = factory()
+    _, root, leaf, run = _leaf_under_root(
+        session, workspace, objective="Corrija add em calc.py", metadata={"model_operation": True, "atomic": True}
+    )
+    provider = _Scripted(
+        [
+            '{"path": "calc.py", "content": "def add(a, b):\\n    return a + b\\n"}',
+            '{"path": "calc.py", "old_string": "return a * b", "new_string": "return a + b"}',
+        ]
+    )
+    monkeypatch.setattr("agent.orchestrator.runner._select_provider", lambda settings, config: provider)
+
+    await RunOrchestrator(session, settings).run_until_idle(run.id, max_steps=12)
+    task = session.get(TaskModel, leaf.id)
+    evs = _evidences(session, leaf.id)
+    assert evs[0].passed is False and evs[0].detail_json.get("destructive_write") is True
+    assert "edit_file" in provider.prompts[1]
+    assert task.status == TaskStatus.COMPLETED.value
+    text = (workspace / "calc.py").read_text(encoding="utf-8")
+    assert "return a + b" in text and "def f29" in text, "o resto do arquivo foi preservado"
+
+
+def test_criterio_implicito_so_protege_arquivo_existente_e_grande():
+    """O volume só é exigido para arquivo que já existia com tamanho relevante."""
+    from agent.orchestrator.execution.writes import implicit_spec
+
+    assert "preserve_lines" not in implicit_spec("a.py", "x = 1", lines_before=None)
+    assert "preserve_lines" not in implicit_spec("a.py", "x = 1", lines_before=5)
+    assert implicit_spec("a.py", "x = 1", lines_before=120)["preserve_lines"] == 120

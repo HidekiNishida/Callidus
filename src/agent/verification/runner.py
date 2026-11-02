@@ -195,6 +195,18 @@ async def _verify(
             return VerificationResult("file_contains", False, read.get("error", "leitura falhou"), read)
         content = read["content"]
         ok = needle in content
+        preserve = spec.get("preserve_lines")
+        if ok and isinstance(preserve, int) and preserve > 0:
+            # Escrita que troca um arquivo existente pelo trecho novo apaga o resto: o trecho está
+            # lá, mas o arquivo foi destruído (visto com o qwen3-vl:8b: 362 linhas → 1).
+            now = content.count("\n") + 1
+            if now < preserve * 0.5:
+                return VerificationResult(
+                    "file_contains",
+                    False,
+                    f"a escrita apagou o arquivo: {path} tinha {preserve} linhas e ficou com {now}",
+                    {"needle": needle, "destructive_write": True, "lines_before": preserve, "lines_after": now},
+                )
         if ok and spec.get("syntax"):
             problem = syntax_problem(path, content)
             if problem:

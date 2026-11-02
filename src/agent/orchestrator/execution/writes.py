@@ -35,25 +35,34 @@ def write_tool_from_payload(data: dict) -> tuple[str, dict[str, Any]]:
     return "write_file", {"path": data["path"], "content": data.get("content", "")}
 
 
-def implicit_spec(path: Any, written: str) -> dict[str, Any] | None:
+#: A partir de quantas linhas um arquivo existente passa a ter o volume protegido.
+PRESERVE_MIN_LINES = 20
+
+
+def implicit_spec(path: Any, written: str, *, lines_before: int | None = None) -> dict[str, Any] | None:
     """Critério implícito de verificação de uma escrita (`file_contains` com o que foi gravado).
 
     Args:
         path: caminho do arquivo gravado.
         written: conteúdo gravado (ou o trecho substituído).
+        lines_before: linhas do arquivo antes da etapa, quando ele já existia. A partir de
+            `PRESERVE_MIN_LINES`, o critério exige que a escrita não apague a maior parte dele.
 
     Returns:
         O critério de verificação, ou `None` quando não há o que comprovar.
     """
     if not written or not written.strip() or not isinstance(path, str):
         return None
-    return {
+    spec: dict[str, Any] = {
         "type": "file_contains",
         "path": path,
         "contains": written[:200],
         "implicit": True,
         "syntax": True,
     }
+    if lines_before and lines_before >= PRESERVE_MIN_LINES:
+        spec["preserve_lines"] = lines_before
+    return spec
 
 
 def model_refusal_result(
@@ -179,6 +188,21 @@ class WriteJournal:
             self.written[full] = hashlib.sha256(full.read_bytes()).hexdigest()
         except OSError:
             return
+
+    def lines_before(self, path: Any) -> int | None:
+        """Linhas do arquivo antes da primeira escrita da etapa (`None` se era novo ou desconhecido).
+
+        Args:
+            path: caminho escrito.
+
+        Returns:
+            O número de linhas do original.
+        """
+        full = self._resolve(path)
+        original = self.originals.get(full) if full is not None else None
+        if original is None:
+            return None
+        return original.decode("utf-8", errors="replace").count("\n") + 1
 
     def restore(self) -> list[str]:
         """Devolve cada arquivo ao conteúdo original, só quando o disco ainda tem o que a etapa gravou.
