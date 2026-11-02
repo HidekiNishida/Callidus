@@ -3202,8 +3202,9 @@ pre,
   position: fixed;
   inset: 0;
   z-index: 51;
-  background: color-mix(in srgb, black 68%);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .stages-card {

@@ -134,6 +134,11 @@ export const ChatView = {
       () => state.conversation?.id || null,
       () => {
         scrollFollow.reset();
+        // Ao abrir uma conversa, rola para o fim imediatamente.
+        Vue.nextTick(() => {
+          const element = logRef.value;
+          if (element) scrollFollow.followContent(element);
+        });
       },
     );
 
