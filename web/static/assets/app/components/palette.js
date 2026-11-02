@@ -8,7 +8,7 @@
  * Observações: os comandos contextuais (renomear, apagar) só entram na lista quando há conversa
  * ou projeto selecionado.
  */
-import { state, openView, toast, deleteConversation, deleteProject } from "../store.js";
+import { state, openView, toast, deleteConversation, deleteProject, setTheme } from "../store.js";
 import { icon } from "../ui.js";
 
 /**
@@ -146,10 +146,7 @@ export const CommandPalette = {
      * @returns {void}
      */
     function toggleTheme() {
-      const next = state.theme === "dark" ? "light" : "dark";
-      document.documentElement.dataset.theme = next;
-      try { localStorage.setItem("callidus-theme", next); } catch { /* armazenamento indisponível */ }
-      state.theme = next;
+      setTheme(state.theme === "dark" ? "light" : "dark");
     }
 
     return { state, query, index, results, inputRef, close, run, onKeydown, icon };

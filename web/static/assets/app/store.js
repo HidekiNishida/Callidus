@@ -148,6 +148,16 @@ export const state = reactive({
   },
 });
 
+// O tema salvo vale desde a primeira pintura: o `index.html` nasce com `data-theme="dark"`,
+// e sem isto a página ficava escura com `state.theme === "light"` — o primeiro clique no
+// botão de alternar "não fazia nada" (só gravava o tema que já estava no estado).
+try {
+  if (typeof document !== "undefined" && document.documentElement) {
+    document.documentElement.dataset.theme = state.theme;
+    document.documentElement.dataset.density = state.density;
+  }
+} catch { /* documento indisponível */ }
+
 let stream = null;
 let pollTimer = null;
 let taskTimer = null;

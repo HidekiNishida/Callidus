@@ -37,11 +37,25 @@ test("inferenceView lê os campos do detalhe e soma a barra por categoria", () =
   assert.equal(view.provider, "openrouter");
   assert.equal(view.measurement, "estimate");
   assert.equal(view.total_tokens, 300);
+  // A janela é de 1000 tokens: cada categoria ocupa 15% e sobram 70% livres.
   assert.deepEqual(
     view.segments.map((seg) => [seg.category, seg.tokens, seg.pct]),
-    [["objective", 150, 50], ["instructions", 150, 50]],
+    [["objective", 150, 15], ["instructions", 150, 15]],
   );
+  assert.deepEqual(view.free, { tokens: 700, width: 70, pct: 70 });
   assert.equal(view.components.length, 3);
+});
+
+test("inferenceView sem janela divide a barra entre as categorias e não mostra livre", () => {
+  const view = inferenceView({ ...DETAIL, context_window_size: null });
+  assert.deepEqual(view.segments.map((seg) => seg.pct), [50, 50]);
+  assert.equal(view.free, null);
+});
+
+test("inferenceView com contexto acima da janela não mostra livre negativo", () => {
+  const view = inferenceView({ ...DETAIL, context_window_size: 200 });
+  assert.equal(view.free.tokens, 0);
+  assert.deepEqual(view.segments.map((seg) => seg.pct), [50, 50]);
 });
 
 test("inferenceView cai na estimativa quando o provedor não informa tokens", () => {

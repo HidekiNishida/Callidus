@@ -130,25 +130,68 @@ export const ChatView = {
     });
     Vue.onBeforeUnmount(() => document.removeEventListener("keydown", closeStagesOnEscape));
 
-    // A conversa está no ponto mais baixo? (o usuário pode estar lendo algo acima)
+    // A conversa está no ponto mais baixo? Vem da posição real da rolagem: é o que
+    // decide se o botão "rolar para o fim" aparece.
     const atBottom = Vue.ref(true);
     // Quem manda na rolagem: o estado segue a posição real da conversa, então
     // voltar ao fim sempre religa o acompanhamento do feed.
-    const scrollFollow = createScrollFollow({
-      onChange: (following) => {
-        atBottom.value = following;
-      },
-    });
+    const scrollFollow = createScrollFollow();
+    // Conversa recém-aberta: assim que as mensagens aparecerem, vai direto ao fim.
+    let pendingJump = true;
 
-    // Conversa nova: o acompanhamento do feed recomeça, colado no fim.
+    function updateAtBottom() {
+      const element = logRef.value;
+      atBottom.value = !element || scrollFollow.isNearBottom(element);
+    }
+
+    function jumpIfPending() {
+      const element = logRef.value;
+      if (!pendingJump || !element || !element.childElementCount) return;
+      pendingJump = false;
+      scrollFollow.jumpToBottom(element);
+      updateAtBottom();
+    }
+
+    // O conteúdo cresce depois de renderizado (feed hidratado, markdown, itens que
+    // expandem): quem está acompanhando continua no fim.
+    function keepAtBottom() {
+      const element = logRef.value;
+      if (!element) return;
+      if (pendingJump) jumpIfPending();
+      else scrollFollow.stick(element);
+      updateAtBottom();
+    }
+
+    // O ResizeObserver pega o que cresce sem nova renderização (imagens, transições);
+    // a renderização do componente é tratada em `onUpdated`.
+    const resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(keepAtBottom) : null;
+
+    function observeTurns() {
+      const element = logRef.value;
+      if (!resizeObserver || !element) return;
+      for (const turn of element.children) resizeObserver.observe(turn);
+    }
+
+    Vue.onMounted(() => {
+      observeTurns();
+      keepAtBottom();
+    });
+    Vue.onUpdated(() => {
+      observeTurns();
+      keepAtBottom();
+    });
+    Vue.onBeforeUnmount(() => resizeObserver?.disconnect());
+
+    // Conversa nova: o acompanhamento recomeça e a conversa abre no fim.
     Vue.watch(
       () => state.conversation?.id || null,
       () => {
         scrollFollow.reset();
-        // Ao abrir uma conversa, rola para o fim imediatamente.
+        pendingJump = true;
+        resizeObserver?.disconnect();
         Vue.nextTick(() => {
-          const element = logRef.value;
-          if (element) scrollFollow.followContent(element);
+          observeTurns();
+          jumpIfPending();
         });
       },
     );
@@ -273,6 +316,13 @@ export const ChatView = {
     const inferenceCache = Vue.reactive({});
     const loadingInference = Vue.reactive(new Set());
     const openInferences = Vue.reactive(new Set());
+    // Tabela de componentes de cada inferência: nasce recolhida.
+    const openTables = Vue.reactive(new Set());
+
+    const toggleTable = (inferenceId) => {
+      if (openTables.has(inferenceId)) openTables.delete(inferenceId);
+      else openTables.add(inferenceId);
+    };
 
     const toggleInference = (inferenceId) => {
       if (openInferences.has(inferenceId)) openInferences.delete(inferenceId);
@@ -384,6 +434,7 @@ export const ChatView = {
 
     function onScroll(event) {
       scrollFollow.handleScroll(event && event.currentTarget);
+      updateAtBottom();
     }
 
     function onWheel(event) {
@@ -506,6 +557,8 @@ export const ChatView = {
       loadingInference,
       openInferences,
       toggleInference,
+      openTables,
+      toggleTable,
       cachedInference,
       inferenceSegments,
       inferenceComponents,
@@ -687,8 +740,14 @@ export const ChatView = {
                               v-for="seg in inferenceSegments(entry.inference_id)"
                               :key="seg.category"
                               class="inference-segment"
-                              :style="{ width: seg.pct + '%', backgroundColor: seg.color }"
+                              :style="{ width: seg.width + '%', backgroundColor: seg.color }"
                               :title="seg.category + ' · ' + seg.tokens + ' tokens (' + measurementLabel(seg.measurement) + ')'"
+                            ></div>
+                            <div
+                              v-if="cachedInference(entry.inference_id).free"
+                              class="inference-segment inference-free"
+                              :style="{ width: cachedInference(entry.inference_id).free.width + '%' }"
+                              :title="'livre · ' + cachedInference(entry.inference_id).free.tokens + ' tokens'"
                             ></div>
                           </div>
                           <div class="inference-legend">
@@ -700,8 +759,21 @@ export const ChatView = {
                               <span class="inference-legend-dot" :style="{ backgroundColor: seg.color }"></span>
                               {{ seg.category }} · {{ seg.tokens }} ({{ seg.pct }}%) · {{ measurementLabel(seg.measurement) }}
                             </span>
+                            <span class="inference-legend-item" v-if="cachedInference(entry.inference_id).free">
+                              <span class="inference-legend-dot inference-free"></span>
+                              livre · {{ cachedInference(entry.inference_id).free.tokens }} ({{ cachedInference(entry.inference_id).free.pct }}%)
+                            </span>
                           </div>
-                          <table class="data-table inference-table">
+                          <button
+                            type="button"
+                            class="inference-table-toggle"
+                            :aria-expanded="openTables.has(entry.inference_id)"
+                            @click="toggleTable(entry.inference_id)"
+                          >
+                            <span class="inference-chevron" :class="{ open: openTables.has(entry.inference_id) }" aria-hidden="true">▼</span>
+                            {{ openTables.has(entry.inference_id) ? 'Ocultar' : 'Ver' }} os {{ inferenceComponents(entry.inference_id).length }} componentes do contexto
+                          </button>
+                          <table class="data-table inference-table" v-if="openTables.has(entry.inference_id)">
                             <thead>
                               <tr>
                                 <th>Categoria</th><th>Identificação</th><th>Tokens</th><th>%</th><th>Origem</th><th>Medição</th><th>Obrigatório</th>

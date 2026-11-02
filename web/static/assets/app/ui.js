@@ -1161,11 +1161,13 @@ export function flattenInferenceComponents(raw) {
  *
  * @param {object|null} detail Resposta de `/api/intelligence/inferences/{id}`.
  * @param {Array|object|null} [components] Composição carregada à parte (opcional).
- * @returns {object} Campos achatados, `components` e `segments` (um por categoria, com
- *   tokens, percentual inteiro e cor).
+ * @returns {object} Campos achatados, `components`, `segments` (um por categoria, com
+ *   tokens, percentual da janela e cor) e `free` (o que sobra da janela de contexto).
  * Observações: a barra soma por categoria — o detalhe traz um componente por item, e
- * vários itens da mesma categoria virariam fatias iguais na barra. Tokens ausentes
- * do provedor caem na estimativa local, marcada como tal.
+ * vários itens da mesma categoria virariam fatias iguais na barra. Com a janela
+ * conhecida, as fatias são proporcionais a ela e o restante aparece como espaço
+ * livre; sem janela, as fatias dividem a barra entre si e `free` é `null`. Tokens
+ * ausentes do provedor caem na estimativa local, marcada como tal.
  */
 export function inferenceView(detail, components = null) {
   const data = detail || {};
@@ -1179,13 +1181,23 @@ export function inferenceView(detail, components = null) {
     byCategory.set(key, group);
   }
   const total = comps.reduce((sum, comp) => sum + (comp.tokens || 0), 0);
+  const window = data.context_window_size || 0;
+  // A base é a janela; se o contexto passou dela (estimativa errada), a barra cheia é o total.
+  const base = window ? Math.max(window, total) : total;
+  const share = (tokens) => (base ? (tokens / base) * 100 : 0);
   const segments = Array.from(byCategory.values()).map((group, index) => ({
     category: group.category,
     tokens: group.tokens,
-    pct: total ? Math.round((group.tokens / total) * 100) : 0,
+    width: share(group.tokens),
+    pct: Math.round(share(group.tokens)),
     color: INFERENCE_COLORS[index % INFERENCE_COLORS.length],
     measurement: group.measurements.size === 1 ? [...group.measurements][0] : "partial",
   }));
+  const freeTokens = window ? Math.max(0, window - total) : null;
+  const free =
+    freeTokens == null || !comps.length
+      ? null
+      : { tokens: freeTokens, width: share(freeTokens), pct: Math.round(share(freeTokens)) };
   const promptExact = data.prompt_tokens != null;
   const completionExact = data.completion_tokens != null;
   return {
@@ -1211,5 +1223,6 @@ export function inferenceView(detail, components = null) {
     total_tokens: total,
     components: comps,
     segments,
+    free,
   };
 }

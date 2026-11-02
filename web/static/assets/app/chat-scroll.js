@@ -114,9 +114,7 @@ export function createScrollFollow({ threshold = DEFAULT_THRESHOLD, onChange = (
     element = next || element;
     if (!element || !following) return false;
     autoScrolling = true;
-    // No Safari o `scrollTo({ behavior: "smooth" })` pode não chegar ao fim no
-    // primeiro tentativa: define scrollTop diretamente e confirma com retry.
-    element.scrollTop = element.scrollHeight;
+    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
     lastTop = element.scrollTop;
     clearTimer();
     autoTimer = timers.setTimeout(() => {
@@ -128,16 +126,44 @@ export function createScrollFollow({ threshold = DEFAULT_THRESHOLD, onChange = (
         setFollowing(true);
         return;
       }
-      // A rolagem não chegou ao fim (conteúdo grande ou layout ainda ajustando):
-      // tenta novamente algumas vezes.
+      // A rolagem suave não chegou ao fim (conteúdo ainda crescendo, o Safari parou
+      // no meio, ou a aba não está pintando): completa sem animação e confere de novo.
       if (retries >= MAX_RETRIES) {
+        retries = 0;
         setFollowing(nearBottom());
         return;
       }
       retries += 1;
-      element.scrollTop = element.scrollHeight;
+      element.scrollTo({ top: element.scrollHeight, behavior: "instant" });
+      lastTop = element.scrollTop;
       followContent(element);
     }, SMOOTH_MS);
+    return true;
+  }
+
+  /** Vai ao fim de uma vez, sem animação (ao abrir uma conversa). */
+  function jumpToBottom(next) {
+    element = next || element;
+    if (!element) return;
+    clearTimer();
+    autoScrolling = false;
+    retries = 0;
+    element.scrollTo({ top: element.scrollHeight, behavior: "instant" });
+    lastTop = element.scrollTop;
+    setFollowing(true);
+  }
+
+  /**
+   * O conteúdo mudou de tamanho (markdown, item expandido, imagem carregada): quem
+   * está acompanhando continua colado no fim. Quem subiu para ler não é puxado.
+   */
+  function stick(next) {
+    element = next || element;
+    if (!element || !following || nearBottom()) return false;
+    clearTimer();
+    autoScrolling = false;
+    element.scrollTo({ top: element.scrollHeight, behavior: "instant" });
+    lastTop = element.scrollTop;
     return true;
   }
 
@@ -146,8 +172,13 @@ export function createScrollFollow({ threshold = DEFAULT_THRESHOLD, onChange = (
     element = next || element;
     if (!element) return;
     setFollowing(true);
-    element.scrollTop = element.scrollHeight;
     followContent(element);
+  }
+
+  /** A conversa está perto do fim (posição real, não a intenção de acompanhar)? */
+  function isNearBottom(next) {
+    element = next || element;
+    return nearBottom();
   }
 
   /** Conversa nova: o acompanhamento recomeça, colado no fim. */
@@ -170,8 +201,11 @@ export function createScrollFollow({ threshold = DEFAULT_THRESHOLD, onChange = (
     handleTouchMove,
     handleTouchEnd,
     followContent,
+    jumpToBottom,
+    stick,
     scrollToBottom,
     reset,
     isFollowing,
+    isNearBottom,
   };
 }

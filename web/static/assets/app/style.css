@@ -330,6 +330,17 @@ pre,
   overflow: auto;
 }
 
+/* Cada tela ocupa a altura da área principal. O chat rola só no `.chat-log`: se o
+   wrapper crescer com o conteúdo, quem rola é a página inteira (o campo de mensagem
+   some, a conversa não abre no fim e o botão "rolar para o fim" nunca aparece). */
+.view-switch > div {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.view-switch > div > .chat { flex: 1; min-height: 0; }
+
 /* ── Páginas de Inteligência ─────────────────────────────────────────── */
 
 .intelligence-page {
@@ -1843,11 +1854,34 @@ pre,
   font-size: 10.5px;
   color: #fff;
   white-space: nowrap;
-  padding: 0 6px;
+  padding: 0;
   overflow: hidden;
   box-sizing: border-box;
+  flex: none;
 }
 .inference-segment.est { opacity: 0.85; }
+/* Espaço livre da janela de contexto: listrado, para não parecer mais uma categoria. */
+.inference-segment.inference-free,
+.inference-legend-dot.inference-free {
+  background: repeating-linear-gradient(135deg, transparent 0 4px, color-mix(in srgb, var(--muted) 22%, transparent) 4px 8px);
+}
+.inference-legend-dot.inference-free { border: 1px solid var(--border); }
+
+.inference-table-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.inference-table-toggle:hover { color: var(--text); border-color: var(--border); }
+.inference-table-toggle .inference-chevron.open { transform: rotate(-180deg); }
 
 .inference-legend {
   display: flex;

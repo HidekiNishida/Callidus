@@ -172,3 +172,45 @@ test("rolar para cima e voltar para baixo durante a rolagem suave não trava o f
   // E o feed volta a ser seguido.
   assert.equal(follow.followContent(element), true);
 });
+
+test("abrir uma conversa vai ao fim sem animação", () => {
+  const { follow } = setup();
+  const element = makeElement({ scrollTop: 0 });
+
+  follow.jumpToBottom(element);
+  assert.deepEqual(element.scrolls.at(-1), { top: element.scrollHeight, behavior: "instant" });
+  assert.equal(follow.isFollowing(), true);
+  assert.equal(follow.isNearBottom(element), true);
+});
+
+test("conteúdo que cresce mantém no fim quem acompanha e não puxa quem subiu", () => {
+  const { follow } = setup();
+  const element = makeElement();
+
+  element.scrollHeight += 500;
+  assert.equal(follow.stick(element), true);
+  assert.equal(follow.isNearBottom(element), true);
+
+  follow.handleWheel(element, -120);
+  element.scrollHeight += 500;
+  element.scrolls.length = 0;
+  assert.equal(follow.stick(element), false);
+  assert.equal(element.scrolls.length, 0);
+});
+
+test("rolagem suave que não chega ao fim é completada sem animação", () => {
+  const { follow, timers } = setup();
+  const element = makeElement({ scrollTop: 0 });
+  // Aba sem pintar quadros: a rolagem suave não sai do lugar.
+  const original = element.scrollTo.bind(element);
+  element.scrollTo = ({ top, behavior }) => {
+    if (behavior === "smooth") element.scrolls.push({ top, behavior });
+    else original({ top, behavior });
+  };
+
+  follow.scrollToBottom(element);
+  assert.equal(follow.isNearBottom(element), false);
+  timers.run();
+  assert.equal(follow.isNearBottom(element), true);
+  assert.equal(element.scrolls.some((item) => item.behavior === "instant"), true);
+});

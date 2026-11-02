@@ -5391,6 +5391,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** chat-scroll — módulo do projeto.
 
 - `createScrollFollow`
+- `jumpToBottom` — vai ao fim sem animação (ao abrir uma conversa).
+- `stick` — conteúdo cresceu: mantém no fim quem acompanha, sem puxar quem subiu para ler.
+- `isNearBottom` — posição real perto do fim (decide o botão "rolar para o fim").
 - `nearBottom`
 - `setFollowing`
 - `clearTimer`
@@ -5423,6 +5426,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** conversa: mensagens, atividade e estado vazio. O avatar e o estado vazio usam `brandSrc('mark', tema)`. A resposta final visível vem de `visibleFinalAnswer` (texto da raiz, ou o markdown da etapa concluída quando a raiz ainda não recebeu a cópia).
 
 - `closeStagesOnEscape` — Esc fecha o popup de etapas (teleportado para o `<body>`).
+- `keepAtBottom` / `jumpIfPending` — a conversa abre no fim e continua no fim enquanto o conteúdo cresce.
+- `observeTurns` — registra as mensagens no `ResizeObserver`.
+- `updateAtBottom` — mostra o botão "rolar para o fim" quando a conversa não está no fim.
 - `loadInference` — carrega o detalhe da inferência quando ela encerra e guarda no formato de `inferenceView`.
 - `isOpen`
 - `toggleEntry`
