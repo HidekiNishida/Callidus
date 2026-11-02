@@ -625,6 +625,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - Arquivo: [README.md](/scripts/README.md)
 - Arquivo: [backup-data.sh](/scripts/backup-data.sh)
+- Arquivo: [check-web-syntax.js](/scripts/check-web-syntax.js)
 - Arquivo: [fix-python314-editable.py](/scripts/fix-python314-editable.py)
 - Arquivo: [resume.py](/scripts/resume.py)
 - Arquivo: [audit_ollama_smoke.sh](/scripts/audit_ollama_smoke.sh)
@@ -641,7 +642,15 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Backup do SQLite `data/agent.db` → `backups/agent-YYYYMMDD-HHMMSS.db`.
 
-### `scripts/fix-python314-editable.py`
+### `scripts/check-web-syntax.js`
+
+**Propósito:** Validação sintática e de integridade de importações dos módulos JavaScript do frontend, impedindo a introdução de erros de sintaxe (ex.: chaves/colchetes desbalanceados) que impeçam a inicialização da interface. Usado em CI (`npm run lint:web`).
+
+- `main() -> None` — Percorre os módulos `.js` em `web/static/`, executa `node --check` em cada um e verifica a resolução das importações relativas; encerra com código diferente de zero quando encontra problemas, informando arquivo, linha e coluna.
+- `checkSyntax(file) -> dict|None` — Executa a validação sintática de um arquivo e devolve o erro encontrado ou `None`.
+- `checkImports(file) -> list[str]` — Verifica se as importações relativas (`import ... from`, `import()`, `require`) resolvem para arquivos existentes.
+- `walkFrontend(dir) -> list[str]` — Coleta recursivamente todos os arquivos `.js` do frontend.
+
 
 **Propósito:** Corrige editable install no Python 3.14+ (remove `.pth` com prefixo `_`).
 

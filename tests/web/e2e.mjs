@@ -59,16 +59,19 @@ async function startServer() {
   plog("startServer: iniciando uvicorn");
   rmSync(DB_PATH, { force: true });
   mkdirSync(join(ROOT, "tests", "web"), { recursive: true });
-  const uvicornBin = process.env.VIRTUAL_ENV
-    ? join(process.env.VIRTUAL_ENV, "bin", "uvicorn")
-    : "uvicorn";
-  server = spawn(uvicornBin, ["agent.api.main:app", "--host", "127.0.0.1", "--port", String(PORT)], {
+  const pythonBin = process.env.VIRTUAL_ENV
+    ? join(process.env.VIRTUAL_ENV, "bin", "python")
+    : "python3";
+  // Executa via agent.api.main.run() para que _mount_web() publique os arquivos
+  // estáticos (index.html, JS e CSS) antes de subir o uvicorn. Iniciar o uvicorn
+  // diretamente com "agent.api.main:app" não monta a interface estática.
+  server = spawn(pythonBin, ["-c", "from agent.api.main import run; run()"], {
     cwd: ROOT,
     env: {
       ...process.env,
       PYTHONPATH: join(ROOT, "src"),
       CALLIDUS_DATABASE_URL: `sqlite:///${DB_PATH}`,
-      CALLIDUS_API_PORT: String(PORT),
+      API_PORT: String(PORT),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

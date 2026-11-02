@@ -44,13 +44,45 @@ import { IntelligencePerformance } from "./components/intelligence-performance.j
 import { IntelligenceReasoning } from "./components/intelligence-reasoning.js";
 import { IntelligenceKnowledge } from "./components/intelligence-knowledge.js";
 import { IntelligenceDiagnostics } from "./components/intelligence-diagnostics.js";
-import { IntelligenceBenchmarks, IntelligenceContextConsumption } from "./components/intelligence-pages.js";
 import { IntelligenceEngineering } from "./components/intelligence-engineering.js";
+import { IntelligenceOptimization } from "./components/intelligence-optimization.js";
 import { IntelligenceResources } from "./components/intelligence-resources.js";
 import { IntelligenceAgents } from "./components/intelligence-agents.js";
-import { IntelligenceOptimization } from "./components/intelligence-optimization.js";
 
-const { createApp, reactive, ref, computed, onMounted, onBeforeUnmount } = Vue;
+const {
+  createApp,
+  reactive,
+  ref,
+  computed,
+  onMounted,
+  onBeforeUnmount,
+  defineAsyncComponent,
+} = Vue;
+
+/**
+ * Módulos secundários da área de Inteligência, carregados sob demanda.
+ * Esses módulos só são necessários quando o usuário abre a aba Inteligência.
+ * Se a carga falhar (rede, erro de sintaxe, etc.), o restante da aplicação
+ * continua montado e a página afetada exibe uma mensagem localizada, em vez
+ * de derrubar toda a interface.
+ */
+const IntelligenceBenchmarks = defineAsyncComponent({
+  loader: () =>
+    import("./components/intelligence-pages.js").then((m) => m.IntelligenceBenchmarks),
+  errorComponent: {
+    template:
+      '<div class="boot warn"><span>Módulo de benchmarks indisponível no momento.</span></div>',
+  },
+});
+
+const IntelligenceContextConsumption = defineAsyncComponent({
+  loader: () =>
+    import("./components/intelligence-pages.js").then((m) => m.IntelligenceContextConsumption),
+  errorComponent: {
+    template:
+      '<div class="boot warn"><span>Módulo de consumo de contexto indisponível no momento.</span></div>',
+  },
+});
 
 /** Telas da navegação inferior. */
 const NAV_ITEMS = [
@@ -117,6 +149,25 @@ const App = {
     });
 
     const intelligenceSubView = ref("overview"); // overview, performance, reasoning, knowledge, diagnostics, benchmarks, engineering, resources, agents, optimization
+
+    /**
+     * Emite um evento de diagnóstico de boot para o guarda externo
+     * (index.html) sem falhar se o guarda não estiver disponível.
+     *
+     * @param {string} stage Etapa do ciclo de inicialização.
+     * @param {object} detail Detalhes adicionais do evento.
+     * @returns {void}
+     */
+    function bootEvent(stage, detail = {}) {
+      try {
+        if (window.__callidusBoot) {
+          window.__callidusBoot({ stage, at: Date.now(), ...detail });
+        }
+      } catch {
+        /* guarda de boot indisponível; não falha por causa do diagnóstico */
+      }
+      console.error(`[callidus:boot:${stage}]`, detail);
+    }
 
     onMounted(() => {
       watchViewport();

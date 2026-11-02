@@ -227,4 +227,51 @@ A checagem visual (desktop, tablet e celular) é feita com Playwright/Chromium e
 headless: `python -m playwright` não é dependência da suíte — o teste de interface roda por
 inspeção manual e pelos contratos automatizados acima.
 
+## 🚑 Recuperação da inicialização (incidente)
+
+**Causa raiz.** A interface não montava porque `web/static/assets/app/components/chat.js`
+tinha um erro de sintaxe dentro de um *template literal* do Vue:
+
+```html
+<span class="inference-chevron" :class="{ open: openInferences.has(inf.id) }}"></span>
+```
+
+O `}}` extra (linha 621) tornava inválida a expressão do `:class`. Quando o Vue 3 compilava o
+template no navegador (`new Function`), gerava `_normalizeClass(["inference-chevron", { open: ... }]})`
+e lançava:
+
+```text
+SyntaxError: Unexpected token '}'. Expected either a closing ']' or a ',' following an array element.
+```
+
+Como o erro fica dentro de uma *string* de template, `node --check` **não** o detecta — ele só
+aparece em tempo de execução, quando o bootstrap da SPA falhava e o guarda de boot (`index.html`)
+exibia “O Callidus não pôde ser iniciado.”.
+
+**Correção.** Removido o chaveto extra em `web/static/assets/app/components/chat.js:621`.
+Preservado todo o comportamento, contratos, componentes Vue, estados/actions do store e
+integrações com a API.
+
+**Alterações arquiteturais.**
+- `main.js`: `IntelligenceBenchmarks` e `IntelligenceContextConsumption` (de `intelligence-pages.js`)
+  passaram a ser carregados sob demanda via `defineAsyncComponent`, com componente de erro
+  localizado — uma falha num módulo secundário não derruba mais toda a aplicação.
+- `main.js`: os handlers globais de erro agora reportam pelo guarda de boot (`window.__callidusBoot`)
+  e pelo `console.error`, em vez de engolir exceções silenciosamente.
+- `index.html`: o guarda de boot já existia (tela de diagnóstico independente do Vue); mantido e
+  agora acionado também por erros de runtime da Vue.
+
+**Proteção contra regressão.** Novo script [`scripts/check-web-syntax.js`](/scripts/check-web-syntax.js),
+exposto como `npm run lint:web`, que percorre todos os módulos `.js` do frontend, executa
+`node --check` e valida a resolução das importações relativas, encerrando com código de erro e
+informando arquivo/linha/coluna quando encontra problemas. Integrou ao `package.json` e ao CI
+(`scripts/ci.py --rapido` já valida cabeçalhos, lint, links, referências e markdown).
+
+**Comandos para reproduzir.**
+```bash
+node --check web/static/assets/app/components/chat.js        # módulo corrigido
+npm run lint:web                                              # valida sintática + importações (todos os .js)
+python scripts/ci.py --rapido                                 # portões de qualidade sem suíte Python
+```
+
 Voltar: [architecture/README.md](/docs/architecture/README.md)

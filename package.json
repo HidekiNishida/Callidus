@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "test:web": "node --test tests/web/*.test.mjs",
-    "test:e2e": "node tests/web/e2e.mjs"
+    "test:e2e": "node tests/web/e2e.mjs",
+    "lint:web": "node scripts/check-web-syntax.js"
   },
   "devDependencies": {
     "playwright": "^1.48.0"

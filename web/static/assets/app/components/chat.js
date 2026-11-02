@@ -618,7 +618,7 @@ export const ChatView = {
                   <span class="inference-chip" :class="['measure-' + ((cachedInference(inf.id) || {}).measurement || 'unavailable')]">
                     {{ measurementLabel((cachedInference(inf.id) || {}).measurement) }}
                   </span>
-                  <span class="inference-chevron" :class="{ open: openInferences.has(inf.id) }}" aria-hidden="true">▼</span>
+                  <span class="inference-chevron" :class="{ open: openInferences.has(inf.id) }" aria-hidden="true">▼</span>
                 </div>
 
                 <div class="inference-body" :class="{ open: openInferences.has(inf.id) }">
