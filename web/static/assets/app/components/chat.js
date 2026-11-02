@@ -803,6 +803,34 @@ export const ChatView = {
           <span v-html="icon('spark', 12)"></span>
           {{ state.runMetrics.tokens.total_tokens }} token(es)
         </span>
+
+        <div class="stages-tag" v-if="activeStages.length" @click="stagesOpen = !stagesOpen" role="button" tabindex="0" :aria-expanded="stagesOpen" aria-label="Etapas do plano">
+          <span class="stages-chevron" v-html="icon('chevron-down', 12)"></span>
+          <span class="stages-summary">
+            <strong>Etapa {{ currentIndex }} de {{ activeStages.length }}</strong>
+            <span class="stages-current">{{ currentTitle }}</span>
+          </span>
+
+          <div class="stages-card-wrap" v-if="stagesOpen" @click.self="stagesOpen = false">
+            <div class="stages-card">
+              <div class="stages-header">
+                <span>Etapas do plano</span>
+                <span>{{ currentIndex }} de {{ activeStages.length }}</span>
+              </div>
+              <ul class="stages-list">
+                <li
+                  v-for="(stage, index) in activeStages"
+                  :key="stage.id"
+                  :class="['stage-item', 'stage-' + stage.status.toLowerCase(), { active: stage.active }]"
+                >
+                  <span class="stage-ico" :class="'ico-' + stage.status" v-html="icon(stage.glyph, 12)"></span>
+                  <span class="stage-title">{{ stage.title }}</span>
+                  <span class="stage-status">{{ stage.statusText }}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
       </div>
 
       <p class="composer-hint" v-if="state.running || (state.currentRun || {}).status === 'ACTIVE'">
@@ -830,35 +858,6 @@ export const ChatView = {
             <span class="plan-tag-title">{{ tag.title }}</span>
             <span class="plan-tag-status">{{ tag.statusText }}</span>
           </button>
-        </div>
-      </div>
-
-      <div class="stages-tag" v-if="activeStages.length" @click="stagesOpen = !stagesOpen" role="button" tabindex="0" :aria-expanded="stagesOpen" aria-label="Etapas do plano">
-        <span class="stages-chevron" v-html="icon('chevron-down', 12)"></span>
-        <span class="stages-summary">
-          <strong>Etapa {{ currentIndex }} de {{ activeStages.length }}</strong>
-          <span class="stages-current">{{ currentTitle }}</span>
-        </span>
-
-        <div class="stages-card-wrap" v-if="stagesOpen" @click.self="stagesOpen = false">
-          <div class="stages-overlay"></div>
-          <div class="stages-card">
-            <div class="stages-header">
-              <span>Etapas do plano</span>
-              <span>{{ currentIndex }} de {{ activeStages.length }}</span>
-            </div>
-            <ul class="stages-list">
-              <li
-                v-for="(stage, index) in activeStages"
-                :key="stage.id"
-                :class="['stage-item', 'stage-' + stage.status.toLowerCase(), { active: stage.active }]"
-              >
-                <span class="stage-ico" :class="'ico-' + stage.status" v-html="icon(stage.glyph, 12)"></span>
-                <span class="stage-title">{{ stage.title }}</span>
-                <span class="stage-status">{{ stage.statusText }}</span>
-              </li>
-            </ul>
-          </div>
         </div>
       </div>
 

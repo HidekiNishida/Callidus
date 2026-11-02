@@ -1692,6 +1692,7 @@ pre,
   font-size: 12px;
   color: var(--muted);
   min-height: 26px;
+  position: relative;
 }
 
 .context-chip {
