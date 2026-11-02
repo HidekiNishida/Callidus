@@ -443,6 +443,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Arquitetura das skills sob demanda, da estratégia profissional, da decomposição recursiva e do ciclo de recuperação da verificação.
 
+### `docs/architecture/observabilidade-contexto.md`
+
+**Propósito:** observabilidade de contexto e tokens por inferência: modelo de dados (`inference_records` estendido), componentes do contexto, rotas de consumo e onde aparece na interface (página Consumo e Gestão de Contexto e barra por inferência no chat).
+
 ### `docs/architecture/ux-ui.md`
 
 **Propósito:** Guia de UX/UI da interface web (layout, estados, interações).
@@ -650,11 +654,14 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `checkSyntax(file) -> dict|None` — Executa a validação sintática de um arquivo e devolve o erro encontrado ou `None`.
 - `checkImports(file) -> list[str]` — Verifica se as importações relativas (`import ... from`, `import()`, `require`) resolvem para arquivos existentes.
 - `walkFrontend(dir) -> list[str]` — Coleta recursivamente todos os arquivos `.js` do frontend.
+- `log(...args)` — Escreve uma linha do relatório no console.
 
 
-**Propósito:** Corrige editable install no Python 3.14+ (remove `.pth` com prefixo `_`).
+### `scripts/fix-python314-editable.py`
 
-- `main() -> None` — Entry point do script — remove arquivos `.pth` com prefixo `_` do site-packages, corrigindo a instalação editável do pacote em Python 3.14+. Executado manualmente quando o `pip install -e .` falha.
+**Propósito:** faz o import do pacote `agent` funcionar num venv apesar do Python 3.14, preparando o site-packages com um `.pth` e um link simbólico para `src/agent`. Age só sobre o site-packages do venv; uma instalação real do pacote não é modificada.
+
+- `main() -> None` — Prepara o site-packages para que o pacote em `src/` seja importável (grava o `.pth`, cria o link e remove a flag de oculto no macOS). Executado manualmente quando o `pip install -e .` não deixa o pacote importável.
 
 - `_site_packages() → Path` — Devolve o caminho do site-packages do virtualenv em uso.
 - `_unhide(path) → None` — Remove a flag UF_HIDDEN (macOS) do arquivo, se houver.
@@ -2229,6 +2236,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `compose_final_markdown(*, objective: str, stages: list[dict], model_text: str='') -> str` — Monta o Markdown da resposta final a partir do objetivo, das etapas concluídas e do texto do modelo. Entradas: objetivo, estágios e texto; saída: resposta final formatada.
 - `compose_incomplete_markdown(*, objective: str, pending: list[dict], reason: str, requirements: list[dict] | None=None) -> str` — Monta a resposta final quando a tarefa não foi concluída, listando pendências, o motivo e os requisitos em aberto. Entradas: objetivo, pendências, motivo e requisitos; saída: Markdown explicativo.
 - `ensure_closing_stages(plan: DecompositionResult) -> DecompositionResult` — garante etapa final_answer + verificação.
+- `validate_final_answer(text: str) -> tuple[bool, str | None]` — Verifica se a resposta final está pronta para entrega sem depender do julgamento do modelo: recusa texto vazio, variáveis de template não preenchidas e placeholders genéricos; devolve `(ok, motivo)`.
 - `extract_sources(*chunks: str) -> list[str]` — Extrai as fontes (caminhos de arquivo) citadas nos textos informados; devolve a lista de caminhos únicos.
 - `local_now_line() -> str` — data/hora local formatada.
 - `usable_markdown(text: str) -> bool` — Indica se o texto tem formato Markdown aproveitável: exige tamanho mínimo de 40 caracteres, proíbe início com `{` ou `[` (JSON de ferramenta) e exige marcadores como `#`, item de lista, separador de tabela ou bloco de código. Entrada: texto bruto; saída: booleano.
@@ -4130,6 +4138,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Testes unitários do DiagnosticEngine: categorias, severidades, tipos e detecção automática de gargalos.
 
+### `tests/test_intelligence_context_consumption_api.py`
+
+**Propósito:** verifica o serviço e os contratos HTTP das rotas de consumo de contexto (visão geral, por componente, por tipo, comparação, matriz, oportunidades, linha do tempo e detalhe/componentes de uma inferência), com banco temporário.
+
 ### `tests/test_intelligence_graph.py`
 
 **Propósito:** Testes unitários do CognitiveGraph: topologia, estados, arestas percorridas e aplicação de eventos.
@@ -5462,6 +5474,71 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `onSearch`
 - `bump`
 
+### `web/static/assets/app/components/intelligence-agents.js`
+
+**Propósito:** módulo Agentes e automações da Inteligência — hierarquia de agentes, execuções, automações habilitadas/suspensas, próximas execuções e taxa de sucesso.
+
+- `load` — carrega as automações e o estado do supervisor; a falha vira mensagem na tela.
+
+### `web/static/assets/app/components/intelligence-diagnostics.js`
+
+**Propósito:** módulo Diagnóstico e confiabilidade da Inteligência — falhas por categoria, causa, provedor e ferramenta, estagnação e recuperações.
+
+- `load` — carrega os diagnósticos e o resumo (da run selecionada, ou globais).
+- `analyze` — pede a análise de diagnóstico da run selecionada e recarrega os resultados.
+
+### `web/static/assets/app/components/intelligence-engineering.js`
+
+**Propósito:** módulo Engenharia e qualidade da Inteligência — status do Git, descoberta do projeto e qualidade de código (lint/test/build).
+
+- `load` — busca diff, status e log do Git do projeto selecionado; cada leitura que falha fica vazia.
+
+### `web/static/assets/app/components/intelligence-knowledge.js`
+
+**Propósito:** módulo Conhecimento e memória da Inteligência — grafo de conhecimento, busca de símbolos, itens estruturados e tipos de memória.
+
+- `load` — carrega o grafo e as estatísticas de memória do projeto selecionado.
+- `loadGraph` — lê o grafo de conhecimento do projeto.
+- `loadMemoryStats` — lê as estatísticas de memória do projeto.
+- `search` — pesquisa símbolos no grafo pelo termo digitado.
+- `viewNeighbors` — carrega os vizinhos de um nó do grafo (profundidade 2).
+
+### `web/static/assets/app/components/intelligence-optimization.js`
+
+**Propósito:** módulo Otimização inteligente da Inteligência — análise automática, recomendações, experimentos e histórico de calibração.
+
+- `load` — carrega a visão geral da Inteligência que alimenta as recomendações.
+
+### `web/static/assets/app/components/intelligence-overview.js`
+
+**Propósito:** módulo Overview da Inteligência — visão consolidada do estado do Callidus com indicadores principais, gráficos e saúde do sistema.
+
+- `load` — carrega a visão geral da Inteligência.
+
+### `web/static/assets/app/components/intelligence-performance.js`
+
+**Propósito:** módulo Performance da Inteligência — métricas de desempenho por run: tokens, contexto, inferência, recursos e eficiência com percentis.
+
+- `load` — carrega as métricas da run selecionada ou, sem run, as métricas globais da visão geral.
+
+### `web/static/assets/app/components/intelligence-reasoning.js`
+
+**Propósito:** módulo Reasoning da Inteligência — como o Callidus resolve problemas: decomposições, replanejamentos, profundidade da árvore, estratégias, tentativas e progresso verificável.
+
+- `load` — carrega a visão geral e a árvore de tarefas.
+- `loadTaskTree` — lê as tarefas raiz do projeto ou da conversa atual.
+- `selectTaskNode` — marca a tarefa escolhida na árvore para mostrar seus detalhes.
+
+### `web/static/assets/app/components/intelligence-resources.js`
+
+**Propósito:** módulo Recursos e orçamento da Inteligência — CPU, RAM, VRAM, tokens autorizados/consumidos, saldo e nível de orçamento (normal/elevated/reduce/stop).
+
+- `load` — carrega a visão geral da Inteligência com os dados de recursos e orçamento.
+
+### `web/static/assets/app/components/intelligence-section.js`
+
+**Propósito:** seção completa da Inteligência (abas e sub-visões) montada por render function.
+
 ### `web/static/assets/app/components/intelligence-subview.js`
 
 **Propósito:** Sub-view de inteligência da interface (dashboard de desempenho, calibração, capacidades e perfis). **Quando/onde:** consumida pela SPA para exibir métricas de qualidade, eficiência, recursos e autonomia.
@@ -5593,6 +5670,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** main — módulo do projeto.
 
+- `bootEvent` — emite um evento de diagnóstico do boot para o guarda externo do `index.html`, sem falhar quando ele não existe.
 - `isTyping`
 - `onGlobalKey`
 - `newProject`
