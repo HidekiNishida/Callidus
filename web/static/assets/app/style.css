@@ -1816,6 +1816,14 @@ pre,
 .inference-head.open + .inference-body,
 .inference-body.open { display: block; }
 
+.inference-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
 .inference-bar {
   height: 14px;
   border-radius: 6px;
@@ -3188,8 +3196,9 @@ pre,
 .stages-chevron { flex: none; width: 12px; height: 12px; transition: transform var(--dur-2) var(--ease); }
 .stages-tag[aria-expanded="true"] .stages-chevron { transform: rotate(180deg); }
 
-/* Card pop-up com a lista de etapas em sequência. Usa fixed para não ser
-   cortado pelos limites do container pai (especialmente no mobile). */
+/* Card pop-up com a lista de etapas, centralizado na página. O componente o
+   teleporta para o <body>: dentro da tag (animada com transform) o fixed
+   ficava preso à própria tag e cortado pelo contexto-bar. */
 .stages-card-wrap {
   position: fixed;
   inset: 0;
@@ -3220,15 +3229,15 @@ pre,
   flex-direction: column;
   border: 1px solid var(--border-soft);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-1) 90%, black);
+  background: var(--surface);
   color: var(--text);
-  box-shadow: 0 10px 30px color-mix(in srgb, black 40%);
+  box-shadow: 0 10px 30px color-mix(in srgb, black 40%, transparent);
   animation: card-in var(--dur-3) var(--ease) both;
 }
 
 @keyframes card-in {
-  from { opacity: 0; transform: translateY(-8px); scale(0.96); }
-  to   { opacity: 1; transform: translateY(0); scale(1); }
+  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 @keyframes fade-in {
   from { opacity: 0; }

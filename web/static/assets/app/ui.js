@@ -4,7 +4,8 @@
  * Propósito: ícones, markdown leve e formatadores compartilhados pelos componentes.
  * Responsabilidade: frontend/apresentação — funções puras de formatação e tradução de eventos.
  * Componentes: ICONS, icon(), escapeHtml(), renderMarkdown(), describeActivity(), integrateNarrative(),
- *   mergeActivity(), summarizeActivity(), diffLines(), brandSrc(), visibleFinalAnswer(), helpers de rótulo e tempo.
+ *   mergeActivity(), summarizeActivity(), diffLines(), brandSrc(), visibleFinalAnswer(), inferenceView(),
+ *   helpers de rótulo e tempo.
  * Dependências: nenhuma (módulo puro, sem DOM e sem API).
  * Observações: o HTML do markdown é escapado antes de qualquer marcação — o conteúdo do modelo
  * nunca vira HTML cru.
@@ -1130,3 +1131,85 @@ export function diffLines(text) {
     }));
 }
 
+
+/** Cores dos segmentos da barra de composição do contexto, por ordem de categoria. */
+export const INFERENCE_COLORS = [
+  "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316",
+];
+
+/**
+ * Achata a composição do contexto, venha ela como lista ou agrupada por categoria.
+ *
+ * @param {Array|object|null} raw `components` do detalhe (lista) ou a resposta de
+ *   `/inferences/{id}/components` (`{categories: [{components: [...]}]}`).
+ * @returns {Array<object>} Os componentes, um por item de contexto.
+ */
+export function flattenInferenceComponents(raw) {
+  if (Array.isArray(raw)) return raw.filter(Boolean);
+  if (raw && Array.isArray(raw.categories)) {
+    return raw.categories.flatMap((group) =>
+      Array.isArray(group?.components) && group.components.length
+        ? group.components
+        : [{ category: group?.category, tokens: group?.tokens || 0 }],
+    );
+  }
+  return [];
+}
+
+/**
+ * Monta o que o chat mostra de uma inferência: metadados, tokens e a distribuição do contexto.
+ *
+ * @param {object|null} detail Resposta de `/api/intelligence/inferences/{id}`.
+ * @param {Array|object|null} [components] Composição carregada à parte (opcional).
+ * @returns {object} Campos achatados, `components` e `segments` (um por categoria, com
+ *   tokens, percentual inteiro e cor).
+ * Observações: a barra soma por categoria — o detalhe traz um componente por item, e
+ * vários itens da mesma categoria virariam fatias iguais na barra. Tokens ausentes
+ * do provedor caem na estimativa local, marcada como tal.
+ */
+export function inferenceView(detail, components = null) {
+  const data = detail || {};
+  const comps = flattenInferenceComponents(components ?? data.components);
+  const byCategory = new Map();
+  for (const comp of comps) {
+    const key = comp.category || "outros";
+    const group = byCategory.get(key) || { category: key, tokens: 0, measurements: new Set() };
+    group.tokens += comp.tokens || 0;
+    group.measurements.add(comp.measurement || "estimate");
+    byCategory.set(key, group);
+  }
+  const total = comps.reduce((sum, comp) => sum + (comp.tokens || 0), 0);
+  const segments = Array.from(byCategory.values()).map((group, index) => ({
+    category: group.category,
+    tokens: group.tokens,
+    pct: total ? Math.round((group.tokens / total) * 100) : 0,
+    color: INFERENCE_COLORS[index % INFERENCE_COLORS.length],
+    measurement: group.measurements.size === 1 ? [...group.measurements][0] : "partial",
+  }));
+  const promptExact = data.prompt_tokens != null;
+  const completionExact = data.completion_tokens != null;
+  return {
+    purpose: data.purpose || null,
+    inference_type: data.inference_type || null,
+    model: data.model || null,
+    provider: data.provider || null,
+    status: data.status || null,
+    failure_reason: data.failure_reason || null,
+    duration_ms: data.duration_ms ?? null,
+    measurement: data.measurement || (comps.length ? "estimate" : "unavailable"),
+    prompt_tokens: promptExact
+      ? { value: data.prompt_tokens, measurement: "exact" }
+      : { value: data.estimated_prompt_tokens ?? null, measurement: data.estimated_prompt_tokens != null ? "estimate" : "unavailable" },
+    completion_tokens: completionExact
+      ? { value: data.completion_tokens, measurement: "exact" }
+      : { value: data.estimated_completion_tokens ?? null, measurement: data.estimated_completion_tokens != null ? "estimate" : "unavailable" },
+    context_window_size: data.context_window_size ?? null,
+    occupancy:
+      data.context_window_size && (data.prompt_tokens ?? data.estimated_prompt_tokens)
+        ? (data.prompt_tokens ?? data.estimated_prompt_tokens) / data.context_window_size
+        : null,
+    total_tokens: total,
+    components: comps,
+    segments,
+  };
+}

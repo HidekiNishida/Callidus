@@ -938,19 +938,35 @@ export async function deleteConversation(conversation) {
   }
 }
 
+// Ordem das leituras da lista de tarefas: o polling, o fim do stream e o envio podem
+// pedir a lista ao mesmo tempo, e uma resposta mais antiga não sobrescreve uma mais nova.
+let tasksRequestSeq = 0;
+let tasksAppliedSeq = 0;
+
 /**
  * Recarrega a lista de tarefas do contexto atual.
  *
  * @returns {Promise<void>}
  * Observações: quando a tarefa selecionada some, a primeira da lista passa a ser a selecionada.
+ * Uma leitura que falha (servidor ocupado na inferência, timeout) mantém a lista que já
+ * estava na tela — antes ela virava `[]` e a conversa inteira sumia do chat. Respostas
+ * que chegam fora de ordem, ou de um contexto que já foi trocado, são descartadas.
  */
 export async function refreshTasks() {
-  if (state.conversation) {
-    state.tasks = await api(`/conversations/${state.conversation.id}/tasks`).catch(() => []);
-  } else if (state.selectedProject) {
-    state.tasks = await api(`/projects/${state.selectedProject.id}/tasks`).catch(() => []);
-  } else {
-    state.tasks = [];
+  const seq = ++tasksRequestSeq;
+  const conversationId = state.conversation?.id || null;
+  const projectId = state.selectedProject?.id || null;
+  let path = null;
+  if (conversationId) path = `/conversations/${conversationId}/tasks`;
+  else if (projectId) path = `/projects/${projectId}/tasks`;
+  const tasks = path ? await api(path).catch(() => null) : [];
+  const sameContext =
+    (state.conversation?.id || null) === conversationId &&
+    (conversationId || (state.selectedProject?.id || null) === projectId);
+  if (!sameContext || seq < tasksAppliedSeq) return;
+  if (Array.isArray(tasks)) {
+    tasksAppliedSeq = seq;
+    state.tasks = tasks;
   }
   if (state.selectedTaskId && !state.tasks.some((task) => task.id === state.selectedTaskId)) {
     state.selectedTaskId = state.tasks[0]?.id || null;

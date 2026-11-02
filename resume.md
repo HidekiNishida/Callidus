@@ -3918,6 +3918,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [narrative-replay.test.mjs](/tests/web/narrative-replay.test.mjs)
 - Arquivo: [work-explained.test.mjs](/tests/web/work-explained.test.mjs)
 - Arquivo: [chat-scroll.test.mjs](/tests/web/chat-scroll.test.mjs)
+- Arquivo: [chat-inference.test.mjs](/tests/web/chat-inference.test.mjs)
 - Arquivo: [replay.mjs](/tests/web/replay.mjs)
 - Arquivo: [tools-report.test.mjs](/tests/web/tools-report.test.mjs)
 - Arquivo: [usage-format.test.mjs](/tests/web/usage-format.test.mjs)
@@ -3980,6 +3981,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `DEFAULT_TIMEOUT = 10000` — Tempo limite padrão de requisição (ms).
 - `HEALTH_TIMEOUT = 5000` — Tempo limite do health check (ms).
 - `ADMIN_TIMEOUT = 30000` — Tempo limite de operações administrativas (ms).
+
+### `tests/web/chat-inference.test.mjs`
+
+**Propósito:** verifica a distribuição do contexto das inferências no chat (`inferenceView`, `flattenInferenceComponents`) e que `refreshTasks` não esvazia a conversa quando a leitura falha nem aceita resposta fora de ordem.
 
 ### `tests/web/bootstrap.test.mjs`
 
@@ -5417,6 +5422,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** conversa: mensagens, atividade e estado vazio. O avatar e o estado vazio usam `brandSrc('mark', tema)`. A resposta final visível vem de `visibleFinalAnswer` (texto da raiz, ou o markdown da etapa concluída quando a raiz ainda não recebeu a cópia).
 
+- `closeStagesOnEscape` — Esc fecha o popup de etapas (teleportado para o `<body>`).
+- `loadInference` — carrega o detalhe da inferência quando ela encerra e guarda no formato de `inferenceView`.
 - `isOpen`
 - `toggleEntry`
 - `isTurnCollapsed`
@@ -5745,6 +5752,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 **Propósito:** ui — módulo do projeto.
 
 - `icon`
+- `flattenInferenceComponents` — achata a composição do contexto (lista ou agrupada por categoria).
+- `inferenceView` — detalhe da inferência no formato do chat: metadados, tokens (com estimativa) e a barra por categoria.
 - `escapeHtml`
 - `renderMarkdown`
 - `isListItem`
