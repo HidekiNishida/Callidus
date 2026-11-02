@@ -3193,7 +3193,7 @@ pre,
 .stages-card-wrap {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3205,7 +3205,7 @@ pre,
 .stages-overlay {
   position: fixed;
   inset: 0;
-  z-index: 101;
+  z-index: 2001;
   background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -3213,7 +3213,7 @@ pre,
 
 .stages-card {
   position: relative;
-  z-index: 102;
+  z-index: 2002;
   width: min(420px, 92vw);
   max-height: 70vh;
   display: flex;
