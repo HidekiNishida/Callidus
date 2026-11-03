@@ -3,7 +3,7 @@ Arquivo: src/agent/intelligence/analytics.py
 Nome: analytics.py
 Propósito: serviço de agregação de métricas de desempenho e consumo do Callidus.
 Responsabilidade: camada de aplicação — calcula métricas de tokens, contexto, inferência, recursos e eficiência a partir dos registros persistidos (InferenceRecordModel, ContextSnapshotModel, EventLogModel, OperationAttemptModel).
-Componentes: AnalyticsService, PercentileCalculator.
+Componentes: AnalyticsService (inclui `delivery_metrics`, os indicadores de entrega), PercentileCalculator.
 Dependências: agent.persistence.models, agent.orchestrator.inference_usage, agent.orchestrator.ledger, sqlalchemy, uuid, datetime, statistics.
 Observações: estimativas e valores reportados são mantidos separados; nenhuma métrica usa LLM para cálculo determinístico.
 """
@@ -21,6 +21,7 @@ from agent.orchestrator.inference_usage import fold_usage
 from agent.persistence.models import (
     ContextSnapshotModel,
     EventLogModel,
+    EvidenceModel,
     ExecutionRunModel,
     InferenceRecordModel,
     OperationAttemptModel,
@@ -488,3 +489,120 @@ class AnalyticsService:
                 for r in runs[:10]
             ],
         }
+
+    def delivery_metrics(self, *, project_id: uuid.UUID | None = None) -> dict[str, Any]:
+        """Indicadores de entrega: trabalho concluído **e comprovado**, retrabalho, regressão, revisão.
+
+        Cada indicador traz numerador, denominador, a definição e se é `measured` ou
+        `unavailable`. Nenhum premia volume (tarefas, chamadas, linhas): o centro é a entrega
+        aprovada pela verificação independente.
+
+        Args:
+            project_id: filtra por projeto.
+
+        Returns:
+            `{"sample": {...}, "metrics": {id: indicador}}`.
+        """
+        task_stmt = select(TaskModel)
+        if project_id is not None:
+            task_stmt = task_stmt.where(TaskModel.project_id == project_id)
+        tasks = list(self._session.scalars(task_stmt).all())
+        ids = [t.id for t in tasks]
+        evidences: dict[uuid.UUID, list[EvidenceModel]] = {}
+        model_calls = 0
+        if ids:
+            for row in self._session.scalars(
+                select(EvidenceModel).where(EvidenceModel.task_id.in_(ids))
+                .order_by(EvidenceModel.created_at, EvidenceModel.id)
+            ).all():
+                evidences.setdefault(row.task_id, []).append(row)
+            model_calls = self._session.scalar(
+                select(func.count(OperationAttemptModel.id)).where(
+                    OperationAttemptModel.task_id.in_(ids), OperationAttemptModel.kind == "model")
+            ) or 0
+
+        def ratio(metric_id: str, num: int, den: int, definition: str) -> dict[str, Any]:
+            return {"id": metric_id, "value": round(num / den, 4) if den else None, "numerator": num,
+                    "denominator": den, "unit": "ratio", "kind": "measured" if den else "unavailable",
+                    "definition": definition}
+
+        terminal = {"COMPLETED", "FAILED"}
+        verified = [t for t in tasks if t.status == "COMPLETED" and evidences.get(t.id)
+                    and evidences[t.id][-1].passed is True]
+        with_evidence = [t for t in tasks if evidences.get(t.id)]
+        closed_with_evidence = [t for t in with_evidence if t.status in terminal]
+        first_pass = [t for t in closed_with_evidence if t.status == "COMPLETED"
+                      and all(e.passed is not False for e in evidences[t.id])]
+        reworked = [t for t in with_evidence if any(e.passed is False for e in evidences[t.id])]
+        recovered_pool = [t for t in reworked if t.status in terminal]
+        recovered = [t for t in recovered_pool if t in verified]
+        passed_once = [t for t in with_evidence if any(e.passed is True for e in evidences[t.id])]
+        regressed = []
+        for t in passed_once:
+            rows = evidences[t.id]
+            first_ok = next(i for i, e in enumerate(rows) if e.passed is True)
+            if any(e.passed is False for e in rows[first_ok + 1:]):
+                regressed.append(t)
+
+        lead_times: list[float] = []
+        review_waits: list[float] = []
+        reviewed_completed = 0
+        escaped = 0
+        for t in verified:
+            if t.completed_at and t.created_at:
+                lead_times.append((_aware(t.completed_at) - _aware(t.created_at)).total_seconds())
+        for t in tasks:
+            if t.status != "COMPLETED":
+                continue
+            reviews = (((t.metadata_json or {}).get("work_item") or {}).get("reviews")) or []
+            if not reviews:
+                continue
+            reviewed_completed += 1
+            if any(r.get("decision") == "rejected" and r.get("task_status") == "COMPLETED" for r in reviews):
+                escaped += 1
+            if t.completed_at:
+                try:
+                    first = min(datetime.fromisoformat(str(r["at"])) for r in reviews if r.get("at"))
+                    review_waits.append(max(0.0, (_aware(first) - _aware(t.completed_at)).total_seconds()))
+                except ValueError:
+                    pass
+
+        def latency(metric_id: str, values: list[float], definition: str) -> dict[str, Any]:
+            n = len(values)
+            return {"id": metric_id, "unit": "seconds", "count": n, "kind": "measured" if n else "unavailable",
+                    "p50": median(values) if n else None,
+                    "p95": _percentile(values, 95) if n >= 20 else None,
+                    "p99": _percentile(values, 99) if n >= 100 else None,
+                    "definition": definition + " (P95 a partir de 20 amostras, P99 a partir de 100)"}
+
+        metrics = {
+            "lead_time": latency("lead_time", lead_times, "criação → conclusão verificada"),
+            "first_pass_acceptance": ratio("first_pass_acceptance", len(first_pass), len(closed_with_evidence),
+                                           "encerradas aprovadas sem nenhuma reprovação antes"),
+            "rework_rate": ratio("rework_rate", len(reworked), len(with_evidence),
+                                 "tarefas verificadas com ao menos uma reprovação"),
+            "regression_rate": ratio("regression_rate", len(regressed), len(passed_once),
+                                     "aprovadas que depois reprovaram"),
+            "recovery_success": ratio("recovery_success", len(recovered), len(recovered_pool),
+                                      "reprovadas e encerradas que terminaram verificadas"),
+            "verified_throughput": {"id": "verified_throughput", "value": len(verified), "unit": "tasks",
+                                    "kind": "measured", "denominator": len(tasks),
+                                    "definition": "tarefas concluídas cuja última evidência aprovou"},
+            "review_latency": latency("review_latency", review_waits, "conclusão → primeira revisão registrada"),
+            "model_efficiency": {"id": "model_efficiency", "unit": "calls_per_verified_task",
+                                 "value": round(model_calls / len(verified), 2) if verified else None,
+                                 "numerator": model_calls, "denominator": len(verified),
+                                 "kind": "measured" if verified else "unavailable",
+                                 "definition": "chamadas de modelo registradas por tarefa verificada"},
+            "context_efficiency": {"id": "context_efficiency", "kind": "elsewhere", "value": None,
+                                   "definition": "ver /api/intelligence/context-consumption/overview"},
+            "defect_escape_rate": ratio("defect_escape_rate", escaped, reviewed_completed,
+                                        "concluídas que uma revisão independente reprovou depois"),
+        }
+        return {"sample": {"tasks": len(tasks), "with_evidence": len(with_evidence), "verified": len(verified)},
+                "metrics": metrics}
+
+
+def _aware(value: datetime) -> datetime:
+    """Data com fuso (o SQLite devolve datas ingênuas, gravadas em UTC)."""
+    return value if value.tzinfo else value.replace(tzinfo=UTC)

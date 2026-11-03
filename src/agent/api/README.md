@@ -16,6 +16,7 @@ Interface HTTP do agente: rotas REST, Server-Sent Events (streaming tempo real) 
 | [`live_view.py`](live_view.py) | **Visão ao vivo** — linha do tempo de pensamentos, texto legível das ações e tradução por idioma |
 | [`observe_routes.py`](observe_routes.py) | **Rotas de observabilidade** — SSE `/events`, `/live`, `/snapshot`, histórico, diff git |
 | [`agent_routes.py`](agent_routes.py) | **Rotas da hierarquia de agentes** — árvore, suspender, retomar, descartar, consultar e métricas de recursos |
+| [`organization_routes.py`](organization_routes.py) | **Rotas da organização** — `GET /organization`, `/organization/owner`, `/projects/{id}/board`, `/tasks/{id}/work-item`, `/tasks/{id}/gates`, `/tasks/{id}/handoff`, `POST /tasks/{id}/reviews` (422 sem independência) e `/api/intelligence/metrics/delivery` |
 | [`automation_routes.py`](automation_routes.py) | **Rotas das automações** — definição, gatilhos, ações, disparos e supervisor |
 | [`provider_routes.py`](provider_routes.py) | **Rotas de configuração de provedores** — catálogo, modelos, diagnóstico e credencial |
 | [`deps.py`](deps.py) | **Dependências FastAPI** — `db_session`, `read_settings`, `get_engine`, `ToolRegistry`, `McpManager` |

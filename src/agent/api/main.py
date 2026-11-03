@@ -27,6 +27,7 @@ from agent.api.intelligence_routes import router as intelligence_router
 # _mark_repeated_thought` continua funcionando depois da extração da visão ao vivo.
 from agent.api.live_view import mark_repeated_thought as _mark_repeated_thought  # noqa: F401
 from agent.api.observe_routes import router as observe_router
+from agent.api.organization_routes import router as organization_router
 from agent.api.project_routes import router as project_router
 from agent.api.provider_routes import router as provider_router
 from agent.api.run_routes import router as run_router
@@ -96,6 +97,7 @@ app = FastAPI(
 # caminho variável) fica depois, para não capturar o caminho de outro grupo.
 app.include_router(observe_router)
 app.include_router(intelligence_router)
+app.include_router(organization_router)
 app.include_router(agent_router)
 app.include_router(provider_router)
 app.include_router(automation_router)

@@ -12,6 +12,8 @@ Definições centrais compartilhadas por toda a aplicação: enums, máquina de 
 | [`state_machine.py`](state_machine.py) | `ALLOWED_TRANSITIONS`, `TERMINAL_STATUSES`, `can_transition`, `validate_transition`, `transition`, `InvalidTransitionError` | **Transições válidas** de `TaskStatus` — nunca silenciosas |
 | [`schemas.py`](schemas.py) | `ProjectCreate/Read/Update`, `ConversationCreate/Read/Update/Fork/Move`, `BranchRead`, `TaskCreate/Read/StatusUpdate/DependencyCreate`, `ExecutionRunCreate/Read`, `EventRead`, `MemoryCreate/Read`, `AgentRead`, `AgentAsk`, `AgentDiscard`, `AgentQueryRead`, `ResumeBody` | **Contratos Pydantic** — validação request/response + `model_config = {"from_attributes": True}` |
 | [`failures.py`](failures.py) | `Failure`, `FailureCategory`, `FailureCause`, `classify_context_error`, `classify_model_output`, `classify_provider_error`, `classify_tool_result`, `classify_verification` | **Classificação estruturada** de falhas (categoria + causa + signature + strategy) |
+| [`organization.py`](organization.py) | `Team`, `Role`, `Specialty`, `OwnershipRule`, `Assignment`, `TEAMS`, `ROLES`, `SPECIALTIES`, `OWNERSHIP`, `owner_of`, `select_assignment`, `reviewer_allowed`, `validate_catalog` | **Organização de engenharia** — equipes, papéis, propriedade dos módulos e seleção determinística do responsável ([docs/engineering/](/docs/engineering/README.md)) |
+| [`work_flow.py`](work_flow.py) | `WorkStage`, `WorkSnapshot`, `GateVerdict`, `evaluate_gates`, `stage_for`, `evaluate_delivery`, `out_of_scope` | **Portões G0–G4 e etapa do Kanban**, derivados do status e das evidências — não é segunda máquina de estados |
 
 ## 🔄 Machine de Estados (`TaskStatus`)
 

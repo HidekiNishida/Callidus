@@ -538,10 +538,13 @@ class OperationContextBuilder:
         Returns:
             O contrato em texto e a lista de caminhos citados nele.
         """
+        from agent.services.organization_service import WORK_ITEM_KEY, responsibility_line
+
+        responsibility = responsibility_line((task.metadata_json or {}).get(WORK_ITEM_KEY))
         service = ContractService(self._session)
         row = service.get(task.id)
         if row is None:
-            return "", []
+            return responsibility, []
         parts = {
             "entradas": row.inputs_json,
             "saídas": row.outputs_json,
@@ -551,6 +554,8 @@ class OperationContextBuilder:
         body = "\n".join(
             f"{label}: {json.dumps(value, ensure_ascii=False)[:600]}" for label, value in parts.items() if value
         )
+        if responsibility:
+            body = f"{body}\n{responsibility}".strip()
         return body, service.file_refs_from_contract(row)
 
     def _target_files(self, root_path: str, task: TaskModel, extra: list[str]) -> tuple[str, list[str]]:

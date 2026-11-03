@@ -27,6 +27,7 @@ Camada de aplicação sobre o ORM: CRUD, transições, worker autônomo, schedul
 | [`branches.py`](branches.py) | `ancestor_chain`, `memory_visible`, `visible_tasks` | **Visibilidade por ramo** — a memória do projeto vale para todos; a da conversa segue o ramo e os anteriores |
 | [`cascade.py`](cascade.py) | `delete_cascade` | **Remoção em cascata** — apaga a linha e tudo que depende dela, na ordem topológica do grafo de chaves estrangeiras |
 | [`approval_service.py`](approval_service.py) | `ApprovalService`, `operation_key`, `approval_view` | **Aprovação granular** — pedido por operação (ferramenta + argumentos + etapa), uso único, negação persistida, retomada do run pausado à espera da decisão |
+| [`organization_service.py`](organization_service.py) | `OrganizationService`, `ReviewRejectedError`, `responsibility_line` | **Organização de engenharia** — contrato de trabalho (`metadata_json["work_item"]`), revisão independente, handoff estruturado, portões e quadro; as leituras calculam sem gravar ([work-contract.md](/docs/engineering/work-contract.md)) |
 
 ## 🔄 Fluxos Principais
 

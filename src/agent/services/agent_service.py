@@ -285,6 +285,11 @@ class AgentService:
         )
         self._session.add(agent)
         self._session.flush()
+        # A atribuição organizacional (equipe, papel, revisor) nasce com o agente: é
+        # determinística e barata, e quem lê o agente já encontra o responsável.
+        from agent.services.organization_service import OrganizationService
+
+        OrganizationService(self._session).assign(task, agent)
         return agent
 
     # --------------------------------------------------------------- transições
@@ -790,6 +795,11 @@ class AgentService:
         metadata["last_result"] = result
         agent.metadata_json = metadata
         self._session.flush()
+        # O resultado devolvido ao pai vira handoff estruturado: quem continua (o revisor ou o
+        # pai) não precisa reinvestigar o que o filho já descobriu.
+        from agent.services.organization_service import OrganizationService
+
+        OrganizationService(self._session).record_handoff(task_id)
         return [entry]
     # ------------------------------------------------------- efeitos externos
 
