@@ -206,8 +206,11 @@ class Settings(BaseSettings):
             # O estado canônico do Callidus é SQLite (a conexão usa opção exclusiva do SQLite).
             # Uma URL de outro banco — quase sempre o DATABASE_URL de outro projeto exportado no
             # terminal — derrubava o servidor na subida. O Callidus usa o banco padrão e avisa.
+            # Só o nome próprio (CALLIDUS_DATABASE_URL) merece aviso: o DATABASE_URL genérico de
+            # outro projeto é esperado no terminal e repetir o aviso a cada subida era ruído.
             scheme = self.database_url.split(":", 1)[0]
-            if scheme not in _WARNED_SCHEMES:
+            explicit = (os.environ.get("CALLIDUS_DATABASE_URL") or "").strip() == self.database_url.strip()
+            if explicit and scheme not in _WARNED_SCHEMES:
                 _WARNED_SCHEMES.add(scheme)
                 logging.getLogger("agent.config").warning(
                     "DATABASE_URL aponta para %s, que o Callidus não usa (só SQLite); usando %s. "

@@ -6,7 +6,8 @@ Responsabilidade: camada de testes — filtro do texto público, eventos `agent.
 reconexão, isolamento entre runs, conteúdo privado e chamadas de ferramenta nos streams dos provedores.
 Componentes: filtro (raciocínio, ferramenta, carga JSON), streaming antes do fim (A), resposta longa (C),
 ordem narração → ferramenta → narração (D), interrupção (E), reconexão pela foto ao vivo (F), runs
-simultâneas (G), conteúdo privado (H), provedor sem streaming e finalidade silenciosa (I).
+simultâneas (G), conteúdo privado (H), provedor sem streaming e finalidade silenciosa (I), reserva a
+partir das chamadas de ferramenta e provedor que transmite sem fragmentos (J).
 Dependências: agent.observability, agent.providers (observed, ollama, openai_compatible, anthropic, gemini, mock),
 agent.orchestrator.tool_loop, agent.persistence, httpx, pytest.
 Observações: transporte HTTP simulado (httpx.MockTransport), banco temporário por teste; nenhum serviço
@@ -515,3 +516,50 @@ async def test_i_json_only_response_produces_no_narration(tmp_path):
         await observed_chat(_Scripted(['{"path": ', '"a.py", "content": "x"}']), REQUEST, purpose="operation")
         session.commit()
     assert not any(r.event_type.startswith("agent.narration") for r in _rows(session, run.id))
+
+
+@pytest.mark.asyncio
+async def test_j_tool_call_without_public_text_still_narrates_the_action(tmp_path):
+    """Regressão: o modelo ia direto à ferramenta (raciocínio no canal privado) e a linha do tempo
+    ficava sem narração. A reserva descreve a ação pedida, marcada como vinda das chamadas."""
+    session, project, root, run = _run(tmp_path)
+    calls = [ToolCall(name="read_file", arguments={"path": "app.py"}), ToolCall(name="run_pytest", arguments={})]
+    with observe(session, run_id=run.id, project_id=project.id, task_id=root.id):
+        await observed_chat(_Scripted([], calls=calls), REQUEST, purpose="operation")
+        session.commit()
+    done = [r.payload_json for r in _rows(session, run.id) if r.event_type == "agent.narration.completed"]
+    assert len(done) == 1
+    assert done[0]["content"] == "Vou ler `app.py`. Vou rodar os testes."
+    assert done[0]["source"] == "tool_calls"
+
+
+@pytest.mark.asyncio
+async def test_j_model_text_wins_over_the_tool_call_fallback(tmp_path):
+    """Com fala pública do modelo, a reserva não entra: a narração é só a do modelo."""
+    session, project, root, run = _run(tmp_path)
+    calls = [ToolCall(name="read_file", arguments={"path": "app.py"})]
+    with observe(session, run_id=run.id, project_id=project.id, task_id=root.id):
+        await observed_chat(_Scripted(["Vou conferir a rota."], calls=calls), REQUEST, purpose="operation")
+        session.commit()
+    done = [r.payload_json for r in _rows(session, run.id) if r.event_type == "agent.narration.completed"]
+    assert [d["content"] for d in done] == ["Vou conferir a rota."]
+    assert done[0]["source"] == "model"
+
+
+class _StreamsNothing(_Scripted):
+    """Declara streaming, mas entrega o texto só na resposta final (sem fragmentos)."""
+
+    async def _chat_streaming(self, request, on_delta):
+        """Devolve a resposta inteira sem chamar `on_delta`."""
+        return ChatCompletionResponse(content="Analisei o módulo de rotas.")
+
+
+@pytest.mark.asyncio
+async def test_j_streaming_provider_that_sends_no_fragments_still_narrates(tmp_path):
+    """Regressão: com streaming declarado e nenhum fragmento, a fala do fim era descartada."""
+    session, project, root, run = _run(tmp_path)
+    with observe(session, run_id=run.id, project_id=project.id, task_id=root.id):
+        await observed_chat(_StreamsNothing([]), REQUEST, purpose="operation")
+        session.commit()
+    done = [r.payload_json for r in _rows(session, run.id) if r.event_type == "agent.narration.completed"]
+    assert [d["content"] for d in done] == ["Analisei o módulo de rotas."]

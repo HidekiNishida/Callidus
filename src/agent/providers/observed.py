@@ -16,8 +16,7 @@ import uuid
 
 from agent.observability import current, emit
 from agent.observability.batching import DeltaBatcher
-from agent.observability.narration import NarrationStream, narrates
-from agent.orchestrator.ledger import _SNAPSHOT
+from agent.observability.narration import NarrationStream, describe_tool_calls, narrates
 from agent.persistence.models import InferenceRecordModel
 from agent.providers.base import (
     ChatCompletionRequest,
@@ -70,7 +69,8 @@ async def observed_chat(
         TOKENIZER_VERSION,
         TOKENIZER_STRATEGY,
     )
-    from agent.orchestrator.ledger import record_inference
+    # Import local: o pacote do orquestrador importa este módulo (ciclo de importação).
+    from agent.orchestrator.ledger import _SNAPSHOT, record_inference
 
     estimated_prompt = estimate_messages(request.messages)
     estimated_completion = int(request.profile.output_reserve or 0)
@@ -264,6 +264,9 @@ async def observed_chat(
             row = record_inference(
                 obs.session,
                 idempotency_key=f"{obs.run_id}:{output_id}",
+                # O snapshot criado aqui não está no ContextVar: sem passá-lo, a inferência
+                # ficava sem composição e a barra de contexto aparecia vazia.
+                context_snapshot_id=snapshot_id,
                 run_id=obs.run_id,
                 task_id=obs.task_id,
                 project_id=obs.project_id,
@@ -325,12 +328,15 @@ async def observed_chat(
         raise
     batcher.flush()
     content = response.content or ""
-    if narration is not None:
-        if not streaming:
-            # Sem streaming não há fragmentos: a fala aparece inteira, quando a resposta chega.
-            narration.feed(content)
-        narration.finish("completed")
     tool_calls = [call.model_dump() for call in (getattr(response, "tool_calls", None) or [])]
+    if narration is not None:
+        if not streaming or not received:
+            # Sem fragmentos (provedor sem streaming, ou que entregou o texto só no fim):
+            # a fala aparece inteira, quando a resposta chega.
+            narration.feed(content)
+        # Modelos locais costumam ir direto à ferramenta, com o raciocínio no canal privado:
+        # sem texto público, a narração descreve a ação pedida para a linha do tempo não ficar muda.
+        narration.finish("completed", fallback=describe_tool_calls(tool_calls))
     inference_row = _account(response)
     emit(
         "agent.output.completed",

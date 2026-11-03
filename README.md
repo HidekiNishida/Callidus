@@ -333,7 +333,7 @@ sequenceDiagram
 |----------|-----------|--------------|-------------|
 | `AGENT_DATA_DIR` | Pasta de dados (SQLite, mcp.json) | `./data` | Não |
 | `CALLIDUS_DATABASE_URL` | URL SQLite do banco do Callidus; vence o `DATABASE_URL` | — | Não |
-| `DATABASE_URL` | URL SQLite customizada; uma URL de outro banco (ex.: `postgres://` de outro projeto exportado no terminal) é ignorada com aviso e o Callidus usa `data/agent.db` | `sqlite:///data/agent.db` | Não |
+| `DATABASE_URL` | URL SQLite customizada; uma URL de outro banco (ex.: `postgres://` de outro projeto exportado no terminal) é ignorada em silêncio e o Callidus usa `data/agent.db` | `sqlite:///data/agent.db` | Não |
 | `OLLAMA_BASE_URL` | Endpoint HTTP do Ollama | `http://127.0.0.1:11434` | Não |
 | `OLLAMA_TIMEOUT_SEC` | Timeout de inferência (seg) | `600` | Não |
 | `LLAMACPP_BASE_URL` | Endpoint llama.cpp (OpenAI compat) | `http://127.0.0.1:8080` | Não |

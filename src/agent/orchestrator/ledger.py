@@ -108,13 +108,16 @@ def record_inference(session: Session, *, idempotency_key: str, **fields: Any) -
             return found
         raise
     task = session.get(TaskModel, row.task_id) if row.task_id else None
+    if task is not None and row.parent_task_id is None:
+        row.parent_task_id = task.parent_id
+    # A composição vem do snapshot mesmo sem tarefa (consulta ao agente fora de um run).
+    if components_included is not None:
+        row.components_included_json = components_included
+    elif row.context_snapshot_id is not None:
+        snap = session.get(ContextSnapshotModel, row.context_snapshot_id)
+        if snap is not None:
+            row.components_included_json = _enrich_components(snap, row, task)
     if task is not None:
-        if row.parent_task_id is None:
-            row.parent_task_id = task.parent_id
-        if components_included is None and row.context_snapshot_id is not None:
-            snap = session.get(ContextSnapshotModel, row.context_snapshot_id)
-            if snap is not None:
-                row.components_included_json = _enrich_components(snap, row, task)
         note = f"{row.purpose}: {row.status}"
         if row.measurement == "unavailable":
             note += " (uso do provedor indisponível)"

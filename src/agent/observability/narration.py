@@ -3,11 +3,13 @@ Arquivo: src/agent/observability/narration.py
 Nome: narration.py
 Propósito: transformar a saída pública do modelo, fragmento a fragmento, em narração do agente na linha do tempo.
 Responsabilidade: camada de aplicação — filtro incremental do texto público e emissão de `agent.narration.*`.
-Componentes: NarrationFilter, NarrationStream, NARRATION_PERSIST_CHARS, narrates.
+Componentes: NarrationFilter, NarrationStream, NARRATION_PERSIST_CHARS, narrates, describe_tool_calls.
 Dependências: agent.observability.emitter (emit), agent.observability.batching (DeltaBatcher).
 Observações: nada aqui chama o modelo. A narração é o texto que o próprio modelo escreveu para
 a pessoa; raciocínio (`<think>`), chamadas de ferramenta escritas no texto e cargas JSON/código
 nunca viram narração. Só o início e o fim são gravados no banco; os fragmentos são efêmeros.
+Quando o modelo pede ferramentas sem escrever nada público (o raciocínio fica no canal privado),
+a narração descreve a ação a partir da própria chamada — um fato, nunca um resultado.
 """
 from __future__ import annotations
 
@@ -36,6 +38,81 @@ _FENCE = "```"
 # Começo de linha com cara de tag: `<nome`, `</nome`, `<|...`. Prosa não abre linha assim.
 _LINE_TAG = re.compile(r"<[/|A-Za-z_][^<>\s]*")
 _TAG_WAIT = 40
+
+
+# Verbo de cada ferramenta comum na frase de reserva; as demais aparecem pelo nome.
+_TOOL_VERBS = {
+    "read_file": "Vou ler",
+    "write_file": "Vou gravar",
+    "edit_file": "Vou editar",
+    "delete_file": "Vou apagar",
+    "make_dir": "Vou criar a pasta",
+    "move_file": "Vou mover",
+    "list_dir": "Vou listar",
+    "glob_files": "Vou procurar arquivos com",
+    "search_grep": "Vou buscar",
+    "run_command": "Vou executar",
+    "run_pytest": "Vou rodar os testes",
+    "run_script": "Vou executar o script",
+    "git_status": "Vou conferir o estado do Git",
+    "git_diff": "Vou ver as diferenças no Git",
+    "browser": "Vou usar o navegador",
+}
+# Argumento que identifica o alvo da ação, na ordem de preferência.
+_TARGET_KEYS = ("path", "pattern", "command", "url", "query", "from")
+_TARGET_CHARS = 80
+
+
+def _call_target(arguments: object) -> str:
+    """Alvo curto de uma chamada (caminho, padrão, comando, URL), ou vazio.
+
+    Args:
+        arguments: argumentos já decodificados da chamada.
+
+    Returns:
+        O alvo entre crases, truncado; vazio quando a chamada não tem alvo legível.
+    """
+    if not isinstance(arguments, dict):
+        return ""
+    for key in _TARGET_KEYS:
+        value = arguments.get(key)
+        if isinstance(value, list):
+            value = " ".join(str(v) for v in value)
+        if isinstance(value, str) and value.strip():
+            text = " ".join(value.split())
+            if len(text) > _TARGET_CHARS:
+                text = text[: _TARGET_CHARS - 1] + "…"
+            return f"`{text}`"
+    return ""
+
+
+def describe_tool_calls(calls: list[dict] | None) -> str:
+    """Frase de narração para uma resposta que só pediu ferramentas.
+
+    Args:
+        calls: chamadas pedidas pelo modelo (`name`, `arguments`).
+
+    Returns:
+        Uma frase por chamada (até três), ou vazio sem chamadas.
+
+    Observações:
+        Descreve a ação pedida, nunca o resultado: a ferramenta ainda não rodou.
+    """
+    sentences: list[str] = []
+    for call in calls or []:
+        if not isinstance(call, dict) or not call.get("name"):
+            continue
+        name = str(call["name"])
+        target = _call_target(call.get("arguments"))
+        verb = _TOOL_VERBS.get(name)
+        if verb:
+            sentence = f"{verb} {target}".strip() if target else verb
+        else:
+            sentence = f"Vou usar `{name}`" + (f" em {target}" if target else "")
+        sentences.append(sentence + ".")
+    if len(sentences) > 3:
+        sentences = sentences[:3] + [f"E mais {len(sentences) - 3} ação(ões)."]
+    return " ".join(sentences)
 
 
 def narrates(purpose: str | None) -> bool:
@@ -219,6 +296,7 @@ class NarrationStream:
         self._started_at: float | None = None
         self._first_at: float | None = None
         self._done = False
+        self._source = "model"
         self._batcher = DeltaBatcher(self._publish, interval_ms=interval_ms)
 
     @property
@@ -271,18 +349,37 @@ class NarrationStream:
         )
         self._offset += len(text)
 
-    def finish(self, status: str = "completed", *, error: str = "") -> None:
+    def finish(self, status: str = "completed", *, error: str = "", fallback: str = "") -> None:
         """Fecha a narração, gravando o texto recebido e o estado.
 
         Args:
             status: `completed`, `interrupted` (cancelamento) ou `failed`.
             error: motivo curto da falha, quando houver.
+            fallback: frase usada só quando o modelo não escreveu nada público
+                (ex.: `describe_tool_calls`); marcada no evento como `source: tool_calls`.
 
         Observações:
             Idempotente. O texto parcial de uma geração interrompida é preservado.
         """
         if self._done:
             return
+        if self._started_at is None and fallback.strip():
+            # A reserva não passa pelo filtro: ela é montada por nós e começa com crase.
+            self._source = "tool_calls"
+            self._started_at = self._clock()
+            emit(
+                "agent.narration.started",
+                {
+                    "narration_id": self.narration_id,
+                    "output_id": self.output_id,
+                    "purpose": self.purpose,
+                    "streamed": False,
+                    "source": self._source,
+                },
+                commit=True,
+            )
+            self._parts.append(fallback.strip())
+            self._batcher.add(fallback.strip())
         self._done = True
         self._batcher.flush()
         if self._started_at is None:
@@ -296,6 +393,7 @@ class NarrationStream:
             "chars": len(text),
             "truncated": len(text) > NARRATION_PERSIST_CHARS,
             "duration_ms": int((self._clock() - self._started_at) * 1000),
+            "source": self._source,
         }
         if error:
             payload["error"] = error[:300]

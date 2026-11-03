@@ -34,6 +34,12 @@ def _group_categories(selected: list) -> list[dict]:
             cat = comp.category
             name = comp.name
             tokens = getattr(comp, 'tokens', None)
+            if tokens is None:
+                # ContextComponent não carrega tokens: sem medir o texto, cada fatia da
+                # barra de composição tinha largura zero e a barra aparecia vazia.
+                from agent.providers.base import estimate_text_tokens
+
+                tokens = estimate_text_tokens(comp.text or "")
             required = comp.required
             priority = comp.priority
         else:
@@ -207,16 +213,38 @@ class SnapshotBuilder:
         """Reconstrói um BudgetResult a partir de mensagens já montadas.
         
         Se components forem fornecidos, usa eles para popular selected/categories.
-        Caso contrário, cria um budget sintético básico.
+        Caso contrário, reconstrói componentes a partir das mensagens, classificando por papel.
         """
-        from agent.context.budget import BudgetResult, assemble_messages
+        from agent.context.budget import BudgetResult, ContextComponent
         from agent.providers.base import estimate_text_tokens
 
         # Estimativa simples: soma dos caracteres / 4 (aproximação)
         total_chars = sum(len(m.content or "") for m in messages)
         estimated_tokens = max(1, total_chars // 4)
 
-        selected = components or []
+        if components:
+            selected = components
+        else:
+            # Reconstrói componentes a partir das mensagens efetivamente enviadas
+            # Isso garante que sempre haja composição quando existem mensagens
+            selected = []
+            for msg in messages:
+                role = getattr(msg, 'role', 'unknown')
+                content = getattr(msg, 'content', '') or ''
+                if not content.strip():
+                    continue
+                tokens = estimate_text_tokens(content)
+                category = _role_to_category(role)
+                selected.append(
+                    ContextComponent(
+                        name=f"Mensagem {role}",
+                        text=content,
+                        priority=50,
+                        required=role == "system",
+                        category=category,
+                    )
+                )
+
         return BudgetResult(
             messages=messages,
             selected=selected,
@@ -224,6 +252,17 @@ class SnapshotBuilder:
             estimated_tokens=estimated_tokens,
             strategy_notes=[f"purpose={purpose}", "reconstructed_from_messages"],
         )
+
+
+def _role_to_category(role: str) -> str:
+    """Mapeia papel da mensagem para categoria de composição."""
+    mapping = {
+        "system": "instructions",
+        "user": "objective",
+        "assistant": "history",
+        "tool": "tool_results",
+    }
+    return mapping.get(role, "other")
 
 
 def create_snapshot_for_inference(

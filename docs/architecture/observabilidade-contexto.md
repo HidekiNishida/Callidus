@@ -73,7 +73,10 @@ Toda chamada ao modelo passa por `observed_chat` (`src/agent/providers/observed.
 - Classifica o tipo de inferência a partir da `purpose`.
 - Captura o tamanho da janela do perfil do modelo.
 - Registra versão e estratégia do tokenizador.
-- Enriquece `components_included_json` a partir do `ContextSnapshotModel` vinculado.
+- Enriquece `components_included_json` a partir do `ContextSnapshotModel` vinculado — o do `bind_snapshot` do
+  chamador ou, sem ele, o que `observed_chat` cria a partir das mensagens enviadas (passado explicitamente a
+  `record_inference`). O enriquecimento não exige tarefa, e cada componente leva os tokens medidos do texto:
+  sem isso, a barra de composição da inferência aparecia vazia.
 - Falhas de telemetria nunca bloqueiam a execução (try/except absorve exceções).
 
 ## Endpoints

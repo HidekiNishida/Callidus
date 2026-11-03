@@ -2098,7 +2098,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `NarrationStream.text() -> str` — texto público acumulado.
 - `NarrationStream.feed(piece: str) -> None` — filtra o fragmento; no primeiro texto emite `agent.narration.started` (gravado).
 - `NarrationStream._publish(text: str) -> None` — emite `agent.narration.delta` (efêmero) com o trecho novo e o deslocamento.
-- `NarrationStream.finish(status: str='completed', *, error: str='') -> None` — idempotente; grava `agent.narration.completed` com o texto (parcial em `interrupted`/`failed`), `chars` e `truncated`.
+- `NarrationStream.finish(status: str='completed', *, error: str='', fallback: str='') -> None` — idempotente; grava `agent.narration.completed` com o texto (parcial em `interrupted`/`failed`), `chars`, `truncated` e `source` (`model` ou `tool_calls`); sem texto público, usa `fallback`.
+- `_call_target(arguments: object) -> str` — alvo curto de uma chamada (caminho, padrão, comando, URL), entre crases.
+- `describe_tool_calls(calls: list[dict] | None) -> str` — frase de reserva para resposta que só pediu ferramentas ("Vou ler `app.py`."); descreve a ação, nunca o resultado.
 
 ### `src/agent/observability/sanitize.py`
 

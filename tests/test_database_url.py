@@ -2,7 +2,7 @@
 Arquivo: tests/test_database_url.py
 Nome: test_database_url.py
 Propósito: verificar de onde o Callidus tira a URL do banco e que um DATABASE_URL de outro banco não derruba a subida.
-Responsabilidade: camada de testes — prioridade de CALLIDUS_DATABASE_URL, URL SQLite respeitada e URL não SQLite trocada pelo banco padrão com aviso.
+Responsabilidade: camada de testes — prioridade de CALLIDUS_DATABASE_URL, URL SQLite respeitada e DATABASE_URL genérico não SQLite ignorado em silêncio e CALLIDUS_DATABASE_URL não SQLite trocado pelo padrão com aviso.
 Componentes: Settings.resolved_database_url fora do modo de teste.
 Dependências: agent.config, pytest.
 Observações: o modo de teste (`PYTEST_CURRENT_TEST`) é desligado dentro de cada teste para exercitar o caminho real; o banco fica em tmp_path.
@@ -28,6 +28,20 @@ def test_postgres_database_url_from_another_project_falls_back_to_sqlite(monkeyp
     NoSuchModuleError na subida; agora o Callidus usa data/agent.db e explica no log."""
     _fora_do_pytest(monkeypatch)
     monkeypatch.setenv("DATABASE_URL", "postgres://usuario@localhost:5432/outro_projeto")
+    settings = Settings(data_dir=tmp_path / "data", _env_file=None)
+
+    with caplog.at_level(logging.WARNING, logger="agent.config"):
+        url = settings.resolved_database_url()
+
+    assert url == f"sqlite:///{(tmp_path / 'data' / 'agent.db').resolve()}"
+    # O DATABASE_URL genérico é de outro projeto: ignorado em silêncio, sem aviso a cada subida.
+    assert caplog.text == ""
+
+
+def test_non_sqlite_callidus_database_url_warns(monkeypatch, tmp_path, caplog):
+    """CALLIDUS_DATABASE_URL não SQLite é escolha explícita e errada: usa o padrão e explica no log."""
+    _fora_do_pytest(monkeypatch)
+    monkeypatch.setenv("CALLIDUS_DATABASE_URL", "postgres://usuario@localhost:5432/callidus")
     settings = Settings(data_dir=tmp_path / "data", _env_file=None)
 
     with caplog.at_level(logging.WARNING, logger="agent.config"):

@@ -359,3 +359,40 @@ def test_service_get_inference_not_found():
     assert service.get_inference(uuid.uuid4()) is None
     assert service.get_inference_components(uuid.uuid4()) is None
     session.close()
+
+
+@pytest.mark.parametrize("purpose", ["operation", "plan", "final_answer", "agent_query"])
+def test_every_inference_records_its_context_composition_with_tokens(purpose):
+    """Regressão: `observed_chat` criava o snapshot mas não o passava ao registro, e os
+    componentes saíam sem tokens — a barra de composição da inferência aparecia vazia."""
+    import asyncio
+
+    from agent.observability import observe
+    from agent.providers.base import ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ModelProfile
+    from agent.providers.observed import observed_chat
+
+    class _Fixed:
+        name = "fake"
+        supports_streaming = False
+
+        async def chat(self, request):
+            """Responde sempre o mesmo texto, sem rede."""
+            return ChatCompletionResponse(content="ok")
+
+    session = setup_function()()
+    project, run, task = _create_run_task(session)
+    session.commit()
+    request = ChatCompletionRequest(
+        messages=[ChatMessage(role="system", content="regras " * 40), ChatMessage(role="user", content="faça x")],
+        profile=ModelProfile(model_id="m"),
+    )
+
+    async def _call():
+        with observe(session, run_id=run.id, project_id=project.id, task_id=task.id):
+            await observed_chat(_Fixed(), request, purpose=purpose, stream=False)
+
+    asyncio.run(_call())
+    row = session.scalar(select(InferenceRecordModel))
+    assert row.context_snapshot_id is not None
+    components = row.components_included_json or []
+    assert components and all((c.get("tokens") or 0) > 0 for c in components)

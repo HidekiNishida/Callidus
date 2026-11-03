@@ -25,7 +25,9 @@ agente**, entre as ferramentas, crescendo conforme os fragmentos chegam do prove
 
 - **Nenhuma inferência extra**: a fala é filtrada dos fragmentos que `observed_chat` já recebe.
 - **Nenhuma simulação**: não há temporizador revelando caracteres; o ritmo é o do modelo.
-- **Nada inventado**: resposta sem prosa (só ferramenta, só JSON) não gera narração.
+- **Nada inventado**: resposta só JSON não gera narração. Resposta que só pede ferramentas ganha
+  uma frase de reserva montada a partir das chamadas ([`describe_tool_calls`](/src/agent/observability/narration.py):
+  "Vou ler `app.py`."), marcada com `source: tool_calls` — descreve a ação pedida, nunca o resultado.
 - **Separada do sistema**: as frases do orquestrador (`work.explained`, `agent.thought`) continuam
   sendo eventos de sistema, acoplados ao item operacional; a narração é só texto do modelo.
 
@@ -62,9 +64,9 @@ Declarados em [`contracts.py`](/src/agent/observability/contracts.py), no mesmo 
 
 | Evento | Gravado | Campos | Quando |
 |--------|---------|--------|--------|
-| `agent.narration.started` | sim | `narration_id`, `output_id`, `purpose`, `streamed` | primeiro texto público da resposta |
+| `agent.narration.started` | sim | `narration_id`, `output_id`, `purpose`, `streamed`, `source?` | primeiro texto público da resposta (ou a reserva, no fim) |
 | `agent.narration.delta` | não (efêmero) | `narration_id`, `output_id`, `text`, `offset` | cada lote de texto novo |
-| `agent.narration.completed` | sim | `narration_id`, `output_id`, `content`, `status`, `chars`, `truncated`, `duration_ms`, `error?` | fim da resposta, cancelamento ou falha |
+| `agent.narration.completed` | sim | `narration_id`, `output_id`, `content`, `status`, `chars`, `truncated`, `duration_ms`, `source`, `error?` | fim da resposta, cancelamento ou falha |
 
 - `text` traz **só o trecho novo**; `offset` é o total já publicado, em code points.
 - `status`: `completed`, `interrupted` (cancelamento) ou `failed` (erro do provedor).
@@ -177,13 +179,15 @@ chamada da operação com ferramentas de inspeção). *Medido* em 2026-11-02:
 | G — runs simultâneas isoladas | [`tests/test_narration_stream.py`](/tests/test_narration_stream.py) |
 | H — `thinking`, `reasoning_content`, `thinking_delta`, `thought` e argumentos fora da narração; ferramentas remontadas nos streams | idem |
 | I — provedor sem streaming, resposta final e resposta só JSON | idem |
+| J — reserva a partir das chamadas de ferramenta, fala do modelo acima da reserva, provedor que declara streaming e não envia fragmentos | idem |
 | J — linha principal fora dos detalhes, sem temporizador, tokens de tema, movimento reduzido | [`tests/web/live-narration.test.mjs`](/tests/web/live-narration.test.mjs) |
 
 ## ⚠️ Limitações
 
-- **Depende do modelo**: a narração só existe quando o modelo escreve prosa junto da ferramenta.
-  O `gpt-oss:20b` pelo Ollama não escreve (o preâmbulo vai para o canal de raciocínio, que não é
-  exposto); o `qwen3-vl:8b` escreve, mas nem sempre.
+- **Depende do modelo**: a fala com o *porquê* só existe quando o modelo escreve prosa junto da
+  ferramenta. O `gpt-oss:20b` pelo Ollama não escreve (o preâmbulo vai para o canal de raciocínio,
+  que não é exposto); o `qwen3-vl:8b` escreve, mas nem sempre. Nesses casos aparece a reserva, que
+  diz o *quê* (a ação pedida) mas não o *porquê*.
 - **Texto parcial sem checkpoint**: se o processo morrer no meio da geração, o texto já transmitido
   não é gravado (fica `started` sem `completed`). Narrações são curtas; o custo de gravar
   checkpoints não se pagou.
