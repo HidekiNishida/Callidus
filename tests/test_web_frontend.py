@@ -217,7 +217,8 @@ def test_retomar_usa_a_execucao_da_mensagem_e_continua():
 def test_etiquetas_do_plano_so_while_a_execucao_esta_ativa():
     """Uma tarefa parada (sem nada acontecendo) não aparece como etiqueta."""
     chat = (APP_DIR / "components" / "chat.js").read_text(encoding="utf-8")
-    assert 'run.status === "ACTIVE"' in chat
+    # A API devolve o estado em minúsculas: a comparação passa por `runIsActive`.
+    assert "runIsActive(run)" in chat
     assert "run.root_task_id === last.id" in chat
     assert '"BLOCKED", "FAILED"' in chat
 

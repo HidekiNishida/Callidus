@@ -5,6 +5,7 @@
  * Responsabilidade: frontend/apresentação — funções puras de formatação e tradução de eventos.
  * Componentes: ICONS, icon(), escapeHtml(), renderMarkdown(), describeActivity(), integrateNarrative(),
  *   mergeActivity(), mergeNarration(), summarizeActivity(), diffLines(), brandSrc(), visibleFinalAnswer(), inferenceView(),
+ *   runStatusOf(), runIsActive(), liveRunFor(),
  *   helpers de rótulo e tempo.
  * Dependências: nenhuma (módulo puro, sem DOM e sem API).
  * Observações: o HTML do markdown é escapado antes de qualquer marcação — o conteúdo do modelo
@@ -1339,4 +1340,42 @@ export function inferenceView(detail, components = null) {
     segments,
     free,
   };
+}
+
+
+/**
+ * Estado de uma run em maiúsculas, qualquer que seja a grafia recebida.
+ *
+ * @param {object|null} run Run como a API devolve (`status: "active"`).
+ * @returns {string} `ACTIVE`, `PAUSED`, … ou vazio sem run.
+ * Observações: a API serializa o `RunStatus` em minúsculas; a interface comparava com
+ * `"ACTIVE"` e nunca achava a run em curso — sem controles e sem acompanhamento.
+ */
+export function runStatusOf(run) {
+  return String(run?.status || "").toUpperCase();
+}
+
+/**
+ * Diz se a run ainda está em curso (ativa).
+ *
+ * @param {object|null} run Run da API ou da interface.
+ * @returns {boolean} `true` para run ativa.
+ */
+export function runIsActive(run) {
+  return runStatusOf(run) === "ACTIVE";
+}
+
+/**
+ * Run em curso (ativa ou pausada) de uma das mensagens da conversa.
+ *
+ * @param {Array<object>} runs Runs do workspace.
+ * @param {Iterable<string>} rootIds Tarefas raiz (mensagens) da conversa aberta.
+ * @returns {object|null} A mais recente, preferindo a ativa; `null` sem nenhuma.
+ */
+export function liveRunFor(runs, rootIds) {
+  const roots = new Set(rootIds || []);
+  const live = (runs || [])
+    .filter((run) => roots.has(run.root_task_id) && ["ACTIVE", "PAUSED"].includes(runStatusOf(run)))
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  return live.find(runIsActive) || live[0] || null;
 }

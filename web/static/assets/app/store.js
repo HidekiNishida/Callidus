@@ -10,7 +10,7 @@
  */
 import { api, DEFAULT_TIMEOUT, HEALTH_TIMEOUT } from "./api.js";
 import { formatToolsReport } from "./tools-report.js";
-import { describeActivity, mergeActivity } from "./ui.js";
+import { describeActivity, liveRunFor, mergeActivity, runIsActive, runStatusOf } from "./ui.js";
 import { applyEvent, applyLive, createState, markConnection, markResync } from "./live-state.js";
 import { createStream } from "./live-stream.js";
 
@@ -897,6 +897,7 @@ export async function selectProject(project) {
   state.tasks = [];
   state.currentRun = null;
   await refreshTasks();
+  await attachLiveRun();
 }
 
 /**
@@ -917,6 +918,34 @@ export async function selectConversation(conversation) {
   state.tasks = [];
   state.currentRun = null;
   await refreshTasks();
+  await attachLiveRun();
+}
+
+/**
+ * Liga a interface à run em curso de uma das mensagens da conversa aberta.
+ *
+ * @returns {Promise<void>}
+ * Observações: a run pode ter sido iniciada antes de a página abrir (ou por outra aba) e
+ * segue andando no worker do servidor. Sem isto, a conversa mostrava a run parada, sem
+ * Pausar/Parar e sem acompanhamento ao vivo.
+ */
+export async function attachLiveRun() {
+  const workspace = workspaceId();
+  if (!workspace) return;
+  const conversationId = state.conversation?.id || null;
+  const runs = await api(`/projects/${workspace}/runs`).catch(() => []);
+  // A conversa pode ter mudado enquanto a lista chegava.
+  if ((state.conversation?.id || null) !== conversationId) return;
+  const run = liveRunFor(runs, roots().map((task) => task.id));
+  if (!run || run.id === state.currentRun?.id) return;
+  state.currentRun = run;
+  state.currentRootId = run.root_task_id;
+  if (runIsActive(run)) startTaskPolling();
+  try {
+    await connectStream(run.id);
+  } catch {
+    toast("Não foi possível acompanhar a execução em tempo real", "error");
+  }
 }
 
 /**
@@ -1059,7 +1088,7 @@ export async function refreshRun(runId) {
   if (!workspace) return;
   const runs = await api(`/projects/${workspace}/runs`).catch(() => []);
   const target = runId ? runs.find((run) => run.id === runId) : null;
-  const active = target || runs.find((run) => ["ACTIVE", "PAUSED"].includes(run.status)) || runs[0] || null;
+  const active = target || runs.find((run) => ["ACTIVE", "PAUSED"].includes(runStatusOf(run))) || runs[0] || null;
   state.currentRun = active;
 }
 
@@ -1088,7 +1117,7 @@ export function runConfig() {
 export async function sendMessage() {
   const typed = state.objective.trim();
   if (!typed || state.sending) return;
-  if (state.running || state.currentRun?.status === "ACTIVE") {
+  if (state.running || runIsActive(state.currentRun)) {
     // Mensagem agendada: o agente termina a execução atual e a seguir pega esta.
     // (Antes o botão ficava bloqueado e a mensagem simplesmente se perdia.)
     state.queued = { objective: typed, attachments: [...state.attachments] };
@@ -1158,7 +1187,7 @@ export async function sendMessage() {
  * Observações: habilita o modo autônomo no servidor e dispara o primeiro passo.
  */
 export async function startRun() {
-  if (state.running || state.currentRun?.status === "ACTIVE") {
+  if (state.running || runIsActive(state.currentRun)) {
     toast("Já existe uma execução em andamento", "error");
     return;
   }
@@ -1283,7 +1312,7 @@ export async function resumeRun(rootTaskId) {
   const runs = await api(`/projects/${workspace}/runs`).catch(() => []);
   const run =
     runs.find((item) => item.root_task_id === rootTaskId) ||
-    (state.currentRun?.status === "PAUSED" ? state.currentRun : null);
+    (runStatusOf(state.currentRun) === "PAUSED" ? state.currentRun : null);
   if (!run) {
     toast("Não encontrei a execução pausada desta mensagem", "error");
     return;
@@ -1385,7 +1414,7 @@ export async function connectStream(runId) {
 function startTaskPolling() {
   stopTaskPolling();
   taskTimer = setInterval(() => {
-    if (state.running || state.currentRun?.status === "ACTIVE") {
+    if (state.running || runIsActive(state.currentRun)) {
       refreshTasks();
     } else {
       stopTaskPolling();

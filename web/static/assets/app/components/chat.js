@@ -48,6 +48,7 @@ import {
   visibleFinalAnswer,
   formatTokenCount,
   inferenceView,
+  runIsActive,
 } from "../ui.js";
 import { filesList, currentTask } from "../live-state.js";
 import { createScrollFollow } from "../chat-scroll.js";
@@ -256,7 +257,7 @@ export const ChatView = {
       // Só há etiquetas enquanto a execução desta mensagem está em curso: uma tarefa
       // parada (planejando sem nada acontecendo) não aparece.
       const run = state.currentRun;
-      const running = run && run.status === "ACTIVE" && run.root_task_id === last.id;
+      const running = runIsActive(run) && run.root_task_id === last.id;
       if (!running) return [];
       return childrenOf(last.id)
         .filter(

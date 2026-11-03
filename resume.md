@@ -4245,6 +4245,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [work-explained.test.mjs](/tests/web/work-explained.test.mjs)
 - Arquivo: [chat-scroll.test.mjs](/tests/web/chat-scroll.test.mjs)
 - Arquivo: [chat-inference.test.mjs](/tests/web/chat-inference.test.mjs)
+- Arquivo: [run-status.test.mjs](/tests/web/run-status.test.mjs)
 - Arquivo: [replay.mjs](/tests/web/replay.mjs)
 - Arquivo: [tools-report.test.mjs](/tests/web/tools-report.test.mjs)
 - Arquivo: [usage-format.test.mjs](/tests/web/usage-format.test.mjs)
@@ -4311,6 +4312,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `DEFAULT_TIMEOUT = 10000` — Tempo limite padrão de requisição (ms).
 - `HEALTH_TIMEOUT = 5000` — Tempo limite do health check (ms).
 - `ADMIN_TIMEOUT = 30000` — Tempo limite de operações administrativas (ms).
+
+### `tests/web/run-status.test.mjs`
+
+**Propósito:** verifica que a interface reconhece a run em curso com o estado em minúsculas da API (`runStatusOf`, `runIsActive`) e escolhe a run da conversa (`liveRunFor`).
 
 ### `tests/web/chat-inference.test.mjs`
 
@@ -6125,6 +6130,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `hydrateFeedsFromHistory()` — Para cada mensagem raiz sem feed em memória, reaplica eventos da run mais recente (`replayFeedFromRun`).
 - `replayFeedFromRun(runId, rootId)` — Rejoga eventos de `/observe` no feed da mensagem raiz; o mesmo `eventId` atualiza a entrada existente em `mergeActivity`.
 - `refreshRun`
+- `attachLiveRun` — ao abrir conversa ou projeto, liga a interface à run em curso: controles, polling e stream ao vivo.
 - `runConfig`
 - `sendMessage`
 - `startRun`
@@ -6237,6 +6243,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `icon`
 - `flattenInferenceComponents` — achata a composição do contexto (lista ou agrupada por categoria).
 - `inferenceView` — detalhe da inferência no formato do chat: metadados, tokens (com estimativa) e a barra por categoria.
+- `runStatusOf` — estado da run em maiúsculas, qualquer que seja a grafia (a API serializa em minúsculas).
+- `runIsActive` — a run está ativa.
+- `liveRunFor` — run em curso (ativa ou pausada) mais recente entre as mensagens da conversa.
 - `escapeHtml`
 - `renderMarkdown`
 - `isListItem`
