@@ -79,6 +79,7 @@ raiz, os filhos e os pais com critério próprio.
 | Escreveu arquivo sem declarar | implícita: o trecho gravado está no arquivo, a sintaxe é válida e, se o arquivo já existia com 20+ linhas, a escrita não apagou mais da metade dele |
 | `write_file` sobre arquivo existente com 150+ linhas | recusado pela própria ferramenta, sem tocar o disco: a mudança vai por `edit_file` (reescrever de memória alterava o que não devia mudar) |
 | Rodou a suíte de testes (`run_pytest`) e passou | implícita: `pytest` no mesmo caminho, gravado como evidência |
+| Operação de alteração que não escreveu nada | o critério da etapa é medido antes de recusar a resposta: se a mudança já está feita, conclui com a evidência; se não, continua saída inválida |
 | Operação de modelo que rodou a suíte no ciclo e não escreveu nada | a entrega é o veredito dos testes: `pytest` medido de novo pelo portão (antes, saída inválida repetida até a pausa) |
 | Inspeção que o ambiente responde (`git_status` fora de repositório) | a resposta vira a descoberta da etapa, sem repetir a chamada |
 | Só leu / explicou / operação externa | nenhuma automática: conclui com `verified: None` e `verification_absent` (a aceitação por requisito continua exigindo prova na raiz) |

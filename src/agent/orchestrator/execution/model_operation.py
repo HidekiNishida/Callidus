@@ -471,6 +471,36 @@ class ModelOperation:
             )
             done["thought"] = excerpt
             return done
+        criterion = meta.get("verification") or meta.get("implicit_verification")
+        if data is None and isinstance(criterion, dict) and criterion and str(criterion.get("type")) != "stages":
+            # Etapa de alteração sem escrita: talvez a mudança já esteja feita (uma etapa anterior
+            # corrigiu, ou o plano pediu de novo o que já passou). O critério da etapa é medido
+            # **antes** de tratar a resposta como inválida; se ele já passa, não há o que escrever
+            # e a etapa conclui com essa evidência. Visto com o gpt-oss:20b no arquivo_grande:
+            # "corrigir add" replanejada depois de corrigida, recusada como saída inválida até o limite.
+            from agent.verification.runner import run_verification
+
+            probe = await run_verification(
+                project_root=root_path,
+                spec=criterion,
+                tool_args=meta.get("tool_args") or {},
+                approved=bool(config.get("approve_risky_tools") or meta.get("approved")),
+            )
+            if probe.passed is True:
+                task.consolidated_result_json = {
+                    "model_operation": True,
+                    "already_satisfied": True,
+                    "report": content.strip(),
+                    "context_snapshot_id": str(snap.id),
+                }
+                self._executor.note_thought(
+                    run, task, "A mudança pedida já está feita: o critério da etapa passa sem nova escrita.", phase="tool"
+                )
+                tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+                done = await self._executor.finalize_verification(run, project, task, root_path)
+                done["thought"] = excerpt
+                done["already_satisfied"] = True
+                return done
         # O orçamento efetivo de saída: o que o provedor pode gerar nesta chamada.
         generation_now = dict(profile.generation or {})
         output_budget = int(

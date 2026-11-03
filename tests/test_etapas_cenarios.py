@@ -688,3 +688,62 @@ async def test_etapa_de_testes_que_reprovam_segue_a_recuperacao(tmp_path: Path, 
     assert out["action"] in {"verify_failed", "verify_blocked"}, out
     assert session.get(TaskModel, leaf.id).status != TaskStatus.COMPLETED.value
     assert _evidences(session, leaf.id)[-1].passed is False
+
+
+@pytest.mark.asyncio
+async def test_alteracao_ja_feita_conclui_pelo_criterio(tmp_path: Path, monkeypatch):
+    """Regressão da avaliação real (gpt-oss:20b, arquivo_grande): o plano pediu de novo uma correção
+    já feita; o modelo, sem nada a escrever, respondia em texto e a etapa era recusada como saída
+    inválida até o limite. Agora o critério é medido antes: já passa → conclui com evidência."""
+    settings, factory, workspace = _env(tmp_path)
+    (workspace / "calc.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    session = factory()
+    _, root, leaf, run = _leaf_under_root(
+        session,
+        workspace,
+        objective="Corrija add em calc.py",
+        metadata={
+            "model_operation": True,
+            "atomic": True,
+            "verification": {"type": "file_contains", "path": "calc.py", "contains": "return a + b"},
+        },
+    )
+    monkeypatch.setattr(
+        "agent.orchestrator.runner._select_provider", lambda settings, config: _Scripted(["O add já está correto."])
+    )
+    log = await RunOrchestrator(session, settings).run_until_idle(run.id, max_steps=6)
+    actions = [x.get("action") for x in log]
+    assert "model_operation_invalid" not in actions, actions
+    task = session.get(TaskModel, leaf.id)
+    assert task.status == TaskStatus.COMPLETED.value
+    assert task.consolidated_result_json["already_satisfied"] is True
+    assert _evidences(session, leaf.id)[-1].passed is True
+
+
+@pytest.mark.asyncio
+async def test_alteracao_nao_feita_sem_escrita_continua_invalida(tmp_path: Path, monkeypatch):
+    """Sem a mudança no disco, responder em texto continua sendo saída inválida (não vira aprovação)."""
+    settings, factory, workspace = _env(tmp_path)
+    (workspace / "calc.py").write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+    session = factory()
+    _, root, leaf, run = _leaf_under_root(
+        session,
+        workspace,
+        objective="Corrija add em calc.py",
+        metadata={
+            "model_operation": True,
+            "atomic": True,
+            "verification": {"type": "file_contains", "path": "calc.py", "contains": "return a + b"},
+        },
+    )
+    monkeypatch.setattr(
+        "agent.orchestrator.runner._select_provider", lambda settings, config: _Scripted(["O add já está correto."])
+    )
+    orch = RunOrchestrator(session, settings)
+    for _ in range(3):
+        out = await orch.step(run.id)
+        if out.get("action") == "model_operation_invalid":
+            break
+    assert out["action"] == "model_operation_invalid"
+    assert session.get(TaskModel, leaf.id).status != TaskStatus.COMPLETED.value
+    assert _evidences(session, leaf.id) == []
