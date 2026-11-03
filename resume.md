@@ -3335,7 +3335,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Execução autônoma em segundo plano, varrendo runs ativos em loop. **Quando/onde:** usado pelo servidor da API para avançar runs marcados como `autonomous` sem intervenção do usuário.
 
-- `autonomous_loop(interval_sec: float=2.0) -> None` — a cada intervalo, `step()` runs `ACTIVE` + `autonomous=true`.
+- `autonomous_loop(interval_sec: float=2.0, scheduler: AgentScheduler | None=None, clock: Callable[[], float]=time.monotonic) -> None` — a cada intervalo, submete o passo só da run em foco (`focused_run`) e registra se ela avançou.
+- `focused_run(runs: Iterable[ExecutionRunModel], idle_since: dict[str, float], *, now: float, backoff: float=IDLE_BACKOFF_SEC) -> ExecutionRunModel | None` — a run autônoma mais recente que não está cedendo a vez; todas ociosas, a mais recente.
+- `_note_outcome(idle_since: dict[str, float], result, now: float) -> None` — passo sem avanço (`noop`, `run_stalled`, erro) marca a run como ociosa; avanço limpa a marca.
+- `IDLE_BACKOFF_SEC` — segundos em que uma run ociosa cede a vez (30).
 - `enable_autonomous_on_run(session, run_id: uuid.UUID) -> ExecutionRunModel` — seta `config.autonomous=true`.
 - `request_stop() -> None` — Seta o evento global `_stop`, sinalizando ao `autonomous_loop` que deve encerrar na próxima iteração. Quando se solicita o desligamento do worker de fundo.
 - `start_background_worker() -> asyncio.Task` — inicia loop (lifespan API).
@@ -4105,6 +4108,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - Arquivo: [test_progress_metrics.py](/tests/test_progress_metrics.py)
 - Arquivo: [test_proportional_verification.py](/tests/test_proportional_verification.py)
 - Arquivo: [test_database_url.py](/tests/test_database_url.py)
+- Arquivo: [test_autonomous_focus.py](/tests/test_autonomous_focus.py)
 - Arquivo: [test_requirements.py](/tests/test_requirements.py)
 - Arquivo: [test_multirequisito_regressions.py](/tests/test_multirequisito_regressions.py)
 - Arquivo: [test_narration_stream.py](/tests/test_narration_stream.py)
@@ -4546,7 +4550,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ### `tests/test_database_url.py`
 
-**Propósito:** verifica de onde vem a URL do banco: `CALLIDUS_DATABASE_URL` vence o `DATABASE_URL` genérico, URL SQLite é usada como veio, e um `DATABASE_URL` de outro banco (ex.: `postgres://` de outro projeto exportado no terminal) não derruba a subida — o Callidus usa `data/agent.db` e avisa uma vez.
+**Propósito:** verifica de onde vem a URL do banco: `CALLIDUS_DATABASE_URL` vence o `DATABASE_URL` genérico, URL SQLite é usada como veio, e um `DATABASE_URL` de outro banco (ex.: `postgres://` de outro projeto exportado no terminal) não derruba a subida — o Callidus usa `data/agent.db` em silêncio; só `CALLIDUS_DATABASE_URL` não SQLite gera aviso.
+
+### `tests/test_autonomous_focus.py`
+
+**Propósito:** verifica que o worker autônomo avança uma run por vez — a mais recente — e que uma run ociosa cede a vez por um intervalo e depois volta; o tique do laço submete só a run em foco, com prioridade.
 
 ### `tests/test_requirements.py`
 

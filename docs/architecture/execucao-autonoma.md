@@ -7,8 +7,17 @@ Runs com `config_json.autonomous = true` são avançados pelo worker asyncio (`a
 ## 🔄 Ciclo
 
 1. Listar runs `ACTIVE` com flag autônoma.
-2. `RunOrchestrator.step` por run (commit por tick).
-3. Intervalo configurável (2s).
+2. Escolher **uma** run em foco (`focused_run`): a mais recente, isto é, a última mensagem da pessoa.
+3. `RunOrchestrator.step` da run em foco (commit por tick), com prioridade sobre operações antigas da fila.
+4. Intervalo configurável (2s).
+
+**Por que uma run por vez:** antes, todas as runs ativas avançavam em rodízio. Com quatro runs
+abertas (a mesma mensagem reenviada porque parecia parada), a mais nova recebia um passo a cada
+quatro, e com modelo local cada passo ainda trocava o modelo carregado no Ollama — a mensagem
+nova parecia não prosseguir. As inferências já eram uma por vez no executor; o rodízio só
+dividia o tempo. As runs antigas não são pausadas nem canceladas: andam quando a run em foco
+termina. Um passo sem avanço (`noop`, `run_stalled`, erro) faz a run ceder a vez por
+`IDLE_BACKOFF_SEC` (30 s), para uma run parada não segurar as outras.
 
 ## 🧠 Controles
 

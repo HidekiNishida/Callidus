@@ -3,7 +3,7 @@ Arquivo: src/agent/services/autonomous_worker.py
 Nome: autonomous_worker.py
 Propósito: descobrir runs autônomos ativos e entregá-los ao escalonador em segundo plano.
 Responsabilidade: camada de aplicação — laço de descoberta e execução das operações autônomas.
-Componentes: autonomous_loop, build_scheduler, start_background_worker, stop_background_worker, enable_autonomous_on_run.
+Componentes: autonomous_loop, focused_run, build_scheduler, start_background_worker, stop_background_worker, enable_autonomous_on_run.
 Dependências: agent.services.agent_scheduler, agent.services.query_service, agent.persistence.database.
 Observações: nenhuma inferência é feita para descobrir se existe trabalho; a sessão fica aberta só durante a operação.
 
@@ -22,12 +22,19 @@ Duas responsabilidades, deliberadamente separadas:
 Antes, o worker chamava o orquestrador direto e segurava a sessão do banco durante a
 inferência. Agora a sessão é aberta por operação e fechada em seguida: uma inferência
 longa não segura a conexão.
+
+**Foco**: só a run autônoma mais recente avança (a última mensagem da pessoa). O
+rodízio entre todas as runs ativas fazia cada uma andar a uma fração da velocidade —
+com um modelo local, ainda trocando o modelo carregado a cada passo — e a mensagem nova
+parecia parada. As runs mais antigas esperam a vez, sem pausa nem cancelamento.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
+from collections.abc import Callable, Iterable
 
 from sqlalchemy import select
 
@@ -45,6 +52,62 @@ logger = logging.getLogger(__name__)
 
 _worker_task: asyncio.Task | None = None
 _stop = asyncio.Event()
+
+# Passos que não avançaram nada (a run espera algo de fora): a run em foco cede a vez à
+# seguinte por um tempo, para uma run parada não segurar as outras para sempre.
+_IDLE_ACTIONS = frozenset({"noop", "run_stalled", "run_paused", "run_terminal"})
+IDLE_BACKOFF_SEC = 30.0
+
+
+def focused_run(
+    runs: Iterable[ExecutionRunModel],
+    idle_since: dict[str, float],
+    *,
+    now: float,
+    backoff: float = IDLE_BACKOFF_SEC,
+) -> ExecutionRunModel | None:
+    """Escolhe a única run autônoma que avança neste tique.
+
+    Args:
+        runs: runs ativas.
+        idle_since: quando cada run (por id) teve um passo sem avanço.
+        now: instante monotônico atual.
+        backoff: segundos em que uma run ociosa cede a vez.
+
+    Returns:
+        A run autônoma mais recente que não está cedendo a vez; se todas estão, a mais
+        recente; `None` sem run autônoma.
+
+    Observações:
+        Mais recente = última mensagem da pessoa. As demais não são pausadas: andam
+        quando a run em foco termina ou fica ociosa.
+    """
+    autonomous = [run for run in runs if (run.config_json or {}).get("autonomous")]
+    if not autonomous:
+        return None
+    autonomous.sort(key=lambda run: (run.created_at is not None, run.created_at), reverse=True)
+    for run in autonomous:
+        idle = idle_since.get(str(run.id))
+        if idle is None or now - idle >= backoff:
+            return run
+    return autonomous[0]
+
+
+def _note_outcome(idle_since: dict[str, float], result, now: float) -> None:
+    """Registra se o passo de uma run avançou, para o foco do próximo tique.
+
+    Args:
+        idle_since: marcação de ociosidade por id de run (alterada no lugar).
+        result: desfecho devolvido pelo escalonador (ou `None`).
+        now: instante monotônico atual.
+    """
+    if result is None or result.kind != "run_step" or not result.key.startswith("run:"):
+        return
+    run_id = result.key.split(":", 1)[1]
+    if result.ok and result.action not in _IDLE_ACTIONS:
+        idle_since.pop(run_id, None)
+    else:
+        idle_since[run_id] = now
 
 
 def request_stop() -> None:
@@ -126,17 +189,20 @@ def build_scheduler(settings: Settings | None = None) -> AgentScheduler:
 async def autonomous_loop(
     interval_sec: float = 2.0,
     scheduler: AgentScheduler | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> None:
     """Laço que descobre trabalho autônomo e o executa uma operação por vez.
 
     Args:
         interval_sec: intervalo entre tiques, em segundos.
         scheduler: escalonador a usar; quando ausente, é construído com as configurações do processo.
+        clock: relógio monotônico (injetável em teste).
     """
     settings = get_settings()
     engine = create_db_engine(settings)
     factory = build_session_factory(engine)
     scheduler = scheduler or build_scheduler(settings)
+    idle_since: dict[str, float] = {}
     while not _stop.is_set():
         try:
             session = factory()
@@ -145,11 +211,10 @@ async def autonomous_loop(
                     ExecutionRunModel.status == RunStatus.ACTIVE.value
                 )
                 runs = list(session.scalars(stmt).all())
-                for run in runs:
-                    cfg = run.config_json or {}
-                    if not cfg.get("autonomous"):
-                        continue
-                    scheduler.submit("run_step", f"run:{run.id}", {"run_id": str(run.id)})
+                focus = focused_run(runs, idle_since, now=clock())
+                if focus is not None:
+                    # Prioridade acima das operações antigas que ainda estejam na fila.
+                    scheduler.submit("run_step", f"run:{focus.id}", {"run_id": str(focus.id)}, priority=1)
                 # Consultas pendentes entram na mesma fila: uma operação por vez.
                 pending = list(
                     session.scalars(
@@ -168,7 +233,7 @@ async def autonomous_loop(
                 session.close()
             # Uma operação por vez: o escalonador decide a ordem e o executor
             # compartilhado garante que só uma inferência esteja ativa.
-            await scheduler.run_once()
+            _note_outcome(idle_since, await scheduler.run_once(), clock())
         except Exception as exc:
             logger.warning("autonomous loop error: %s", exc)
         await asyncio.sleep(interval_sec)
