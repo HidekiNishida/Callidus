@@ -833,15 +833,38 @@ class TaskExecutor:
         model_text = ""
         try:
             self.note_thought(run, task, "Escrevendo a resposta final.")
-            resp = await observed_chat(
-                provider,
-                ChatCompletionRequest(
-                    messages=[ChatMessage(role="user", content=prompt)],
-                    profile=profile,
-                ),
-                purpose="final_answer",
-                stream=config.get("stream", True) is not False,
+            from agent.context.snapshot_builder import create_snapshot_for_inference
+            from agent.orchestrator.ledger import bind_snapshot
+            from agent.observability import current as current_obs
+            request = ChatCompletionRequest(
+                messages=[ChatMessage(role="user", content=prompt)],
+                profile=profile,
             )
+            obs = current_obs()
+            if obs is not None and obs.session is not None:
+                budget_with_snap, snap = create_snapshot_for_inference(
+                    obs.session,
+                    project_id=obs.project_id,
+                    task_id=obs.task_id,
+                    run_id=obs.run_id,
+                    profile=profile,
+                    messages=request.messages,
+                    purpose="final_answer",
+                )
+                with bind_snapshot(str(snap.id)):
+                    resp = await observed_chat(
+                        provider,
+                        request,
+                        purpose="final_answer",
+                        stream=config.get("stream", True) is not False,
+                    )
+            else:
+                resp = await observed_chat(
+                    provider,
+                    request,
+                    purpose="final_answer",
+                    stream=config.get("stream", True) is not False,
+                )
             model_text = (resp.content or "").strip()
             apply_provider_usage(task, provider)
         except Exception:

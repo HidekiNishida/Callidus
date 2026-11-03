@@ -181,6 +181,11 @@ async def plan_with_model(
         "Para explorar use list_dir ou glob_files. Para teste Python use run_pytest ou run_script. "
         "Para alterar código prefira uma subtarefa com metadata.model_operation=true (sem "
         "tool_args): o agente inspeciona o arquivo e aplica a mudança com o conteúdo exato. "
+        # Visto com o gpt-oss:20b (bateria, dashboard): o plano trazia o HTML, o CSS e o JS
+        # inteiros em tool_args — 8 mil tokens e quase 4 minutos só para planejar, com o
+        # conteúdo escapado duas vezes. O plano descreve; a execução escreve.
+        "Nunca escreva o conteúdo de um arquivo no plano: tool_args não leva content nem "
+        "new_string; criar ou alterar arquivo é sempre metadata.model_operation=true. "
         "Use edit_file só com o trecho antigo copiado literalmente do arquivo; um trecho "
         "paraphraseado faz a edição falhar. "
         "Verificação é metadata.verification e o type só pode ser um destes: "
@@ -198,34 +203,85 @@ async def plan_with_model(
     )
     from agent.orchestrator.tool_loop import INSPECTION_TOOLS, run_tool_loop
     from agent.tools.registry import ToolContext, build_default_registry
+    from agent.context.snapshot_builder import create_snapshot_for_inference
+    from agent.orchestrator.ledger import bind_snapshot
 
     content = ""
     if getattr(provider, "capabilities", None) and _supports_tool_loop(provider):
-        outcome = await run_tool_loop(
-            provider=provider,
-            messages=budget.messages,
-            profile=profile,
-            registry=build_default_registry(),
-            ctx=ToolContext(project_root=project_root or "."),
-            tool_ids=INSPECTION_TOOLS,
-            final_tools=INSPECTION_TOOLS,
-            final_tools_after=(),
-            final_instruction=(
-                "Você já inspecionou o que era preciso. Responda agora com o JSON do plano "
-                "no formato pedido."
-            ),
-            final_instruction_after=(
-                "Agora responda apenas com o JSON do plano. Não peça mais ferramentas."
-            ),
-            purpose="plan",
-        )
+        # Cria snapshot para o ciclo de ferramentas
+        from agent.observability import current as current_obs
+        obs = current_obs()
+        if obs is not None and obs.session is not None:
+            budget_with_snap, snap = create_snapshot_for_inference(
+                obs.session,
+                project_id=obs.project_id,
+                task_id=obs.task_id,
+                run_id=obs.run_id,
+                profile=profile,
+                messages=budget.messages,
+                purpose="decompose",
+            )
+            with bind_snapshot(str(snap.id)):
+                outcome = await run_tool_loop(
+                    provider=provider,
+                    messages=budget.messages,
+                    profile=profile,
+                    registry=build_default_registry(),
+                    ctx=ToolContext(project_root=project_root or "."),
+                    tool_ids=INSPECTION_TOOLS,
+                    final_tools=INSPECTION_TOOLS,
+                    final_tools_after=(),
+                    final_instruction=(
+                        "Você já inspecionou o que era preciso. Responda agora com o JSON do plano "
+                        "no formato pedido."
+                    ),
+                    final_instruction_after=(
+                        "Agora responda apenas com o JSON do plano. Não peça mais ferramentas."
+                    ),
+                    purpose="plan",
+                )
+        else:
+            outcome = await run_tool_loop(
+                provider=provider,
+                messages=budget.messages,
+                profile=profile,
+                registry=build_default_registry(),
+                ctx=ToolContext(project_root=project_root or "."),
+                tool_ids=INSPECTION_TOOLS,
+                final_tools=INSPECTION_TOOLS,
+                final_tools_after=(),
+                final_instruction=(
+                    "Você já inspecionou o que era preciso. Responda agora com o JSON do plano "
+                    "no formato pedido."
+                ),
+                final_instruction_after=(
+                    "Agora responda apenas com o JSON do plano. Não peça mais ferramentas."
+                ),
+                purpose="plan",
+            )
         content = outcome.content or ""
     else:
         from agent.providers.observed import observed_chat
-
-        resp = await observed_chat(
-            provider, ChatCompletionRequest(messages=budget.messages, profile=profile), purpose="plan"
-        )
+        from agent.observability import current as current_obs
+        obs = current_obs()
+        if obs is not None and obs.session is not None:
+            budget_with_snap, snap = create_snapshot_for_inference(
+                obs.session,
+                project_id=obs.project_id,
+                task_id=obs.task_id,
+                run_id=obs.run_id,
+                profile=profile,
+                messages=budget.messages,
+                purpose="decompose",
+            )
+            with bind_snapshot(str(snap.id)):
+                resp = await observed_chat(
+                    provider, ChatCompletionRequest(messages=budget.messages, profile=profile), purpose="plan"
+                )
+        else:
+            resp = await observed_chat(
+                provider, ChatCompletionRequest(messages=budget.messages, profile=profile), purpose="plan"
+            )
         content = resp.content or ""
     plan = _plan_from_content(content)
     if plan is None and _supports_structured_output(provider):
@@ -309,6 +365,9 @@ async def _repair_plan(
     """
     from agent.providers.base import ChatMessage
     from agent.providers.observed import observed_chat
+    from agent.context.snapshot_builder import create_snapshot_for_inference
+    from agent.orchestrator.ledger import bind_snapshot
+    from agent.observability import current as current_obs
 
     history = list(messages)
     echo = (previous or "").strip()
@@ -322,15 +381,37 @@ async def _repair_plan(
         ask = 'A resposta veio vazia. Responda agora somente o plano em JSON no formato {"subtasks":[...]}.'
     history.append(ChatMessage(role="user", content=ask))
     try:
-        response = await observed_chat(
-            provider,
-            ChatCompletionRequest(
-                messages=history,
+        obs = current_obs()
+        if obs is not None and obs.session is not None:
+            budget_with_snap, snap = create_snapshot_for_inference(
+                obs.session,
+                project_id=obs.project_id,
+                task_id=obs.task_id,
+                run_id=obs.run_id,
                 profile=profile,
-                response_format={"schema": PLAN_SCHEMA},
-            ),
-            purpose="plan",
-        )
+                messages=history,
+                purpose="plan_repair",
+            )
+            with bind_snapshot(str(snap.id)):
+                response = await observed_chat(
+                    provider,
+                    ChatCompletionRequest(
+                        messages=history,
+                        profile=profile,
+                        response_format={"schema": PLAN_SCHEMA},
+                    ),
+                    purpose="plan",
+                )
+        else:
+            response = await observed_chat(
+                provider,
+                ChatCompletionRequest(
+                    messages=history,
+                    profile=profile,
+                    response_format={"schema": PLAN_SCHEMA},
+                ),
+                purpose="plan",
+            )
     except Exception:
         # A recuperação é um bônus: falhar aqui devolve o caso ao caminho de sempre (template).
         return None

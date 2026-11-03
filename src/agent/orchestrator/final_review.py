@@ -105,9 +105,26 @@ async def final_review(
         profile=profile,
     )
     from agent.providers.observed import observed_chat
+    from agent.context.snapshot_builder import create_snapshot_for_inference
+    from agent.orchestrator.ledger import bind_snapshot
 
     try:
-        resp = await observed_chat(provider, request, purpose="plan")
+        from agent.observability import current as current_obs
+        obs = current_obs()
+        if obs is not None and obs.session is not None:
+            budget, snap = create_snapshot_for_inference(
+                obs.session,
+                project_id=obs.project_id,
+                task_id=obs.task_id,
+                run_id=obs.run_id,
+                profile=profile,
+                messages=request.messages,
+                purpose="final_review",
+            )
+            with bind_snapshot(str(snap.id)):
+                resp = await observed_chat(provider, request, purpose="plan")
+        else:
+            resp = await observed_chat(provider, request, purpose="plan")
     except Exception:  # noqa: BLE001 — revisão que falha não pode impedir a entrega
         return []
     data, _err = parse_json_object(resp.content or "")

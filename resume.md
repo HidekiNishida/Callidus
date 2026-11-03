@@ -1338,6 +1338,21 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `OperationContextBuilder._technical_snippet(project_id: uuid.UUID, objective: str) -> str` — Busca no grafo de conhecimento os símbolos mencionados no objetivo (até 8 tokens, 3 hits cada) e devolve as referências encontradas. Retorna um aviso para usar `list_dir`/`search_grep` quando nada é encontrado.
 - `OperationContextBuilder.build_for_task(*, project_id: uuid.UUID, root_path: str, task: TaskModel, profile: ModelProfile, run_id: uuid.UUID | None=None, compact: bool=False) -> tuple[BudgetResult, ContextSnapshotModel]` — Monta o prompt completo da operação (objetivo, contrato, regras, memórias, arquivos citados, skills selecionadas, dependências) respeitando o orçamento do modelo, grava o `ContextSnapshotModel` e devolve `(BudgetResult, ContextSnapshotModel)`.
 
+### `src/agent/context/snapshot_builder.py`
+
+**Propósito:** Construtor unificado de snapshots de contexto para diferentes finalidades de inferência (planejamento, operação, resposta final, automação, consulta de agente). Centraliza a criação de `ContextSnapshotModel` para garantir rastreabilidade completa entre inferência e composição de contexto. **Quando/onde:** Usado por `gap_analysis.py`, `final_review.py`, `decomposition.py`, `query_service.py`, `executor.py`, `automation_operation.py` antes de chamar `observed_chat` com `bind_snapshot`.
+
+- `SnapshotBuilder` — Classe que encapsula a lógica de construção de snapshots por finalidade.
+- `SnapshotBuilder.__init__(session: Session) -> None` — Inicializa o construtor com a sessão SQLAlchemy.
+- `SnapshotBuilder.build_plan_snapshot(*, project_id, task_id, run_id, profile, messages, purpose="plan", components=None) -> tuple[BudgetResult, ContextSnapshotModel]` — Constrói snapshot para inferência de planejamento (decomposição, análise de lacunas, revisão final).
+- `SnapshotBuilder.build_operation_snapshot(*, project_id, task, profile, run_id, root_path, settings=None, compact=False) -> tuple[BudgetResult, ContextSnapshotModel]` — Delega para `OperationContextBuilder.build_for_task` (operação de modelo).
+- `SnapshotBuilder.build_final_answer_snapshot(*, project_id, task_id, run_id, profile, messages, purpose="final_answer", components=None) -> tuple[BudgetResult, ContextSnapshotModel]` — Snapshot para resposta final do executor.
+- `SnapshotBuilder.build_automation_snapshot(*, project_id, task_id, run_id, profile, messages, purpose="automation", components=None) -> tuple[BudgetResult, ContextSnapshotModel]` — Snapshot para operação de automação.
+- `SnapshotBuilder.build_agent_query_snapshot(*, project_id, task_id, run_id, profile, messages, purpose="agent_query", components=None) -> tuple[BudgetResult, ContextSnapshotModel]` — Snapshot para consulta de agente (`query_service.py`).
+- `_group_categories(selected: list) -> list[dict]` — Agrupa componentes por categoria para `categories_json` do snapshot; aceita objetos `ContextComponent` e dicionários.
+- `SnapshotBuilder._budget_from_messages(profile: ModelProfile, messages: list, purpose: str, components: list[ContextComponent] | None=None) -> BudgetResult` — Reconstrói um `BudgetResult` a partir de mensagens; se `components` for fornecido, usa eles para popular `selected` e `categories_json`. Caso contrário, cria budget sintético com estimativa de tokens por caracteres.
+- `create_snapshot_for_inference(session, *, project_id, task_id, run_id, profile, messages, purpose, task=None, root_path=None, settings=None, compact=False, components=None) -> tuple[BudgetResult, ContextSnapshotModel]` — Factory que escolhe o construtor apropriado baseado na finalidade; usada por todos os caminhos de inferência para criar e persistir o snapshot antes do `bind_snapshot`.
+
 ## `src/agent/domain/`
 
 **Propósito:** Contratos centrais do domínio: enums, schemas, máquina de estados e falhas.
@@ -2983,7 +2998,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `task_reported_total(session: Session, task_id: uuid.UUID) -> tuple[int | None, str]` — Total que a API mostra: o livro, quando existe; senão o metadado legado com qualidade.
 - `note_budget_pause(session: Session, task: TaskModel | None, reason: str) -> None` — Registra no resumo operacional que a execução pausou por orçamento.
 - `iter_spend(rows: list[InferenceRecordModel]) -> list[tuple[InferenceRecordModel, int, str]]` — Gasto e qualidade de cada linha, para a conferência.
-- `_enrich_components(snap: ContextSnapshotModel, row: InferenceRecordModel, task: TaskModel | None) -> list[dict]` — Enriquece componentes do snapshot com agente, tarefa, janela, confiança e potencial de otimização.
+- `_enrich_components(snap: ContextSnapshotModel, row: InferenceRecordModel, task: TaskModel | None) -> list[dict]` — Enriquece componentes do snapshot com agente, tarefa, janela, confiança e potencial de otimização. Agora usa `categories_json` do snapshot (populado por `SnapshotBuilder`) para enriquecer automaticamente todas as inferências, incluindo planejamento, resposta final, automação e consultas de agente.
 
 ### `src/agent/orchestrator/usage_report.py`
 

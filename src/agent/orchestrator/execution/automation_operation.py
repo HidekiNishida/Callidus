@@ -245,38 +245,65 @@ class AutomationOperation:
                 task_id=task.id,
             )
 
-        if supports_tool_loop(provider):
-            outcome = await run_tool_loop(
-                provider=provider,
-                messages=[ChatMessage(role="user", content=prompt)],
-                profile=profile,
-                registry=tools,
-                ctx=ctx,
-                approved=True,
-                tool_ids=list(_automation_tool_ids()),
-                max_iterations=max(1, int(settings.max_tool_iterations)),
-                max_tool_calls=max(1, int(settings.max_tool_calls)),
-                stream=config.get("stream", True) is not False,
-                on_tool_call=_on_tool_call,
-                final_tools=list(_automation_tool_ids()),
-                final_tools_after=(),
-                final_instruction=(
-                    "Você já fez a operação. Responda agora ao usuário com o estado real "
-                    "devolvido pela ferramenta. Não peça mais ferramentas."
-                ),
-                purpose="automation",
-            )
-        else:
-            resp = await observed_chat(
-                provider,
-                ChatCompletionRequest(
+        from agent.context.snapshot_builder import create_snapshot_for_inference
+        from agent.orchestrator.ledger import bind_snapshot
+        from agent.observability import current as current_obs
+
+        async def _run_with_snapshot():
+            obs = current_obs()
+            if obs is not None and obs.session is not None:
+                # Para automação, criamos o snapshot com a mensagem inicial
+                initial_messages = [ChatMessage(role="user", content=prompt)]
+                budget_with_snap, snap = create_snapshot_for_inference(
+                    obs.session,
+                    project_id=obs.project_id,
+                    task_id=obs.task_id,
+                    run_id=obs.run_id,
+                    profile=profile,
+                    messages=initial_messages,
+                    purpose="automation",
+                )
+                with bind_snapshot(str(snap.id)):
+                    return await _run_automation_inner()
+            else:
+                return await _run_automation_inner()
+
+        async def _run_automation_inner():
+            if supports_tool_loop(provider):
+                outcome = await run_tool_loop(
+                    provider=provider,
                     messages=[ChatMessage(role="user", content=prompt)],
                     profile=profile,
-                ),
-                purpose="automation",
-                stream=config.get("stream", True) is not False,
-            )
-            outcome = ToolLoopOutcome(content=resp.content or "", iterations=1, stop_reason="final")
+                    registry=tools,
+                    ctx=ctx,
+                    approved=True,
+                    tool_ids=list(_automation_tool_ids()),
+                    max_iterations=max(1, int(settings.max_tool_iterations)),
+                    max_tool_calls=max(1, int(settings.max_tool_calls)),
+                    stream=config.get("stream", True) is not False,
+                    on_tool_call=_on_tool_call,
+                    final_tools=list(_automation_tool_ids()),
+                    final_tools_after=(),
+                    final_instruction=(
+                        "Você já fez a operação. Responda agora ao usuário com o estado real "
+                        "devolvido pela ferramenta. Não peça mais ferramentas."
+                    ),
+                    purpose="automation",
+                )
+            else:
+                resp = await observed_chat(
+                    provider,
+                    ChatCompletionRequest(
+                        messages=[ChatMessage(role="user", content=prompt)],
+                        profile=profile,
+                    ),
+                    purpose="automation",
+                    stream=config.get("stream", True) is not False,
+                )
+                outcome = ToolLoopOutcome(content=resp.content or "", iterations=1, stop_reason="final")
+            return outcome
+
+        outcome = await _run_with_snapshot()
 
         markdown = _compose(outcome, results)
         emit(

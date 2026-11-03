@@ -593,10 +593,26 @@ class QueryService:
         from agent.observability.emitter import current, observe
         from agent.orchestrator.budget_gate import use_budget_settings
         from agent.providers.observed import observed_chat
+        from agent.context.snapshot_builder import create_snapshot_for_inference
+        from agent.orchestrator.ledger import bind_snapshot
 
         async def _ask():
             """Passa a consulta pelo mesmo controlador das outras inferências."""
-            return await observed_chat(provider, request, purpose="agent_query", stream=False)
+            obs = current()
+            if obs is not None and obs.session is not None:
+                budget_with_snap, snap = create_snapshot_for_inference(
+                    obs.session,
+                    project_id=obs.project_id,
+                    task_id=obs.task_id,
+                    run_id=obs.run_id,
+                    profile=profile,
+                    messages=request.messages,
+                    purpose="agent_query",
+                )
+                with bind_snapshot(str(snap.id)):
+                    return await observed_chat(provider, request, purpose="agent_query", stream=False)
+            else:
+                return await observed_chat(provider, request, purpose="agent_query", stream=False)
 
         if current() is None and execution is not None and execution.run_id:
             with use_budget_settings(self._settings), observe(

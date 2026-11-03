@@ -184,13 +184,34 @@ async def analyze_gaps(
     if not snapshot:
         return []
     from agent.providers.observed import observed_chat
+    from agent.context.snapshot_builder import create_snapshot_for_inference
+    from agent.orchestrator.ledger import bind_snapshot
 
     request = ChatCompletionRequest(
         messages=[ChatMessage(role="user", content=_prompt(objective, snapshot, environment_note(project_root)))],
         profile=profile,
     )
+    # Cria snapshot de contexto para rastreabilidade
+    # Como esta função não tem sessão/run/task, criamos um snapshot mínimo
+    # O chamador deve fornecer o contexto de execução se quiser persistência completa
     try:
-        resp = await observed_chat(provider, request, purpose="plan")
+        # Se estamos dentro de um contexto de observabilidade, usamos a sessão atual
+        from agent.observability import current
+        obs = current()
+        if obs is not None and obs.session is not None:
+            budget, snap = create_snapshot_for_inference(
+                obs.session,
+                project_id=obs.project_id,
+                task_id=obs.task_id,
+                run_id=obs.run_id,
+                profile=profile,
+                messages=request.messages,
+                purpose="gap_analysis",
+            )
+            with bind_snapshot(str(snap.id)):
+                resp = await observed_chat(provider, request, purpose="plan")
+        else:
+            resp = await observed_chat(provider, request, purpose="plan")
     except Exception:  # noqa: BLE001 — falha do modelo aqui não pode impedir o plano
         return []
     data, _err = parse_json_object(resp.content or "")
