@@ -39,6 +39,7 @@ from agent.orchestrator.execution.providers import (
     select_provider,
     supports_tool_loop,
 )
+from agent.orchestrator.execution.tool_results import TEST_TOOLS
 from agent.orchestrator.execution.writes import (
     WriteJournal,
     implicit_spec,
@@ -443,6 +444,31 @@ class ModelOperation:
             }
             tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
             done = await self._executor.finalize_verification(run, project, task, root_path)
+            done["thought"] = excerpt
+            return done
+        test_call = next(
+            (item for item in reversed(tool_log) if str(item.get("tool")) in TEST_TOOLS), None
+        ) if data is None else None
+        if test_call is not None:
+            # O modelo rodou a suíte no ciclo e não entregou escrita: a entrega desta etapa é o
+            # veredito dos testes. Exigir JSON transformava "executar os testes" em saída
+            # inválida repetida até a pausa (visto com o gpt-oss:20b no arquivo_grande). O
+            # veredito é medido de novo pelo portão, independente do que o modelo concluiu.
+            test_path = (test_call.get("args") or {}).get("path")
+            task.consolidated_result_json = {
+                "model_operation": True,
+                "tests_run": True,
+                "report": content.strip(),
+                "context_snapshot_id": str(snap.id),
+            }
+            tasks.update_status(task.id, TaskStatusUpdate(status=TaskStatus.VERIFYING))
+            done = await self._executor.finalize_verification(
+                run,
+                project,
+                task,
+                root_path,
+                implicit_spec={"type": "pytest", "path": test_path if isinstance(test_path, str) and test_path else "."},
+            )
             done["thought"] = excerpt
             return done
         # O orçamento efetivo de saída: o que o provedor pode gerar nesta chamada.

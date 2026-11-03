@@ -609,3 +609,82 @@ async def test_reescrita_inteira_de_arquivo_grande_e_recusada(tmp_path: Path):
     assert (await registry.execute("write_file", ctx, {"path": "small.py", "content": "a = 2\n"}))["success"]
     assert (await registry.execute("write_file", ctx, {"path": "novo.py", "content": big + big}))["success"]
     assert (await registry.execute("edit_file", ctx, {"path": "big.py", "old_string": "x1 = 1", "new_string": "x1 = 11"}))["success"]
+
+
+class _TestRunner:
+    """Modelo com ciclo de ferramentas: roda a suíte e responde em texto, sem escrita."""
+
+    name = "ollama"
+    last_usage = None
+
+    def __init__(self) -> None:
+        """Zera o contador de chamadas."""
+        self.calls = 0
+
+    def capabilities(self):
+        """Declara ferramentas e ciclo de ferramentas."""
+        from agent.providers.base import ProviderCapabilities
+
+        return ProviderCapabilities(tools=True, tool_loop=True)
+
+    async def chat(self, request):
+        """Primeiro pede `run_pytest`; depois relata o resultado em texto."""
+        from agent.providers.base import ToolCall
+
+        self.calls += 1
+        calls = [ToolCall(id="t1", name="run_pytest", arguments={})] if self.calls == 1 else []
+        content = "" if self.calls == 1 else "Os testes passaram."
+        return type(
+            "R",
+            (),
+            {"content": content, "tool_calls": calls, "reasoning": None,
+             "completion_tokens_estimate": 10, "prompt_tokens_estimate": 30},
+        )()
+
+
+@pytest.mark.asyncio
+async def test_etapa_de_executar_testes_entrega_o_veredito_e_nao_saida_invalida(tmp_path: Path, monkeypatch):
+    """Regressão da avaliação real (gpt-oss:20b, arquivo_grande): "executar testes" como operação
+    de modelo rodava a suíte, respondia em texto e era recusada como saída inválida até a pausa.
+    Agora a entrega é o veredito dos testes, medido de novo pelo portão."""
+    settings, factory, workspace = _env(tmp_path)
+    (workspace / "calc.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    (workspace / "test_calc.py").write_text("import calc\n\n\ndef test_add():\n    assert calc.add(2, 3) == 5\n", encoding="utf-8")
+    session = factory()
+    _, root, leaf, run = _leaf_under_root(
+        session, workspace, objective="Executar os testes unitários", metadata={"model_operation": True}
+    )
+    provider = _TestRunner()
+    monkeypatch.setattr("agent.orchestrator.runner._select_provider", lambda settings, config: provider)
+
+    log = await RunOrchestrator(session, settings).run_until_idle(run.id, max_steps=6)
+    actions = [x.get("action") for x in log]
+    assert "model_operation_invalid" not in actions, actions
+    task = session.get(TaskModel, leaf.id)
+    assert task.status == TaskStatus.COMPLETED.value
+    evs = _evidences(session, leaf.id)
+    assert evs[-1].verifier == "pytest" and evs[-1].passed is True
+    assert task.consolidated_result_json["tests_run"] is True
+
+
+@pytest.mark.asyncio
+async def test_etapa_de_testes_que_reprovam_segue_a_recuperacao(tmp_path: Path, monkeypatch):
+    """Se a suíte reprova, a etapa não conclui: o portão reprova e a recuperação assume."""
+    settings, factory, workspace = _env(tmp_path)
+    (workspace / "calc.py").write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+    (workspace / "test_calc.py").write_text("import calc\n\n\ndef test_add():\n    assert calc.add(2, 3) == 5\n", encoding="utf-8")
+    session = factory()
+    _, root, leaf, run = _leaf_under_root(
+        session, workspace, objective="Executar os testes unitários", metadata={"model_operation": True}
+    )
+    monkeypatch.setattr("agent.orchestrator.runner._select_provider", lambda settings, config: _TestRunner())
+
+    orch = RunOrchestrator(session, settings)
+    out = None
+    for _ in range(4):
+        out = await orch.step(run.id)
+        if out.get("action") in {"verify_failed", "verify_blocked", "blocked_loop"}:
+            break
+    assert out["action"] in {"verify_failed", "verify_blocked"}, out
+    assert session.get(TaskModel, leaf.id).status != TaskStatus.COMPLETED.value
+    assert _evidences(session, leaf.id)[-1].passed is False
