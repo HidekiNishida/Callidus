@@ -475,6 +475,130 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Auditoria da Fase Zero — arquitetura atual, pistas revalidadas, lacunas, o que é preservado, o que não será feito e a ordem de execução.
 
+### `docs/engineering/operating-model.md`
+
+**Propósito:** Modelo operacional: o fluxo pedido → atribuição → contexto → verificação → handoff → portões → revisão → indicadores, o PDCA e o que não existe de propósito.
+
+### `docs/engineering/organization.md`
+
+**Propósito:** Organograma: escritórios, equipes e as três dimensões independentes (hierarquia, papel, especialidade).
+
+### `docs/engineering/ownership.md`
+
+**Propósito:** Mapa de propriedade dos módulos, a regra de especificidade de `owner_of`, áreas protegidas e coordenação.
+
+### `docs/engineering/responsibilities.md`
+
+**Propósito:** Matriz dos 17 papéis com revisor padrão, separação entre execução, revisão e aprovação, e escalonamento.
+
+### `docs/engineering/work-contract.md`
+
+**Propósito:** Campos do contrato de trabalho (`metadata_json["work_item"]`), a origem de cada um e a seleção do responsável.
+
+### `docs/engineering/workflow.md`
+
+**Propósito:** Etapas do Kanban derivadas do `TaskStatus` e dos portões, e onde vê-las na interface.
+
+### `docs/engineering/quality-gates.md`
+
+**Propósito:** Portões G0–G4, o que é eliminatório, a independência da revisão e a avaliação em cinco dimensões.
+
+### `docs/engineering/metrics.md`
+
+**Propósito:** Indicadores de entrega com numerador e denominador, e o que não é medido de propósito.
+
+### `docs/engineering/knowledge-management.md`
+
+**Propósito:** Handoff estruturado entre agentes, consulta pelo `QueryService` e onde ficam decisões.
+
+### `docs/engineering/context-engineering.md`
+
+**Propósito:** A linha de responsabilidade no contexto da operação e o que fica fora do pacote de contexto.
+
+### `docs/engineering/benchmarking.md`
+
+**Propósito:** Cenários determinísticos A–J versus avaliação real no `lab/`, a regra de comparação e o estado da medição.
+
+### `docs/engineering/security-governance.md`
+
+**Propósito:** Proteções existentes, áreas protegidas acrescentadas pela organização e o CI remoto sem segredo.
+
+### `docs/engineering/final-audit.md`
+
+**Propósito:** Auditoria final da missão: arquitetura antes/depois, critérios atendidos e pendentes, testes, riscos e recomendações.
+
+## `docs/engineering/roles/`
+
+**Propósito:** Uma página por papel da organização (missão, equipe, autoridade, revisão, escalonamento), gerada a partir do catálogo `ROLES`.
+
+### `docs/engineering/roles/ai-engineer.md`
+
+**Propósito:** Perfil do papel `ai_engineer`.
+
+### `docs/engineering/roles/backend-developer.md`
+
+**Propósito:** Perfil do papel `backend_developer`.
+
+### `docs/engineering/roles/cto.md`
+
+**Propósito:** Perfil do papel `cto`.
+
+### `docs/engineering/roles/frontend-developer.md`
+
+**Propósito:** Perfil do papel `frontend_developer`.
+
+### `docs/engineering/roles/knowledge-engineer.md`
+
+**Propósito:** Perfil do papel `knowledge_engineer`.
+
+### `docs/engineering/roles/knowledge-steward.md`
+
+**Propósito:** Perfil do papel `knowledge_steward`.
+
+### `docs/engineering/roles/planner.md`
+
+**Propósito:** Perfil do papel `planner`.
+
+### `docs/engineering/roles/product-owner.md`
+
+**Propósito:** Perfil do papel `product_owner`.
+
+### `docs/engineering/roles/qa-engineer.md`
+
+**Propósito:** Perfil do papel `qa_engineer`.
+
+### `docs/engineering/roles/release-engineer.md`
+
+**Propósito:** Perfil do papel `release_engineer`.
+
+### `docs/engineering/roles/requirements-analyst.md`
+
+**Propósito:** Perfil do papel `requirements_analyst`.
+
+### `docs/engineering/roles/reviewer.md`
+
+**Propósito:** Perfil do papel `reviewer`.
+
+### `docs/engineering/roles/security-engineer.md`
+
+**Propósito:** Perfil do papel `security_engineer`.
+
+### `docs/engineering/roles/software-architect.md`
+
+**Propósito:** Perfil do papel `software_architect`.
+
+### `docs/engineering/roles/solutions-architect.md`
+
+**Propósito:** Perfil do papel `solutions_architect`.
+
+### `docs/engineering/roles/tech-lead.md`
+
+**Propósito:** Perfil do papel `tech_lead`.
+
+### `docs/engineering/roles/test-engineer.md`
+
+**Propósito:** Perfil do papel `test_engineer`.
+
 ## `docs/intelligence/`
 
 **Propósito:** Documentação do sistema de inteligência operacional e observabilidade — telemetria, analytics, grafo cognitivo, benchmarks, diagnósticos, API e frontend.
@@ -1252,6 +1376,43 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `InferenceType(StrEnum)` — : PLANNING, TASK_DECOMPOSITION, EXECUTION, TOOL_SELECTION, TOOL_RESULT_ANALYSIS, VERIFICATION, ERROR_CORRECTION, RECOVERY, RESEARCH, MEMORY_RETRIEVAL, CONTEXT_SUMMARIZATION, FINAL_RESPONSE, DIAGNOSTIC, CALIBRATION, OTHER.
 - `ContextComponentCategory(StrEnum)` — : SYSTEM_INSTRUCTIONS, AGENT_INSTRUCTIONS, TASK_INSTRUCTIONS, CONVERSATION_HISTORY, PARENT_AGENT_CONTEXT, CHILD_AGENT_CONTEXT, SHORT_TERM_MEMORY, LONG_TERM_MEMORY, KNOWLEDGE_RETRIEVAL, TOOL_DEFINITIONS, TOOL_CALLS, TOOL_RESULTS, FILES_AND_DOCUMENTS, CODE_CONTEXT, RESEARCH_RESULTS, COMPACTION_SUMMARIES, OUTPUT_FORMAT_AND_SCHEMAS, PROVIDER_METADATA, OTHER.
 
+### `src/agent/domain/organization.py`
+
+**Propósito:** Catálogo da organização de engenharia (escritórios, equipes, papéis, especialidades, propriedade dos módulos) e a seleção determinística do responsável, sem I/O.
+
+- `Team` — Equipe ou escritório: grupo de papéis com uma missão e uma área de código.
+- `Specialty` — Competência técnica. `skill_id` liga a competência a uma skill de `skills/`.
+- `Role` — Papel profissional que um agente lógico (ou o humano) pode assumir.
+- `OwnershipRule` — Regra de propriedade de um caminho.
+- `validate_catalog() → list[str]` — Confere a coerência do catálogo.
+- `_normalize(path) → str` — Caminho relativo com barras normais, sem `./` nem barra inicial.
+- `_specificity(rule, path) → int` — Quão bem a regra casa com o caminho (0 = não casa). Prefixo vence nome de pasta, que vence extensão.
+- `owner_of(path) → OwnershipRule | None` — Regra de propriedade mais específica de um caminho.
+- `reviewer_allowed(executor_role, reviewer_role) → bool` — Diz se `reviewer_role` pode aprovar o trabalho de `executor_role`.
+- `Assignment` — Resultado da seleção de responsável, com a justificativa rastreável.
+- `_module_of(rule, path) → str` — Nome do módulo afetado: o prefixo da regra, ou a pasta do arquivo nas regras genéricas.
+- `select_assignment(*, objective, paths, kind, lead_specialty) → Assignment` — Escolhe equipe, papel, revisor e especialidades de uma tarefa.
+- `Assignment.to_dict(self) → dict[str, Any]` — Forma serializável (JSON) da atribuição.
+
+### `src/agent/domain/work_flow.py`
+
+**Propósito:** Portões G0–G4, etapa do Kanban derivada do status e avaliação da entrega em cinco dimensões, a partir de um retrato da tarefa.
+
+- `WorkStage` — Etapa organizacional da tarefa, derivada do status e dos portões.
+- `GateVerdict` — Veredito de um portão: estado, verificações feitas e motivos de reprovação.
+- `WorkSnapshot` — Retrato da tarefa usado pelos portões. Montado do estado persistido pelo serviço.
+- `_norm(path) → str` — Caminho comparável: barras normais, sem `./`.
+- `out_of_scope(snapshot) → list[str]` — Arquivos alterados fora do escopo declarado (nada quando o escopo não foi declarado).
+- `_check(name, ok, detail, *, eliminatory) → dict[str, Any]` — Uma verificação de portão; `ok=None` quer dizer ainda não verificável.
+- `_state(checks) → tuple[str, list[str]]` — Estado do portão: reprova se uma eliminatória falhou, pendente se alguma não é verificável.
+- `_independent_reviews(snapshot) → list[dict[str, Any]]` — Revisões feitas por papel que pode revisar o executor (nunca o próprio executor).
+- `evaluate_gates(snapshot) → list[GateVerdict]` — Avalia os cinco portões da tarefa.
+- `_verdict(gate_id, name, checks) → GateVerdict` — Monta o veredito de um portão a partir das verificações.
+- `stage_for(snapshot, gates) → WorkStage` — Etapa organizacional atual, derivada do status e dos portões.
+- `evaluate_delivery(snapshot, gates) → dict[str, Any]` — Avaliação da entrega em cinco dimensões, sem média que esconda falha eliminatória.
+- `GateVerdict.to_dict(self) → dict[str, Any]` — Forma serializável (JSON) do veredito.
+- `gate_ok(gate_id) → bool | None`
+
 ### `src/agent/domain/failures.py`
 
 **Propósito:** Taxonomia de falhas do orquestrador, com categorias, causas, dicas de retentativa e detecção de resposta truncada. **Quando/onde:** Usado para classificar erros de ferramenta, provider, contexto e verificação e para montar o contexto de falhas da tentativa seguinte.
@@ -1982,6 +2143,11 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `src/agent/intelligence/analytics.py`
 
 **Propósito:** Agregação de métricas de desempenho e consumo a partir de registros persistidos. **Quando/onde:** Usado pela API para responder endpoints de métricas e pelo frontend para dashboards.
+
+- `_aware(value) → datetime` — Data com fuso (o SQLite devolve datas ingênuas, gravadas em UTC).
+- `AnalyticsService.delivery_metrics(self, *, project_id) → dict[str, Any]` — Indicadores de entrega: trabalho concluído **e comprovado**, retrabalho, regressão, revisão.
+- `ratio(metric_id, num, den, definition) → dict[str, Any]`
+- `latency(metric_id, values, definition) → dict[str, Any]`
 
 - `AnalyticsService` — Símbolo da classe — ver a descrição do arquivo.
 - `AnalyticsService.__init__(session: Session) -> None` — Cria o serviço ligado a uma sessão.
@@ -3276,6 +3442,31 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `RunService._usage(run: ExecutionRunModel) -> dict[str, Any]` — Consumo acumulado do run. A retomada não zera esse consumo e não amplia o teto de tokens; isso só acontece com autorização explícita.
 
+### `src/agent/services/organization_service.py`
+
+**Propósito:** Liga o catálogo organizacional ao banco: contrato de trabalho, revisão independente, handoff, portões e quadro; leituras calculam sem gravar.
+
+- `ReviewRejectedError` — Revisão recusada: decisão inválida ou revisor sem independência.
+- `_now() → str` — Instante atual em UTC, ISO 8601.
+- `_aware_iso(value) → str` — Data em ISO 8601 com fuso (o SQLite devolve datas ingênuas gravadas em UTC).
+- `responsibility_line(work_item) → str` — Uma linha com responsável, revisor e áreas que exigem coordenação, para o contexto da operação.
+- `OrganizationService` — Contrato de trabalho, atribuição, revisão, handoff e portões de uma tarefa.
+- `OrganizationService.__init__(self, session) → None` — Cria o serviço ligado a uma sessão.
+- `OrganizationService.directory(self, project_id) → dict[str, Any]` — Organograma, papéis, especialidades, propriedade e (opcional) quem ocupa cada papel.
+- `OrganizationService.owner(self, path) → dict[str, Any] | None` — Dono de um caminho, com equipe e papel por extenso.
+- `OrganizationService._task(self, task_id) → TaskModel` — Tarefa pelo id, ou `LookupError`.
+- `OrganizationService._scope_paths(self, task) → list[str]` — Escopo declarado da tarefa: `allowed_files`, ou os arquivos do contrato quando não houver.
+- `OrganizationService.assign(self, task, agent, *, persist) → dict[str, Any]` — Atribui (ou reatribui) a tarefa e grava o contrato de trabalho.
+- `OrganizationService.work_item(self, task_id) → dict[str, Any]` — Contrato de trabalho da tarefa, atribuído na hora se ainda não existir.
+- `OrganizationService._agent_for(self, task_id) → AgentModel | None` — Agente lógico da tarefa, quando já criado.
+- `OrganizationService.record_review(self, task_id, *, role, decision, reason, evidence_ids) → dict[str, Any]` — Registra a revisão de um papel independente.
+- `OrganizationService.build_handoff(self, task, *, next_owner) → dict[str, Any]` — Resumo estruturado para quem continua o trabalho, montado só do estado persistido.
+- `OrganizationService.record_handoff(self, task_id, *, next_owner) → dict[str, Any] | None` — Grava o handoff no agente da tarefa (sobrescreve o anterior: vale o estado mais recente).
+- `OrganizationService._evidences(self, task_id) → list[EvidenceModel]` — Evidências da tarefa em ordem cronológica.
+- `OrganizationService.snapshot(self, task) → WorkSnapshot` — Retrato da tarefa para os portões, lido do banco.
+- `OrganizationService.gates(self, task_id) → dict[str, Any]` — Portões, etapa do fluxo e avaliação da entrega de uma tarefa.
+- `OrganizationService.board(self, project_id, *, limit) → list[dict[str, Any]]` — Quadro do projeto: cada tarefa com etapa, responsável, revisor e portões resumidos.
+
 ### `src/agent/services/approval_service.py`
 
 **Propósito:** Aprovação granular de operações arriscadas — pedir, decidir, consumir e auditar. **Quando/onde:** no registro de ferramentas (na hora da execução) e nas rotas de aprovação.
@@ -4038,6 +4229,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - Arquivo: [observe-with-narration.json](/tests/web/fixtures/observe-with-narration.json)
 
+### `tests/web/organization.test.mjs`
+
+**Propósito:** Verifica que a aba Organização mostra indicador indisponível como indisponível e rotula todos os portões e etapas.
+
 ### `tests/web/usage-format.test.mjs`
 
 **Propósito:** Verificar que a interface distingue uso informado, estimativa, parcial e ausência, e que o alerta de teto não se confunde com a janela.
@@ -4630,6 +4825,20 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `web/README.md`
 
 **Propósito:** Índice da pasta `web/` (SPA estática, build, assets).
+
+### `src/agent/api/organization_routes.py`
+
+**Propósito:** Rotas finas da organização: organograma, dono de caminho, quadro, contrato de trabalho, portões, revisões, handoff e indicadores de entrega.
+
+- `ReviewCreate` — Pedido de revisão independente.
+- `organization(project_id, session) → dict[str, Any]` — Organograma, papéis, especialidades, propriedade e os agentes do projeto por papel.
+- `owner(path, session) → dict[str, Any]` — Dono de um caminho do projeto (`owner: null` quando não há regra).
+- `board(project_id, session) → list[dict[str, Any]]` — Quadro do projeto: etapa, responsável, revisor e portões de cada tarefa.
+- `work_item(task_id, session) → dict[str, Any]` — Contrato de trabalho da tarefa (atribuído na hora se ainda não existir).
+- `gates(task_id, session) → dict[str, Any]` — Portões G0–G4, etapa do fluxo e avaliação da entrega em cinco dimensões.
+- `create_review(task_id, body, session) → dict[str, Any]` — Registra a revisão de um papel independente; a reprovação bloqueia a integração.
+- `handoff(task_id, session) → dict[str, Any]` — Handoff estruturado da tarefa, montado agora a partir do estado persistido.
+- `delivery_metrics(project_id, session) → dict[str, Any]` — Indicadores de entrega com numerador, denominador e tipo de medida.
 
 ### `src/agent/api/agent_routes.py`
 
@@ -5329,6 +5538,37 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** agent_service — módulo do projeto.
 
+- `AgentService.get(self, agent_id) → AgentModel` — Agente por identificador.
+- `AgentService.find(self, agent_id) → AgentModel | None` — Agente por identificador, sem erro quando não existe.
+- `AgentService.agent_for_task(self, task_id) → AgentModel | None` — Agente associado a uma tarefa.
+- `AgentService.children(self, agent_id) → list[AgentModel]` — Delegados diretos de um agente.
+- `AgentService.descendants(self, agent_id) → list[AgentModel]` — Descendentes em ordem de profundidade (o mais perto primeiro).
+- `AgentService.ancestors(self, agent_id) → list[AgentModel]` — Cadeia de ancestrais, do mais distante para o mais próximo.
+- `AgentService.executions(self, agent_id) → list[AgentExecutionModel]` — Execuções de um agente, da mais antiga para a mais recente.
+- `AgentService.current_execution(self, agent_id) → AgentExecutionModel | None` — Execução viva ou recuperável do agente (a última em aberto).
+- `AgentService.ensure_agent(self, task_id, *, parent_agent_id, role, instructions) → AgentModel` — Agente da tarefa, criado se ainda não existir.
+- `AgentService._set_agent_status(self, agent, target) → AgentModel` — Move o agente para um novo estado, validando a transição.
+- `AgentService._set_execution_status(self, execution, target, error) → AgentExecutionModel` — Move a execução para um novo estado, validando a transição.
+- `AgentService.start_execution(self, agent_id, *, task_id, run_id, checkpoint) → AgentExecutionModel` — Abre uma execução do agente.
+- `AgentService.suspend(self, agent_id, *, reason, checkpoint) → AgentExecutionModel` — Suspende a execução: persiste o estado e libera o contexto de inferência.
+- `AgentService.resume(self, agent_id) → AgentExecutionModel` — Retoma a execução suspensa a partir do estado persistido.
+- `AgentService.wait_for_child(self, agent_id) → AgentExecutionModel` — A execução fica esperando uma resposta de descendente.
+- `AgentService.complete_execution(self, agent_id, *, result) → AgentExecutionModel` — Encerra a execução como concluída, gravando o resultado no checkpoint.
+- `AgentService.fail_execution(self, agent_id, error) → AgentExecutionModel` — Encerra a execução como falhada, guardando a causa.
+- `AgentService.cancel_execution(self, agent_id, *, reason) → AgentExecutionModel` — Cancela a execução em andamento.
+- `AgentService.save_checkpoint(self, agent_id, payload, *, merge) → AgentExecutionModel` — Grava o estado operacional da execução (etapa, plano, pendências, erros).
+- `AgentService.bound_checkpoint(self, checkpoint) → dict[str, Any]` — Mantém o checkpoint dentro do limite configurado.
+- `AgentService.checkpoint(self, agent_id) → dict[str, Any]` — Checkpoint atual do agente.
+- `AgentService.record_finding(self, agent_id, text, *, evidence, artifacts, kind) → dict[str, Any]` — Guarda uma descoberta do agente no estado persistente.
+- `AgentService.findings(self, agent_id) → list[dict[str, Any]]` — Descobertas registradas pelo agente.
+- `AgentService.record_task_result(self, task_id) → list[dict[str, Any]]` — Importa o resultado e as evidências de uma tarefa para o agente dela.
+- `AgentService.record_external_effect(self, agent_id, *, description, effect_id, resumable, verify_hint) → dict[str, Any]` — Registra um efeito externo (comando, sessão, transação) que a execução fez.
+- `AgentService.external_effects(self, agent_id) → list[dict[str, Any]]` — Efeitos externos registrados pelo agente.
+- `AgentService.effects_requiring_verification(self, agent_id) → list[dict[str, Any]]` — Efeitos externos que precisam ser verificados antes de a ação ser repetida.
+- `AgentService.mark_effect_verified(self, agent_id, effect_id) → dict[str, Any] | None` — Marca um efeito externo como verificado.
+- `AgentService.discard_checks(self, agent_id) → dict[str, Any]` — Verifica o que impede descartar o agente agora.
+- `AgentService.discard(self, agent_id, *, purge, reason, force) → dict[str, Any]` — Descarta o estado recuperável do agente.
+
 - `AgentNotFoundError` — Agente inexistente.
 - `AgentDepthError` — A delegação passaria do limite de profundidade configurado.
 - `DiscardBlockedError` — Descartar o agente agora quebraria algo que ainda é necessário.
@@ -5579,6 +5819,15 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `onClick`
 - `onSearch`
 - `bump`
+
+### `web/static/assets/app/components/intelligence-organization.js`
+
+**Propósito:** Aba Organização da Inteligência: quadro com etapa, responsável, revisor e portões; detalhe dos portões; revisão independente; indicadores de entrega; equipes e propriedade.
+
+- `formatMetric`
+- `load`
+- `open`
+- `submitReview`
 
 ### `web/static/assets/app/components/intelligence-agents.js`
 
@@ -6290,6 +6539,14 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `tests/fixtures/sample_project/tests/test_calc.py`
 
 **Propósito:** Documento do projeto..
+
+### `tests/test_organization.py`
+
+**Propósito:** Verifica as regras puras da organização: catálogo coerente, propriedade, seleção do responsável, independência da revisão, portões e etapas.
+
+### `tests/test_organization_api.py`
+
+**Propósito:** Verifica pela API os cenários de aceitação A–J da organização (contrato, especialização, handoff, falha, revisão, arquitetura, retomada, autoavaliação, contexto, entrega completa) e que ler o quadro não grava.
 
 ### `tests/test_agent_api.py`
 

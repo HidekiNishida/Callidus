@@ -75,6 +75,15 @@ const IntelligenceBenchmarks = defineAsyncComponent({
   },
 });
 
+const IntelligenceOrganization = defineAsyncComponent({
+  loader: () =>
+    import("./components/intelligence-organization.js").then((m) => m.IntelligenceOrganization),
+  errorComponent: {
+    template:
+      '<div class="boot warn"><span>Módulo de organização indisponível no momento.</span></div>',
+  },
+});
+
 const IntelligenceContextConsumption = defineAsyncComponent({
   loader: () =>
     import("./components/intelligence-pages.js").then((m) => m.IntelligenceContextConsumption),
@@ -120,6 +129,7 @@ const App = {
     IntelligenceDiagnostics,
     IntelligenceBenchmarks,
     IntelligenceContextConsumption,
+    IntelligenceOrganization,
     IntelligenceEngineering,
     IntelligenceResources,
     IntelligenceAgents,
@@ -148,7 +158,7 @@ const App = {
       remoteBusy: false,
     });
 
-    const intelligenceSubView = ref("overview"); // overview, performance, reasoning, knowledge, diagnostics, benchmarks, engineering, resources, agents, optimization
+    const intelligenceSubView = ref("overview"); // overview, performance, reasoning, knowledge, diagnostics, benchmarks, engineering, resources, agents, optimization, consumo, organization
 
     /**
      * Emite um evento de diagnóstico de boot para o guarda externo
@@ -750,6 +760,14 @@ const App = {
                   >
                     <span v-html="icon('layers', 15)"></span><span>Consumo de Contexto</span>
                   </button>
+                  <button
+                    role="tab"
+                    :class="{ active: intelligenceSubView === 'organization' }"
+                    @click="setIntelligenceSubView('organization')"
+                    aria-selected="intelligenceSubView === 'organization'"
+                  >
+                    <span v-html="icon('layout', 15)"></span><span>Organização</span>
+                  </button>
                 </nav>
                 <div class="intelligence-sub-views">
                   <div v-if="intelligenceSubView === 'overview'" key="intelligence-overview">
@@ -784,6 +802,9 @@ const App = {
                   </div>
                   <div v-else-if="intelligenceSubView === 'consumo'" key="intelligence-consumo">
                     <IntelligenceContextConsumption />
+                  </div>
+                  <div v-else-if="intelligenceSubView === 'organization'" key="intelligence-organization">
+                    <IntelligenceOrganization />
                   </div>
                 </div>
               </div>

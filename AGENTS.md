@@ -47,6 +47,8 @@ O agente não depende de memória: o estado e a fila estão escritos. Em toda se
    tarefa em `plan/execution-plan.md` §3 e o checklist da atividade em
    [`internal/tarefas/`](/docs/regras/checklists-tarefas.md). `plan/` é local e está no `.gitignore`.
 3. Leia o [hub de regras](/docs/regras/README.md) e só os ramos que a tarefa pede.
+   O modelo operacional (papéis, propriedade dos módulos, portões) está em
+   [`docs/engineering/`](/docs/engineering/README.md); confira o dono do caminho antes de mexer em área protegida.
 4. Siga o protocolo de `plan/execution-plan.md` §7: orientar → planejar → implementar + testar →
    verificar (`python scripts/ci.py`) → registrar → comitar e publicar. **Não pare para perguntar**,
    exceto nas decisões do [§17](#17-decisões-do-dono).

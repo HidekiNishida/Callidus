@@ -4,7 +4,7 @@ Tudo o que falta no Callidus, ranqueado pelo quanto bloqueia quem o usa para des
 
 Voltar: [docs/progresso/](/docs/progresso/README.md) · Formato: [progresso.md](/docs/regras/progresso.md)
 
-> **Revisado em:** 2026-10-22 · **Atualizado em:** 2026-10-22 · **Mudança:** minor (adaptação ao qwen3:8b; G1 e G11 atualizados)
+> **Revisado em:** 2026-10-22 · **Atualizado em:** 2026-11-03 · **Mudança:** minor (G6 e G7 atualizados pela organização de engenharia)
 
 É a fila de trabalho: sem tarefa dada, pegue o **maior rank em que consiga avançar** e atualize a entrada na mesma entrega. Os ids (`G1`, `G2`…) são estáveis; o rank muda. As fontes desta primeira versão são [limitacoes.md](/docs/architecture/limitacoes.md), [diagnostico-evolucao.md](/docs/architecture/diagnostico-evolucao.md), a [avaliação reproduzível](/docs/architecture/avaliacao.md) e a auditoria de 2026-10-21 (`.cursor/CALLIDUS_AUDITORIA.md`, `.cursor/CALLIDUS_DESCOBERTAS.md`). Todas as horas são *estimadas*.
 
@@ -60,13 +60,13 @@ Fora de escopo por decisão registrada: serializar inferência entre **processos
 
 ## G6 Fiscais automáticos das regras de engenharia
 
-- **Faltando:** CI remoto (GitHub Actions) — adiado por decisão do dono; `ruff` não está nas dependências `dev` nem tem configuração no `pyproject.toml`; nenhum teste impede o domínio de importar FastAPI/SQLAlchemy (AGENTS.md §2); nenhum fiscal garante testes sem rede; `scripts/padronizar_cabecalhos.py --check` sai com 0 mesmo quando falta cabeçalho.
-- **Feito:** comando único `python scripts/ci.py` agregando lint, cabeçalhos, documentação, `resume.md`, interface e suíte Python; caminhos absolutos do Mac trocados por caminhos do repositório em `internal/tarefas/`, para a verificação de referências passar em qualquer máquina (2026-10-21).
+- **Faltando:** proteção de branch exigindo o check do CI (decisão do dono); um fiscal geral de camadas (o teste de importação cobre só `domain/organization.py` e `domain/work_flow.py`); nenhum fiscal garante testes sem rede; `scripts/padronizar_cabecalhos.py --check` sai com 0 mesmo quando falta cabeçalho.
+- **Feito:** comando único `python scripts/ci.py` agregando lint, cabeçalhos, documentação, `resume.md`, interface e suíte Python; caminhos absolutos do Mac trocados por caminhos do repositório em `internal/tarefas/`, para a verificação de referências passar em qualquer máquina (2026-10-21). CI remoto em `.github/workflows/ci.yml` rodando `scripts/ci.py` com permissão só de leitura, `ruff` no grupo `[dev]`, checagem de sintaxe e importações da SPA no comando único (2026-11-03).
 
 ## G7 Seleção lexical de skills, estratégia e consulta
 
 - **Faltando:** skills ativadas por palavra-chave; estratégia por domínios fixos; consulta entre agentes por busca lexical (13/15, 0 falsos positivos — *medido*); verificação de lastro também lexical ([limitacoes.md](/docs/architecture/limitacoes.md), itens 10, 11 e 17).
-- **Feito:** catálogo de skills recarregável e medição de consulta (`scripts/medir-hierarquia.py`).
+- **Feito:** catálogo de skills recarregável e medição de consulta (`scripts/medir-hierarquia.py`). Papel e especialidades de cada agente gravados em `metadata_json["assignment"]` ([work-contract.md](/docs/engineering/work-contract.md)), ainda não usados pelo `QueryService` para rotear (2026-11-03).
 
 ## G8 Grafo de conhecimento multi-linguagem
 

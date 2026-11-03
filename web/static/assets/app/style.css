@@ -4118,3 +4118,41 @@ pre,
   .node-panel { animation: none; }
   .history-panel { animation: none; }
 }
+
+/* Organização: chips dos portões G0–G4, quadro e formulário de revisão. */
+.gate-chips { white-space: nowrap; }
+.gate-chip {
+  display: inline-block;
+  min-width: 26px;
+  margin-right: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 10.5px;
+  text-align: center;
+  color: var(--muted);
+}
+.gate-chip.gate-passed { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.gate-chip.gate-failed { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.gate-chip.gate-pending { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.org-row { cursor: pointer; }
+.org-row.active td, .org-row:focus-visible td { background: var(--accent-soft); }
+.org-gates, .org-offices { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.org-checks { list-style: none; padding: 0; margin: 6px 0 12px; }
+.org-checks li { padding: 2px 0; }
+.org-checks .ok { color: var(--ok); }
+.org-checks .bad { color: var(--danger); }
+.org-team ul { margin: 4px 0 10px 18px; padding: 0; }
+.org-review { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-top: 8px; }
+.org-review label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.org-review .org-reason { flex: 1 1 220px; }
+.org-review input, .org-review select {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+}
+.status-badge.stage-DONE, .status-badge.stage-INTEGRATED { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.status-badge.stage-REWORK, .status-badge.stage-FAILED, .status-badge.stage-BLOCKED { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.status-badge.stage-TECHNICAL_AUDIT, .status-badge.stage-QA_REVIEW, .status-badge.stage-ARCHITECTURE_REVIEW { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
