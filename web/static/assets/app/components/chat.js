@@ -372,8 +372,15 @@ export const ChatView = {
       try {
         const detail = await loadInferenceDetail(inferenceId);
         let components = null;
-        if (detail && !Array.isArray(detail.components)) {
+        // Carrega componentes se: não há detail, detail.components não é array,
+        // ou é array vazio (pode significar que o backend não incluiu na resposta detalhada)
+        const needsComponents = !detail ||
+          !Array.isArray(detail.components) ||
+          (Array.isArray(detail.components) && detail.components.length === 0);
+        if (needsComponents) {
           components = await loadInferenceComponents(inferenceId);
+        } else {
+          components = detail.components;
         }
         // Sem registro no banco, o item mostra o que o próprio evento sabe — e não
         // fica em "carregando" para sempre.
@@ -520,6 +527,39 @@ export const ChatView = {
     function removeAttachment(index) {
       state.attachments.splice(index, 1);
     }
+
+    // Computed properties for context utilization bar
+    const contextUtilization = Vue.computed(() => {
+      const ctx = state.currentInferenceContext;
+      if (!ctx) return null;
+      const window = ctx.context_limit;
+      const tokens = ctx.tokens_used_for_occupancy ?? ctx.reported_input_tokens?.value ?? ctx.estimated_input_tokens?.value;
+      if (!window || !tokens) return null;
+      const pct = Math.min(100, Math.round((tokens / window) * 100));
+      const measurement = ctx.window_occupancy_measurement || ctx.measurement || 'estimate';
+      return { window, tokens, pct, measurement, ctx };
+    });
+
+    const contextUtilizationPct = Vue.computed(() => contextUtilization.value?.pct ?? 0);
+    const contextUtilizationColor = Vue.computed(() => {
+      const pct = contextUtilizationPct.value;
+      if (pct >= 90) return '#ef4444';
+      if (pct >= 70) return '#f59e0b';
+      return '#10b981';
+    });
+    const contextUtilizationText = Vue.computed(() => {
+      const c = contextUtilization.value;
+      if (!c) return 'Contexto: indisponível';
+      const measurementLabel = c.measurement === 'exact' ? 'real' : c.measurement === 'estimate' ? 'estimativa' : c.measurement === 'partial' ? 'parcial' : 'sem medição';
+      return `${c.tokens.toLocaleString()} / ${c.window.toLocaleString()} tokens (${c.pct}%) · ${measurementLabel}`;
+    });
+    const contextUtilizationTooltip = Vue.computed(() => {
+      const c = contextUtilization.value;
+      if (!c) return 'Nenhuma inferência registrada';
+      const measurementLabel = c.measurement === 'exact' ? 'Contagem real do provedor' : c.measurement === 'estimate' ? 'Estimativa local' : c.measurement === 'partial' ? 'Medição parcial' : 'Sem medição';
+      const source = c.ctx.context_limit_source || 'desconhecida';
+      return `Janela de contexto: ${source}\n${measurementLabel}`;
+    });
 
     return {
       state,
@@ -882,12 +922,16 @@ export const ChatView = {
         <span class="context-chip" v-if="changedFiles.length">
           <span v-html="icon('file', 12)"></span>{{ changedFiles.length }} arquivo(s) alterado(s)
         </span>
-        <span
-          v-if="state.runMetrics && (state.runMetrics.tokens.total_tokens || 0) > 0"
-          class="context-chip"
-        >
+        <div v-if="state.currentInferenceContext" class="context-chip context-utilization" :title="contextUtilizationTooltip">
           <span v-html="icon('spark', 12)"></span>
-          {{ state.runMetrics.tokens.total_tokens }} token(es)
+          <span class="utilization-bar" :style="{ width: '100%' }">
+            <span class="utilization-fill" :style="{ width: contextUtilizationPct + '%', backgroundColor: contextUtilizationColor }"></span>
+          </span>
+          <span class="utilization-text">{{ contextUtilizationText }}</span>
+        </div>
+        <span v-else-if="state.runMetrics && (state.runMetrics.tokens.total_tokens || 0) > 0" class="context-chip">
+          <span v-html="icon('spark', 12)"></span>
+          {{ state.runMetrics.tokens.total_tokens }} token(es) (acumulado)
         </span>
 
         <div

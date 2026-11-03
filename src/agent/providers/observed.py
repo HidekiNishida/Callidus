@@ -17,6 +17,8 @@ import uuid
 from agent.observability import current, emit
 from agent.observability.batching import DeltaBatcher
 from agent.observability.narration import NarrationStream, narrates
+from agent.orchestrator.ledger import _SNAPSHOT
+from agent.persistence.models import InferenceRecordModel
 from agent.providers.base import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -156,7 +158,7 @@ async def observed_chat(
         failed_call: bool = False,
         timeout: bool = False,
         error: str = "",
-    ) -> None:
+    ) -> InferenceRecordModel | None:
         """Grava a inferência assim que a resposta ou a falha existe.
 
         Args:
@@ -170,7 +172,8 @@ async def observed_chat(
             necessário para correlacionar o evento de desfecho com o snapshot de
             contexto vinculado.
         """
-        from agent.persistence.models import InferenceRecordModel
+        from agent.context.snapshot_builder import create_snapshot_for_inference
+        from agent.orchestrator.ledger import bind_snapshot
         reporting = False
         capabilities = getattr(provider, "capabilities", None)
         if callable(capabilities):
@@ -206,6 +209,22 @@ async def observed_chat(
         # Decisões do adaptador (janela pedida, saturação, correções de formato): é o que
         # permite dizer, depois, se uma resposta ruim veio de um prompt cortado pelo servidor.
         adapter_meta = raw.get("callidus") if isinstance(raw, dict) and isinstance(raw.get("callidus"), dict) else None
+
+        # Extrai a janela de contexto efetiva do adaptador (ex.: num_ctx do Ollama)
+        context_window_size = None
+        if adapter_meta and isinstance(adapter_meta, dict):
+            num_ctx = adapter_meta.get("num_ctx")
+            if num_ctx is not None:
+                try:
+                    context_window_size = int(num_ctx)
+                except (TypeError, ValueError):
+                    pass
+        if context_window_size is None and getattr(request.profile, "context_limit", None):
+            try:
+                context_window_size = int(request.profile.context_limit)
+            except (TypeError, ValueError):
+                pass
+
         from agent.orchestrator.inference_usage import estimate_cost
         from agent.persistence.models import ExecutionRunModel
 
@@ -214,6 +233,34 @@ async def observed_chat(
         cost, cost_quality = estimate_cost(prices if isinstance(prices, dict) else {}, provider.name, parsed_prompt, parsed_completion)
         row = None
         try:
+            # Se não há snapshot vinculado, cria um a partir das mensagens da requisição
+            # Isso garante que cada inferência tenha sua própria composição
+            snapshot_id = _SNAPSHOT.get()
+            if snapshot_id is None:
+                try:
+                    budget, snap = create_snapshot_for_inference(
+                        obs.session,
+                        project_id=obs.project_id,
+                        task_id=obs.task_id,
+                        run_id=obs.run_id,
+                        profile=request.profile,
+                        messages=request.messages,
+                        purpose=purpose,
+                    )
+                    snapshot_id = str(snap.id)
+                except ValueError:
+                    # Para propósitos que exigem task/root_path (ex.: "operation") sem ter
+                    # esses dados disponíveis, cai para um snapshot genérico baseado nas mensagens.
+                    budget, snap = create_snapshot_for_inference(
+                        obs.session,
+                        project_id=obs.project_id,
+                        task_id=obs.task_id,
+                        run_id=obs.run_id,
+                        profile=request.profile,
+                        messages=request.messages,
+                        purpose="plan",
+                    )
+                    snapshot_id = str(snap.id)
             row = record_inference(
                 obs.session,
                 idempotency_key=f"{obs.run_id}:{output_id}",
@@ -236,7 +283,7 @@ async def observed_chat(
                 cache_write_tokens=cache_write,
                 estimated_prompt_tokens=estimated_prompt,
                 estimated_completion_tokens=estimated_completion,
-                context_window_size=int(request.profile.context_limit) if getattr(request.profile, "context_limit", None) else None,
+                context_window_size=context_window_size,
                 tokenizer_version=TOKENIZER_VERSION,
                 tokenizer_strategy=TOKENIZER_STRATEGY,
                 cost_usd=cost,

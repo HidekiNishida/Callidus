@@ -110,34 +110,59 @@ def _matches(row: InferenceRecordModel, filters: dict[str, str]) -> bool:
     return True
 
 
-def _window_limit(run: ExecutionRunModel | None, basis: int | None, basis_quality: str) -> dict[str, Any]:
+def _window_limit(
+    run: ExecutionRunModel | None,
+    basis: int | None,
+    basis_quality: str,
+    *,
+    context_window_size: int | None = None,
+    prompt_tokens: int | None = None,
+    measurement: str | None = None,
+) -> dict[str, Any]:
     """Janela de contexto conhecida e a ocupação dela pela chamada.
 
     Args:
         run: execução da chamada, quando existe.
         basis: tokens da entrada usada na conta (estimativa, senão o informado).
         basis_quality: qualidade desse número.
+        context_window_size: tamanho da janela de contexto do modelo (do registro de inferência).
+        prompt_tokens: tokens de entrada informados pelo provedor.
+        measurement: qualidade da medição do registro.
 
     Returns:
         O limite e a ocupação. Sem base numérica, a ocupação fica indisponível.
     """
-    config = run.config_json if run is not None and isinstance(run.config_json, dict) else {}
-    if isinstance(config, dict) and config.get("context_limit"):
-        limit = int(config["context_limit"])
+    limit = None
+    source = None
+    if context_window_size and context_window_size > 0:
+        limit = context_window_size
+        source = "janela do modelo (registro de inferência)"
+    elif run is not None and isinstance(run.config_json, dict) and run.config_json.get("context_limit"):
+        limit = int(run.config_json["context_limit"])
         source = "configuração da execução"
     else:
         limit = int(active_settings().default_context_limit)
         source = "padrão do processo"
+
     occupancy = None
     quality = "unavailable"
-    if limit > 0 and basis is not None:
-        occupancy = int(basis) / limit
+    tokens_for_occupancy = None
+    if prompt_tokens is not None:
+        tokens_for_occupancy = prompt_tokens
+        quality = measurement or "exact"
+    elif basis is not None:
+        tokens_for_occupancy = int(basis)
         quality = basis_quality
+
+    if limit and limit > 0 and tokens_for_occupancy is not None:
+        occupancy = tokens_for_occupancy / limit
+
     return {
         "context_limit": limit or None,
         "context_limit_source": source,
         "window_occupancy": occupancy,
         "window_occupancy_measurement": quality,
+        "tokens_used_for_occupancy": tokens_for_occupancy,
     }
 
 
@@ -378,7 +403,14 @@ def build_usage_view(
         "notes": window.get("notes") or [],
         "method": window.get("method"),
         "snapshot_id": window.get("snapshot_id"),
-        **_window_limit(run, estimated if estimated is not None else reported_prompt, "estimate" if estimated is not None else (latest.measurement if latest else "unavailable")),
+        **_window_limit(
+            run,
+            estimated if estimated is not None else reported_prompt,
+            "estimate" if estimated is not None else (latest.measurement if latest else "unavailable"),
+            context_window_size=latest.context_window_size if latest is not None else None,
+            prompt_tokens=latest.prompt_tokens if latest is not None else None,
+            measurement=latest.measurement if latest is not None else None,
+        ),
     }
     cost_values = [float(row.cost_usd) for row in selected if row.cost_usd is not None]
     if not cost_values:

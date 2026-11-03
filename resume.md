@@ -1350,7 +1350,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `SnapshotBuilder.build_automation_snapshot(*, project_id, task_id, run_id, profile, messages, purpose="automation", components=None) -> tuple[BudgetResult, ContextSnapshotModel]` — Snapshot para operação de automação.
 - `SnapshotBuilder.build_agent_query_snapshot(*, project_id, task_id, run_id, profile, messages, purpose="agent_query", components=None) -> tuple[BudgetResult, ContextSnapshotModel]` — Snapshot para consulta de agente (`query_service.py`).
 - `_group_categories(selected: list) -> list[dict]` — Agrupa componentes por categoria para `categories_json` do snapshot; aceita objetos `ContextComponent` e dicionários.
-- `SnapshotBuilder._budget_from_messages(profile: ModelProfile, messages: list, purpose: str, components: list[ContextComponent] | None=None) -> BudgetResult` — Reconstrói um `BudgetResult` a partir de mensagens; se `components` for fornecido, usa eles para popular `selected` e `categories_json`. Caso contrário, cria budget sintético com estimativa de tokens por caracteres.
+- `SnapshotBuilder._budget_from_messages(profile: ModelProfile, messages: list, purpose: str, components: list[ContextComponent] | None=None) -> BudgetResult` — Reconstrói um `BudgetResult` a partir de mensagens; se `components` for fornecido, usa eles para popular `selected` e `categories_json`. Caso contrário, reconstrói componentes a partir das mensagens efetivamente enviadas, classificando cada mensagem por papel (`system` → `instructions`, `user` → `objective`, `assistant` → `history`, `tool` → `tool_results`) via `_role_to_category`, garantindo composição não vazia quando existem mensagens.
+- `_role_to_category(role: str) -> str` — Mapeia papel da mensagem para categoria de composição: `system` → `instructions`, `user` → `objective`, `assistant` → `history`, `tool` → `tool_results`, demais → `other`. Usado pela reconstrução de componentes em `_budget_from_messages`.
 - `create_snapshot_for_inference(session, *, project_id, task_id, run_id, profile, messages, purpose, task=None, root_path=None, settings=None, compact=False, components=None) -> tuple[BudgetResult, ContextSnapshotModel]` — Factory que escolhe o construtor apropriado baseado na finalidade; usada por todos os caminhos de inferência para criar e persistir o snapshot antes do `bind_snapshot`.
 
 ## `src/agent/domain/`
@@ -2705,6 +2706,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `_answered(task: TaskModel) -> bool` — Indica se a tarefa já entregou resposta final com Markdown não vazio em `consolidated_result_json`. Entrada: modelo da tarefa; saída: booleano.
 - `_items(text: str | None) -> list[str]` — Extrai os itens de lista (marcadores `-`/`*`/`•` ou numeração) de um texto. Entrada: texto; saída: lista de itens.
+- `_loose_lines(text: str | None) -> list[str]` — Divide um texto em linhas não vazias, removendo espaços nas pontas. Entrada: texto; saída: lista de linhas limpas.
 - `_passed_current(session: Session, task_id: uuid.UUID) -> list[EvidenceModel]` — Lista as evidências da tarefa que passaram e cujo fingerprint de artefatos ainda é atual. Entrada: sessão e id da tarefa; saída: lista de `EvidenceModel`.
 - `_subtree(session: Session, root: TaskModel) -> list[TaskModel]` — Devolve as tarefas descendentes da raiz, no mesmo projeto, fechando a relação `parent_id` iterativamente. Entrada: sessão e tarefa raiz; saída: lista de `TaskModel`.
 - `derive_requirements(objective: str, acceptance_criteria: str | None=None) -> list[dict[str, Any]]` — Deriva requisitos determinísticos (R1..Rn) dos itens enumerados do objetivo e das linhas dos critérios de aceite; sem itens, o objetivo inteiro vira R1. Entrada: objetivo e critérios; saída: lista de requisitos com descrição, origem, critério e tipo de evidência.
@@ -3272,6 +3274,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 - `PathSecurityError(ValueError)` — exceção de path fora do escopo.
 - `resolve_under_root(root: str | Path, user_path: str) -> Path` — normaliza, resolve symlinks, verifica `candidate.relative_to(root)`, levanta `PathSecurityError` se fora.
+- `_absolute_without_slash(root: str | Path, root_resolved: Path, user_path: str) -> Path | None` — Converte um caminho relativo do usuário em absoluto dentro do root, sem adicionar barra final. Entrada: root, root resolvido, caminho do usuário; saída: Path absoluto ou None se inválido.
 
 ## `src/agent/services/`
 
@@ -3698,6 +3701,9 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `BrowserSession.call(action: str, args: dict, *, headed: bool, timeout: float=45) -> dict` — enfileira uma ação e espera o resultado da thread, devolvendo erro de tempo esgotado se ela não responder. Entrada: ação, argumentos, modo visível/headless e limite de espera; saída: dicionário de resultado ou `{"success": False, "error": "navegador demorou demais"}`.
 - `_watch_page(page, console_log: list[dict], network_log: list[dict]) -> None` — Registra console e respostas HTTP da página, sem cabeçalhos e com segredos redigidos.
 - `_act(page, action: str, args: dict, *, headed: bool, console_log: list[dict] | None=None, network_log: list[dict] | None=None) -> dict` — executa uma ação do Playwright (`navigate`, `snapshot`, `click`, `type`, `fill`, `press`, `scroll`, `screenshot`, `aria`, `console`, `network`) e devolve o resultado. Campo de senha não devolve o valor.
+- `_page_text(page, offset: int, limit: int) -> tuple[str, int]` — Extrai o texto acessível da página (ARIA) com paginação. Entrada: página Playwright, offset e limite de caracteres; saída: tupla com o texto extraído e o próximo offset.
+- `ask_ai(browser, args: dict, *, headed: bool, clock=None, sleep=None) -> dict` — Executa uma ação de IA no navegador (ex.: preencher formulário, clicar em elemento via descrição). Entrada: instância do BrowserSession, argumentos da ação, modo headed, clock opcional e sleep opcional; saída: dicionário com o resultado da ação.
+- `detect_wall(title: str, text: str) -> str | None` — Detecta se a página atual é um muro de pagamento, login ou bloqueio anti-bot. Entrada: título e texto da página; saída: string descrevendo o tipo de muro ou None se não detectado.
 - `_launch(playwright, headed: bool)` — abre o Chromium, preferindo o canal `chrome` e caindo para o Chromium embutido quando o primeiro falha. Entrada: contexto do Playwright e flag de janela visível; saída: objeto `Browser`.
 - `browser_call(action: str, args: dict, *, headed: bool) -> dict` — actions: `navigate`, `click`, `fill`, `screenshot`, `evaluate`, `select`, `hover`, `wait`, `close`.
 - `guard_url(url: str) -> str` — valida URL (https, não localhost/private).
@@ -3735,6 +3741,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_system_info(ctx: ToolContext, args: dict) -> dict` — descreve a máquina: sistema, release, arquitetura, versão do Python, usuário, pasta pessoal, hora local e raiz do workspace. Entrada: contexto; saída: dicionário com os dados do ambiente.
 - `_test_counts(stdout: str) -> dict[str, int]` — extrai do último resumo do pytest as quantidades de passed/failed/error/skipped. Entrada: stdout do pytest; saída: dicionário `{"passed": n, "failed": n, ...}`.
 - `_write_file(ctx: ToolContext, args: dict) -> dict` — grava o conteúdo no arquivo, criando diretórios quando preciso, remove o bytecode obsoleto e emite `file.created`/`file.changed` com o diff. Entrada: `path` e `content`; saída: dicionário com `bytes`, `created` e o diff. Recusa a reescrita inteira de arquivo existente com 150+ linhas (`LARGE_REWRITE_LINES`): a mudança vai por `edit_file`.
+- `_ask_external_ai(ctx: ToolContext, args: dict) -> dict` — Chama uma IA externa (via CLI) para tarefas de análise ou geração, delegando o contexto da ferramenta. Entrada: contexto da ferramenta e argumentos; saída: dicionário com a resposta da IA.
+- `_unescape_json_text(text: str) -> str` — Desfaz o escape de texto JSON (ex.: `\\n` → `\n`, `\\"` → `"`). Entrada: texto com escapes JSON; saída: texto sem escapes.
 - `python_for(project_root: str) -> str` — escolhe o interpretador do projeto: o `python` do `.venv`/`venv` se existir, senão o `sys.executable` do agente. Entrada: raiz do projeto; saída: caminho do interpretador. Quando `_run_command`, `_run_script` e `_run_pytest` montam o argv.
 - `register_all(registry: ToolRegistry) -> None` — registra todas builtins.
 - `_glob_scan(root: Path, pattern: str) -> dict` — escaneia arquivos do projeto correspondentes a um padrão glob.
@@ -3928,6 +3936,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `parse_json_object(text: str) -> tuple[dict[str, Any] | None, str | None]` — encontra primeiro `{`...`}` balanceado, tenta `json.loads`, se falha tenta reparar (aspas simples, trailing commas, etc.).
 - `write_payloads(text: str) -> list[dict[str, Any]]` — escritas (`path` + `content` ou `old_string`/`new_string`) em vários objetos JSON seguidos, inclusive embrulhadas como `{"name": "write_file"|"edit_file", "arguments": {...}}`.
 - `pick_write_payload(payloads: list[dict[str, Any]], hint: str) -> dict[str, Any] | None` — a escrita do arquivo citado na etapa; sem citação, só quando todas são do mesmo arquivo (senão `None`).
+- `split_multi_file_payloads(payloads: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]` — Separa um payload que contém múltiplos arquivos em payloads individuais por arquivo. Entrada: lista de payloads brutos; saída: tupla com o payload principal (primeiro arquivo) e lista dos payloads dos demais arquivos.
 
 ## `src/agent/verification/`
 
@@ -6179,6 +6188,7 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `loadContextConsumptionOpportunities(runId, projectId)` — Carrega oportunidades de otimização via `/api/intelligence/context-consumption/opportunities` e armazena em `state.contextConsumptionOpportunities`.
 - `loadInferenceDetail(inferenceId)` — Carrega detalhe de uma inferência individual via `/api/intelligence/inferences/{id}` e armazena em `state.inferenceDetail`.
 - `loadInferenceComponents(inferenceId)` — Carrega composição do contexto de uma inferência via `/api/intelligence/inferences/{id}/components` e armazena em `state.inferenceComponents`.
+- `loadInferenceContext(taskId)` — Carrega a utilização de contexto da inferência mais recente da tarefa via `/tasks/{taskId}/usage` e armazena em `state.currentInferenceContext` para a barra de contexto dinâmica.
 
 ### `web/static/assets/app/components/intelligence-graph.js`
 
@@ -6346,6 +6356,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 ### `lab/avaliar.py`
 
 **Propósito:** Avaliação reproduzível do Callidus com o modelo local de referência.
+
+### `lab/bateria.py`
+
+**Propósito:** Bateria de cenários de teste reproduzíveis para medir o Callidus com modelos locais (Ollama/llama.cpp) e comparar resultados entre commits. Roda múltiplos cenários (ex.: `multirequisito`, `calculadora`, `narrative`) em worktrees isolados, alternando entre "antes" e "depois" do commit, e gera relatórios com aceite, conclusões falsas, tempos e uso de tokens. Saída em `lab/out/<TAG>/`. **Quando/onde:** no Mac, com o Ollama aberto; variáveis `MODEL`, `ROUNDS`, `SCENARIOS`, `ANTES`, `DEPOIS`, `PROVIDER`, `TAG`.
 
 ### `lab/medir_narracao.py`
 

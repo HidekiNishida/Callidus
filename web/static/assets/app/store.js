@@ -121,6 +121,7 @@ export const state = reactive({
   contextConsumptionOpportunities: null,
   inferenceDetail: null,
   inferenceComponents: null,
+  currentInferenceContext: null,
 
   /** Estados independentes de cada recurso durante o bootstrap. */
   initialization: {
@@ -1431,6 +1432,7 @@ export async function selectTask(taskId) {
   state.selectedTaskId = taskId;
   state.detailsOpen = true;
   await loadInspector(taskId);
+  await loadInferenceContext(taskId);
 }
 
 // Token do inspetor: uma resposta lenta de uma tarefa antiga não pode sobrescrever a atual.
@@ -1451,6 +1453,7 @@ function maybeRefreshUsage(envelope) {
   if (now - usageRefreshAt < 800) return;
   usageRefreshAt = now;
   loadInspector(state.selectedTaskId);
+  loadInferenceContext(state.selectedTaskId);
 }
 
 /**
@@ -1476,6 +1479,26 @@ export async function loadInspector(taskId) {
   ]);
   if (token !== inspectorToken) return; // resposta obsoleta
   state.inspector = { task, attempts, evidences, snapshots, contract, usage };
+}
+
+/**
+ * Carrega a utilização de contexto da inferência mais recente da tarefa.
+ * Atualiza o estado reativo para a barra de contexto dinâmica.
+ *
+ * @param {string} taskId Id da tarefa.
+ * @returns {Promise<void>}
+ */
+export async function loadInferenceContext(taskId) {
+  if (!taskId) {
+    state.currentInferenceContext = null;
+    return;
+  }
+  const usage = await api(`/tasks/${taskId}/usage`).catch(() => null);
+  if (!usage) {
+    state.currentInferenceContext = null;
+    return;
+  }
+  state.currentInferenceContext = usage.call || null;
 }
 
 /**
