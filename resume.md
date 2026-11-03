@@ -463,6 +463,18 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Visão macro da arquitetura (camadas, fases, ADRs, stack).
 
+## `docs/engineering/`
+
+**Propósito:** Organização de engenharia do Callidus — auditoria, modelo operacional, papéis, propriedade dos módulos, contrato de trabalho, portões e indicadores.
+
+### `docs/engineering/README.md`
+
+**Propósito:** Índice da pasta `engineering/`: documento → finalidade → quando consultar.
+
+### `docs/engineering/audit.md`
+
+**Propósito:** Auditoria da Fase Zero — arquitetura atual, pistas revalidadas, lacunas, o que é preservado, o que não será feito e a ordem de execução.
+
 ## `docs/intelligence/`
 
 **Propósito:** Documentação do sistema de inteligência operacional e observabilidade — telemetria, analytics, grafo cognitivo, benchmarks, diagnósticos, API e frontend.
@@ -7062,11 +7074,19 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 ## `.github/`
 
-**Propósito:** Arquivos lidos pelo GitHub. Hoje só o modelo de pull request; o CI remoto ainda não existe ([G6](/docs/progresso/gaps.md#g6-fiscais-automáticos-das-regras-de-engenharia)).
+**Propósito:** Arquivos lidos pelo GitHub: o modelo de pull request e o workflow de CI remoto.
 
 ### `.github/pull_request_template.md`
 
 **Propósito:** Modelo de pull request — o que e por quê, como foi testado e o checklist dos portões (`python scripts/ci.py`, inegociáveis, docs de progresso). **Quando/onde:** preenchido a cada PR aberto no GitHub.
+
+## `.github/workflows/`
+
+**Propósito:** Workflows do GitHub Actions — hoje só o CI que espelha o comando local de verificação.
+
+### `.github/workflows/ci.yml`
+
+**Propósito:** CI remoto: em PR, push na `main` e execução manual, instala `.[dev]`, o Node e o Chromium do Playwright e roda `python scripts/ci.py`. Permissão só de leitura, sem segredo, sem modelo real.
 
 ### `CLAUDE.md`
 

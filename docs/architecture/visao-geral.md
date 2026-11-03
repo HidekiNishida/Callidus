@@ -13,7 +13,7 @@ A **complexidade fica na arquitetura do agente**, não na janela de contexto do 
 | Runtime / API | Python 3.11+, FastAPI, Uvicorn | Ecossistema maduro para SQLite, HTTP (Ollama/llama.cpp), testes |
 | Persistência | SQLite + SQLAlchemy 2 | Uma máquina, retomada após reinício, sem infra extra |
 | Contratos | Pydantic v2 | Validação de JSON estruturado nas fronteiras |
-| Frontend (fases posteriores) | Vite + React | UI rica para árvore de tarefas e logs |
+| Frontend | Vue 3 em módulos ES, sem etapa de build (`web/static/`) | SPA servida pela própria API; testes com `node --test` e Playwright |
 | Artefatos | `data/` (gitignored) | DB, memórias longas, evidências |
 
 ## 🏗️ Módulos (`src/agent/`)

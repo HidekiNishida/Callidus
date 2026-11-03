@@ -51,6 +51,8 @@ def passos() -> list[Passo]:
         Passo("referências", [PY, "scripts/check_references.py"], "nada citado que não exista (AGENTS.md §12)"),
         Passo("estrutura Markdown", [PY, "scripts/check_markdown.py"], "padrão de forma (docs/regras/documentacao.md)"),
         Passo("resume.md", [PY, "scripts/resume.py", "check"], "resumo vivo sincronizado (AGENTS.md §13)"),
+        Passo("sintaxe JavaScript", ["node", "scripts/check-web-syntax.js"],
+              "SPA sem erro de sintaxe nem importação quebrada (AGENTS.md §16)", exige="node"),
         Passo("testes da interface", ["node", "--test", *web_tests], "comportamento da SPA (AGENTS.md §10)",
               exige="node"),
         Passo("testes E2E", ["node", "tests/web/e2e.mjs"], "navegador real valida a inicialização (AGENTS.md §11)",

@@ -1,4 +1,4 @@
-# Serviços (`services/`) — Regras de Negócio (15 Services)
+# Serviços (`services/`) — Regras de Negócio
 
 Camada de aplicação sobre o ORM: CRUD, transições, worker autônomo, scheduler, métricas, contratos, memória, knowledge graph — e a camada de **agentes** (agente lógico, execução, consulta e escalonador).
 

@@ -13,7 +13,7 @@ O Callidus segue camadas com dependência sempre para dentro:
 | Infraestrutura | `src/agent/persistence`, `providers`, `tools`, `knowledge`, `memory` | SQLite, provedores, ferramentas, grafo, memória |
 | Apresentação | `src/agent/api`, `web/static` | FastAPI, SSE, SPA Vue 3 |
 
-O SQLite (`data/agent.db`) é a fonte da verdade. Há 14 modelos de persistência já definidos em `persistence/models.py`, incluindo `EventLogModel`, `InferenceRecordModel`, `ContextSnapshotModel`, `OperationAttemptModel` e `EvidenceModel`.
+O SQLite (`data/agent.db`) é a fonte da verdade. Há 36 modelos de persistência definidos em `persistence/models.py`, incluindo `EventLogModel`, `InferenceRecordModel`, `ContextSnapshotModel`, `OperationAttemptModel` e `EvidenceModel`.
 
 ## 2. Recursos existentes (reaproveitáveis)
 

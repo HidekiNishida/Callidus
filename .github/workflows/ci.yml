@@ -1,0 +1,55 @@
+# Arquivo: .github/workflows/ci.yml
+# Nome: ci.yml
+# Propósito: rodar no GitHub os mesmos portões de qualidade do comando local `python scripts/ci.py`.
+# Responsabilidade: integração contínua — verifica PRs, pushes na main e execuções manuais.
+# Dependências: actions/checkout, actions/setup-python, actions/setup-node; pyproject.toml ([dev]) e package.json.
+# Observações: permissões mínimas (só leitura), nenhum segredo, banco sempre temporário; o modelo real
+#   não roda aqui (a avaliação com modelo fica em lab/, fora da CI).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portoes:
+    name: portões (scripts/ci.py)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Instalar o Callidus e as ferramentas de desenvolvimento
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e ".[dev]"
+
+      - name: Instalar dependências da interface e o navegador do E2E
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Portões de qualidade
+        env:
+          VIRTUAL_ENV: ${{ github.workspace }}/.venv
+        run: .venv/bin/python scripts/ci.py
