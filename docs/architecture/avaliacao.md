@@ -375,6 +375,17 @@ Leitura honesta:
   domina (numa rodada o plano não trouxe a etapa de correção).
 - Nenhuma rodada desta investigação terminou em conclusão falsa.
 
+Depois de `9543fc1` (etapa que roda os testes entrega o veredito, em vez de saída inválida):
+
+| Cenário | Resultado |
+|---------|-----------|
+| `qwen3-vl:8b` · arquivo_grande | **concluído**, 1/1, aceite completo (45 funções preservadas), 103 s, sem estagnação |
+| `gpt-oss:20b` · arquivo_grande | ativo no limite, aceite completo; a correção foi verificada cedo, mas a etapa "executar testes" foi subdividida num plano que pedia a mesma correção de novo, e o modelo, sem nada a mudar, respondeu em texto (saída inválida) |
+
+O caso restante é diferente do corrigido: uma **etapa de alteração cuja mudança já está feita**
+ainda exige uma escrita. O detalhe das falhas dessa rodada se perdeu (a rodada seguinte usou a
+mesma pasta de trabalho e sobrescreveu o banco).
+
 ## 🧪 Testes determinísticos
 
 A avaliação real depende do Ollama. Os testes de unidade cobrem os mesmos comportamentos sem
