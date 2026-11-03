@@ -172,7 +172,7 @@ dela reprovar é que ela volta a executar — reexecutar direto sobrescreveria a
 | 2 — verificação reprova | `tests/test_etapas_cenarios.py::test_cenario2_*` | escrita desfeita, critério identificado, orientação no prompt, aprovação na segunda |
 | 3 — queda no meio | `tests/test_etapas_cenarios.py::test_cenario3_*`, `tests/test_granular_approval.py::test_resume_after_crash_*` | retomada em sessão nova; nada concluído é reexecutado; operação em voo pede confirmação |
 | 4 — dependências | `tests/test_etapas_cenarios.py::test_cenario4_e_6_*` | B só roda depois de A; pai com resumos estruturados |
-| 5 — modelo pequeno | `lab/avaliar.py` com `qwen3-vl:8b` e `gpt-oss:20b` | 6/6 aceites e 0 conclusões falsas nos dois; `bug` passou a fechar nos dois depois das correções; `arquivo_grande` medido de novo depois da correção da etapa "executar testes"; ver [avaliacao.md](/docs/architecture/avaliacao.md#-etapas-1-e-2--confiabilidade-e-decomposição-02112026) |
+| 5 — modelo pequeno | `lab/avaliar.py` com `qwen3-vl:8b` e `gpt-oss:20b` | 6/6 aceites e 0 conclusões falsas nos dois; depois das correções desta investigação, os 6 cenários concluem nos dois modelos (uma rodada por modelo); ver [avaliacao.md](/docs/architecture/avaliacao.md#-etapas-1-e-2--confiabilidade-e-decomposição-02112026) |
 | 6 — conflito de arquivo | `tests/test_etapas_cenarios.py::test_cenario4_e_6_*` | arquivo compartilhado listado; A reverificada, não reexecutada; trabalho de B preservado |
 | 7 — operação de alto risco | `tests/test_granular_approval.py` | pausa, decisão persistida, retomada só aprovada, uso único |
 | 8 — tarefa simples | `tests/test_etapas_cenarios.py::test_cenario8_*` | 2 etapas (ler + responder), nenhuma escrita |

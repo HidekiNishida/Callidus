@@ -14,7 +14,7 @@ Detalhes: [docs/progresso/](/docs/progresso/README.md) · Fila: [gaps.md](/docs/
 |---|-------|------|
 | Fluxos centrais que passam no portão do alpha | 6 / 6 (1 com ressalvas) | medido |
 | Cenários aceitos com o modelo local (`gpt-oss:20b`) | 15 / 15 | medido (2026-10-20) |
-| Testes Python / testes da interface | 1 420 casos passam / 124 passam | medido (2026-11-02) |
+| Testes Python / testes da interface | 1 433 casos passam / 124 passam | medido (2026-11-02) |
 | Qualidade geral | ~63 % | estimado |
 | Horas até o beta | ~34 h | estimado |
 | Horas para fechar toda a fila | ~105 h | estimado |
@@ -41,6 +41,7 @@ Detalhes: [docs/progresso/](/docs/progresso/README.md) · Fila: [gaps.md](/docs/
 
 | Data | O que entrou |
 |------|--------------|
+| 2026-11-02 | Avaliação real das Etapas 1 e 2 com `gpt-oss:20b` e `qwen3-vl:8b`: seis defeitos achados e corrigidos (resposta final inválida derrubava o run; `git_status` fora de repositório repetido; pytest verde sem evidência; escrita que apagava o arquivo aprovada; etapa de testes e alteração já feita recusadas como saída inválida) — `bug` e `arquivo_grande` passaram a concluir nos dois modelos, sem conclusão falsa ([avaliacao.md](/docs/architecture/avaliacao.md#-etapas-1-e-2--confiabilidade-e-decomposição-02112026)) |
 | 2026-11-02 | Etapas 1 e 2 — confiabilidade e decomposição: portão de verificação único (o gate paralelo aprovava por verificador mais fraco), conclusão sem verificador registrada, critério não satisfeito na recuperação, aprovação granular por operação com pausa e retomada, retomada sem repetir operação não repetível, rollback que preserva alteração de terceiros, pai com critério próprio passa pelo portão, irmã desatualizada é reverificada (não reexecutada), plano direto para "leia e explique", resumos estruturados; 8 cenários de integração ([confiabilidade-decomposicao.md](/docs/architecture/confiabilidade-decomposicao.md)) |
 | 2026-11-02 | Narração do agente em tempo real: a fala pública do modelo chega à Atividade do agente fragmento a fragmento, sem inferência extra (primeiro trecho a 355 ms com `qwen3-vl:8b`, *medido*); chamadas de ferramenta deixaram de se perder nos streams de OpenAI-compatível, llama.cpp, Anthropic e Gemini ([narracao-tempo-real.md](/docs/architecture/narracao-tempo-real.md)) |
 | 2026-10-27 | `qwen3-vl:8b` real na tarefa média: o run deixou de quebrar (antes: 3 de 3 com exceção) e passou a escrever o código certo; plano de 2 048 tokens vazios para ~500 tokens úteis, operação concluída de 15–295 s para 6–27 s (bloco de raciocínio vazio, janela que acompanha a reserva, prova por arquivo, `pytest` sem testes, chamadas em JSON solto); conclusão comprovada ainda pendente ([avaliacao.md](/docs/architecture/avaliacao.md)) |

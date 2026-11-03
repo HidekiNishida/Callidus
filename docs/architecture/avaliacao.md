@@ -386,6 +386,17 @@ O caso restante é diferente do corrigido: uma **etapa de alteração cuja mudan
 ainda exige uma escrita. O detalhe das falhas dessa rodada se perdeu (a rodada seguinte usou a
 mesma pasta de trabalho e sobrescreveu o banco).
 
+Depois de `6b78e72` (alteração já feita conclui pelo critério, em vez de saída inválida), cada modelo
+em pasta de trabalho própria:
+
+| Cenário | Resultado |
+|---------|-----------|
+| `gpt-oss:20b` · arquivo_grande | **concluído**, 1/1, aceite completo, 3 chamadas ao modelo, 46 s, sem estagnação |
+| `qwen3-vl:8b` · arquivo_grande | **concluído**, 1/1, aceite completo, 8 chamadas ao modelo, 401 s, sem estagnação |
+
+Com isso, `bug` e `arquivo_grande` passaram a concluir nos dois modelos (uma rodada por modelo —
+a variação entre rodadas continua sem medida com várias repetições, [G1](/docs/progresso/gaps.md#g1-avaliação-real-ampla-e-repetível)).
+
 ## 🧪 Testes determinísticos
 
 A avaliação real depende do Ollama. Os testes de unidade cobrem os mesmos comportamentos sem
