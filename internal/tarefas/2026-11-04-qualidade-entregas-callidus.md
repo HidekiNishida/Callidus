@@ -77,7 +77,7 @@ Resultados de 2026-11-04:
 - `.venv/bin/python scripts/ci.py` na árvore compartilhada: **1488 passaram, 1 falhou** em `tests/test_multirequisito_regressions.py::test_edit_file_with_empty_old_string_appends`, cuja edição em `src/agent/tools/builtins.py` é trabalho preexistente de outra sessão.
 - `.venv/bin/python scripts/ci.py --rapido` na árvore compartilhada: todos os portões passaram após sincronizar `resume.md`.
 - Cópia temporária limpa do `HEAD` com somente os arquivos staged desta entrega: `.venv/bin/python scripts/ci.py` passou em todos os portões, incluindo resume, E2E e suíte Python. A cópia tinha dependências locais ligadas por symlink e foi descartada após a verificação.
-- Commit `7b45f9a` (`Eleva a fidelidade e a qualidade das entregas do Callidus`) publicado em `origin/main`.
+- Commits `7b45f9a` (correção sistêmica), `3fbe038` (checkpoint) e `74bf9fe` (perfis para artefatos e inventário limpo) publicados em `origin/main`.
 - Verificadores individuais de Markdown, links, referências e resume passaram.
 - G1 não foi rodado: o script/execução contém trabalho compartilhado não commitado, portanto não havia baseline isolado comparável para atribuir o resultado.
 
