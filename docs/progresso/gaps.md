@@ -4,7 +4,7 @@ Tudo o que falta no Callidus, ranqueado pelo quanto bloqueia quem o usa para des
 
 Voltar: [docs/progresso/](/docs/progresso/README.md) · Formato: [progresso.md](/docs/regras/progresso.md)
 
-> **Revisado em:** 2026-11-04 · **Atualizado em:** 2026-11-04 · **Mudança:** minor (G16 aberto; G7 atualizado)
+> **Revisado em:** 2026-11-04 · **Atualizado em:** 2026-11-04 · **Mudança:** minor (comparação antes/depois da organização medida; G1 amplo permanece)
 
 É a fila de trabalho: sem tarefa dada, pegue o **maior rank em que consiga avançar** e atualize a entrada na mesma entrega. Os ids (`G1`, `G2`…) são estáveis; o rank muda. As fontes desta primeira versão são [limitacoes.md](/docs/architecture/limitacoes.md), [diagnostico-evolucao.md](/docs/architecture/diagnostico-evolucao.md), a [avaliação reproduzível](/docs/architecture/avaliacao.md) e a auditoria de 2026-10-21 (`.cursor/CALLIDUS_AUDITORIA.md`, `.cursor/CALLIDUS_DESCOBERTAS.md`). Todas as horas são *estimadas*.
 
@@ -35,9 +35,9 @@ Fora de escopo por decisão registrada: serializar inferência entre **processos
 
 ## G1 Avaliação real ampla e repetível
 
-- **Faltando:** só 5 cenários curtos, 3 rodadas por lado ([avaliacao.md](/docs/architecture/avaliacao.md)); nenhuma sessão longa de produção; cenários B–F da auditoria só parciais; a disposição de qualidade nunca foi comparada com o modelo local ([limitacoes.md](/docs/architecture/limitacoes.md), item 19); nenhum benchmark multilíngue; sem medição de tokens do provedor.
-- **Feito:** `lab/avaliar.py` com aceite objetivo e falha injetada; 15/15 cenários aceitos em 2026-10-20 com `gpt-oss:20b` (*medido*). `scripts/simular-qwen3.py`: fluxo inteiro contra um servidor Ollama simulado — com a janela padrão de 4 096, dois cenários com arquivo de tamanho comum passaram de pausados (20 chamadas, 18 com o prompt cortado) a concluídos (6–7 chamadas, nenhum corte) (*medido*, 2026-10-22, [avaliacao.md](/docs/architecture/avaliacao.md#-qwen38b--servidor-ollama-simulado)).
-- **Faltando (qwen3:8b):** a avaliação real com `qwen3:8b` (`lab/avaliar.py --model qwen3:8b`, três rodadas por lado); a amostragem por finalidade do qwen3 é padrão do fabricante + julgamento, ainda sem medição.
+- **Faltando:** avaliação ampla com ≥15 cenários e 3+ rodadas; nenhuma sessão longa de produção; cenários B–F da auditoria só parciais; disposição de qualidade ainda não comparada com modelo local ([limitacoes.md](/docs/architecture/limitacoes.md), item 19); nenhum benchmark multilíngue; tokens do provedor não medidos.
+- **Feito:** `lab/avaliar.py` com aceite objetivo e falha injetada; 15/15 cenários aceitos em 2026-10-20 com `gpt-oss:20b` (*medido*). `scripts/simular-qwen3.py`: fluxo inteiro contra Ollama simulado — dois cenários passaram de pausados (20 chamadas, 18 com prompt cortado) a concluídos (6–7 chamadas, nenhum corte) (*medido*, 2026-10-22, [avaliacao.md](/docs/architecture/avaliacao.md#-qwen38b--servidor-ollama-simulado)). Comparação específica da missão de organização: `a43d9c3`→`550d733`, mesmo script/provedor/modelo, 3 × 6 cenários; 14/18→13/18 runs concluídos e 18/21→16/21 requisitos provados. Medianas de chamadas/tempo caíram, mas conclusão e requisitos agregados também; resultado misto, inconclusivo, sem falsas conclusões ([benchmarking.md](/docs/engineering/benchmarking.md#-organização-de-engenharia--antes-e-depois-2026-11-04)).
+- **Faltando (qwen3:8b):** avaliação real com `qwen3:8b` (`lab/avaliar.py --model qwen3:8b`, três rodadas por lado); a amostragem por finalidade do qwen3 é padrão do fabricante + julgamento, ainda sem medição. A comparação da organização usou somente `gpt-oss:20b` e não substitui esta amostra.
 
 ## G2 Decomposição em repositórios grandes
 
@@ -117,7 +117,7 @@ Fora de escopo por decisão registrada: serializar inferência entre **processos
 
 | Data | Mudança | Resumo |
 |------|---------|--------|
-| 2026-11-04 | minor | G16 aberto; evidência de arquivo divergente rejeitada, perfis de qualidade de artefato, handoff na UI e roteamento por especialidade implementados |
+| 2026-11-04 | minor | Comparação real da missão de organização (3 × 6 cenários) medida e registrada; resultado inconclusivo, G1 amplo continua aberto; G16: fidelidade de arquivo, perfis de qualidade, handoff e roteamento por especialidade |
 | 2026-11-02 | minor | G10: narração do agente em tempo real (horas de 5 para 2); G11: ferramentas e raciocínio nos streams de quatro provedores |
 | 2026-10-22 | minor | Adaptação ao `qwen3:8b`: janela e saída explícitas no Ollama, estimativa calibrada, conversa do ciclo na janela, reparo do plano; G1 com a medição simulada e a real pendente; G11 com a política por família |
 | 2026-10-21 | major | Criação: 15 gaps tirados das limitações, do diagnóstico, da avaliação e da auditoria |

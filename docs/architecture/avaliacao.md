@@ -397,6 +397,25 @@ em pasta de trabalho própria:
 Com isso, `bug` e `arquivo_grande` passaram a concluir nos dois modelos (uma rodada por modelo —
 a variação entre rodadas continua sem medida com várias repetições, [G1](/docs/progresso/gaps.md#g1-avaliação-real-ampla-e-repetível)).
 
+## 🎯 Organização de engenharia — antes e depois (04/11/2026)
+
+A comparação específica da missão Claude foi executada entre `a43d9c3` (antes) e `550d733` (depois), com `gpt-oss:20b`, provedor local `meu_ollama`, seis cenários, 40 passos e três rodadas por lado. O script foi idêntico nos dois commits (SHA-256 `cf51ba672e95afd8f0788424015eafca6fa263bf`). Worktrees, bancos e diretórios de trabalho eram isolados; as rodadas foram alternadas.
+
+| Indicador | Antes | Depois |
+|-----------|-------|--------|
+| Runs concluídos | 14/18 (77,8%) | 13/18 (72,2%) |
+| Requisitos comprovados | 18/21 (85,7%) | 16/21 (76,2%) |
+| Chamadas ao modelo / ferramentas | 126 / 139 | 94 / 108 |
+| Falhas do modelo / replanejamentos | 6 / 4 | 4 / 6 |
+| Falsas conclusões | 0 | 0 |
+| Tempo total | 2 945,2 s | 2 456,0 s |
+| Mediana de chamadas ao modelo / ferramentas | 35 / 44 | 31 / 33 |
+| Mediana de tempo por rodada | 924,3 s | 795,3 s |
+
+Por cenário, runs concluídos antes→depois: `funcional` 3/3→2/3, `bug` 1/3→3/3, `arquivo_grande` 3/3→2/3, `multirequisito` 3/3→2/3, `verificacao_reprova` 1/3→1/3 e `pergunta_simples` 3/3→3/3. As medianas de custo melhoraram, mas conclusão e requisitos comprovados agregados caíram. Com n=3 e a variação do modelo, a conclusão é **inconclusiva**; não se atribui o resultado à organização. Nenhuma falsa conclusão ocorreu.
+
+Limitação observada: `aceite_total` pode contar predicados satisfeitos quando o run está `active`/`failed` ou ainda não comprovou todos os requisitos. Para confiabilidade, use status e requisitos provados. O indicador precisa de revisão com a sessão proprietária de `lab/avaliar.py`. Os seis JSONs brutos ficam localmente em `lab/out/g1-org-2026-11-04/` e não são versionados. Esta comparação fecha a pendência específica da missão, mas não fecha o G1 amplo: ainda faltam 15+ cenários, sessão longa, cobertura dos casos da auditoria, qualidade comparada, benchmark multilíngue e tokens reais do provedor.
+
 ## 🧪 Testes determinísticos
 
 A avaliação real depende do Ollama. Os testes de unidade cobrem os mesmos comportamentos sem

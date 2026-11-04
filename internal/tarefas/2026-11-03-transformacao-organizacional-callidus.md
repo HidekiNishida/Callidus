@@ -6,7 +6,7 @@ Checkpoint versionado da missão que dá ao Callidus uma organização de engenh
 |-------|-------|
 | Estado | concluída (com pendências registradas) |
 | Criado em | 2026-11-03 |
-| Atualizado em | 2026-11-03 |
+| Atualizado em | 2026-11-04 |
 | Agente / tarefa | Claude Code — missão "plataforma de engenharia autônoma" |
 | Regras consultadas | [AGENTS.md](/AGENTS.md), [Hub](/docs/regras/README.md), [arquitetura](/docs/architecture/README.md) |
 
@@ -16,7 +16,7 @@ Toda tarefa do Callidus passa a ter equipe, papel, revisor, escopo e etapa de tr
 
 ## Próxima ação
 
-Medir com `lab/avaliar.py` (mesmo modelo, antes e depois) se a linha de responsabilidade no contexto muda a taxa de conclusão — G1. As demais recomendações estão em [final-audit.md](/docs/engineering/final-audit.md#-recomendações).
+Comparação específica concluída em 2026-11-04: 3 rodadas × 6 cenários antes/depois, com resultado misto e inconclusivo. Próxima ação: ampliar o G1 do projeto (≥15 cenários e sessão longa) e revisar `aceite_total`; recomendações restantes em [final-audit.md](/docs/engineering/final-audit.md#-recomendações).
 
 ## 🔄 Estado por fase
 
@@ -28,7 +28,7 @@ Medir com `lab/avaliar.py` (mesmo modelo, antes e depois) se a linha de responsa
 - [x] Fase 8 — API (`/organization`, `/tasks/{id}/work-item`, `/tasks/{id}/gates`, `/tasks/{id}/handoff`, `POST /tasks/{id}/reviews`, `/projects/{id}/board`) e aba Organização
 - [x] Fase 10 — cenários de aceitação A–J em testes determinísticos (`tests/test_organization_api.py`)
 - [x] Fase 11 — reconciliação documental e auditoria final ([final-audit.md](/docs/engineering/final-audit.md))
-- [ ] Avaliação real antes/depois com modelo local (G1) — não feita nesta sessão
+- [x] Comparação real antes/depois desta missão: `a43d9c3` vs `550d733`, mesmo script, `gpt-oss:20b`, 3 × 6 cenários; resultado inconclusivo, sem evidência de ganho agregado de confiabilidade ([benchmarking.md](/docs/engineering/benchmarking.md#-organização-de-engenharia--antes-e-depois-2026-11-04)). O G1 amplo do projeto continua pendente.
 
 ## 🧾 Decisões
 
@@ -54,6 +54,7 @@ Medir com `lab/avaliar.py` (mesmo modelo, antes e depois) se a linha de responsa
 | entrega | `node tests/web/e2e.mjs` | todos os cenários passaram |
 | entrega | `node --test tests/web/*.test.mjs` | 127 passaram |
 | entrega | conferência visual com banco descartável (`CALLIDUS_DATABASE_URL` no scratchpad) | quadro, portões e revisão funcionando |
+| 2026-11-04 | `lab/avaliar.py` em worktrees isolados, antes/depois, 3 rodadas × 6 cenários, `gpt-oss:20b` | 14/18 vs 13/18 runs concluídos; 18/21 vs 16/21 requisitos provados; medianas de tempo 924,3 s vs 795,3 s; resultado inconclusivo. Seis JSONs preservados localmente em `lab/out/g1-org-2026-11-04/`. |
 
 ## Bloqueios
 

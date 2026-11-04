@@ -4,7 +4,7 @@ O portão do próximo estágio do Callidus e os marcos até ele.
 
 Voltar: [docs/progresso/](/docs/progresso/README.md) · Resumo: [ROADMAP.md](/ROADMAP.md) · Fila: [gaps.md](/docs/progresso/gaps.md)
 
-> **Revisado em:** 2026-11-04 · **Atualizado em:** 2026-11-04 · **Mudança:** minor (método de qualidade de entrega registrado)
+> **Revisado em:** 2026-11-04 · **Atualizado em:** 2026-11-04 · **Mudança:** minor (comparação da missão medida; G1 amplo mantido)
 
 ## 🚦 Portão do alpha (atual)
 
@@ -39,6 +39,8 @@ Critérios propostos, ainda **não aprovados pelo dono**:
 
 O [G16](/docs/progresso/gaps.md#g16-fidelidade-do-artefato-e-verificação-da-entrega) registra a necessidade de tornar requisito → artefato → evidência uma prática comum para todos os tipos de entrega. A primeira proteção de caminhos de arquivo e o piso web foram implementados; o gate universal permanece pendente.
 
+A comparação real antes/depois da organização foi executada em três rodadas de seis cenários: houve redução nas medianas de custo, mas também queda nas taxas agregadas de runs concluídos e requisitos provados. O resultado é inconclusivo e não altera as notas; G1 continua sendo o principal risco de medição.
+
 ## 🗺️ Marcos
 
 | # | Marco | Status | Restante (h) |
@@ -56,5 +58,5 @@ Horas *estimadas*.
 
 | Data | Mudança | Resumo |
 |------|---------|--------|
-| 2026-11-04 | minor | G16 adicionado à fila de trabalho; critérios de estágio mantidos |
+| 2026-11-04 | minor | Comparação da missão de organização medida, resultado inconclusivo; G1 amplo e critérios de estágio mantidos |
 | 2026-10-21 | major | Criação: portão do alpha com evidência, proposta de beta e marcos M0–M5 |

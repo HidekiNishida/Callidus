@@ -44,7 +44,7 @@ O núcleo (pedido → plano → execução → verificação → resposta) funci
 | Conhecimento, skills e hierarquia | 50 | [G7](/docs/progresso/gaps.md#g7-seleção-lexical-de-skills-estratégia-e-consulta), [G8](/docs/progresso/gaps.md#g8-grafo-de-conhecimento-multi-linguagem), [G9](/docs/progresso/gaps.md#g9-propagação-de-impacto-de-contratos) | 34 | estimado |
 | Automações, sistema e desktop | 50 | [G12](/docs/progresso/gaps.md#g12-automação-de-desktop-nas-três-plataformas), [G15](/docs/progresso/gaps.md#g15-servidores-mcp-pesados) | 13 | estimado |
 | Engenharia e documentação | 80 | [G6](/docs/progresso/gaps.md#g6-fiscais-automáticos-das-regras-de-engenharia), [G13](/docs/progresso/gaps.md#g13-versão-e-licença), [G14](/docs/progresso/gaps.md#g14-documentação-de-limitações-desatualizada), [G16](/docs/progresso/gaps.md#g16-fidelidade-do-artefato-e-verificação-da-entrega) | 16 | estimado |
-| Avaliação com o modelo real | 45 | [G1](/docs/progresso/gaps.md#g1-avaliação-real-ampla-e-repetível) | 10 | estimado |
+| Avaliação com o modelo real | 45 | [G1](/docs/progresso/gaps.md#g1-avaliação-real-ampla-e-repetível) | 10 | estimado (comparação da organização medida em 3 × 6 cenários; G1 amplo insuficiente) |
 
 ## ⏱️ Calibração
 
@@ -81,7 +81,7 @@ Do `git log` (*estimado*): 113 commits entre 2026-10-17 e 2026-10-21, num interv
 
 | Data | Mudança | Resumo |
 |------|---------|--------|
-| 2026-11-04 | minor | Método de qualidade e inspeção de evidência atualizados; estimativa geral preservada por faltar avaliação ampla (G16) |
+| 2026-11-04 | minor | Comparação antes/depois da organização medida, resultado inconclusivo; método de qualidade e inspeção de evidência atualizados; nota preservada por faltar avaliação ampla (G1) |
 | 2026-11-02 | minor | Etapas 1 e 2: 1 420 testes Python aprovados; orquestração 75→80, ferramentas e segurança 60→65 (*estimado*) |
 | 2026-10-22 | minor | Suíte Python rodada de novo (929 aprovados, 1 pulado) na adaptação ao `qwen3:8b` |
 | 2026-10-21 | major | Criação: contagens medidas no commit `6868a30`, notas estimadas por área |

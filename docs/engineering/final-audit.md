@@ -28,7 +28,7 @@ O Callidus passou a ter uma organização de engenharia **implementada**, não s
 | Conhecimento | handoff estruturado; consulta persistida prioriza descendentes por correspondência lexical com especialidades, com regressão determinística | busca semântica continua pendente; a ordenação heurística não infere sinônimos |
 | Trabalho | contrato funcional, responsável, escopo protegido, continuidade (estado persistido) | dependências continuam em `TaskDependencyModel`, não no contrato |
 | Qualidade | revisão independente, portões, reprovação bloqueia integração, testes de regressão | auditoria de manutenibilidade por tarefa (dimensão `não disponível`) |
-| Autoavaliação | indicadores medidos com denominador, comparação entre versões por projeto | avaliação real antes/depois com modelo local ([G1](/docs/progresso/gaps.md#g1-avaliação-real-ampla-e-repetível)) |
+| Autoavaliação | indicadores medidos com denominador; comparação específica antes/depois executada em 3 × 6 cenários | comparação inconclusiva; G1 amplo ainda pede ≥15 cenários e sessão longa ([G1](/docs/progresso/gaps.md#g1-avaliação-real-ampla-e-repetível)) |
 | Interface | área organizacional, responsáveis, portões, evidências por portão, revisão e passagem de trabalho exibida no detalhe | — |
 | Engenharia | CI local e remoto, Ruff em `[dev]`, testes Python/JS/E2E | `resume.md` não pôde ser carimbado (bloqueio abaixo) |
 
@@ -53,7 +53,7 @@ O Callidus passou a ter uma organização de engenharia **implementada**, não s
 
 ## 🔭 Recomendações
 
-1. Medir com `lab/avaliar.py` (mesmo modelo, antes/depois) se a linha de responsabilidade no contexto muda a taxa de conclusão.
+1. Ampliar G1 para ≥15 cenários, sessão longa, casos da auditoria e mais modelos/idiomas; revisar o indicador `aceite_total`, que pode ser positivo com run `active`/`failed`.
 2. Implementar verificadores específicos e gate requisito → artefato → evidência para as demais classes de entrega (G16).
 3. Acionar a revisão do papel de coordenação automaticamente quando o G3 ficar pendente por área protegida.
 
@@ -63,4 +63,4 @@ O Callidus passou a ter uma organização de engenharia **implementada**, não s
 - Consulta persistida mantém o agente alvo em primeiro lugar e ordena os descendentes por tokens compartilhados com as especialidades; ainda é uma heurística lexical.
 - A conversa culinária revelou falso aceite: a tarefa pedia `style.css`, mas o modelo alterou `index.html` e evidência genérica passou. A verificação agora rejeita divergência em evidência limitada a arquivo nomeado. O site local foi refeito e validado em viewport desktop/mobile, interações, imagens e console.
 - O contrato inicial agora diferencia os pisos de web, documento, planilha, apresentação e pesquisa; são critérios de execução, não verificadores automáticos do artefato final.
-- G1 não foi executado nesta sessão: há alterações locais compartilhadas, incluindo `lab/avaliar.py` e componentes de execução; um resultado sem baseline isolado não seria atribuível nem comparável. Modelos instalados: `gpt-oss:20b` e `qwen3-vl:8b`; disponibilidade no Ollama foi observada em 2026-11-04. Não houve troca de modelo padrão.
+- G1 específico da missão executado em worktrees isolados: antes `a43d9c3` 14/18 runs e 18/21 requisitos; depois `550d733` 13/18 e 16/21. Medianas de modelo/ferramentas/tempo: 35/44/924,3 s antes e 31/33/795,3 s depois; resultado misto e inconclusivo (n=3), sem falsa conclusão. Detalhes em [benchmarking.md](/docs/engineering/benchmarking.md) e [avaliacao.md](/docs/architecture/avaliacao.md). O G1 amplo continua aberto. `lab/avaliar.py` tem alteração local de outra sessão e não foi tocado; identificou-se também que `aceite_total` não equivale a run concluído.
