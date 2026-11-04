@@ -4,7 +4,7 @@ Checkpoint da análise da missão de engenharia autônoma do Claude e do caso re
 
 | Campo | Valor |
 |-------|-------|
-| Estado | concluída; pendências externas registradas |
+| Estado | concluída; pendências externas registradas; publicada |
 | Criado em | 2026-11-04 |
 | Atualizado em | 2026-11-04 |
 | Agente / tarefa | Codex — concluir a missão e elevar a qualidade das entregas |
@@ -33,7 +33,7 @@ Quando a árvore compartilhada estiver sem alterações de execução concorrent
 - [x] Atualizar documentação, índices, gaps, checklist, `resume.md` e `plan/STATUS.md`.
 - [x] Rodar as verificações aplicáveis; registrar comandos e resultados observados.
 - [x] Rodar `.venv/bin/python scripts/resume.py check` e `.venv/bin/python scripts/ci.py`; registrar bloqueios abaixo.
-- [ ] Revisão final, commit apenas dos caminhos desta tarefa e push se as verificações passarem.
+- [x] Revisão final, commit apenas dos caminhos desta tarefa e push após validação isolada.
 
 ## 📁 Arquivos previstos
 
@@ -76,6 +76,7 @@ Resultados de 2026-11-04:
 - `.venv/bin/python scripts/ci.py` na árvore compartilhada: **1488 passaram, 1 falhou** em `tests/test_multirequisito_regressions.py::test_edit_file_with_empty_old_string_appends`, cuja edição em `src/agent/tools/builtins.py` é trabalho preexistente de outra sessão.
 - `.venv/bin/python scripts/ci.py --rapido` na árvore compartilhada: todos os portões passaram após sincronizar `resume.md`.
 - Cópia temporária limpa do `HEAD` com somente os arquivos staged desta entrega: `.venv/bin/python scripts/ci.py` passou em todos os portões, incluindo resume, E2E e suíte Python. A cópia tinha dependências locais ligadas por symlink e foi descartada após a verificação.
+- Commit `7b45f9a` (`Eleva a fidelidade e a qualidade das entregas do Callidus`) publicado em `origin/main`.
 - Verificadores individuais de Markdown, links, referências e resume passaram.
 - G1 não foi rodado: o script/execução contém trabalho compartilhado não commitado, portanto não havia baseline isolado comparável para atribuir o resultado.
 
