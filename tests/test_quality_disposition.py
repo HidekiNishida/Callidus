@@ -3,7 +3,7 @@ Arquivo: tests/test_quality_disposition.py
 Nome: test_quality_disposition.py
 Propósito: verificar o contrato de qualidade, a decisão de decomposição e a explicação do feed.
 Responsabilidade: camada de testes — comportamento do refinamento, da disposição e da narração.
-Componentes: contrato explícito versus inferido, protótipo, herança, investigação, execução direta, redação de segredo.
+Componentes: contrato explícito versus inferido, perfis de software/web/documento/planilha/apresentação/pesquisa, protótipo, herança, investigação, execução direta, redação de segredo.
 Dependências: agent.orchestrator.quality_contract, agent.orchestrator.disposition, agent.orchestrator.narration, agent.orchestrator.runner.
 Observações: banco temporário; nenhuma chamada de modelo.
 """
@@ -66,6 +66,26 @@ def test_pedido_curto_de_site_recebe_piso_web_funcional_sem_backend_inventado():
     assert "não fingem envio ou persistência" in inferred
     assert "navegador" in inferred
     assert contract["exclusions"] == ["não criar capacidade que o pedido não pediu"]
+
+
+@pytest.mark.parametrize(
+    ("objective", "profile", "required_phrase"),
+    [
+        ("Crie um relatório de auditoria", "document", "arquivo abre"),
+        ("Monte uma planilha de orçamento com totais", "spreadsheet", "fórmulas"),
+        ("Prepare uma apresentação em slides", "presentation", "narrativa clara"),
+        ("Pesquise fontes sobre acessibilidade", "research", "fontes rastreáveis"),
+    ],
+)
+def test_pedido_de_artefato_recebe_criterios_do_formato(objective, profile, required_phrase):
+    """Formato pedido define critérios de qualidade pertinentes ao artefato final."""
+    strategy = ProfessionalStrategist().analyze(objective)
+
+    contract = build_quality_contract(objective, strategy)
+    inferred = " ".join(item["text"] for item in contract["inferred"])
+
+    assert contract["profile"] == profile
+    assert required_phrase in inferred
 
 
 def test_prototipo_nao_recebe_endurecimento_de_producao():

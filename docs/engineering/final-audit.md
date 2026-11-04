@@ -40,7 +40,7 @@ O Callidus passou a ter uma organização de engenharia **implementada**, não s
 | Mesma cópia com as mudanças desta missão | 1461 passaram, 0 falhas (+28 testes novos) |
 | `node tests/web/e2e.mjs` (navegador real) | todos os cenários passaram |
 | `tests/web/organization.test.mjs` | 4 passaram após teste de carregamento do handoff (2026-11-04) |
-| Testes focados de aceitação, qualidade web, consultas e API da organização | 57 passaram (2026-11-04) |
+| Testes focados de aceitação, qualidade web, consultas e API da organização | 61 passaram (2026-11-04) |
 | Conferência visual com banco descartável | quadro, portões e revisão funcionando; a aprovação do QA moveu a tarefa de Auditoria técnica para Integrada |
 | `python scripts/ci.py --rapido` na árvore de trabalho | tudo verde exceto `resume.md`, que reprova só por itens da outra sessão |
 
@@ -62,4 +62,5 @@ O Callidus passou a ter uma organização de engenharia **implementada**, não s
 - Handoff renderizado junto dos portões e revisões; teste frontend confirma a leitura do endpoint e preservação do resumo.
 - Consulta persistida mantém o agente alvo em primeiro lugar e ordena os descendentes por tokens compartilhados com as especialidades; ainda é uma heurística lexical.
 - A conversa culinária revelou falso aceite: a tarefa pedia `style.css`, mas o modelo alterou `index.html` e evidência genérica passou. A verificação agora rejeita divergência em evidência limitada a arquivo nomeado. O site local foi refeito e validado em viewport desktop/mobile, interações, imagens e console.
+- O contrato inicial agora diferencia os pisos de web, documento, planilha, apresentação e pesquisa; são critérios de execução, não verificadores automáticos do artefato final.
 - G1 não foi executado nesta sessão: há alterações locais compartilhadas, incluindo `lab/avaliar.py` e componentes de execução; um resultado sem baseline isolado não seria atribuível nem comparável. Modelos instalados: `gpt-oss:20b` e `qwen3-vl:8b`; disponibilidade no Ollama foi observada em 2026-11-04. Não houve troca de modelo padrão.

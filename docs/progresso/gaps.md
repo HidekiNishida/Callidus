@@ -110,14 +110,14 @@ Fora de escopo por decisão registrada: serializar inferência entre **processos
 ## G16 Fidelidade do artefato e verificação da entrega
 
 - **Faltando:** verificadores específicos para documentos, planilhas, pesquisas e interfaces ainda não são uma etapa obrigatória comum; um projeto web pode passar por critério textual sem abrir no navegador nem exercitar controles; ainda não há um gate final universal que confira requisito → artefato → evidência recente.
-- **Feito nesta entrega:** tarefas que nomeiam explicitamente um arquivo são reprovadas quando evidência de `file_contains`, `file_exists` ou sintaxe aponta para outro arquivo (`tests/test_global_acceptance.py`); o contrato de qualidade reconhece pedidos de site em português e exige estrutura, responsividade, controles funcionais, feedback e recursos visuais utilizáveis (`tests/test_quality_disposition.py`); a aba Organização mostra o handoff persistido e consultas descendentes priorizam especialidades (57 testes Python focados e 3 testes web passaram, 2026-11-04). O caso «site de culinária» foi refeito e exercitado no navegador em desktop e mobile; veja o checklist da tarefa para as evidências.
+- **Feito nesta entrega:** tarefas que nomeiam explicitamente um arquivo são reprovadas quando evidência de `file_contains`, `file_exists` ou sintaxe aponta para outro arquivo (`tests/test_global_acceptance.py`); o contrato seleciona critérios de qualidade para site, documento, planilha, apresentação e pesquisa, com testes determinísticos; a aba Organização mostra o handoff persistido e consultas descendentes priorizam especialidades. O caso «site de culinária» foi refeito e exercitado no navegador em desktop e mobile; o CI passou por completo num worktree isolado. Os perfis orientam o plano, mas ainda não verificam esses formatos diretamente.
 - **Estimativa:** 8 h; não altera o portão ou os critérios de estágio.
 
 ## 🕑 Histórico de revisão
 
 | Data | Mudança | Resumo |
 |------|---------|--------|
-| 2026-11-04 | minor | G16 aberto; evidência de arquivo divergente rejeitada, critérios de site ampliados, handoff na UI e roteamento por especialidade concluídos |
+| 2026-11-04 | minor | G16 aberto; evidência de arquivo divergente rejeitada, perfis de qualidade de artefato, handoff na UI e roteamento por especialidade implementados |
 | 2026-11-02 | minor | G10: narração do agente em tempo real (horas de 5 para 2); G11: ferramentas e raciocínio nos streams de quatro provedores |
 | 2026-10-22 | minor | Adaptação ao `qwen3:8b`: janela e saída explícitas no Ollama, estimativa calibrada, conversa do ciclo na janela, reparo do plano; G1 com a medição simulada e a real pendente; G11 com a política por família |
 | 2026-10-21 | major | Criação: 15 gaps tirados das limitações, do diagnóstico, da avaliação e da auditoria |

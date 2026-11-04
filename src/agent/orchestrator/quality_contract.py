@@ -3,7 +3,7 @@ Arquivo: src/agent/orchestrator/quality_contract.py
 Nome: quality_contract.py
 Propósito: contrato de qualidade da tarefa — o que é pedido, o que é padrão profissional e o que fica de fora.
 Responsabilidade: camada de aplicação — refinamento determinístico da intenção, sem nova inferência.
-Componentes: build_quality_contract, inherit_quality, attach_quality_contract, render_quality_for_prompt.
+Componentes: build_quality_contract, inherit_quality, attach_quality_contract, render_quality_for_prompt; profiles for engineering, web, documents, spreadsheets, presentations and research.
 Dependências: agent.orchestrator.strategy, agent.services.contract_service, agent.persistence.models.
 Observações: o contrato vive no aceite já persistido da tarefa; o metadado guarda só o recorte que desce na árvore.
 """
@@ -25,6 +25,12 @@ _PROTOTYPE = re.compile(
 )
 _CHANGE_HINT = re.compile(r"\b(corri\w*|bug|implement\w*|cri[ae]\w*|edit\w*|escrev\w*|refator\w*|adicion\w*)\b", re.IGNORECASE)
 _WEB = re.compile(r"\b(site|website|web|p[aá]gina|interface|html|css|formul[aá]rio|responsiv)\b", re.IGNORECASE)
+_ARTIFACT_HINTS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("spreadsheet", re.compile(r"\b(planilha|spreadsheet|excel|xlsx|csv)\b", re.IGNORECASE)),
+    ("presentation", re.compile(r"\b(apresenta[cç][aã]o|slides?|powerpoint|pptx)\b", re.IGNORECASE)),
+    ("document", re.compile(r"\b(documento|relat[oó]rio|manual|guia|docx|word|pdf)\b", re.IGNORECASE)),
+    ("research", re.compile(r"\b(pesquis[ae]|levantamento|fontes|comparativo)\b", re.IGNORECASE)),
+)
 _ITEM = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+(.+?)\s*$")
 _UNCERTAIN = re.compile(
     r"\b(onde fica|onde est[aá]|n[ãa]o sei|qual arquivo|investig\w*|como funciona)\b",
@@ -62,6 +68,26 @@ _PROFILES: dict[str, list[str]] = {
         "cada link, botão e formulário visível executa a ação prometida e apresenta feedback; formulários validam os dados e não fingem envio ou persistência sem backend",
         "imagens e outros recursos carregam ou têm fallback; a experiência principal é percorrida no navegador quando disponível e limitações são relatadas",
     ],
+    "document": [
+        "a estrutura e o conteúdo cobrem os pontos pedidos, com fatos identificáveis e sem preenchimento genérico",
+        "a hierarquia de títulos, tabelas e links ajuda a leitura e mantém a navegação coerente",
+        "o arquivo abre e, quando há renderização disponível, páginas e elementos não ficam cortados nem sobrepostos",
+    ],
+    "spreadsheet": [
+        "fórmulas expressam os cálculos pedidos e os totais podem ser conferidos com exemplos simples",
+        "unidades, formatos, entradas vazias e valores inválidos são tratados de modo legível",
+        "referências entre células e abas permanecem válidas; resultados não dependem de valores fixos quando a planilha deve recalcular",
+    ],
+    "presentation": [
+        "a sequência de slides sustenta uma narrativa clara e cobre os pontos solicitados",
+        "texto e gráficos são legíveis na apresentação, com contraste e hierarquia visual consistentes",
+        "a renderização não corta texto, gráficos nem elementos importantes nas bordas dos slides",
+    ],
+    "research": [
+        "as afirmações verificáveis têm fontes rastreáveis e adequadas ao assunto",
+        "fatos, inferências e incertezas ficam distinguidos; informações temporais indicam a data ou período relevante",
+        "a síntese responde aos pontos pedidos sem esconder lacunas de evidência",
+    ],
 }
 
 
@@ -71,9 +97,12 @@ def _items(text: str) -> list[str]:
 
 
 def _profile_for(domain: str, objective: str) -> tuple[str, list[str]]:
-    """Escolhe o perfil de qualidade do domínio, com o perfil web quando o pedido é de interface."""
+    """Escolhe qualidade especializada por artefato, com fallback ao perfil do domínio."""
     if _WEB.search(objective or "") and domain not in {"documentation", "consultation", "quality_assurance"}:
         return "web", list(_PROFILES["web"])
+    for profile, hint in _ARTIFACT_HINTS:
+        if hint.search(objective or ""):
+            return profile, list(_PROFILES[profile])
     return domain, list(_PROFILES.get(domain, _PROFILES["software_engineering"]))
 
 

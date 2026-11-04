@@ -44,6 +44,8 @@ Escolha as verificações pelo risco e pela natureza do resultado. Evite tanto a
 | Planilha/dados | Fórmulas e referências conferidas, totais reconciliados, formatos/unidades e células vazias tratados |
 | Pesquisa/análise | Fontes rastreáveis, fatos separados de inferências, recorte temporal explícito quando necessário |
 
+O contrato do Callidus seleciona pisos iniciais para engenharia de software, web, documentos, planilhas, apresentações e pesquisa. Esses critérios guiam o plano e a execução; sua presença no prompt **não é prova** de que o arquivo final passou por renderização, recálculo ou checagem de fontes. G16 acompanha os verificadores independentes que ainda faltam para essas classes.
+
 Teste a jornada principal de ponta a ponta. Depois cubra o caso vazio, uma entrada inválida e a falha externa mais provável. Faça uma revisão visual e de acessibilidade básica quando houver interface. Não declare um serviço conectado, envio concluído ou dado atualizado sem evidência desse efeito.
 
 ## 🔁 Recuperação sem repetição cega

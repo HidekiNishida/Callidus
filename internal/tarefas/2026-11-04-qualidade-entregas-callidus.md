@@ -27,6 +27,7 @@ Quando a árvore compartilhada estiver sem alterações de execução concorrent
 - [x] Reprovar evidência de uma etapa de arquivo quando ela não cobre o arquivo pedido explicitamente.
 - [x] Cobrir a regressão com testes determinísticos sem tocar nos testes existentes de outra sessão.
 - [x] Ampliar o piso de qualidade de projetos web com critérios claros e proporcionais ao pedido.
+- [x] Selecionar critérios iniciais por formato de entrega (documento, planilha, apresentação e pesquisa) sem tratar o prompt como verificação real.
 - [x] Melhorar o site culinário local: hierarquia visual, responsividade, busca/filtros, favoritos, detalhes e formulário com feedback real.
 - [x] Validar o site no navegador em desktop e mobile; corrigir falhas de console, links, imagens e controles.
 - [x] Concluir as pendências da missão Claude independentes e verificáveis: handoff na UI e roteamento lexical por especialidade.
@@ -69,7 +70,7 @@ Quando a árvore compartilhada estiver sem alterações de execução concorrent
 
 Resultados de 2026-11-04:
 
-- `.venv/bin/python -m pytest tests/test_global_acceptance.py tests/test_quality_disposition.py tests/test_query_service.py tests/test_organization_api.py -q`: **57 passaram**.
+- `.venv/bin/python -m pytest tests/test_global_acceptance.py tests/test_quality_disposition.py tests/test_query_service.py tests/test_organization_api.py -q`: **61 passaram** (após incluir os perfis de documento, planilha, apresentação e pesquisa).
 - `node --test tests/web/organization.test.mjs`: **4 passaram**; `node --check web/static/assets/app/components/intelligence-organization.js`: passou.
 - Navegador Playwright em `http://127.0.0.1:8769/`: título e conteúdo carregados; imagens observadas carregadas; 0 mensagens de console; `scrollWidth == innerWidth` em 390 px e desktop; busca, filtros, favoritos persistidos, diálogo de receita e feedback explícito do formulário já exercitados.
 - `.venv/bin/python scripts/resume.py check`: passou depois de atualizar o índice vivo.
