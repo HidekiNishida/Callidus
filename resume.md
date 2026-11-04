@@ -527,6 +527,10 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 
 **Propósito:** Auditoria final da missão: arquitetura antes/depois, critérios atendidos e pendentes, testes, riscos e recomendações.
 
+### `docs/engineering/delivery-quality.md`
+
+**Propósito:** Contrato de entrega, rastreabilidade de requisito → artefato → evidência, verificações proporcionais por tipo de resultado, recuperação sem repetição cega e checklist honesto de conclusão.
+
 ## `docs/engineering/roles/`
 
 **Propósito:** Uma página por papel da organização (missão, equipe, autoridade, revisão, escalonamento), gerada a partir do catálogo `ROLES`.
@@ -2562,6 +2566,8 @@ Configuração por variáveis de ambiente / `.env` (`src/agent/config.py`).
 - `_gap_failure(session: Session, task: TaskModel) -> Failure` — Classifica a falha de evidência da tarefa: `STALE_EVIDENCE` quando os arquivos verificados mudaram depois da verificação, senão `VERIFICATION_FAILED`. Entrada: sessão e tarefa; saída: `Failure` recuperável com a causa e o detalhe.
 - `_reopen(ts: TaskService, task: TaskModel, reason: str) -> None` — Reabre uma tarefa concluída, levando-a de COMPLETED a VERIFYING e depois PLANNING com o motivo. Entrada: serviço de tarefas, tarefa e motivo; saída: `None`.
 - `_subtree_tasks(session: Session, root_id: uuid.UUID) -> list[TaskModel]` — Devolve todas as tarefas da subárvore da raiz, fechando a relação `parent_id` iterativamente. Entrada: sessão e id da raiz; saída: lista de `TaskModel`.
+- `_named_output_files(task: TaskModel) -> list[str]` — Extrai arquivos explicitamente pedidos no título ou objetivo quando a etapa descreve criar ou alterar um artefato.
+- `_verification_scope_mismatch(task: TaskModel) -> str | None` — Detecta evidência limitada a arquivo que cobre caminho diferente do arquivo solicitado.
 - `correct_requirement_gaps(session: Session, root: TaskModel) -> list[uuid.UUID]` — cria etapas `Atender Rn`/`Comprovar Rn`.
 - `ensure_global_verification_task(session: Session, project_id: uuid.UUID, root: TaskModel) -> TaskModel | None` — cria etapa se faltar.
 - `evaluate_global_acceptance(session: Session, root_id: uuid.UUID) -> tuple[bool, str]` — todos requisitos `satisfied`?

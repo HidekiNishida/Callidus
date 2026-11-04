@@ -16,6 +16,7 @@ Voltar ao [índice da documentação](/docs/README.md)
 | [work-contract.md](work-contract.md) | campos do contrato de trabalho e a seleção do responsável | ao criar ou depurar uma atribuição |
 | [workflow.md](workflow.md) | etapas do Kanban derivadas do status | ao ler o quadro |
 | [quality-gates.md](quality-gates.md) | portões G0–G4 e a avaliação em cinco dimensões | ao aprovar ou reprovar |
+| [delivery-quality.md](delivery-quality.md) | contrato, evidência e verificações proporcionais por tipo de entrega | ao planejar, executar ou fechar qualquer pedido |
 | [metrics.md](metrics.md) | indicadores de entrega e seus denominadores | ao medir |
 | [knowledge-management.md](knowledge-management.md) | handoff e consulta entre agentes | ao passar trabalho adiante |
 | [context-engineering.md](context-engineering.md) | o que a organização põe no contexto (uma linha) | ao mexer no prompt |

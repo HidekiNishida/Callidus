@@ -53,6 +53,21 @@ def test_contrato_separa_pedido_de_piso_e_de_premissa():
     assert "não criar capacidade" in contract["exclusions"][0]
 
 
+def test_pedido_curto_de_site_recebe_piso_web_funcional_sem_backend_inventado():
+    """«Site» sozinho aciona critérios web para controles reais, responsividade e honestidade do formulário."""
+    strategy = ProfessionalStrategist().analyze("crie um site de culinária")
+
+    contract = build_quality_contract(strategy.original_request, strategy)
+    inferred = " ".join(item["text"] for item in contract["inferred"])
+
+    assert contract["profile"] == "web"
+    assert "telas estreitas e largas" in inferred
+    assert "executa a ação prometida" in inferred
+    assert "não fingem envio ou persistência" in inferred
+    assert "navegador" in inferred
+    assert contract["exclusions"] == ["não criar capacidade que o pedido não pediu"]
+
+
 def test_prototipo_nao_recebe_endurecimento_de_producao():
     """Um protótipo mantém o piso curto e registra o que ficou de fora."""
     strategy = ProfessionalStrategist().analyze("Faça um protótipo de página de login")

@@ -67,6 +67,7 @@ export const IntelligenceOrganization = {
     const metrics = Vue.ref(null);
     const selected = Vue.ref(null);
     const detail = Vue.ref(null);
+    const handoff = Vue.ref(null);
     const review = Vue.reactive({ role: "qa_engineer", decision: "approved", reason: "" });
 
     const roleName = (id) => directory.value?.roles.find((r) => r.id === id)?.name || id || "—";
@@ -108,10 +109,16 @@ export const IntelligenceOrganization = {
     async function open(row) {
       selected.value = row;
       detail.value = null;
+      handoff.value = null;
       try {
-        detail.value = await api(`/tasks/${encodeURIComponent(row.task_id)}/gates`);
+        const [gates, transfer] = await Promise.all([
+          api(`/tasks/${encodeURIComponent(row.task_id)}/gates`),
+          api(`/tasks/${encodeURIComponent(row.task_id)}/handoff`),
+        ]);
+        detail.value = gates;
+        handoff.value = transfer;
       } catch (err) {
-        toast(err.message || "Falha ao carregar os portões", "error");
+        toast(err.message || "Falha ao carregar os portões e o handoff", "error");
       }
     }
 
@@ -136,11 +143,12 @@ export const IntelligenceOrganization = {
     Vue.watch(() => workspaceId(), () => {
       selected.value = null;
       detail.value = null;
+      handoff.value = null;
       load();
     });
 
     return {
-      loading, error, directory, board, metrics, selected, detail, review,
+      loading, error, directory, board, metrics, selected, detail, handoff, review,
       teamsByOffice, roleName, teamName, load, open, submitReview,
       icon, GATE_LABEL, STAGE_LABEL, formatMetric,
     };
@@ -216,6 +224,21 @@ export const IntelligenceOrganization = {
               <li v-for="r in detail.reviews" :key="r.at">{{ roleName(r.role) }}: {{ r.decision === 'approved' ? 'aprovou' : 'reprovou' }}<span v-if="r.reason" class="muted small"> — {{ r.reason }}</span></li>
             </ul>
             <p v-else class="muted small">Nenhuma revisão registrada.</p>
+            <section v-if="handoff" class="org-handoff" aria-labelledby="org-handoff-title">
+              <h4 id="org-handoff-title">Passagem de trabalho</h4>
+              <p v-if="handoff.next_owner"><strong>Próximo responsável:</strong> {{ roleName(handoff.next_owner) }}</p>
+              <p v-if="handoff.results">{{ handoff.results }}</p>
+              <p v-if="handoff.next_action"><strong>Próxima ação:</strong> {{ handoff.next_action }}</p>
+              <div v-if="handoff.findings && handoff.findings.length">
+                <strong>Descobertas</strong>
+                <ul class="org-checks"><li v-for="(finding, index) in handoff.findings" :key="index">{{ typeof finding === 'string' ? finding : finding.text || finding.title || JSON.stringify(finding) }}</li></ul>
+              </div>
+              <div v-if="handoff.pending && handoff.pending.length">
+                <strong>Pendente</strong>
+                <ul class="org-checks"><li v-for="(item, index) in handoff.pending" :key="index">{{ item }}</li></ul>
+              </div>
+              <p v-if="!handoff.results && !handoff.next_action && !(handoff.findings || []).length && !(handoff.pending || []).length" class="muted small">Nenhuma passagem registrada para esta tarefa.</p>
+            </section>
             <form class="org-review" @submit.prevent="submitReview">
               <label>Papel <select v-model="review.role"><option v-for="r in directory.roles" :key="r.id" :value="r.id">{{ r.name }}</option></select></label>
               <label>Decisão <select v-model="review.decision"><option value="approved">Aprovar</option><option value="rejected">Reprovar</option></select></label>

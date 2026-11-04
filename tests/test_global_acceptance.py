@@ -150,6 +150,24 @@ async def test_task_claimed_done_without_evidence_gets_a_localized_fix(session, 
     assert ts.get_task(root.id).status == TaskStatus.PLANNING.value
 
 
+def test_file_task_is_rejected_when_evidence_covers_a_different_named_file(session, tmp_path):
+    """Um `file_contains` aprovado em index.html não comprova a etapa «Criar style.css»."""
+    run, root, (task,), _, _ = _tree(
+        session,
+        tmp_path,
+        "- criar style.css",
+        [{"title": "Criar style.css", "covers": ["R1"], "file": "index.html"}],
+    )
+
+    accepted, reason = evaluate_global_acceptance(session, root.id)
+
+    assert not accepted
+    assert "evidência fora do escopo" in reason
+    assert "style.css" in reason and "index.html" in reason
+    assert reopen_verification_gaps(session, root.id) == [task.id]
+    assert task.status == TaskStatus.RETRY_PENDING.value
+
+
 @pytest.mark.asyncio
 async def test_pending_mandatory_requirement_blocks_completion_with_partial_report(session, tmp_path):
     """Requisito obrigatório sem comprovação impede a conclusão e o relatório mostra o que faltou."""

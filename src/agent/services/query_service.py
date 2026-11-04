@@ -45,6 +45,7 @@ from sqlalchemy.orm import Session
 
 from agent.config import Settings, get_settings
 from agent.domain.agent_enums import ExecutionStatus, QueryStatus
+from agent.domain.organization import SPECIALTIES
 from agent.persistence.models import AgentModel, AgentQueryModel
 from agent.providers.base import (
     ChatCompletionRequest,
@@ -355,8 +356,9 @@ class QueryService:
     def answer_from_persisted(self, query: AgentQueryModel) -> dict[str, Any] | None:
         """Responde a partir do estado já persistido, sem reativar ninguém.
 
-        A busca é direcionada: primeiro o alvo, depois a descendência, em ordem de
-        profundidade. O primeiro agente com evidência pertinente responde.
+        A busca preserva o alvo explícito e, na descendência, consulta primeiro os
+        agentes cuja especialidade combina lexicalmente com a pergunta. A evidência
+        ainda precisa passar pelo mesmo filtro de relevância antes de responder.
 
         Args:
             query: consulta a responder.
@@ -366,7 +368,25 @@ class QueryService:
         """
         questions = list(query.questions_json or [])
         combined = " ".join(questions)
-        for agent in [self._agents.get(query.target_agent_id), *self._agents.descendants(query.target_agent_id)]:
+        target = self._agents.get(query.target_agent_id)
+        descendants = self._agents.descendants(query.target_agent_id)
+        question_tokens = _tokens(combined)
+
+        def specialty_score(agent: AgentModel) -> int:
+            """Ordena descendentes por correspondência entre a pergunta e suas especialidades."""
+            assignment = (agent.metadata_json or {}).get("assignment") or {}
+            labels = []
+            for specialty_id in assignment.get("specialties") or []:
+                specialty = SPECIALTIES.get(str(specialty_id))
+                labels.extend((str(specialty_id), specialty.name if specialty else ""))
+            specialty_tokens = set(_tokens(" ".join(labels)))
+            return len(question_tokens & specialty_tokens)
+
+        ordered_descendants = sorted(
+            enumerate(descendants), key=lambda pair: (-specialty_score(pair[1]), pair[0])
+        )
+        candidates = [target, *(agent for _, agent in ordered_descendants)]
+        for agent in candidates:
             finding = self._relevant(combined, self._agents.findings(agent.id))
             if finding is None:
                 continue

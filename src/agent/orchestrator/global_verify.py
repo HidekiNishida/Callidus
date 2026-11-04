@@ -11,7 +11,9 @@ Observações: o estado canônico é o SQLite; a verificação é independente d
 from __future__ import annotations
 
 import uuid
+import re
 from datetime import UTC, datetime
+from pathlib import PurePosixPath
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -74,6 +76,56 @@ REQUIREMENT_LABELS = {
     "informativo": "informativo",
 }
 _ACCEPTABLE = {"satisfied", "não_aplicável", "informativo"}
+_FILE_SCOPED = {"file_contains", "file_exists", "syntax"}
+_CREATE_ACTION = re.compile(
+    r"\b(?:criar|crie|criado|criada|adicione|adicionar|implementar|implemente|gerar|gere|"
+    r"escrever|escreva|editar|edite|alterar|altere|corrigir|corrija|create|write|add|"
+    r"implement|generate|edit|modify|fix)\b",
+    re.IGNORECASE,
+)
+_NAMED_FILE = re.compile(
+    r"(?<![\w/.-])((?:[\w.-]+/)*[\w-][\w.-]*\.(?:html?|css|js|jsx|ts|tsx|py|md|json|toml|yaml|yml|sql|sh))(?![\w/])",
+    re.IGNORECASE,
+)
+
+
+def _named_output_files(task: TaskModel) -> list[str]:
+    """Arquivos citados explicitamente como saída de uma etapa de criação ou alteração.
+
+    Só considera nomes no título ou objetivo da própria etapa; uma menção a arquivo no pedido
+    raiz não é suficiente para exigir que cada subtarefa o produza.
+    """
+    result: list[str] = []
+    for text in (task.title or "", task.objective or ""):
+        if not _CREATE_ACTION.search(text):
+            continue
+        for match in _NAMED_FILE.findall(text):
+            path = str(PurePosixPath(match))
+            if path not in result:
+                result.append(path)
+    return result
+
+
+def _verification_scope_mismatch(task: TaskModel) -> str | None:
+    """Detecta quando verificação por arquivo aprova caminho diferente do arquivo pedido.
+
+    A impressão digital prova que o arquivo verificado não mudou; ela não prova que é o
+    arquivo que a tarefa prometeu criar ou alterar. Este vínculo impede que uma escrita em
+    `index.html` aprove por engano a etapa «Criar style.css».
+    """
+    required = _named_output_files(task)
+    spec = verification_spec(task)
+    if not required or not isinstance(spec, dict) or spec.get("type") not in _FILE_SCOPED:
+        return None
+    verified = str(spec.get("path") or "")
+    verified_path = PurePosixPath(verified)
+    missing = [
+        name for name in required
+        if PurePosixPath(name) != verified_path and PurePosixPath(name).name != verified_path.name
+    ]
+    if not missing:
+        return None
+    return f"etapa pede {', '.join(missing)}, mas a evidência por arquivo cobre {verified or '(caminho vazio)'}"
 
 
 def requirements_report(session: Session, root: TaskModel) -> list[dict]:
@@ -128,6 +180,9 @@ def evaluate_global_acceptance(session: Session, root_id: uuid.UUID) -> tuple[bo
         if verification_spec(t) and TaskStatus(t.status) == TaskStatus.COMPLETED:
             if not verification_evidence_ok(session, t):
                 return False, f"evidência ausente ou desatualizada: {t.title}"
+            mismatch = _verification_scope_mismatch(t)
+            if mismatch:
+                return False, f"evidência fora do escopo: {t.title} — {mismatch}"
 
     report = root.consolidated_result_json or {}
     if report and report.get("achieved") is False:
@@ -196,9 +251,18 @@ def reopen_verification_gaps(session: Session, root_id: uuid.UUID) -> list[uuid.
             continue
         if TaskStatus(t.status) != TaskStatus.COMPLETED:
             continue
-        if verification_evidence_ok(session, t):
+        if verification_evidence_ok(session, t) and not _verification_scope_mismatch(t):
             continue
-        failure = _gap_failure(session, t)
+        mismatch = _verification_scope_mismatch(t)
+        failure = (
+            Failure(
+                FailureCategory.RECOVERABLE,
+                FailureCause.VERIFICATION_FAILED,
+                mismatch,
+            )
+            if mismatch
+            else _gap_failure(session, t)
+        )
         if failure.cause == FailureCause.STALE_EVIDENCE:
             invalidate_latest(session, t.id, failure.detail)
         # A falha é registrada pelo diário: assim ela ganha assinatura e estratégia, e passa a

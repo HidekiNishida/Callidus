@@ -187,6 +187,36 @@ async def test_a_consulta_encontra_evidencia_em_descendente_profundo(session: Se
     assert resolved.answered_by_agent_id == tree["agents"]["grand"].id
 
 
+def test_consulta_prioriza_especialidade_que_combina_com_a_pergunta(session: Session, tree):
+    """Entre descendentes com evidência, a especialidade pertinente responde primeiro."""
+    from agent.domain.schemas import TaskCreate
+
+    sibling_task = TaskService(session).create_task(
+        tree["project"].id,
+        TaskCreate(title="Interface", objective="Trabalho de interface", parent_id=tree["tasks"]["child"].id),
+    )
+    sibling = AgentService(session).ensure_agent(sibling_task.id)
+    agents = AgentService(session)
+    agents.record_finding(tree["agents"]["grand"].id, "A interface web usa um botão de envio.")
+    agents.record_finding(sibling.id, "A interface web usa um botão de envio.")
+    grand_row = session.get(type(tree["agents"]["grand"]), tree["agents"]["grand"].id)
+    sibling_row = session.get(type(sibling), sibling.id)
+    grand_row.metadata_json = {**(grand_row.metadata_json or {}), "assignment": {"specialties": ["testing_quality_assurance"]}}
+    sibling_row.metadata_json = {**(sibling_row.metadata_json or {}), "assignment": {"specialties": ["frontend"]}}
+    session.flush()
+
+    service = QueryService(session)
+    query = service.ask(
+        tree["agents"]["root"].id,
+        tree["agents"]["child"].id,
+        "qual é a interface web?",
+    )
+    answer = service.answer_from_persisted(query)
+
+    assert answer is not None
+    assert answer["source_agent_id"] == str(sibling.id)
+
+
 async def test_sem_evidencia_a_resposta_diz_que_falta(session: Session, tree):
     """Sem evidência no estado, a resposta declara a ausência e marca a incerteza."""
     service = QueryService(session)

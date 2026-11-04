@@ -10,8 +10,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-globalThis.Vue ??= { ref: () => ({}), reactive: (o) => o, computed: () => ({}), onMounted: () => {}, watch: () => {} };
-const { formatMetric, GATE_LABEL, STAGE_LABEL } = await import(
+globalThis.Vue ??= { ref: (value) => ({ value }), reactive: (o) => o, computed: (fn) => ({ get value() { return fn(); } }), onMounted: () => {}, watch: () => {} };
+const { formatMetric, GATE_LABEL, STAGE_LABEL, IntelligenceOrganization } = await import(
   "../../web/static/assets/app/components/intelligence-organization.js"
 );
 
@@ -31,4 +31,22 @@ test("todo portão e toda etapa da API têm rótulo", () => {
   for (const stage of ["INBOX", "ANALYSIS", "ARCHITECTURE_REVIEW", "READY", "IN_PROGRESS", "IMPLEMENTATION_COMPLETE",
     "QA_REVIEW", "TECHNICAL_AUDIT", "READY_FOR_INTEGRATION", "INTEGRATED", "DONE", "REWORK", "BLOCKED", "FAILED",
     "CANCELLED"]) assert.ok(STAGE_LABEL[stage], stage);
+});
+
+test("detalhe da tarefa carrega e conserva a passagem de trabalho", async () => {
+  const requested = [];
+  globalThis.fetch = async (path) => {
+    requested.push(path);
+    const payload = path.endsWith("/handoff")
+      ? { next_owner: "qa_engineer", next_action: "Revisar os testes", findings: ["Busca implementada"] }
+      : { stage: "QA_REVIEW", status: "in_progress", gates: [], evaluation: { dimensions: [] }, reviews: [] };
+    return { ok: true, status: 200, text: async () => JSON.stringify(payload) };
+  };
+
+  const component = IntelligenceOrganization.setup();
+  await component.open({ task_id: "task-1", title: "Busca" });
+
+  assert.deepEqual(requested, ["/tasks/task-1/gates", "/tasks/task-1/handoff"]);
+  assert.equal(component.handoff.value.next_action, "Revisar os testes");
+  assert.equal(component.handoff.value.findings[0], "Busca implementada");
 });

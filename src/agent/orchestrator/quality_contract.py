@@ -24,7 +24,7 @@ _PROTOTYPE = re.compile(
     re.IGNORECASE,
 )
 _CHANGE_HINT = re.compile(r"\b(corri\w*|bug|implement\w*|cri[ae]\w*|edit\w*|escrev\w*|refator\w*|adicion\w*)\b", re.IGNORECASE)
-_WEB = re.compile(r"\b(p[aá]gina|interface|html|css|formul[aá]rio|responsiv)\b", re.IGNORECASE)
+_WEB = re.compile(r"\b(site|website|web|p[aá]gina|interface|html|css|formul[aá]rio|responsiv)\b", re.IGNORECASE)
 _ITEM = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+(.+?)\s*$")
 _UNCERTAIN = re.compile(
     r"\b(onde fica|onde est[aá]|n[ãa]o sei|qual arquivo|investig\w*|como funciona)\b",
@@ -57,8 +57,10 @@ _PROFILES: dict[str, list[str]] = {
     ],
     "consultation": [],
     "web": [
-        "a página tem hierarquia legível e estado vazio ou de erro quando há dados",
-        "o fluxo pedido pode ser percorrido",
+        "a estrutura, o conteúdo e a direção visual servem ao propósito do site, sem conteúdo genérico de preenchimento",
+        "o layout funciona em telas estreitas e largas, com leitura, navegação e controles acessíveis por teclado",
+        "cada link, botão e formulário visível executa a ação prometida e apresenta feedback; formulários validam os dados e não fingem envio ou persistência sem backend",
+        "imagens e outros recursos carregam ou têm fallback; a experiência principal é percorrida no navegador quando disponível e limitações são relatadas",
     ],
 }
 
